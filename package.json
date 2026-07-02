@@ -1,0 +1,12 @@
+{
+  "name": "vibe-idx",
+  "private": true,
+  "workspaces": [
+    "apps/*"
+  ],
+  "type": "module",
+  "devDependencies": {
+    "vite-plus": "^0.2.1"
+  },
+  "packageManager": "pnpm@11.9.0"
+}
