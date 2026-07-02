@@ -31,6 +31,7 @@ from idx_ingest.parsers import (
     parse_laporan_efek_pdf,
     parse_market_summary,
 )
+from idx_ingest.sources import source_policy
 from idx_ingest.util import store_raw_bytes, yyyymmdd
 
 IDX_BASE = "https://www.idx.co.id"
@@ -41,6 +42,8 @@ HEADERS = {
     "Origin": IDX_BASE,
 }
 INSIDER_TITLE = "LAPORAN KEPEMILIKAN ATAU SETIAP PERUBAHAN KEPEMILIKAN SAHAM PERUSAHAAN TERBUKA"
+INSIDER_TITLE_PHRASE = "laporan kepemilikan atau setiap perubahan kepemilikan saham"
+KSEI_1PCT_TITLE = "Pemegang Saham di atas 1% (KSEI)"
 
 
 @dataclass(frozen=True)
@@ -50,6 +53,13 @@ class Settings:
         f"sqlite:///{REPO_ROOT / 'data' / 'vibe_idx.sqlite'}",
     )
     raw_dir: Path = Path(os.environ.get("VIBE_IDX_RAW_DIR", REPO_ROOT / "data" / "raw"))
+
+
+def _default_lookback_days(source_name: str) -> int:
+    lookback_days = source_policy(source_name).default_lookback_days
+    if lookback_days is None:
+        raise ValueError(f"source {source_name} does not define a default lookback")
+    return lookback_days
 
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=8))
@@ -108,6 +118,17 @@ def announcement_matches_title(item: dict[str, Any], title: str) -> bool:
     return title.lower() in announcement_title(item).lower()
 
 
+def is_insider_announcement(item: dict[str, Any]) -> bool:
+    return INSIDER_TITLE_PHRASE in announcement_title(item).lower()
+
+
+def _announcement_date(item: dict[str, Any]) -> dt.date | None:
+    published_at = (item.get("pengumuman") or {}).get("TglPengumuman")
+    if not published_at:
+        return None
+    return dt.datetime.fromisoformat(published_at).date()
+
+
 def choose_lamp1(item: dict[str, Any]) -> dict[str, Any] | None:
     attachments = item.get("attachments") or []
     for attachment in attachments:
@@ -123,7 +144,9 @@ def choose_lamp1(item: dict[str, Any]) -> dict[str, Any] | None:
 def is_insider_attachment(attachment: dict[str, Any]) -> bool:
     filename = attachment.get("OriginalFilename") or ""
     path = attachment.get("FullSavePath") or ""
-    return filename.startswith("LK-") and "/From_KSEI/" in path
+    if filename.startswith("LK-") and "/From_KSEI/" in path:
+        return True
+    return bool(attachment.get("IsAttachment") and "_lamp" in filename.lower())
 
 
 def ingest_market_summary(
@@ -133,6 +156,42 @@ def ingest_market_summary(
     settings = settings or Settings()
     url = market_summary_url(trade_date)
     payload = fetch_json(url)
+    rows = parse_market_summary(payload, trade_date)
+    if payload.get("data") and len(rows) <= 800:
+        raise ValueError(f"market summary sanity check failed: only {len(rows)} parsed rows")
+    return _persist_market_summary(settings, trade_date, url, payload, rows)
+
+
+def ingest_latest_market_summary(
+    today: dt.date | None = None,
+    lookback_days: int | None = None,
+    settings: Settings | None = None,
+) -> dict[str, int | str]:
+    today = today or dt.date.today()
+    lookback_days = lookback_days if lookback_days is not None else _default_lookback_days(
+        "market-summary"
+    )
+    settings = settings or Settings()
+    for offset in range(lookback_days + 1):
+        trade_date = today - dt.timedelta(days=offset)
+        url = market_summary_url(trade_date)
+        payload = fetch_json(url)
+        rows = parse_market_summary(payload, trade_date)
+        if not rows:
+            continue
+        if payload.get("data") and len(rows) <= 800:
+            raise ValueError(f"market summary sanity check failed: only {len(rows)} parsed rows")
+        return _persist_market_summary(settings, trade_date, url, payload, rows)
+    return {"trade_date": today.isoformat(), "rows": 0}
+
+
+def _persist_market_summary(
+    settings: Settings,
+    trade_date: dt.date,
+    url: str,
+    payload: dict[str, Any],
+    rows,
+) -> dict[str, int | str]:
     raw_file = _store_json(
         settings,
         "market-summary",
@@ -140,9 +199,6 @@ def ingest_market_summary(
         url,
         f"market-summary-{trade_date}.json",
     )
-    rows = parse_market_summary(payload, trade_date)
-    if payload.get("data") and len(rows) <= 800:
-        raise ValueError(f"market summary sanity check failed: only {len(rows)} parsed rows")
 
     with connect(settings.database_url) as conn:
         raw_file_id = upsert_raw_file(conn, raw_file)
@@ -195,6 +251,48 @@ def ingest_ksei_5pct(
     return {"reports": reports_seen, "rows": rows_seen}
 
 
+def ingest_latest_ksei_5pct(
+    today: dt.date | None = None,
+    settings: Settings | None = None,
+) -> dict[str, int]:
+    today = today or dt.date.today()
+    settings = settings or Settings()
+    payload, response_id = _store_ownership_list(settings, today.year)
+    latest = next((item for item in payload.get("items") or [] if item.get("Prospectus")), None)
+    if latest is None:
+        with connect(settings.database_url) as conn:
+            record_parser_run(conn, response_id, "ksei-5pct-ownership-list", "parsed")
+            conn.commit()
+        return {"reports": 0, "rows": 0}
+
+    listing_date = dt.datetime.fromisoformat(latest["ListingDate"]).date()
+    rows_seen = 0
+    with connect(settings.database_url) as conn:
+        record_parser_run(conn, response_id, "ksei-5pct-ownership-list", "parsed")
+        announcement_id = upsert_announcement(
+            conn,
+            Announcement(**_ownership_announcement_model(latest)),
+        )
+        raw_xlsx_id, xlsx = _download_file(
+            conn,
+            settings,
+            "ksei-5pct",
+            announcement_id,
+            latest["Prospectus"],
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        try:
+            report = parse_ksei_5pct_xlsx(xlsx, listing_date, listing_date)
+            upsert_ksei_5pct_report(conn, report, announcement_id, raw_xlsx_id)
+            record_parser_run(conn, raw_xlsx_id, "ksei-5pct", "parsed")
+            rows_seen = len(report.rows)
+        except Exception as exc:
+            record_parser_run(conn, raw_xlsx_id, "ksei-5pct", "failed", str(exc))
+            raise
+        conn.commit()
+    return {"reports": 1, "rows": rows_seen}
+
+
 def ingest_ksei_1pct(
     date_from: dt.date,
     date_to: dt.date,
@@ -216,7 +314,7 @@ def ingest_ksei_1pct(
     with connect(settings.database_url) as conn:
         record_parser_run(conn, response_id, f"{kind}-announcement-search", "parsed")
         for item in payload.get("Replies") or []:
-            if not announcement_matches_title(item, "Pemegang Saham di atas 1% (KSEI)"):
+            if not announcement_matches_title(item, KSEI_1PCT_TITLE):
                 continue
             attachment = choose_lamp1(item)
             if not attachment:
@@ -245,6 +343,67 @@ def ingest_ksei_1pct(
     return {"reports": reports_seen, "rows": rows_seen}
 
 
+def ingest_latest_ksei_1pct(
+    today: dt.date | None = None,
+    lookback_days: int | None = None,
+    page_size: int = 50,
+    settings: Settings | None = None,
+) -> dict[str, int]:
+    today = today or dt.date.today()
+    lookback_days = lookback_days if lookback_days is not None else _default_lookback_days(
+        "ksei-1pct"
+    )
+    settings = settings or Settings()
+    date_from = today - dt.timedelta(days=lookback_days)
+    payload, response_id = _store_announcement_search(
+        settings,
+        "1%",
+        "ksei-1pct",
+        date_from,
+        today,
+        page_size,
+    )
+
+    with connect(settings.database_url) as conn:
+        record_parser_run(conn, response_id, "ksei-1pct-announcement-search", "parsed")
+        item = next(
+            (
+                item
+                for item in payload.get("Replies") or []
+                if announcement_matches_title(item, KSEI_1PCT_TITLE)
+            ),
+            None,
+        )
+        if item is None:
+            conn.commit()
+            return {"reports": 0, "rows": 0}
+        attachment = choose_lamp1(item)
+        if attachment is None:
+            conn.commit()
+            return {"reports": 0, "rows": 0}
+
+        announcement_id = upsert_announcement(
+            conn,
+            Announcement(**_announcement_model(item, "1%")),
+        )
+        raw_pdf_id, pdf = _download_attachment(
+            conn,
+            settings,
+            "ksei-1pct",
+            announcement_id,
+            attachment,
+        )
+        try:
+            report = parse_ksei_1pct_pdf(pdf)
+            upsert_ksei_1pct_report(conn, report, announcement_id, raw_pdf_id)
+            record_parser_run(conn, raw_pdf_id, "ksei-1pct", "parsed")
+        except Exception as exc:
+            record_parser_run(conn, raw_pdf_id, "ksei-1pct", "failed", str(exc))
+            raise
+        conn.commit()
+    return {"reports": 1, "rows": len(report.rows)}
+
+
 def ingest_insider(
     date_from: dt.date,
     date_to: dt.date,
@@ -254,7 +413,6 @@ def ingest_insider(
     return _ingest_announcement_pdfs(
         keyword="laporan kepemilikan",
         kind="insider",
-        title=INSIDER_TITLE,
         date_from=date_from,
         date_to=date_to,
         page_size=page_size,
@@ -262,6 +420,77 @@ def ingest_insider(
         saver=upsert_insider_report,
         settings=settings or Settings(),
     )
+
+
+def ingest_latest_insider(
+    today: dt.date | None = None,
+    lookback_days: int | None = None,
+    page_size: int = 50,
+    settings: Settings | None = None,
+) -> dict[str, int]:
+    today = today or dt.date.today()
+    lookback_days = lookback_days if lookback_days is not None else _default_lookback_days(
+        "insider"
+    )
+    settings = settings or Settings()
+    date_from = today - dt.timedelta(days=lookback_days)
+    payload, response_id = _store_announcement_search(
+        settings,
+        "laporan kepemilikan",
+        "insider",
+        date_from,
+        today,
+        page_size,
+    )
+    matching = [
+        item
+        for item in payload.get("Replies") or []
+        if is_insider_announcement(item)
+    ]
+    dated_items = [
+        (published_date, item)
+        for item in matching
+        if (published_date := _announcement_date(item))
+    ]
+    latest_date = max((published_date for published_date, _item in dated_items), default=None)
+    latest_items = [item for published_date, item in dated_items if published_date == latest_date]
+
+    parsed = 0
+    with connect(settings.database_url) as conn:
+        record_parser_run(conn, response_id, "insider-announcement-search", "parsed")
+        for item in latest_items:
+            announcement_id = upsert_announcement(
+                conn,
+                Announcement(**_announcement_model(item, "laporan kepemilikan")),
+            )
+            attachments = [
+                a
+                for a in item.get("attachments") or []
+                if (a.get("FullSavePath") or "").lower().endswith(".pdf")
+                and is_insider_attachment(a)
+            ]
+            for attachment in attachments:
+                raw_pdf_id, pdf = _download_attachment(
+                    conn,
+                    settings,
+                    "insider",
+                    announcement_id,
+                    attachment,
+                )
+                try:
+                    upsert_insider_report(
+                        conn,
+                        parse_insider_pdf(pdf),
+                        announcement_id,
+                        raw_pdf_id,
+                    )
+                    record_parser_run(conn, raw_pdf_id, "insider", "parsed")
+                    parsed += 1
+                except Exception as exc:
+                    record_parser_run(conn, raw_pdf_id, "insider", "failed", str(exc))
+                    raise
+        conn.commit()
+    return {"reports": parsed}
 
 
 def ingest_laporan_efek(
@@ -282,6 +511,69 @@ def ingest_laporan_efek(
         first_attachment_only=True,
         result_key="snapshots",
     )
+
+
+def ingest_latest_laporan_efek(
+    today: dt.date | None = None,
+    lookback_days: int | None = None,
+    page_size: int = 50,
+    settings: Settings | None = None,
+) -> dict[str, int]:
+    today = today or dt.date.today()
+    lookback_days = lookback_days if lookback_days is not None else _default_lookback_days(
+        "laporan-efek"
+    )
+    settings = settings or Settings()
+    date_from = today - dt.timedelta(days=lookback_days)
+    payload, response_id = _store_announcement_search(
+        settings,
+        "laporan efek",
+        "laporan-efek",
+        date_from,
+        today,
+        page_size,
+    )
+    item = next(iter(payload.get("Replies") or []), None)
+    parsed = 0
+    with connect(settings.database_url) as conn:
+        record_parser_run(conn, response_id, "laporan-efek-announcement-search", "parsed")
+        if item is None:
+            conn.commit()
+            return {"snapshots": 0}
+        announcement_id = upsert_announcement(
+            conn,
+            Announcement(**_announcement_model(item, "laporan efek")),
+        )
+        attachments = [
+            a
+            for a in item.get("attachments") or []
+            if (a.get("FullSavePath") or "").lower().endswith(".pdf")
+        ]
+        for index, attachment in enumerate(attachments):
+            raw_pdf_id, pdf = _download_attachment(
+                conn,
+                settings,
+                "laporan-efek",
+                announcement_id,
+                attachment,
+            )
+            if index != 0:
+                record_parser_run(conn, raw_pdf_id, "laporan-efek", "stored_unparsed")
+                continue
+            try:
+                upsert_monthly_snapshot(
+                    conn,
+                    parse_laporan_efek_pdf(pdf),
+                    announcement_id,
+                    raw_pdf_id,
+                )
+                record_parser_run(conn, raw_pdf_id, "laporan-efek", "parsed")
+                parsed += 1
+            except Exception as exc:
+                record_parser_run(conn, raw_pdf_id, "laporan-efek", "failed", str(exc))
+                raise
+        conn.commit()
+    return {"snapshots": parsed}
 
 
 def _ingest_announcement_pdfs(
@@ -310,6 +602,8 @@ def _ingest_announcement_pdfs(
     with connect(settings.database_url) as conn:
         record_parser_run(conn, response_id, f"{kind}-announcement-search", "parsed")
         for item in payload.get("Replies") or []:
+            if kind == "insider" and not is_insider_announcement(item):
+                continue
             if title and not announcement_matches_title(item, title):
                 continue
             announcement_id = upsert_announcement(
