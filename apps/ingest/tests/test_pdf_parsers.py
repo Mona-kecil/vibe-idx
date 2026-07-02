@@ -78,6 +78,7 @@ def test_parse_existing_laporan_efek_fixture() -> None:
     assert snapshot.issuer_name == "PT Bank Central Asia Tbk."
     assert snapshot.report_month == "2026-05"
     assert snapshot.registrar == "PT. Raya Saham Registra"
+    assert snapshot.reported_free_float_percent == Decimal("42.46")
 
 
 def test_pdfplumber_extracts_insider_fixture() -> None:

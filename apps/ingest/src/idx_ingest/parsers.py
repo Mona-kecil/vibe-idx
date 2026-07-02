@@ -281,7 +281,7 @@ def parse_laporan_efek_pdf(pdf_bytes: bytes) -> MonthlyOwnershipSnapshot:
         treasury_shares=_first_int_after(flat, "Jumlah saham tresuri"),
         scrip_shares=_holder_bucket(flat, "Pemegang Saham < 5% - Warkat"),
         scripless_shares=_holder_bucket(flat, "Pemegang Saham < 5% - Non Warkat"),
-        reported_free_float_percent=_first_decimal_after(flat, "% Saham Free Float"),
+        reported_free_float_percent=_free_float_percent(flat),
     )
 
 
@@ -610,6 +610,26 @@ def _first_int_after(text: str, label: str) -> int | None:
 def _first_decimal_after(text: str, label: str):
     match = re.search(rf"{re.escape(label)}.*?(\d+(?:,\d+)?|\d+(?:\.\d+)?)", text, re.I)
     return parse_decimal(match.group(1)) if match else None
+
+
+def _free_float_percent(text: str) -> Decimal | None:
+    match = re.search(
+        r"% Saham Free Float\s+(.*?)(?:Jumlah saham yang harus dibatasi|Pernyataan|$)",
+        text,
+        re.I,
+    )
+    if not match:
+        return None
+
+    values = [
+        value
+        for raw in re.findall(
+            r"(?<![\d.,])(\d{1,3}(?:,\d{1,4}|\.\d{1,4}))(?![\d.,])",
+            match.group(1),
+        )
+        if (value := parse_decimal(raw)) is not None and value <= 100
+    ]
+    return values[-1] if values else None
 
 
 def _parse_percent(value: str | None) -> Decimal | None:

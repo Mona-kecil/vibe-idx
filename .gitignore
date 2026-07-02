@@ -3,6 +3,9 @@ data/
 .pytest_cache/
 .ruff_cache/
 __pycache__/
+node_modules/
+.pnpm-store/
+apps/**/dist/
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal

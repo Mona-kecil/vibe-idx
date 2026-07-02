@@ -4,6 +4,7 @@ from idx_ingest.ingest import (
     INSIDER_TITLE,
     announcement_matches_title,
     choose_lamp1,
+    is_insider_announcement,
     is_insider_attachment,
     ownership_list_url,
 )
@@ -31,6 +32,18 @@ def test_insider_filter_skips_material_info_keyword_hits() -> None:
     assert announcement_matches_title(target, INSIDER_TITLE)
 
 
+def test_insider_filter_accepts_company_specific_ownership_report_title() -> None:
+    item = {
+        "pengumuman": {
+            "JudulPengumuman": (
+                "Laporan Kepemilikan atau Setiap Perubahan Kepemilikan Saham "
+                "PT Bank KB Indonesia Tbk"
+            )
+        }
+    }
+    assert is_insider_announcement(item)
+
+
 def test_choose_lamp1_attachment() -> None:
     item = {
         "attachments": [
@@ -54,5 +67,17 @@ def test_insider_attachment_skips_material_info_pdf() -> None:
         {
             "OriginalFilename": "20260611_SPMA_Laporan Informasi dan Fakta Material_32100514.pdf",
             "FullSavePath": "https://www.idx.co.id/StaticData/From_EREP/spma.pdf",
+        }
+    )
+
+
+def test_insider_attachment_accepts_lampiran_company_report_pdf() -> None:
+    assert is_insider_attachment(
+        {
+            "OriginalFilename": (
+                "20260701_BBKP_Laporan Informasi dan Fakta Material_32106991_lamp1.pdf"
+            ),
+            "FullSavePath": "https://www.idx.co.id/StaticData/From_EREP/bbkp-lamp1.pdf",
+            "IsAttachment": True,
         }
     )
