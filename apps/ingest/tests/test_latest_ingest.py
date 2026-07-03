@@ -69,6 +69,63 @@ def test_latest_ksei_5pct_uses_first_available_listing_not_today(
     assert row == ("2026-06-30", "BBCA", "https://idx.test/latest.xlsx")
 
 
+def test_latest_ksei_5pct_persists_account_holder_shareholder_and_account_distinct(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    settings = Settings(
+        database_url=f"sqlite:///{tmp_path / 'vibe_idx.sqlite'}",
+        raw_dir=tmp_path / "raw",
+    )
+    monkeypatch.setattr(
+        ingest,
+        "fetch_json",
+        lambda url: {
+            "items": [
+                {
+                    "Description": "Pemegang Saham di Atas 5% per 30 Juni 2026",
+                    "Prospectus": "https://idx.test/latest.xlsx",
+                    "ListingDate": "2026-06-30T12:00:00",
+                }
+            ]
+        },
+    )
+    monkeypatch.setattr(ingest, "fetch_bytes", lambda url, accept="*/*": b"xlsx")
+    monkeypatch.setattr(
+        ingest,
+        "parse_ksei_5pct_xlsx",
+        lambda xlsx, as_of_date, source_date: KseiFivePctReport(
+            as_of_date=as_of_date,
+            source_date=source_date,
+            rows=[
+                KseiFivePctRow(
+                    ticker="AADI",
+                    issuer_name="ADARO ANDALAN INDONESIA Tbk, PT",
+                    account_holder_name="CITIBANK, N. A",
+                    shareholder_name="ADARO STRATEGIC INVESTMENTS",
+                    account_name="BOS LTD S/A PT ADARO STRATEGIC INVESTMENTS",
+                )
+            ],
+        ),
+    )
+
+    result = ingest.ingest_latest_ksei_5pct(dt.date(2026, 7, 2), settings=settings)
+
+    assert result == {"reports": 1, "rows": 1}
+    with sqlite3.connect(tmp_path / "vibe_idx.sqlite") as conn:
+        row = conn.execute(
+            """
+            SELECT account_holder_name, shareholder_name, account_name
+            FROM ksei_5pct_rows
+            """
+        ).fetchone()
+    assert row == (
+        "CITIBANK, N. A",
+        "ADARO STRATEGIC INVESTMENTS",
+        "BOS LTD S/A PT ADARO STRATEGIC INVESTMENTS",
+    )
+
+
 def test_latest_market_summary_walks_back_to_populated_eod_snapshot(
     tmp_path: Path,
     monkeypatch,

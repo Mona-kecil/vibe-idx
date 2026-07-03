@@ -223,6 +223,10 @@ h2 {
   min-width: 150px;
 }
 
+.date-field {
+  min-width: 170px;
+}
+
 .segmented {
   display: inline-flex;
   min-height: 40px;
@@ -290,6 +294,47 @@ h2 {
   background: #ffffff;
 }
 
+.ownership-table-wrap {
+  background: #fbfcfb;
+}
+
+.ownership-table {
+  min-width: 1320px;
+  table-layout: fixed;
+}
+
+.ownership-col-expand {
+  width: 44px;
+}
+
+.ownership-col-ticker {
+  width: 78px;
+}
+
+.ownership-col-issuer {
+  width: 270px;
+}
+
+.ownership-col-shareholder {
+  width: 300px;
+}
+
+.ownership-col-percent {
+  width: 106px;
+}
+
+.ownership-col-shares {
+  width: 178px;
+}
+
+.ownership-col-delta {
+  width: 136px;
+}
+
+.ownership-col-count {
+  width: 126px;
+}
+
 table {
   width: 100%;
   min-width: 980px;
@@ -327,6 +372,95 @@ tbody tr:hover {
 .numeric {
   text-align: right;
   font-variant-numeric: tabular-nums;
+}
+
+.expand-column {
+  width: 44px;
+  min-width: 44px;
+  text-align: center;
+}
+
+.expand-button {
+  display: inline-grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 1px solid #aebbb5;
+  border-radius: 4px;
+  background: #ffffff;
+  color: #123c35;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.expand-button:hover,
+.expand-button[aria-expanded='true'] {
+  border-color: #123c35;
+  background: #e6f0ea;
+}
+
+.ticker-cell,
+.shareholder-name {
+  font-weight: 850;
+}
+
+.shareholder-name-changed {
+  color: #1167b1;
+}
+
+.row-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 6px;
+  border: 1px solid #c8d2cc;
+  border-radius: 4px;
+  color: #52615c;
+  font-size: 0.72rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.ownership-detail-row > td {
+  padding: 0;
+  background: #f4f7f5;
+}
+
+.account-detail-panel {
+  max-height: min(360px, 48vh);
+  overflow: auto;
+  padding: 8px 10px 10px;
+  border-top: 1px solid #d6ded9;
+}
+
+.account-detail-table {
+  min-width: 1120px;
+  border: 1px solid #d8e0dc;
+  background: #ffffff;
+}
+
+.account-detail-table th {
+  position: static;
+  background: #eef3ef;
+  font-size: 0.68rem;
+}
+
+.account-detail-table th,
+.account-detail-table td {
+  padding: 9px 10px;
+}
+
+.account-detail-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  clip-path: inset(50%);
 }
 
 .sort-button {

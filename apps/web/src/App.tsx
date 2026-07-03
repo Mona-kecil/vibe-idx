@@ -10,7 +10,7 @@ import {
   type ColumnDef,
   type SortingState,
 } from '@tanstack/react-table';
-import { useMemo, useState, type ReactNode } from 'react';
+import { Fragment, useMemo, useState, type ReactNode } from 'react';
 
 import { trpc, type RouterOutputs } from './trpc';
 
@@ -21,6 +21,7 @@ type TransactionType = 'BUY' | 'SELL' | 'BUYBACK' | 'GRANT' | 'TRANSFER' | 'OTHE
 
 type PriceRow = RouterOutputs['prices']['list']['rows'][number];
 type FivePctRow = RouterOutputs['ownership']['fivePct']['list']['rows'][number];
+type FivePctAccountRow = FivePctRow['accounts'][number];
 type OnePctRow = RouterOutputs['ownership']['onePct']['list']['rows'][number];
 type InsiderRow = RouterOutputs['insiders']['transactions']['list']['rows'][number];
 
@@ -143,9 +144,15 @@ function Metric({ label, value }: { label: string; value?: string | null }) {
   );
 }
 
+export function keepPreviousListResult<T>(previousData: T | undefined) {
+  return previousData;
+}
+
 function PricesSurface() {
   const [filters, setFilters] = useListFilters();
-  const query = trpc.prices.list.useQuery(filters);
+  const query = trpc.prices.list.useQuery(filters, {
+    placeholderData: keepPreviousListResult,
+  });
 
   return (
     <SurfaceFrame
@@ -162,49 +169,109 @@ function PricesSurface() {
 
 function FivePctSurface() {
   const [filters, setFilters] = useListFilters<{
+    asOfDate: string;
     view: 'all' | 'percentageChanges';
-  }>({ view: 'all' });
-  const query = trpc.ownership.fivePct.list.useQuery(filters);
+  }>({ asOfDate: '', view: 'all' });
+  const query = trpc.ownership.fivePct.list.useQuery(
+    {
+      ...filters,
+      asOfDate: filters.asOfDate || undefined,
+    },
+    {
+      placeholderData: keepPreviousListResult,
+    },
+  );
+  const datesQuery = trpc.ownership.fivePct.dates.useQuery();
 
   return (
     <SurfaceFrame
+      dateLabel={filters.asOfDate ? 'Date' : 'Latest'}
       filters={filters}
       isLoading={query.isLoading}
       onFiltersChange={setFilters}
       pageInfo={query.data}
       extraControls={
-        <div className="segmented" aria-label="5 percent ownership view">
-          {[
-            ['all', 'All rows'],
-            ['percentageChanges', '% Changes'],
-          ].map(([view, label]) => (
-            <button
-              aria-pressed={filters.view === view}
-              key={view}
-              onClick={() =>
-                setFilters((current) => ({
-                  ...current,
-                  page: 1,
-                  view: view as 'all' | 'percentageChanges',
-                }))
-              }
-              type="button"
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+        <>
+          <FivePctDateSelector
+            dates={datesQuery.data ?? []}
+            isLoading={datesQuery.isLoading}
+            onDateChange={(asOfDate) =>
+              setFilters((current) => ({
+                ...current,
+                asOfDate,
+                page: 1,
+              }))
+            }
+            selectedDate={filters.asOfDate}
+          />
+          <div className="segmented" aria-label="5 percent ownership view">
+            {[
+              ['all', 'All rows'],
+              ['percentageChanges', '% Changes'],
+            ].map(([view, label]) => (
+              <button
+                aria-pressed={filters.view === view}
+                key={view}
+                onClick={() =>
+                  setFilters((current) => ({
+                    ...current,
+                    page: 1,
+                    view: view as 'all' | 'percentageChanges',
+                  }))
+                }
+                type="button"
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </>
       }
     >
-      <DataTable columns={fivePctColumns} rows={query.data?.rows ?? []} />
+      <FivePctOwnershipTable rows={query.data?.rows ?? []} />
       <QueryState error={query.error?.message} isLoading={query.isLoading} />
     </SurfaceFrame>
   );
 }
 
+export function FivePctDateSelector({
+  dates,
+  isLoading = false,
+  onDateChange,
+  selectedDate,
+}: {
+  dates: string[];
+  isLoading?: boolean;
+  onDateChange: (date: string) => void;
+  selectedDate: string;
+}) {
+  const visibleDates =
+    selectedDate && !dates.includes(selectedDate) ? [selectedDate, ...dates] : dates;
+
+  return (
+    <label className="field compact-field date-field">
+      Date
+      <select
+        disabled={isLoading && dates.length === 0}
+        onChange={(event) => onDateChange(event.target.value)}
+        value={selectedDate}
+      >
+        <option value="">Latest</option>
+        {visibleDates.map((date) => (
+          <option key={date} value={date}>
+            {date}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
 function OnePctSurface() {
   const [filters, setFilters] = useListFilters({ investor: '' });
-  const query = trpc.ownership.onePct.list.useQuery(filters);
+  const query = trpc.ownership.onePct.list.useQuery(filters, {
+    placeholderData: keepPreviousListResult,
+  });
 
   return (
     <SurfaceFrame
@@ -239,10 +306,15 @@ function InsidersSurface() {
   const [filters, setFilters] = useListFilters({
     type: '' as '' | TransactionType,
   });
-  const query = trpc.insiders.transactions.list.useQuery({
-    ...filters,
-    type: filters.type || undefined,
-  });
+  const query = trpc.insiders.transactions.list.useQuery(
+    {
+      ...filters,
+      type: filters.type || undefined,
+    },
+    {
+      placeholderData: keepPreviousListResult,
+    },
+  );
 
   return (
     <SurfaceFrame
@@ -295,6 +367,7 @@ function SurfaceFrame<
   T extends { latestDate: string | null; page: number; pageSize: number; total: number },
 >({
   children,
+  dateLabel = 'Latest',
   extraControls,
   filters,
   isLoading,
@@ -302,6 +375,7 @@ function SurfaceFrame<
   pageInfo,
 }: {
   children: ReactNode;
+  dateLabel?: string;
   extraControls?: ReactNode;
   filters: F;
   isLoading: boolean;
@@ -375,7 +449,9 @@ function SurfaceFrame<
         </div>
       </div>
       <div className="result-meta">
-        <span>Latest: {pageInfo?.latestDate ?? '-'}</span>
+        <span>
+          {dateLabel}: {pageInfo?.latestDate ?? '-'}
+        </span>
         <span>{formatNumber(total)} rows</span>
       </div>
       {children}
@@ -469,6 +545,159 @@ function DataTable<T extends object>({
   );
 }
 
+export function FivePctOwnershipTable({
+  initialExpandedIds = [],
+  rows,
+}: {
+  initialExpandedIds?: string[];
+  rows: FivePctRow[];
+}) {
+  const [expandedIds, setExpandedIds] = useState(() => new Set(initialExpandedIds));
+
+  function toggleRow(rowId: string) {
+    setExpandedIds((current) => {
+      const next = new Set(current);
+      if (next.has(rowId)) {
+        next.delete(rowId);
+      } else {
+        next.add(rowId);
+      }
+
+      return next;
+    });
+  }
+
+  return (
+    <div className="table-wrap ownership-table-wrap">
+      <table className="ownership-table">
+        <colgroup>
+          <col className="ownership-col-expand" />
+          <col className="ownership-col-ticker" />
+          <col className="ownership-col-issuer" />
+          <col className="ownership-col-shareholder" />
+          <col className="ownership-col-percent" />
+          <col className="ownership-col-percent" />
+          <col className="ownership-col-shares" />
+          <col className="ownership-col-delta" />
+          <col className="ownership-col-count" />
+        </colgroup>
+        <thead>
+          <tr>
+            <th className="expand-column">
+              <span className="visually-hidden">Expand</span>
+            </th>
+            <th>Ticker</th>
+            <th>Issuer</th>
+            <th>Shareholder</th>
+            <th className="numeric">Current %</th>
+            <th className="numeric">Prev %</th>
+            <th className="numeric">Current total shares</th>
+            <th className="numeric">Share delta</th>
+            <th className="numeric">Account count</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => {
+            const isExpanded = expandedIds.has(row.id);
+            const detailId = `details-${stableDomId(row.id)}`;
+            const hasShareDelta =
+              hasNonZeroValue(row.actualChange) || hasNonZeroValue(row.reportedChange);
+
+            return (
+              <Fragment key={row.id}>
+                <tr className="ownership-summary-row">
+                  <td className="expand-column">
+                    <button
+                      aria-controls={detailId}
+                      aria-expanded={isExpanded}
+                      aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${row.ticker} ${row.shareholderName}`}
+                      className="expand-button"
+                      onClick={() => toggleRow(row.id)}
+                      type="button"
+                    >
+                      <span aria-hidden="true">{isExpanded ? '-' : '+'}</span>
+                    </button>
+                  </td>
+                  <td className="ticker-cell">{row.ticker}</td>
+                  <td>{formatText(row.issuerName)}</td>
+                  <td>
+                    <span
+                      className={
+                        hasShareDelta ? 'shareholder-name shareholder-name-changed' : 'shareholder-name'
+                      }
+                    >
+                      {formatText(row.shareholderName)}
+                    </span>
+                    {row.kind === 'unlinkedAccounts' ? (
+                      <span className="row-badge">Unlinked</span>
+                    ) : null}
+                  </td>
+                  <td className="numeric">{formatPercent(row.currentPercent)}</td>
+                  <td className="numeric">{formatPercent(row.previousPercent)}</td>
+                  <td className="numeric">{formatNumber(row.currentTotalShares)}</td>
+                  <td className="numeric">{formatNumber(row.actualChange)}</td>
+                  <td className="numeric">{formatNumber(row.accountCount)}</td>
+                </tr>
+                {isExpanded ? (
+                  <tr className="ownership-detail-row">
+                    <td colSpan={9} id={detailId}>
+                      <FivePctAccountDetails accounts={row.accounts} />
+                    </td>
+                  </tr>
+                ) : null}
+              </Fragment>
+            );
+          })}
+          {rows.length === 0 ? (
+            <tr>
+              <td className="empty" colSpan={9}>
+                No rows for the current filters.
+              </td>
+            </tr>
+          ) : null}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function FivePctAccountDetails({ accounts }: { accounts: FivePctAccountRow[] }) {
+  return (
+    <div className="account-detail-panel">
+      <table className="account-detail-table">
+        <thead>
+          <tr>
+            <th>Nama Pemegang Rekening Efek</th>
+            <th>Nama Rekening Efek</th>
+            <th>Status</th>
+            <th className="numeric">Prev account shares</th>
+            <th className="numeric">Current account shares</th>
+            <th className="numeric">Prev %</th>
+            <th className="numeric">Current %</th>
+            <th className="numeric">Reported change</th>
+            <th className="numeric">Actual change</th>
+          </tr>
+        </thead>
+        <tbody>
+          {accounts.map((account) => (
+            <tr key={account.id}>
+              <td>{formatText(account.accountHolderName)}</td>
+              <td>{formatText(account.accountName)}</td>
+              <td>{formatInvestorStatus(account.investorStatus)}</td>
+              <td className="numeric">{formatNumber(account.previousShares)}</td>
+              <td className="numeric">{formatNumber(account.currentShares)}</td>
+              <td className="numeric">{formatPercent(account.previousPercent)}</td>
+              <td className="numeric">{formatPercent(account.currentPercent)}</td>
+              <td className="numeric">{formatNumber(account.reportedChange)}</td>
+              <td className="numeric">{formatNumber(account.actualChange)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function QueryState({ error, isLoading }: { error?: string; isLoading: boolean }) {
   if (isLoading) {
     return <p className="query-state">Loading rows from SQLite...</p>;
@@ -495,17 +724,6 @@ const priceColumns: Array<DataColumn<PriceRow>> = [
   numberColumn('close', 'Close', (row) => row.close),
   numberColumn('volume', 'Volume', (row) => row.volume),
   numberColumn('value', 'Value', (row) => row.value),
-];
-
-const fivePctColumns: Array<DataColumn<FivePctRow>> = [
-  textColumn('ticker', 'Ticker', (row) => row.ticker),
-  textColumn('issuerName', 'Issuer', (row) => row.issuerName),
-  textColumn('shareholderName', 'Shareholder', (row) => row.shareholderName),
-  percentColumn('previousPercent', 'Prev %', (row) => row.previousPercent),
-  percentColumn('currentPercent', 'Current %', (row) => row.currentPercent),
-  numberColumn('previousShares', 'Prev Shares', (row) => row.previousShares),
-  numberColumn('currentShares', 'Current Shares', (row) => row.currentShares),
-  numberColumn('actualChange', 'Share Delta', (row) => row.actualChange),
 ];
 
 const onePctColumns: Array<DataColumn<OnePctRow>> = [
@@ -578,6 +796,26 @@ function formatNumber(value: number | null | undefined) {
 
 function formatPercent(value: number | null | undefined) {
   return value === null || value === undefined ? '-' : `${value.toFixed(2)}%`;
+}
+
+function formatInvestorStatus(value: string | null) {
+  if (value === 'L') {
+    return 'Local';
+  }
+
+  if (value === 'A') {
+    return 'Foreign';
+  }
+
+  return formatText(value);
+}
+
+function hasNonZeroValue(value: number | null | undefined) {
+  return value !== null && value !== undefined && value !== 0;
+}
+
+function stableDomId(value: string) {
+  return value.replace(/[^a-zA-Z0-9_-]/g, '-');
 }
 
 function sortGlyph(sort: false | 'asc' | 'desc') {

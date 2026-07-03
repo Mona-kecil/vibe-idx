@@ -59,6 +59,10 @@ type LatestDateRow = {
   latestDate: string | null;
 };
 
+type DateValueRow = {
+  value: string;
+};
+
 type DailyPriceRow = {
   tradeDate: string;
   ticker: string;
@@ -78,12 +82,28 @@ type DailyPriceRow = {
 };
 
 type FivePctOwnershipRow = {
+  id: string;
   asOfDate: string;
   previousDate: string | null;
   sourceDate: string | null;
+  kind: 'shareholder' | 'unlinkedAccounts';
   ticker: string;
   issuerName: string | null;
   shareholderName: string | null;
+  investorStatus: string | null;
+  previousPercent: number | null;
+  previousTotalShares: number | null;
+  currentPercent: number | null;
+  currentTotalShares: number | null;
+  reportedChange: number | null;
+  actualChange: number | null;
+  accountCount: number;
+  accounts: FivePctOwnershipAccountRow[];
+};
+
+type FivePctOwnershipAccountRow = {
+  id: string;
+  accountHolderName: string | null;
   accountName: string | null;
   investorStatus: string | null;
   previousShares: number | null;
@@ -94,6 +114,15 @@ type FivePctOwnershipRow = {
   currentPercent: number | null;
   reportedChange: number | null;
   actualChange: number | null;
+};
+
+type FivePctOwnershipRawRow = FivePctOwnershipAccountRow & {
+  asOfDate: string;
+  previousDate: string | null;
+  sourceDate: string | null;
+  ticker: string;
+  issuerName: string | null;
+  shareholderName: string | null;
 };
 
 type OnePctOwnershipRow = {
@@ -246,26 +275,9 @@ function listFivePctOwnership(context: ServerContext, input: FivePctListInput) {
     const filters = ['report.as_of_date = ?', 'report.is_latest_revision = 1'];
     const params: Array<number | string> = [latestDate];
 
-    if (input.view === 'percentageChanges') {
-      filters.push('row.previous_percent IS NOT row.current_percent');
-    }
-
     if (input.ticker?.trim()) {
       filters.push('row.ticker = ?');
       params.push(input.ticker.trim().toUpperCase());
-    }
-
-    if (input.q?.trim()) {
-      filters.push(
-        `(
-          LOWER(row.ticker) LIKE ?
-          OR LOWER(row.issuer_name) LIKE ?
-          OR LOWER(row.shareholder_name) LIKE ?
-          OR LOWER(row.account_name) LIKE ?
-        )`,
-      );
-      const query = normalizeLike(input.q);
-      params.push(query, query, query, query);
     }
 
     const whereSql = filters.join(' AND ');
@@ -273,21 +285,18 @@ function listFivePctOwnership(context: ServerContext, input: FivePctListInput) {
       FROM ksei_5pct_rows row
       JOIN ksei_5pct_reports report ON report.id = row.report_id
     `;
-    const total =
-      database
-        .prepare<unknown[], CountRow>(`SELECT COUNT(*) AS total ${fromSql} WHERE ${whereSql}`)
-        .get(...params)?.total ?? 0;
-
-    const rows = database
-      .prepare<unknown[], FivePctOwnershipRow>(
+    const rawRows = database
+      .prepare<unknown[], FivePctOwnershipRawRow>(
         `
         SELECT
+          row.id,
           report.as_of_date AS asOfDate,
           report.previous_date AS previousDate,
           report.source_date AS sourceDate,
           row.ticker,
           row.issuer_name AS issuerName,
           row.shareholder_name AS shareholderName,
+          row.account_holder_name AS accountHolderName,
           row.account_name AS accountName,
           row.investor_status AS investorStatus,
           row.previous_shares AS previousShares,
@@ -300,20 +309,290 @@ function listFivePctOwnership(context: ServerContext, input: FivePctListInput) {
           row.actual_change AS actualChange
         ${fromSql}
         WHERE ${whereSql}
-        ORDER BY row.ticker ASC, row.shareholder_name ASC
-        LIMIT ? OFFSET ?
+        ORDER BY
+          row.ticker ASC,
+          row.shareholder_name IS NULL ASC,
+          row.shareholder_name ASC,
+          row.account_holder_name ASC,
+          row.account_name ASC,
+          row.id ASC
         `,
       )
-      .all(...params, input.pageSize, (input.page - 1) * input.pageSize);
+      .all(...params);
+    const rowsForGrouping = input.q?.trim()
+      ? rawRows.filter((row) => rowMatchesFivePctQuery(row, input.q!.trim()))
+      : rawRows;
+    const groupedRows = groupFivePctRows(rowsForGrouping, rawRows, {
+      changedOnly: input.view === 'percentageChanges',
+    });
 
     return {
       latestDate,
       page: input.page,
       pageSize: input.pageSize,
-      rows,
-      total,
+      rows: groupedRows.slice((input.page - 1) * input.pageSize, input.page * input.pageSize),
+      total: groupedRows.length,
     };
   });
+}
+
+function listFivePctDates(context: ServerContext) {
+  return withReadonlyDatabase(context.databaseUrl, (database) =>
+    database
+      .prepare<[], DateValueRow>(
+        `
+        SELECT DISTINCT as_of_date AS value
+        FROM ksei_5pct_reports
+        WHERE is_latest_revision = 1
+        ORDER BY as_of_date DESC
+        `,
+      )
+      .all()
+      .map((row) => row.value),
+  );
+}
+
+function groupFivePctRows(
+  rows: FivePctOwnershipRawRow[],
+  contextRows = rows,
+  options: { changedOnly?: boolean } = {},
+): FivePctOwnershipRow[] {
+  const groups = new Map<string, FivePctOwnershipRawRow[]>();
+  const shareholderGroups = buildFivePctShareholderGroups(contextRows);
+
+  for (const row of rows) {
+    const shareholderName = normalizeNullableText(row.shareholderName);
+    const matchedShareholder = shareholderName ? null : matchShareholderGroup(row, shareholderGroups);
+    const groupKey =
+      shareholderName || matchedShareholder
+        ? `shareholder:${row.ticker}:${shareholderName ?? matchedShareholder!.shareholderName}`
+        : `unlinked:${row.ticker}`;
+    groups.set(groupKey, [...(groups.get(groupKey) ?? []), row]);
+  }
+
+  const groupEntries = Array.from(groups.entries()).filter(
+    ([, groupRows]) => !options.changedOnly || fivePctGroupHasPrimaryShareChange(groupRows),
+  );
+
+  return groupEntries
+    .map(([key, groupRows]) => {
+      const metadataRow = shareholderGroups.get(key)?.row ?? groupRows[0]!;
+      const shareholderName = normalizeNullableText(metadataRow.shareholderName);
+      const kind: FivePctOwnershipRow['kind'] = key.startsWith('shareholder:')
+        ? 'shareholder'
+        : 'unlinkedAccounts';
+      const accounts = groupRows.map((row) => ({
+        id: row.id,
+        accountHolderName: row.accountHolderName,
+        accountName: row.accountName,
+        investorStatus: row.investorStatus,
+        previousShares: row.previousShares,
+        previousSidTotal: row.previousSidTotal,
+        previousPercent: row.previousPercent,
+        currentShares: row.currentShares,
+        currentSidTotal: row.currentSidTotal,
+        currentPercent: row.currentPercent,
+        reportedChange: row.reportedChange,
+        actualChange: row.actualChange,
+      }));
+
+      return {
+        id: key,
+        asOfDate: metadataRow.asOfDate,
+        previousDate: metadataRow.previousDate,
+        sourceDate: metadataRow.sourceDate,
+        kind,
+        ticker: metadataRow.ticker,
+        issuerName: firstNonEmpty([metadataRow.issuerName, ...groupRows.map((row) => row.issuerName)]),
+        shareholderName: shareholderName ?? 'Account-only rows',
+        investorStatus: firstNonEmpty(groupRows.map((row) => row.investorStatus)),
+        previousPercent: firstNumber(groupRows.map((row) => row.previousPercent)),
+        previousTotalShares:
+          maxNumber(groupRows.map((row) => row.previousSidTotal)) ??
+          sumNullable(groupRows.map((row) => row.previousShares)),
+        currentPercent: firstNumber(groupRows.map((row) => row.currentPercent)),
+        currentTotalShares:
+          maxNumber(groupRows.map((row) => row.currentSidTotal)) ??
+          sumNullable(groupRows.map((row) => row.currentShares)),
+        reportedChange: sumNullable(groupRows.map((row) => row.reportedChange)),
+        actualChange: sumNullable(groupRows.map((row) => row.actualChange)),
+        accountCount: accounts.length,
+        accounts,
+      };
+    })
+    .sort((left, right) => {
+      const tickerSort = left.ticker.localeCompare(right.ticker);
+      if (tickerSort !== 0) {
+        return tickerSort;
+      }
+
+      if (left.kind !== right.kind) {
+        return left.kind === 'shareholder' ? -1 : 1;
+      }
+
+      return (left.shareholderName ?? '').localeCompare(right.shareholderName ?? '');
+    });
+}
+
+function fivePctGroupHasPrimaryShareChange(groupRows: FivePctOwnershipRawRow[]) {
+  return groupRows
+    .filter((row) => normalizeNullableText(row.shareholderName))
+    .some(
+      (row) =>
+        hasNonZeroNumber(row.actualChange) ||
+        hasOwnershipBoundaryChange(row),
+    );
+}
+
+function hasOwnershipBoundaryChange(row: FivePctOwnershipRawRow) {
+  return (
+    (row.previousPercent === null && row.currentPercent !== null) ||
+    (row.previousPercent !== null && row.currentPercent === null) ||
+    (row.previousShares === null && row.currentShares !== null) ||
+    (row.previousShares !== null && row.currentShares === null)
+  );
+}
+
+function hasNonZeroNumber(value: number | null) {
+  return value !== null && value !== 0;
+}
+
+type FivePctShareholderGroup = {
+  key: string;
+  row: FivePctOwnershipRawRow;
+  shareholderName: string;
+  tokens: string[];
+};
+
+function buildFivePctShareholderGroups(rows: FivePctOwnershipRawRow[]) {
+  const groups = new Map<string, FivePctShareholderGroup>();
+
+  for (const row of rows) {
+    const shareholderName = normalizeNullableText(row.shareholderName);
+    if (!shareholderName) {
+      continue;
+    }
+
+    const key = `shareholder:${row.ticker}:${shareholderName}`;
+    if (!groups.has(key)) {
+      groups.set(key, {
+        key,
+        row,
+        shareholderName,
+        tokens: tokenizeOwnershipName(shareholderName),
+      });
+    }
+  }
+
+  return groups;
+}
+
+function matchShareholderGroup(
+  row: FivePctOwnershipRawRow,
+  shareholderGroups: Map<string, FivePctShareholderGroup>,
+) {
+  const accountTokens = tokenizeOwnershipName(row.accountName);
+  let bestMatch: { group: FivePctShareholderGroup; score: number } | null = null;
+
+  if (accountTokens.length === 0) {
+    return null;
+  }
+
+  for (const group of shareholderGroups.values()) {
+    if (group.row.ticker !== row.ticker) {
+      continue;
+    }
+
+    const score = shareholderAccountMatchScore(group.tokens, accountTokens);
+    if (score === 0) {
+      continue;
+    }
+
+    if (!bestMatch || score > bestMatch.score || group.tokens.length > bestMatch.group.tokens.length) {
+      bestMatch = { group, score };
+    }
+  }
+
+  return bestMatch?.group ?? null;
+}
+
+function shareholderAccountMatchScore(shareholderTokens: string[], accountTokens: string[]) {
+  if (shareholderTokens.length === 0) {
+    return 0;
+  }
+
+  let score = 0;
+  for (const shareholderToken of shareholderTokens) {
+    const hasToken = accountTokens.some(
+      (accountToken) =>
+        accountToken === shareholderToken ||
+        (accountToken.length >= 3 && shareholderToken.startsWith(accountToken)) ||
+        (shareholderToken.length >= 3 && accountToken.startsWith(shareholderToken)),
+    );
+    if (hasToken) {
+      score += 1;
+    }
+  }
+
+  const requiredScore = shareholderTokens.length <= 2 ? shareholderTokens.length : 2;
+  return score >= requiredScore ? score : 0;
+}
+
+function tokenizeOwnershipName(value: string | null) {
+  return (
+    value
+      ?.toUpperCase()
+      .replace(/[^A-Z0-9]+/g, ' ')
+      .split(/\s+/)
+      .filter(
+        (token) =>
+          token.length > 1 &&
+          !['A', 'AC', 'AG', 'BANK', 'LTD', 'NA', 'PT', 'RE', 'SA', 'TBK'].includes(token),
+      ) ?? []
+  );
+}
+
+function rowMatchesFivePctQuery(row: FivePctOwnershipRawRow, query: string) {
+  const normalizedQuery = query.toLowerCase();
+  return [
+    row.ticker,
+    row.issuerName,
+    row.shareholderName,
+    row.accountHolderName,
+    row.accountName,
+  ].some((value) => value?.toLowerCase().includes(normalizedQuery));
+}
+
+function normalizeNullableText(value: string | null) {
+  const normalized = value?.trim();
+  return normalized ? normalized : null;
+}
+
+function firstNonEmpty(values: Array<string | null>) {
+  for (const value of values) {
+    const normalized = normalizeNullableText(value);
+    if (normalized) {
+      return normalized;
+    }
+  }
+
+  return null;
+}
+
+function firstNumber(values: Array<number | null>) {
+  return values.find((value) => value !== null) ?? null;
+}
+
+function maxNumber(values: Array<number | null>) {
+  const numericValues = values.filter((value): value is number => value !== null);
+  return numericValues.length > 0 ? Math.max(...numericValues) : null;
+}
+
+function sumNullable(values: Array<number | null>) {
+  const numericValues = values.filter((value): value is number => value !== null);
+  return numericValues.length > 0
+    ? numericValues.reduce((total, value) => total + value, 0)
+    : null;
 }
 
 function listOnePctOwnership(context: ServerContext, input: OnePctListInput) {
@@ -575,6 +854,9 @@ export const appRouter = t.router({
   }),
   ownership: t.router({
     fivePct: t.router({
+      dates: t.procedure.query(({ ctx }) => {
+        return listFivePctDates(ctx);
+      }),
       list: t.procedure.input(fivePctListInput).query(({ ctx, input }) => {
         return listFivePctOwnership(ctx, input);
       }),

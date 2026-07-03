@@ -26,6 +26,7 @@ def connect(database_url: str):
     conn.execute("PRAGMA foreign_keys = ON")
     with (Path(__file__).resolve().parents[4] / "db/migrations/001_init.sql").open() as file:
         conn.executescript(file.read())
+    _ensure_sqlite_compat_migrations(conn)
     return conn
 
 
@@ -49,6 +50,15 @@ def _sqlite_sql(sql: str) -> str:
         .replace("%s", "?")
         .replace(" IS NOT DISTINCT FROM ?", " IS ?")
     )
+
+
+def _ensure_sqlite_compat_migrations(conn: sqlite3.Connection) -> None:
+    columns = {
+        str(row[1])
+        for row in conn.execute("PRAGMA table_info(ksei_5pct_rows)").fetchall()
+    }
+    if "account_holder_name" not in columns:
+        conn.execute("ALTER TABLE ksei_5pct_rows ADD COLUMN account_holder_name TEXT")
 
 
 def upsert_raw_file(conn: Any, raw: RawFileRef) -> str:
@@ -327,18 +337,19 @@ def upsert_ksei_5pct_report(
         conn.execute(
             """
             INSERT INTO ksei_5pct_rows (
-              report_id, ticker, issuer_name, shareholder_name, account_name,
-              investor_status, previous_shares, previous_sid_total,
-              previous_percent, current_shares, current_sid_total,
-              current_percent, reported_change, actual_change
+              report_id, ticker, issuer_name, shareholder_name, account_holder_name,
+              account_name, investor_status, previous_shares, previous_sid_total,
+              previous_percent, current_shares, current_sid_total, current_percent,
+              reported_change, actual_change
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 report_id,
                 item.ticker,
                 item.issuer_name,
                 item.shareholder_name,
+                item.account_holder_name,
                 item.account_name,
                 item.investor_status,
                 item.previous_shares,

@@ -84,6 +84,7 @@ CREATE TABLE IF NOT EXISTS ksei_5pct_rows (
   ticker TEXT NOT NULL,
   issuer_name TEXT,
   shareholder_name TEXT,
+  account_holder_name TEXT,
   account_name TEXT,
   investor_status TEXT,
   previous_shares INTEGER,

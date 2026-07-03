@@ -55,6 +55,7 @@ class KseiFivePctRow:
     ticker: str
     issuer_name: str | None = None
     shareholder_name: str | None = None
+    account_holder_name: str | None = None
     account_name: str | None = None
     investor_status: str | None = None
     previous_shares: int | None = None

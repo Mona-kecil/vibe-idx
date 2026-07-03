@@ -63,6 +63,7 @@ function createFixtureDatabase() {
       ticker TEXT NOT NULL,
       issuer_name TEXT,
       shareholder_name TEXT,
+      account_holder_name TEXT,
       account_name TEXT,
       investor_status TEXT,
       previous_shares INTEGER,
@@ -84,16 +85,21 @@ function createFixtureDatabase() {
       ('five-latest', '2026-06-30', '2026-06-29', '2026-06-30', 1, 1, 10, 'parsed', '2026-06-30T17:00:00Z');
 
     INSERT INTO ksei_5pct_rows (
-      id, report_id, ticker, issuer_name, shareholder_name, account_name,
-      investor_status, previous_shares, previous_sid_total, previous_percent,
+      id, report_id, ticker, issuer_name, shareholder_name, account_holder_name,
+      account_name, investor_status, previous_shares, previous_sid_total, previous_percent,
       current_shares, current_sid_total, current_percent, reported_change,
       actual_change
     )
     VALUES
-      ('unchanged', 'five-latest', 'AADI', 'ADARO ANDALAN INDONESIA Tbk, PT', 'ADARO STRATEGIC INVESTMENTS', NULL, NULL, 3200000000, NULL, 41.10, 3200000000, NULL, 41.10, 0, 0),
-      ('changed', 'five-latest', 'BIRD', 'BLUE BIRD Tbk, PT', 'INDRA PRIAWAN DJOKOSOETONO', NULL, NULL, 119000000, NULL, 5.99, 120199400, NULL, 6.01, 1199400, 1199400),
-      ('new', 'five-latest', 'FUJI', 'FUJI FINANCE INDONESIA Tbk, PT', 'BATARA BAYU SOEDARWANTO', NULL, NULL, NULL, NULL, NULL, 9000000, NULL, 6.30, NULL, NULL),
-      ('old-changed', 'five-old', 'OLD', 'Old Issuer Tbk.', 'Old Holder', NULL, NULL, 1, NULL, 5.00, 2, NULL, 5.50, 1, 1);
+      ('unchanged', 'five-latest', 'AADI', 'ADARO ANDALAN INDONESIA Tbk, PT', 'ADARO STRATEGIC INVESTMENTS', 'CITIBANK, N. A', 'BOS LTD S/A PT ADARO STRATEGIC INVESTMENTS', 'L', 68000000, 3200000000, 41.10, 69000000, 3201000000, 41.12, 1000000, 1000000),
+      ('unchanged-second-account', 'five-latest', 'AADI', 'ADARO ANDALAN INDONESIA Tbk, PT', 'ADARO STRATEGIC INVESTMENTS', 'PT BANK DBS INDONESIA', 'DBS BANK LTD SG S/A PT ADARO STRATEGIC INVESTMENTS', 'L', 10000000, 3200000000, 41.10, 10000000, 3201000000, 41.12, 0, 0),
+      ('account-only', 'five-latest', 'AADI', NULL, NULL, 'PT. BANK PERMATA, TBK', 'PT ADARO STRATEGIC INVESTMENTS', 'L', 36454773, NULL, NULL, 36454773, NULL, NULL, 0, 0),
+      ('unmatched-account-only', 'five-latest', 'AADI', NULL, NULL, 'UNKNOWN BROKER', 'UNMATCHED CUSTODY ACCOUNT', 'L', 123, NULL, NULL, 456, NULL, NULL, 333, 333),
+      ('percent-only', 'five-latest', 'BYAN', 'BAYAN RESOURCES Tbk', 'LOW TUCK KWONG', 'BUT. STANDARD CHARTERED BANK', 'LOW TUCK KWONG', 'A', 1853000000, 13413921870, 40.24, 1853000000, 13416921870, 40.25, 0, 0),
+      ('reported-only', 'five-latest', 'FILM', 'MD ENTERTAINMENT Tbk, PT', 'MORGAN STANLEY AND CO INTERNATIONAL PLC', 'PT Bank HSBC Indonesia', 'MORGAN STANLEY AND CO INTL PLC - FIRM AC', 'A', 3, 1135572153, 10.43, 3, 1135572053, 10.43, -100, 0),
+      ('changed', 'five-latest', 'BIRD', 'BLUE BIRD Tbk, PT', 'INDRA PRIAWAN DJOKOSOETONO', NULL, NULL, NULL, 119000000, NULL, 5.99, 120199400, NULL, 6.01, 1199400, 1199400),
+      ('new', 'five-latest', 'FUJI', 'FUJI FINANCE INDONESIA Tbk, PT', 'BATARA BAYU SOEDARWANTO', NULL, NULL, NULL, NULL, NULL, NULL, 9000000, NULL, 6.30, NULL, NULL),
+      ('old-changed', 'five-old', 'OLD', 'Old Issuer Tbk.', 'Old Holder', NULL, NULL, NULL, 1, NULL, 5.00, 2, NULL, 5.50, 1, 1);
 
     CREATE TABLE ksei_1pct_reports (
       id TEXT PRIMARY KEY,
@@ -337,6 +343,114 @@ describe('ownership.onePct.list', () => {
 });
 
 describe('ownership.fivePct.list', () => {
+  it('lists available 5% report dates newest first', async () => {
+    const fixture = createFixtureDatabase();
+
+    try {
+      await expect(fixture.caller.ownership.fivePct.dates()).resolves.toEqual([
+        '2026-06-30',
+        '2026-06-28',
+      ]);
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it('returns rows for a requested historical 5% report date', async () => {
+    const fixture = createFixtureDatabase();
+
+    try {
+      const result = await fixture.caller.ownership.fivePct.list({
+        asOfDate: '2026-06-28',
+      });
+
+      expect(result.latestDate).toBe('2026-06-28');
+      expect(result.total).toBe(1);
+      expect(result.rows).toEqual([
+        expect.objectContaining({
+          currentPercent: 5.5,
+          shareholderName: 'Old Holder',
+          ticker: 'OLD',
+        }),
+      ]);
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it('returns shareholder summaries with expandable account details', async () => {
+    const fixture = createFixtureDatabase();
+
+    try {
+      const result = await fixture.caller.ownership.fivePct.list({});
+
+      expect(result.latestDate).toBe('2026-06-30');
+      expect(result.total).toBe(6);
+      expect(result.rows.map((row) => [row.kind, row.ticker, row.shareholderName])).toEqual([
+        ['shareholder', 'AADI', 'ADARO STRATEGIC INVESTMENTS'],
+        ['unlinkedAccounts', 'AADI', 'Account-only rows'],
+        ['shareholder', 'BIRD', 'INDRA PRIAWAN DJOKOSOETONO'],
+        ['shareholder', 'BYAN', 'LOW TUCK KWONG'],
+        ['shareholder', 'FILM', 'MORGAN STANLEY AND CO INTERNATIONAL PLC'],
+        ['shareholder', 'FUJI', 'BATARA BAYU SOEDARWANTO'],
+      ]);
+
+      expect(result.rows[0]).toEqual(
+        expect.objectContaining({
+          accountCount: 3,
+          actualChange: 1000000,
+          currentPercent: 41.12,
+          currentTotalShares: 3201000000,
+          issuerName: 'ADARO ANDALAN INDONESIA Tbk, PT',
+          investorStatus: 'L',
+          previousPercent: 41.1,
+          previousTotalShares: 3200000000,
+          reportedChange: 1000000,
+        }),
+      );
+      expect(result.rows[0]?.accounts).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            accountHolderName: 'CITIBANK, N. A',
+            accountName: 'BOS LTD S/A PT ADARO STRATEGIC INVESTMENTS',
+            currentShares: 69000000,
+            currentSidTotal: 3201000000,
+            investorStatus: 'L',
+            previousShares: 68000000,
+          }),
+          expect.objectContaining({
+            accountHolderName: 'PT BANK DBS INDONESIA',
+            accountName: 'DBS BANK LTD SG S/A PT ADARO STRATEGIC INVESTMENTS',
+            currentShares: 10000000,
+          }),
+          expect.objectContaining({
+            accountHolderName: 'PT. BANK PERMATA, TBK',
+            accountName: 'PT ADARO STRATEGIC INVESTMENTS',
+            currentShares: 36454773,
+          }),
+        ]),
+      );
+      expect(result.rows[0]?.accounts).toHaveLength(3);
+      expect(result.rows[0]?.accounts[0]).toEqual(
+        expect.objectContaining({
+          accountHolderName: 'CITIBANK, N. A',
+          accountName: 'BOS LTD S/A PT ADARO STRATEGIC INVESTMENTS',
+        }),
+      );
+      expect(result.rows[1]).toEqual(
+        expect.objectContaining({
+          accountCount: 1,
+          currentTotalShares: 456,
+          issuerName: null,
+          kind: 'unlinkedAccounts',
+          shareholderName: 'Account-only rows',
+        }),
+      );
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
   it('returns only latest 5% rows with percentage changes in compact view', async () => {
     const fixture = createFixtureDatabase();
 
@@ -346,21 +460,100 @@ describe('ownership.fivePct.list', () => {
       });
 
       expect(result.latestDate).toBe('2026-06-30');
-      expect(result.total).toBe(2);
-      expect(result.rows.map((row) => row.ticker)).toEqual(['BIRD', 'FUJI']);
+      expect(result.total).toBe(3);
+      expect(result.rows.map((row) => row.ticker)).toEqual(['AADI', 'BIRD', 'FUJI']);
+      expect(result.rows.map((row) => row.shareholderName)).not.toContain('LOW TUCK KWONG');
+      expect(result.rows.map((row) => row.shareholderName)).not.toContain(
+        'MORGAN STANLEY AND CO INTERNATIONAL PLC',
+      );
       expect(result.rows[0]).toEqual(
+        expect.objectContaining({
+          previousPercent: 41.1,
+          currentPercent: 41.12,
+          actualChange: 1000000,
+        }),
+      );
+      expect(result.rows[1]).toEqual(
         expect.objectContaining({
           previousPercent: 5.99,
           currentPercent: 6.01,
           actualChange: 1199400,
         }),
       );
-      expect(result.rows[1]).toEqual(
+      expect(result.rows[2]).toEqual(
         expect.objectContaining({
           previousPercent: null,
           currentPercent: 6.3,
         }),
       );
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it('matches account names while returning the owning expandable group', async () => {
+    const fixture = createFixtureDatabase();
+
+    try {
+      const result = await fixture.caller.ownership.fivePct.list({
+        q: 'dbs bank',
+      });
+
+      expect(result.total).toBe(1);
+      expect(result.rows[0]).toEqual(
+        expect.objectContaining({
+          accountCount: 1,
+          shareholderName: 'ADARO STRATEGIC INVESTMENTS',
+          ticker: 'AADI',
+        }),
+      );
+      expect(result.rows[0]?.accounts).toEqual([
+        expect.objectContaining({
+          accountHolderName: 'PT BANK DBS INDONESIA',
+          accountName: 'DBS BANK LTD SG S/A PT ADARO STRATEGIC INVESTMENTS',
+        }),
+      ]);
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it('links account-only rows to a same-ticker shareholder when the account name contains the shareholder name', async () => {
+    const fixture = createFixtureDatabase();
+
+    try {
+      const result = await fixture.caller.ownership.fivePct.list({
+        q: 'pt adaro strategic',
+      });
+
+      expect(result.total).toBe(1);
+      expect(result.rows[0]).toEqual(
+        expect.objectContaining({
+          accountCount: 3,
+          issuerName: 'ADARO ANDALAN INDONESIA Tbk, PT',
+          shareholderName: 'ADARO STRATEGIC INVESTMENTS',
+          ticker: 'AADI',
+        }),
+      );
+      expect(result.rows[0]?.accounts).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            accountName: 'PT ADARO STRATEGIC INVESTMENTS',
+            currentShares: 36454773,
+          }),
+        ]),
+      );
+      expect(result.rows[0]?.accounts).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            accountName: 'BOS LTD S/A PT ADARO STRATEGIC INVESTMENTS',
+          }),
+          expect.objectContaining({
+            accountName: 'DBS BANK LTD SG S/A PT ADARO STRATEGIC INVESTMENTS',
+          }),
+        ]),
+      );
+      expect(result.rows[0]?.accounts).toHaveLength(3);
     } finally {
       fixture.cleanup();
     }

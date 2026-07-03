@@ -194,6 +194,10 @@ def parse_ksei_5pct_xlsx(
                     or _find_column(headers, "nama", "emiten"),
                 ),
                 shareholder_name=_cell(row, _find_column(headers, "pemegang", "saham")),
+                account_holder_name=_cell(
+                    row,
+                    _find_column(headers, "pemegang", "rekening", "efek"),
+                ),
                 account_name=_cell(row, _find_column(headers, "nama rekening")),
                 investor_status=_cell(row, _find_column(headers, "status")),
                 previous_shares=previous_shares,

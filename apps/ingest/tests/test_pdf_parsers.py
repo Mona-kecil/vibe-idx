@@ -55,6 +55,39 @@ def test_parse_ksei_5pct_xlsx() -> None:
     assert report.rows[0].current_percent == Decimal("5.67")
 
 
+def test_parse_ksei_5pct_xlsx_keeps_account_holder_shareholder_and_account_distinct() -> None:
+    report = parse_ksei_5pct_xlsx(
+        _xlsx(
+            [
+                [
+                    "Kode",
+                    "Nama Perusahaan",
+                    "Nama Pemegang Rekening Efek",
+                    "Nama Pemegang Saham",
+                    "Nama Rekening Efek",
+                    "Jumlah Saham",
+                    "Persentase",
+                ],
+                [
+                    "AADI",
+                    "ADARO ANDALAN INDONESIA Tbk, PT",
+                    "CITIBANK, N. A",
+                    "ADARO STRATEGIC INVESTMENTS",
+                    "BOS LTD S/A PT ADARO STRATEGIC INVESTMENTS",
+                    "1.234.567",
+                    "5,67",
+                ],
+            ]
+        ),
+        dt.date(2026, 6, 30),
+    )
+
+    row = report.rows[0]
+    assert row.account_holder_name == "CITIBANK, N. A"
+    assert row.shareholder_name == "ADARO STRATEGIC INVESTMENTS"
+    assert row.account_name == "BOS LTD S/A PT ADARO STRATEGIC INVESTMENTS"
+
+
 def test_parse_existing_insider_fixture() -> None:
     path = REPO_ROOT / "samples/idx-insider/LK-08062026-4607-00.pdf"
     report = parse_insider_pdf(path.read_bytes())
