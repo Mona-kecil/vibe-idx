@@ -1,0 +1,8 @@
+# Runs in Asia/Jakarta via the scheduler service TZ environment.
+
+# Weekdays every 30 minutes from 19:00 through 22:00.
+0,30 19-21 * * 1-5 /etc/vibe-idx/run-daily.sh
+0 22 * * 1-5 /etc/vibe-idx/run-daily.sh
+
+# Monthly sources, daily from calendar day 2 through day 10.
+0 9 2-10 * * /etc/vibe-idx/run-monthly.sh

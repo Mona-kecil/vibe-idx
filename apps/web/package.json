@@ -3,13 +3,16 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "CI=true vp build",
+    "build": "pnpm run build:client && pnpm run build:server",
+    "build:client": "CI=true vp build",
+    "build:server": "tsc -p tsconfig.server.json",
     "check": "CI=true vp check",
     "dev": "CI=true vp dev",
     "dev:server": "tsx watch src/server/http.ts",
     "dev:web": "CI=true vp dev",
     "preview": "vp preview",
     "server": "tsx src/server/http.ts",
+    "start": "node build/server/http.js",
     "test": "CI=true vp test"
   },
   "dependencies": {

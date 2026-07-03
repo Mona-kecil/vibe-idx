@@ -27,6 +27,50 @@ uv run idx-ingest laporan-efek
 uv run idx-ingest market-summary
 ```
 
+Run with Docker Compose:
+
+```bash
+docker compose --profile tools build
+docker compose run --rm ingest market-summary
+docker compose up web api
+```
+
+The web app is available at `http://localhost:5173`, and the API is exposed at
+`http://localhost:20240/trpc`. Ingest more data into the shared Compose volume with:
+
+```bash
+docker compose run --rm ingest market-summary
+docker compose run --rm ingest ksei-5pct
+docker compose run --rm ingest insider
+docker compose run --rm ingest ksei-1pct
+docker compose run --rm ingest laporan-efek
+```
+
+Compose stores SQLite and raw files in the named volume `vibe-idx-data`.
+
+Run the compiled production app:
+
+```bash
+docker compose --profile prod up --build app
+```
+
+The compiled app serves both the React build and `/trpc` API from
+`http://localhost:8080`.
+
+Run the compiled production app with scheduled ingestion:
+
+```bash
+docker compose --profile prod up --build app scheduler
+```
+
+The scheduler uses `supercronic` to run
+[apps/ingest/cron/ingest.cron](apps/ingest/cron/ingest.cron) inside the Compose
+stack. It writes to the same `vibe-idx-data` volume as the app and stops when
+the Compose stack stops. Scheduled ingestion runs in Jakarta time:
+
+- Weekdays every 30 minutes from 19:00 through 22:00: daily sources.
+- Calendar days 2 through 10 each month at 09:00: monthly sources.
+
 No-argument commands use source-specific latest behavior:
 
 - `market-summary` walks backward to the latest populated EOD trading summary.

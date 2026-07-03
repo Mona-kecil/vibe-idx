@@ -1,7 +1,7 @@
 import { initTRPC } from '@trpc/server';
 import { z } from 'zod';
 
-import { withReadonlyDatabase } from './db';
+import { withReadonlyDatabase } from './db.js';
 
 export type ServerContext = {
   databaseUrl?: string;

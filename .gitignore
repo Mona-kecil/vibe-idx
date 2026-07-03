@@ -6,6 +6,7 @@ __pycache__/
 node_modules/
 .pnpm-store/
 apps/**/dist/
+apps/**/build/
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal
