@@ -1,42 +1,89 @@
 # vibe-idx
 
-Local IDX/KSEI ingestion.
+Local IDX/KSEI ingestion and web UI for market data, ownership disclosures, and
+IDX announcements.
+
+## Project Layout
 
 ```text
-apps/ingest/   Python ingestion CLI and parsers
+apps/ingest/   Python ingestion CLI, source clients, and parsers
+apps/web/      React web app and tRPC HTTP server
 db/            SQLite schema
 samples/       Small IDX fixture PDFs/JSON for tests
 data/          Local runtime data, ignored by git
 ```
 
-Run checks:
+## Prerequisites
+
+Install these tools before running the project locally:
+
+- Node.js 24 or newer
+- pnpm 11.9.0 or newer
+- Python 3.12
+- uv
+- Docker and Docker Compose, for containerized runs
+
+If pnpm is not already available, enable it through Corepack:
+
+```bash
+corepack enable
+```
+
+## Install
+
+Install the JavaScript workspace dependencies from the repo root:
+
+```bash
+pnpm install
+```
+
+Install the Python ingest dependencies:
 
 ```bash
 cd apps/ingest
-uv run pytest
-uv run ruff check .
+uv sync
+cd ../..
 ```
 
-Run latest-aware ingestion:
+## Run Locally in Development Mode
+
+The web server reads from `data/vibe_idx.sqlite` by default. Create and populate
+that database by running at least one ingest command:
 
 ```bash
+cd apps/ingest
+uv run idx-ingest market-summary
 uv run idx-ingest ksei-5pct
 uv run idx-ingest insider
 uv run idx-ingest ksei-1pct
 uv run idx-ingest laporan-efek
-uv run idx-ingest market-summary
+cd ../..
 ```
 
-Run with Docker Compose:
+Start the API server in one terminal:
+
+```bash
+pnpm --filter @vibe-idx/web dev:server
+```
+
+Start the Vite web app in another terminal:
+
+```bash
+pnpm --filter @vibe-idx/web dev:web
+```
+
+Open the web app at `http://localhost:5173`. The API listens on
+`http://localhost:20240/trpc`, and Vite proxies `/trpc` requests to it.
+
+## Run in Docker for Development
+
+Build the Compose images:
 
 ```bash
 docker compose --profile tools build
-docker compose run --rm ingest market-summary
-docker compose up web api
 ```
 
-The web app is available at `http://localhost:5173`, and the API is exposed at
-`http://localhost:20240/trpc`. Ingest more data into the shared Compose volume with:
+Populate the shared Docker SQLite volume:
 
 ```bash
 docker compose run --rm ingest market-summary
@@ -46,37 +93,55 @@ docker compose run --rm ingest ksei-1pct
 docker compose run --rm ingest laporan-efek
 ```
 
-Compose stores SQLite and raw files in the named volume `vibe-idx-data`.
+Start the dev web and API services:
 
-Run the compiled production app:
+```bash
+docker compose up web api
+```
+
+Open `http://localhost:5173`. The API is exposed at
+`http://localhost:20240/trpc`.
+
+Docker Compose stores SQLite data and downloaded raw files in the named volume
+`vibe-idx-data`.
+
+## Run on a Server with Docker
+
+For a compiled production-style container that serves both the React build and
+the `/trpc` API from one service:
 
 ```bash
 docker compose --profile prod up --build app
 ```
 
-The compiled app serves both the React build and `/trpc` API from
-`http://localhost:8080`.
+Open `http://localhost:8080`.
 
-Run the compiled production app with scheduled ingestion:
+To run the compiled app with scheduled ingestion in the same Compose stack:
 
 ```bash
 docker compose --profile prod up --build app scheduler
 ```
 
-The scheduler uses `supercronic` to run
-[apps/ingest/cron/ingest.cron](apps/ingest/cron/ingest.cron) inside the Compose
-stack. It writes to the same `vibe-idx-data` volume as the app and stops when
-the Compose stack stops. Scheduled ingestion runs in Jakarta time:
+The scheduler uses `supercronic` and
+[`apps/ingest/cron/ingest.cron`](apps/ingest/cron/ingest.cron). It writes to the
+same `vibe-idx-data` volume as the app and stops when the Compose stack stops.
+Scheduled ingestion runs in Jakarta time:
 
 - Weekdays every 30 minutes from 19:00 through 22:00: daily sources.
 - Calendar days 2 through 10 each month at 09:00: monthly sources.
 
+## Ingestion Commands
+
 No-argument commands use source-specific latest behavior:
 
-- `market-summary` walks backward to the latest populated EOD trading summary.
-- `ksei-5pct` fetches the newest available KSEI ownership-list file.
-- `insider` fetches all insider reports from the newest publication day in the lookback window.
-- `ksei-1pct` and `laporan-efek` fetch the latest monthly disclosure from a lookback window.
+```bash
+cd apps/ingest
+uv run idx-ingest market-summary
+uv run idx-ingest ksei-5pct
+uv run idx-ingest insider
+uv run idx-ingest ksei-1pct
+uv run idx-ingest laporan-efek
+```
 
 Inspect source-aware ingestion policy:
 
@@ -85,7 +150,7 @@ uv run idx-ingest sources
 uv run idx-ingest sources ksei-1pct
 ```
 
-Backfill:
+Backfill historical data:
 
 ```bash
 uv run idx-ingest ksei-5pct --from 2026-06-01 --to 2026-06-28
@@ -96,11 +161,34 @@ uv run idx-ingest laporan-efek --period previous-month
 
 Historical date basis:
 
-- Daily sources use source-specific daily dates: `market-summary` uses trade date, `ksei-5pct` uses ownership-list listing date, and `insider` uses IDX disclosure publish date.
-- Monthly sources use IDX disclosure publish month. Use `--month YYYY-MM` for a specific disclosure month or `--period previous-month` for the previous monthly disclosure cycle.
-- `--period latest` is equivalent to the no-argument default and cannot be combined with `--from`, `--to`, or `--month`.
+- Daily sources use source-specific daily dates: `market-summary` uses trade
+  date, `ksei-5pct` uses ownership-list listing date, and `insider` uses IDX
+  disclosure publish date.
+- Monthly sources use IDX disclosure publish month. Use `--month YYYY-MM` for a
+  specific disclosure month or `--period previous-month` for the previous
+  monthly disclosure cycle.
+- `--period latest` is equivalent to the no-argument default and cannot be
+  combined with `--from`, `--to`, or `--month`.
 
-Default DB:
+## Checks
+
+Run Python checks:
+
+```bash
+cd apps/ingest
+uv run pytest
+uv run ruff check .
+```
+
+Run web checks:
+
+```bash
+pnpm --filter @vibe-idx/web test
+pnpm --filter @vibe-idx/web check
+pnpm --filter @vibe-idx/web build
+```
+
+The default local database path is:
 
 ```text
 data/vibe_idx.sqlite
