@@ -22,6 +22,7 @@ from idx_ingest.db import (
     upsert_ksei_5pct_report,
     upsert_monthly_snapshot,
     upsert_raw_file,
+    upsert_suspension_events,
 )
 from idx_ingest.models import Announcement
 from idx_ingest.parsers import (
@@ -29,7 +30,9 @@ from idx_ingest.parsers import (
     parse_ksei_1pct_pdf,
     parse_ksei_5pct_xlsx,
     parse_laporan_efek_pdf,
+    parse_long_suspension_events,
     parse_market_summary,
+    parse_suspension_events,
 )
 from idx_ingest.sources import source_policy
 from idx_ingest.util import store_raw_bytes, yyyymmdd
@@ -101,6 +104,22 @@ def announcement_url(keyword: str, date_from: dt.date, date_to: dt.date, page_si
 def market_summary_url(trade_date: dt.date) -> str:
     params = {"date": yyyymmdd(trade_date), "length": 9999, "start": 0}
     return f"{IDX_BASE}/primary/TradingSummary/GetStockSummary?{urlencode(params)}"
+
+
+def suspension_events_url(page_size: int = 9999) -> str:
+    params = {
+        "indexFrom": 1,
+        "pageSize": page_size,
+        "lang": "id",
+        "type": "",
+        "dateFrom": "",
+        "dateTo": "",
+    }
+    return f"{IDX_BASE}/primary/NewsAnnouncement/GetSuspension?{urlencode(params)}"
+
+
+def long_suspension_url() -> str:
+    return f"{IDX_BASE}/id/perusahaan-tercatat/suspensi-lebih-dari-6-bulan/"
 
 
 def ownership_list_url(year: int) -> str:
@@ -206,6 +225,48 @@ def _persist_market_summary(
         record_parser_run(conn, raw_file_id, "market-summary", "parsed")
         conn.commit()
     return {"trade_date": trade_date.isoformat(), "rows": count}
+
+
+def ingest_suspension_events(
+    settings: Settings | None = None,
+    page_size: int = 9999,
+) -> dict[str, int]:
+    settings = settings or Settings()
+    url = suspension_events_url(page_size)
+    payload = fetch_json(url)
+    rows = parse_suspension_events(payload)
+    raw_file = _store_json(
+        settings,
+        "suspension-events",
+        payload,
+        url,
+        "suspension-events.json",
+    )
+    long_url = long_suspension_url()
+    long_html = fetch_bytes(long_url, accept="text/html")
+    long_rows = parse_long_suspension_events(long_html.decode("utf-8", "ignore"))
+    long_raw_file = store_raw_bytes(
+        settings.raw_dir,
+        "suspension-events",
+        long_html,
+        source_url=long_url,
+        original_filename="long-suspension.html",
+        content_type="text/html",
+    )
+
+    with connect(settings.database_url) as conn:
+        raw_file_id = upsert_raw_file(conn, raw_file)
+        long_raw_file_id = upsert_raw_file(conn, long_raw_file)
+        count = upsert_suspension_events(conn, [*rows, *long_rows])
+        record_parser_run(conn, raw_file_id, "suspension-events", "parsed")
+        record_parser_run(conn, long_raw_file_id, "long-suspension-events", "parsed")
+        conn.commit()
+    return {
+        "rows": count,
+        "longSuspensionRows": len(long_rows),
+        "skippedRows": len(payload.get("Results") or []) - len(rows),
+        "totalRows": len(payload.get("Results") or []),
+    }
 
 
 def ingest_ksei_5pct(

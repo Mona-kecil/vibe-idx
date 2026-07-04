@@ -101,6 +101,16 @@ class KseiOnePctReport:
 
 
 TransactionType = Literal["BUY", "SELL", "BUYBACK", "GRANT", "TRANSFER", "OTHER"]
+SuspensionEventType = Literal["SPT", "UPT"]
+
+
+@dataclass(slots=True)
+class SuspensionEvent:
+    ticker: str
+    event_type: SuspensionEventType
+    event_at: dt.datetime
+    title: str
+    attachment_url: str | None = None
 
 
 @dataclass(slots=True)

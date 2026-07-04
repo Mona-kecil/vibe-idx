@@ -16,6 +16,7 @@ from idx_ingest.ingest import (
     ingest_latest_laporan_efek,
     ingest_latest_market_summary,
     ingest_market_summary,
+    ingest_suspension_events,
 )
 from idx_ingest.sources import SOURCES, month_window, previous_month_window, source_policy
 from idx_ingest.util import parse_cli_date
@@ -39,6 +40,11 @@ def market_summary(date: str | None = None) -> None:
         _print(ingest_market_summary(_date_or_today(date)))
         return
     _print(ingest_latest_market_summary())
+
+
+@app.command("suspension-events")
+def suspension_events(page_size: int = 9999) -> None:
+    _print(ingest_suspension_events(page_size=page_size))
 
 
 @app.command("ksei-5pct")

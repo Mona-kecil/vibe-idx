@@ -63,6 +63,16 @@ CREATE TABLE IF NOT EXISTS daily_prices (
   PRIMARY KEY (trade_date, ticker)
 );
 
+CREATE TABLE IF NOT EXISTS idx_suspension_events (
+  ticker TEXT NOT NULL,
+  event_type TEXT NOT NULL CHECK (event_type IN ('SPT', 'UPT')),
+  event_at TEXT NOT NULL,
+  title TEXT NOT NULL,
+  attachment_url TEXT,
+  ingested_at TEXT NOT NULL,
+  PRIMARY KEY (ticker, event_type, event_at, title)
+);
+
 CREATE TABLE IF NOT EXISTS ksei_5pct_reports (
   id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
   announcement_id TEXT NOT NULL REFERENCES idx_announcements(id),

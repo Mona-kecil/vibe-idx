@@ -5,6 +5,7 @@ import re
 import xml.etree.ElementTree as ET
 import zipfile
 from decimal import Decimal, InvalidOperation
+from html.parser import HTMLParser
 from io import BytesIO
 from typing import Any
 
@@ -17,6 +18,7 @@ from idx_ingest.models import (
     KseiOnePctReport,
     KseiOnePctRow,
     MonthlyOwnershipSnapshot,
+    SuspensionEvent,
     TransactionType,
 )
 from idx_ingest.util import (
@@ -114,6 +116,123 @@ def parse_market_summary(payload: dict[str, Any], trade_date: dt.date) -> list[D
             )
         )
     return prices
+
+
+def parse_suspension_events(payload: dict[str, Any]) -> list[SuspensionEvent]:
+    events: list[SuspensionEvent] = []
+    for row in payload.get("Results") or []:
+        ticker = (row.get("Kode") or "").strip().upper()
+        event_type = (row.get("Info_Type") or "").strip().upper()
+        event_at = _parse_iso_datetime(row.get("Date"))
+        title = (row.get("Judul") or "").strip()
+        if not _is_single_ticker(ticker) or event_type not in {"SPT", "UPT"} or event_at is None:
+            continue
+        events.append(
+            SuspensionEvent(
+                ticker=ticker,
+                event_type=event_type,  # type: ignore[arg-type]
+                event_at=event_at,
+                title=title,
+                attachment_url=(row.get("Data_Download") or "").strip() or None,
+            )
+        )
+    return events
+
+
+def parse_long_suspension_events(html: str) -> list[SuspensionEvent]:
+    table = _SuspensionTableParser()
+    table.feed(html)
+    events: list[SuspensionEvent] = []
+    for cells in table.rows:
+        if len(cells) < 7:
+            continue
+        ticker = cells[1].strip().upper()
+        issuer_name = cells[2].strip()
+        suspension_date = _parse_idx_short_date(cells[6].strip())
+        if not _is_single_ticker(ticker) or suspension_date is None:
+            continue
+        events.append(
+            SuspensionEvent(
+                ticker=ticker,
+                event_type="SPT",
+                event_at=dt.datetime.combine(suspension_date, dt.time.min),
+                title=f"Suspensi > 6 Bulan: {issuer_name}",
+                attachment_url=None,
+            )
+        )
+    return events
+
+
+class _SuspensionTableParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.rows: list[list[str]] = []
+        self._current_row: list[str] | None = None
+        self._current_cell: list[str] | None = None
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag == "tr":
+            self._current_row = []
+        elif tag == "td" and self._current_row is not None:
+            self._current_cell = []
+        elif tag == "br" and self._current_cell is not None:
+            self._current_cell.append(" ")
+
+    def handle_data(self, data: str) -> None:
+        if self._current_cell is not None:
+            self._current_cell.append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag == "td" and self._current_row is not None and self._current_cell is not None:
+            self._current_row.append(_normalize_space("".join(self._current_cell)))
+            self._current_cell = None
+        elif tag == "tr" and self._current_row is not None:
+            self.rows.append(self._current_row)
+            self._current_row = None
+
+
+def _normalize_space(value: str) -> str:
+    return re.sub(r"\s+", " ", value.replace("\xa0", " ")).strip()
+
+
+def _is_single_ticker(value: str) -> bool:
+    return bool(re.fullmatch(r"[A-Z0-9]{2,8}", value))
+
+
+def _parse_iso_datetime(value: object) -> dt.datetime | None:
+    if not isinstance(value, str) or not value:
+        return None
+    return dt.datetime.fromisoformat(value)
+
+
+def _parse_idx_short_date(value: str) -> dt.date | None:
+    match = re.fullmatch(r"(\d{1,2})-([A-Za-z]{3})-(\d{2})", value)
+    if not match:
+        return None
+    day_text, month_text, year_text = match.groups()
+    months = {
+        "apr": 4,
+        "agu": 8,
+        "aug": 8,
+        "des": 12,
+        "dec": 12,
+        "feb": 2,
+        "jan": 1,
+        "jul": 7,
+        "jun": 6,
+        "mar": 3,
+        "mei": 5,
+        "may": 5,
+        "nov": 11,
+        "okt": 10,
+        "oct": 10,
+        "sep": 9,
+    }
+    month = months.get(month_text.lower())
+    if month is None:
+        return None
+    year = 2000 + int(year_text)
+    return dt.date(year, month, int(day_text))
 
 
 def parse_ksei_1pct_pdf(pdf_bytes: bytes) -> KseiOnePctReport:

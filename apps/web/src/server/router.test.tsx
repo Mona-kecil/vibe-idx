@@ -42,8 +42,35 @@ function createFixtureDatabase() {
     )
     VALUES
       ('2026-06-28', 'OLD', 'Old Price Tbk.', 90, 91, 92, 89, 90, 100, 9000, 2, 0, 0, 1000, 900, '2026-06-28T17:00:00Z'),
-      ('2026-07-01', 'AADI', 'Adaro Andalan Indonesia Tbk.', 7800, 7850, 7900, 7700, 7875, 6710200, 52800000000, 800, 100, 50, 7786900000, 7786900000, '2026-07-01T17:00:00Z'),
+      ('2026-06-28', 'AADI', 'Adaro Andalan Indonesia Tbk.', 6900, 6900, 7100, 6800, 7000, 1000000, 7000000000, 100, 10, 5, 7786900000, 7786900000, '2026-06-28T17:00:00Z'),
+      ('2026-06-29', 'AADI', 'Adaro Andalan Indonesia Tbk.', 7000, 7050, 7250, 7000, 7200, 2000000, 14400000000, 200, 20, 10, 7786900000, 7786900000, '2026-06-29T17:00:00Z'),
+      ('2026-06-30', 'AADI', 'Adaro Andalan Indonesia Tbk.', 7200, 7300, 7550, 7250, 7500, 3000000, 22500000000, 300, 30, 15, 7786900000, 7786900000, '2026-06-30T17:00:00Z'),
+      ('2026-07-01', 'AADI', 'Adaro Andalan Indonesia Tbk.', 7500, 7850, 7900, 7700, 7875, 6000000, 47250000000, 800, 100, 50, 7786900000, 7786900000, '2026-07-01T17:00:00Z'),
+      ('2026-06-28', 'BPRC', 'Big Price Move Tbk.', 100, 100, 100, 100, 100, 100, 10000, 10, 0, 0, 1000, 1000, '2026-06-28T17:00:00Z'),
+      ('2026-06-29', 'BPRC', 'Big Price Move Tbk.', 100, 100, 100, 100, 100, 100, 10000, 10, 0, 0, 1000, 1000, '2026-06-29T17:00:00Z'),
+      ('2026-06-30', 'BPRC', 'Big Price Move Tbk.', 100, 100, 100, 100, 100, 100, 10000, 10, 0, 0, 1000, 1000, '2026-06-30T17:00:00Z'),
+      ('2026-07-01', 'BPRC', 'Big Price Move Tbk.', 100, 130, 130, 130, 130, 120, 15600, 12, 0, 0, 1000, 1000, '2026-07-01T17:00:00Z'),
+      ('2026-06-28', 'CVOL', 'Climbing Volume Tbk.', 100, 100, 100, 100, 100, 100, 10000, 10, 0, 0, 1000, 1000, '2026-06-28T17:00:00Z'),
+      ('2026-06-29', 'CVOL', 'Climbing Volume Tbk.', 100, 100, 100, 100, 100, 100, 10000, 10, 0, 0, 1000, 1000, '2026-06-29T17:00:00Z'),
+      ('2026-06-30', 'CVOL', 'Climbing Volume Tbk.', 100, 101, 101, 101, 101, 100, 10100, 10, 0, 0, 1000, 1000, '2026-06-30T17:00:00Z'),
+      ('2026-07-01', 'CVOL', 'Climbing Volume Tbk.', 101, 101, 101, 101, 101, 500, 50500, 50, 0, 0, 1000, 1000, '2026-07-01T17:00:00Z'),
       ('2026-07-01', 'ABBA', 'Mahaka Media Tbk.', 30, 30, 30, 30, 30, 0, 0, 0, 0, 0, 3935892857, 3935892857, '2026-07-01T17:00:00Z');
+
+    CREATE TABLE idx_suspension_events (
+      ticker TEXT NOT NULL,
+      event_type TEXT NOT NULL,
+      event_at TEXT NOT NULL,
+      title TEXT NOT NULL,
+      attachment_url TEXT,
+      ingested_at TEXT NOT NULL,
+      PRIMARY KEY (ticker, event_type, event_at, title)
+    );
+
+    INSERT INTO idx_suspension_events (
+      ticker, event_type, event_at, title, attachment_url, ingested_at
+    )
+    VALUES
+      ('ABBA', 'SPT', '2026-07-01T09:00:00', 'Suspensi ABBA', '/Suspensi_ABBA.pdf', '2026-07-01T09:00:00Z');
 
     CREATE TABLE ksei_5pct_reports (
       id TEXT PRIMARY KEY,
@@ -94,6 +121,8 @@ function createFixtureDatabase() {
       ('unchanged', 'five-latest', 'AADI', 'ADARO ANDALAN INDONESIA Tbk, PT', 'ADARO STRATEGIC INVESTMENTS', 'CITIBANK, N. A', 'BOS LTD S/A PT ADARO STRATEGIC INVESTMENTS', 'L', 68000000, 3200000000, 41.10, 69000000, 3201000000, 41.12, 1000000, 1000000),
       ('unchanged-second-account', 'five-latest', 'AADI', 'ADARO ANDALAN INDONESIA Tbk, PT', 'ADARO STRATEGIC INVESTMENTS', 'PT BANK DBS INDONESIA', 'DBS BANK LTD SG S/A PT ADARO STRATEGIC INVESTMENTS', 'L', 10000000, 3200000000, 41.10, 10000000, 3201000000, 41.12, 0, 0),
       ('account-only', 'five-latest', 'AADI', NULL, NULL, 'PT. BANK PERMATA, TBK', 'PT ADARO STRATEGIC INVESTMENTS', 'L', 36454773, NULL, NULL, 36454773, NULL, NULL, 0, 0),
+      ('sucor-account', 'five-latest', 'AADI', NULL, NULL, 'PT SUCOR SEKURITAS', 'PT ADARO STRATEGIC INVESTMENTS - SUCOR', 'L', 1000, NULL, NULL, 1000, NULL, NULL, 0, 0),
+      ('mandiri-account', 'five-latest', 'AADI', NULL, NULL, 'MANDIRI SEKURITAS, PT', 'MANDIRI S/A PT ADARO STRATEGIC INVESTMENTS', 'L', 2000, NULL, NULL, 2000, NULL, NULL, 0, 0),
       ('unmatched-account-only', 'five-latest', 'AADI', NULL, NULL, 'UNKNOWN BROKER', 'UNMATCHED CUSTODY ACCOUNT', 'L', 123, NULL, NULL, 456, NULL, NULL, 333, 333),
       ('percent-only', 'five-latest', 'BYAN', 'BAYAN RESOURCES Tbk', 'LOW TUCK KWONG', 'BUT. STANDARD CHARTERED BANK', 'LOW TUCK KWONG', 'A', 1853000000, 13413921870, 40.24, 1853000000, 13416921870, 40.25, 0, 0),
       ('reported-only', 'five-latest', 'FILM', 'MD ENTERTAINMENT Tbk, PT', 'MORGAN STANLEY AND CO INTERNATIONAL PLC', 'PT Bank HSBC Indonesia', 'MORGAN STANLEY AND CO INTL PLC - FIRM AC', 'A', 3, 1135572153, 10.43, 3, 1135572053, 10.43, -100, 0),
@@ -238,14 +267,29 @@ function createFixtureDatabase() {
 }
 
 describe('prices.list', () => {
-  it('defaults to the latest trade date and returns paginated rows', async () => {
+  it('lists available daily price dates newest first', async () => {
+    const fixture = createFixtureDatabase();
+
+    try {
+      await expect(fixture.caller.prices.dates()).resolves.toEqual([
+        '2026-07-01',
+        '2026-06-30',
+        '2026-06-29',
+        '2026-06-28',
+      ]);
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it('defaults to the latest trade date and returns paginated rows without suspended stocks', async () => {
     const fixture = createFixtureDatabase();
 
     try {
       const result = await fixture.caller.prices.list({ pageSize: 1 });
 
       expect(result.latestDate).toBe('2026-07-01');
-      expect(result.total).toBe(2);
+      expect(result.total).toBe(3);
       expect(result.page).toBe(1);
       expect(result.pageSize).toBe(1);
       expect(result.rows).toEqual([
@@ -254,9 +298,77 @@ describe('prices.list', () => {
           ticker: 'AADI',
           name: 'Adaro Andalan Indonesia Tbk.',
           close: 7875,
-          volume: 6710200,
+          volume: 6000000,
         }),
       ]);
+      expect(result.rows).not.toEqual([expect.objectContaining({ ticker: 'ABBA' })]);
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it('returns price and volume change metrics from prior snapshots', async () => {
+    const fixture = createFixtureDatabase();
+
+    try {
+      const result = await fixture.caller.prices.list({
+        ticker: 'AADI',
+      });
+
+      expect(result.rows).toEqual([
+        expect.objectContaining({
+          price: 7875,
+          price1dChangePercent: 5,
+          ticker: 'AADI',
+          volume1dChangePercent: 100,
+          volume3dChangePercent: 200,
+        }),
+      ]);
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it('sorts daily prices by highest one-day price change', async () => {
+    const fixture = createFixtureDatabase();
+
+    try {
+      const result = await fixture.caller.prices.list({
+        pageSize: 3,
+        sort: 'price1dDesc',
+      });
+
+      expect(result.rows.map((row) => row.ticker)).toEqual(['BPRC', 'AADI', 'CVOL']);
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it('sorts daily prices by highest one-day volume change', async () => {
+    const fixture = createFixtureDatabase();
+
+    try {
+      const result = await fixture.caller.prices.list({
+        pageSize: 3,
+        sort: 'volume1dDesc',
+      });
+
+      expect(result.rows.map((row) => row.ticker)).toEqual(['CVOL', 'AADI', 'BPRC']);
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it('sorts daily prices by highest three-day volume change', async () => {
+    const fixture = createFixtureDatabase();
+
+    try {
+      const result = await fixture.caller.prices.list({
+        pageSize: 3,
+        sort: 'volume3dDesc',
+      });
+
+      expect(result.rows.map((row) => row.ticker)).toEqual(['CVOL', 'AADI', 'BPRC']);
     } finally {
       fixture.cleanup();
     }
@@ -397,7 +509,7 @@ describe('ownership.fivePct.list', () => {
 
       expect(result.rows[0]).toEqual(
         expect.objectContaining({
-          accountCount: 3,
+          accountCount: 5,
           actualChange: 1000000,
           currentPercent: 41.12,
           currentTotalShares: 3201000000,
@@ -430,7 +542,23 @@ describe('ownership.fivePct.list', () => {
           }),
         ]),
       );
-      expect(result.rows[0]?.accounts).toHaveLength(3);
+      expect(result.rows[0]?.accounts).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            accountHolderName: 'PT SUCOR SEKURITAS',
+            brokerCode: 'AZ',
+          }),
+          expect.objectContaining({
+            accountHolderName: 'MANDIRI SEKURITAS, PT',
+            brokerCode: 'CC',
+          }),
+          expect.objectContaining({
+            accountHolderName: 'CITIBANK, N. A',
+            brokerCode: null,
+          }),
+        ]),
+      );
+      expect(result.rows[0]?.accounts).toHaveLength(5);
       expect(result.rows[0]?.accounts[0]).toEqual(
         expect.objectContaining({
           accountHolderName: 'CITIBANK, N. A',
@@ -529,7 +657,7 @@ describe('ownership.fivePct.list', () => {
       expect(result.total).toBe(1);
       expect(result.rows[0]).toEqual(
         expect.objectContaining({
-          accountCount: 3,
+          accountCount: 5,
           issuerName: 'ADARO ANDALAN INDONESIA Tbk, PT',
           shareholderName: 'ADARO STRATEGIC INVESTMENTS',
           ticker: 'AADI',
@@ -553,7 +681,7 @@ describe('ownership.fivePct.list', () => {
           }),
         ]),
       );
-      expect(result.rows[0]?.accounts).toHaveLength(3);
+      expect(result.rows[0]?.accounts).toHaveLength(5);
     } finally {
       fixture.cleanup();
     }

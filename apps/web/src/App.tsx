@@ -10,9 +10,9 @@ import {
   type ColumnDef,
   type SortingState,
 } from '@tanstack/react-table';
-import { Fragment, useMemo, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react';
 
-import { trpc, type RouterOutputs } from './trpc';
+import { trpc, type RouterInputs, type RouterOutputs } from './trpc';
 
 type SurfaceId = 'prices' | 'fivePct' | 'onePct' | 'insiders';
 type Primitive = number | string | null;
@@ -20,13 +20,17 @@ type BaseFilters = { page: number; pageSize: number; q: string; ticker: string }
 type TransactionType = 'BUY' | 'SELL' | 'BUYBACK' | 'GRANT' | 'TRANSFER' | 'OTHER';
 
 type PriceRow = RouterOutputs['prices']['list']['rows'][number];
+type PriceSort = NonNullable<RouterInputs['prices']['list']['sort']>;
 type FivePctRow = RouterOutputs['ownership']['fivePct']['list']['rows'][number];
 type FivePctAccountRow = FivePctRow['accounts'][number];
 type OnePctRow = RouterOutputs['ownership']['onePct']['list']['rows'][number];
 type InsiderRow = RouterOutputs['insiders']['transactions']['list']['rows'][number];
 
+export const dailyPricesPrefetchPages = 5;
+
 type DataColumn<T> = {
   align?: 'right';
+  cellClass?: (row: T) => string;
   header: string;
   id: string;
   render: (row: T) => ReactNode;
@@ -148,20 +152,188 @@ export function keepPreviousListResult<T>(previousData: T | undefined) {
   return previousData;
 }
 
+export function maxPageForTotal(total: number, pageSize: number) {
+  return Math.max(1, Math.ceil(total / pageSize));
+}
+
+export function nextPageFilters<F extends BaseFilters>(filters: F, total: number) {
+  const maxPage = maxPageForTotal(total, filters.pageSize);
+
+  if (filters.page >= maxPage) {
+    return null;
+  }
+
+  return {
+    ...filters,
+    page: filters.page + 1,
+  };
+}
+
+export function prefetchPageFilters<F extends BaseFilters>(
+  filters: F,
+  total: number,
+  pagesAhead: number,
+) {
+  const maxPage = maxPageForTotal(total, filters.pageSize);
+  const pageFilters: F[] = [];
+
+  for (
+    let page = filters.page + 1;
+    page <= Math.min(maxPage, filters.page + pagesAhead);
+    page += 1
+  ) {
+    pageFilters.push({
+      ...filters,
+      page,
+    });
+  }
+
+  return pageFilters;
+}
+
+export async function prefetchSequentially<T>(
+  items: T[],
+  prefetch: (item: T) => Promise<unknown> | void,
+  shouldContinue: () => boolean = () => true,
+) {
+  for (const item of items) {
+    if (!shouldContinue()) {
+      return;
+    }
+    await prefetch(item);
+  }
+}
+
+type PaginationHotkey = {
+  key: string;
+  targetIsContentEditable?: boolean;
+  targetTagName?: string;
+};
+
+export function pageFromPaginationHotkey(
+  event: PaginationHotkey,
+  currentPage: number,
+  maxPage: number,
+) {
+  if (isKeyboardTargetEditable(event)) {
+    return null;
+  }
+
+  if (event.key === 'ArrowLeft') {
+    return currentPage > 1 ? currentPage - 1 : null;
+  }
+
+  if (event.key === 'ArrowRight') {
+    return currentPage < maxPage ? currentPage + 1 : null;
+  }
+
+  return null;
+}
+
+export function rowIndexFromKeyboard(
+  event: PaginationHotkey,
+  currentIndex: number | null,
+  rowCount: number,
+) {
+  if (isKeyboardTargetEditable(event) || rowCount <= 0) {
+    return null;
+  }
+
+  if (event.key === 'ArrowDown') {
+    return currentIndex === null ? 0 : Math.min(rowCount - 1, currentIndex + 1);
+  }
+
+  if (event.key === 'ArrowUp') {
+    return currentIndex === null ? rowCount - 1 : Math.max(0, currentIndex - 1);
+  }
+
+  return null;
+}
+
+function isKeyboardTargetEditable(event: PaginationHotkey) {
+  if (event.targetIsContentEditable) {
+    return true;
+  }
+
+  return ['INPUT', 'SELECT', 'TEXTAREA'].includes(event.targetTagName ?? '');
+}
+
 function PricesSurface() {
-  const [filters, setFilters] = useListFilters();
-  const query = trpc.prices.list.useQuery(filters, {
+  const [filters, setFilters] = useListFilters(
+    { sort: 'tickerAsc' as PriceSort, tradeDate: '' },
+    { pageSize: 10 },
+  );
+  const trpcUtils = trpc.useUtils();
+  const priceQueryInput = useMemo(
+    () => ({
+      ...filters,
+      tradeDate: filters.tradeDate || undefined,
+    }),
+    [filters],
+  );
+  const query = trpc.prices.list.useQuery(priceQueryInput, {
     placeholderData: keepPreviousListResult,
   });
+  const datesQuery = trpc.prices.dates.useQuery();
+
+  useEffect(() => {
+    if (!query.data || query.isPlaceholderData) {
+      return;
+    }
+
+    let isActive = true;
+    const pageInputs = prefetchPageFilters(
+      priceQueryInput,
+      query.data.total,
+      dailyPricesPrefetchPages,
+    );
+
+    void prefetchSequentially(
+      pageInputs,
+      (pageInput) => trpcUtils.prices.list.prefetch(pageInput),
+      () => isActive,
+    );
+
+    return () => {
+      isActive = false;
+    };
+  }, [priceQueryInput, query.data, query.isPlaceholderData, trpcUtils]);
 
   return (
     <SurfaceFrame
+      dateLabel={filters.tradeDate ? 'Date' : 'Latest'}
       filters={filters}
       isLoading={query.isLoading}
       onFiltersChange={setFilters}
       pageInfo={query.data}
+      extraControls={
+        <>
+          <DailyPriceSortSelector
+            onSortChange={(sort) =>
+              setFilters((current) => ({
+                ...current,
+                page: 1,
+                sort,
+              }))
+            }
+            selectedSort={filters.sort}
+          />
+          <SnapshotDateSelector
+            dates={datesQuery.data ?? []}
+            isLoading={datesQuery.isLoading}
+            onDateChange={(tradeDate) =>
+              setFilters((current) => ({
+                ...current,
+                page: 1,
+                tradeDate,
+              }))
+            }
+            selectedDate={filters.tradeDate}
+          />
+        </>
+      }
     >
-      <DataTable columns={priceColumns} rows={query.data?.rows ?? []} />
+      <DailyPricesTable rows={query.data?.rows ?? []} />
       <QueryState error={query.error?.message} isLoading={query.isLoading} />
     </SurfaceFrame>
   );
@@ -245,6 +417,27 @@ export function FivePctDateSelector({
   onDateChange: (date: string) => void;
   selectedDate: string;
 }) {
+  return (
+    <SnapshotDateSelector
+      dates={dates}
+      isLoading={isLoading}
+      onDateChange={onDateChange}
+      selectedDate={selectedDate}
+    />
+  );
+}
+
+export function SnapshotDateSelector({
+  dates,
+  isLoading = false,
+  onDateChange,
+  selectedDate,
+}: {
+  dates: string[];
+  isLoading?: boolean;
+  onDateChange: (date: string) => void;
+  selectedDate: string;
+}) {
   const visibleDates =
     selectedDate && !dates.includes(selectedDate) ? [selectedDate, ...dates] : dates;
 
@@ -260,6 +453,37 @@ export function FivePctDateSelector({
         {visibleDates.map((date) => (
           <option key={date} value={date}>
             {date}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+export function DailyPriceSortSelector({
+  onSortChange,
+  selectedSort,
+}: {
+  onSortChange: (sort: PriceSort) => void;
+  selectedSort: PriceSort;
+}) {
+  const options: Array<{ label: string; value: PriceSort }> = [
+    { label: 'Ticker A-Z', value: 'tickerAsc' },
+    { label: '%1d price high', value: 'price1dDesc' },
+    { label: '%1d volume high', value: 'volume1dDesc' },
+    { label: '%3d volume high', value: 'volume3dDesc' },
+  ];
+
+  return (
+    <label className="field compact-field sort-field">
+      Sort
+      <select
+        onChange={(event) => onSortChange(event.target.value as PriceSort)}
+        value={selectedSort}
+      >
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
           </option>
         ))}
       </select>
@@ -352,14 +576,24 @@ function InsidersSurface() {
   );
 }
 
-function useListFilters<T extends Record<string, unknown> = Record<never, never>>(extra?: T) {
-  return useState<BaseFilters & T>({
+export function createListFilters<T extends Record<string, unknown> = Record<never, never>>(
+  extra?: T,
+  options: { pageSize?: number } = {},
+) {
+  return {
     page: 1,
-    pageSize: 50,
+    pageSize: options.pageSize ?? 50,
     q: '',
     ticker: '',
     ...extra,
-  } as BaseFilters & T);
+  } as BaseFilters & T;
+}
+
+function useListFilters<T extends Record<string, unknown> = Record<never, never>>(
+  extra?: T,
+  options?: { pageSize?: number },
+) {
+  return useState<BaseFilters & T>(() => createListFilters(extra, options));
 }
 
 function SurfaceFrame<
@@ -383,7 +617,35 @@ function SurfaceFrame<
   pageInfo?: T;
 }) {
   const total = pageInfo?.total ?? 0;
-  const maxPage = Math.max(1, Math.ceil(total / filters.pageSize));
+  const maxPage = maxPageForTotal(total, filters.pageSize);
+
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      const target = event.target instanceof HTMLElement ? event.target : null;
+      const nextPage = pageFromPaginationHotkey(
+        {
+          key: event.key,
+          targetIsContentEditable: target?.isContentEditable,
+          targetTagName: target?.tagName,
+        },
+        filters.page,
+        maxPage,
+      );
+
+      if (nextPage === null || isLoading) {
+        return;
+      }
+
+      event.preventDefault();
+      onFiltersChange((current) => ({
+        ...current,
+        page: nextPage,
+      }));
+    }
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [filters.page, isLoading, maxPage, onFiltersChange]);
 
   return (
     <>
@@ -466,6 +728,7 @@ function DataTable<T extends object>({
   columns: Array<DataColumn<T>>;
   rows: T[];
 }) {
+  const [highlightedRowIndex, setHighlightedRowIndex] = useState<number | null>(null);
   const [sorting, setSorting] = useState<SortingState>([]);
   const tableColumns = useMemo<Array<ColumnDef<T, Primitive>>>(
     () =>
@@ -485,6 +748,7 @@ function DataTable<T extends object>({
         id: column.id,
         meta: {
           align: column.align,
+          cellClass: column.cellClass,
         },
       })),
     [columns],
@@ -499,6 +763,36 @@ function DataTable<T extends object>({
       sorting,
     },
   });
+  const visibleRows = table.getRowModel().rows;
+
+  useEffect(() => {
+    setHighlightedRowIndex(null);
+  }, [rows]);
+
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      const target = event.target instanceof HTMLElement ? event.target : null;
+      const nextIndex = rowIndexFromKeyboard(
+        {
+          key: event.key,
+          targetIsContentEditable: target?.isContentEditable,
+          targetTagName: target?.tagName,
+        },
+        highlightedRowIndex,
+        visibleRows.length,
+      );
+
+      if (nextIndex === null) {
+        return;
+      }
+
+      event.preventDefault();
+      setHighlightedRowIndex(nextIndex);
+    }
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [highlightedRowIndex, visibleRows.length]);
 
   return (
     <div className="table-wrap">
@@ -520,11 +814,15 @@ function DataTable<T extends object>({
           ))}
         </thead>
         <tbody>
-          {table.getRowModel().rows.map((row) => (
-            <tr key={row.id}>
+          {visibleRows.map((row, rowIndex) => (
+            <tr
+              aria-selected={rowIndex === highlightedRowIndex}
+              className={rowIndex === highlightedRowIndex ? 'data-row-highlighted' : ''}
+              key={row.id}
+            >
               {row.getVisibleCells().map((cell) => (
                 <td
-                  className={columnAlign(cell.column.columnDef) === 'right' ? 'numeric' : ''}
+                  className={cellClassName(cell.column.columnDef, cell.row.original)}
                   key={cell.id}
                 >
                   {flexRender(cell.column.columnDef.cell, cell.getContext())}
@@ -623,7 +921,9 @@ export function FivePctOwnershipTable({
                   <td>
                     <span
                       className={
-                        hasShareDelta ? 'shareholder-name shareholder-name-changed' : 'shareholder-name'
+                        hasShareDelta
+                          ? 'shareholder-name shareholder-name-changed'
+                          : 'shareholder-name'
                       }
                     >
                       {formatText(row.shareholderName)}
@@ -667,6 +967,7 @@ function FivePctAccountDetails({ accounts }: { accounts: FivePctAccountRow[] }) 
       <table className="account-detail-table">
         <thead>
           <tr>
+            <th className="broker-code-column">Broker</th>
             <th>Nama Pemegang Rekening Efek</th>
             <th>Nama Rekening Efek</th>
             <th>Status</th>
@@ -681,6 +982,7 @@ function FivePctAccountDetails({ accounts }: { accounts: FivePctAccountRow[] }) 
         <tbody>
           {accounts.map((account) => (
             <tr key={account.id}>
+              <td className="broker-code-cell">{formatText(account.brokerCode)}</td>
               <td>{formatText(account.accountHolderName)}</td>
               <td>{formatText(account.accountName)}</td>
               <td>{formatInvestorStatus(account.investorStatus)}</td>
@@ -714,16 +1016,30 @@ function columnAlign<T>(columnDef: ColumnDef<T, unknown>) {
   return (columnDef.meta as { align?: 'right' } | undefined)?.align;
 }
 
+function cellClassName<T>(columnDef: ColumnDef<T, unknown>, row: T) {
+  const meta = columnDef.meta as
+    | {
+        align?: 'right';
+        cellClass?: (row: T) => string;
+      }
+    | undefined;
+
+  return [meta?.align === 'right' ? 'numeric' : '', meta?.cellClass?.(row) ?? '']
+    .filter(Boolean)
+    .join(' ');
+}
+
+export function DailyPricesTable({ rows }: { rows: PriceRow[] }) {
+  return <DataTable columns={priceColumns} rows={rows} />;
+}
+
 const priceColumns: Array<DataColumn<PriceRow>> = [
   textColumn('ticker', 'Ticker', (row) => row.ticker),
   textColumn('name', 'Name', (row) => row.name),
-  numberColumn('previous', 'Prev', (row) => row.previous),
-  numberColumn('open', 'Open', (row) => row.open),
-  numberColumn('high', 'High', (row) => row.high),
-  numberColumn('low', 'Low', (row) => row.low),
-  numberColumn('close', 'Close', (row) => row.close),
-  numberColumn('volume', 'Volume', (row) => row.volume),
-  numberColumn('value', 'Value', (row) => row.value),
+  numberColumn('price', 'Price', (row) => row.price),
+  movementPercentColumn('price1dChangePercent', '%1d price', (row) => row.price1dChangePercent),
+  movementPercentColumn('volume1dChangePercent', '%1d volume', (row) => row.volume1dChangePercent),
+  movementPercentColumn('volume3dChangePercent', '%3d volume', (row) => row.volume3dChangePercent),
 ];
 
 const onePctColumns: Array<DataColumn<OnePctRow>> = [
@@ -786,6 +1102,17 @@ function percentColumn<T>(
   };
 }
 
+function movementPercentColumn<T>(
+  id: string,
+  header: string,
+  value: (row: T) => number | null,
+): DataColumn<T> {
+  return {
+    ...percentColumn(id, header, value),
+    cellClass: (row) => movementCellClass(value(row)),
+  };
+}
+
 function formatText(value: Primitive) {
   return value === null || value === '' ? '-' : String(value);
 }
@@ -812,6 +1139,14 @@ function formatInvestorStatus(value: string | null) {
 
 function hasNonZeroValue(value: number | null | undefined) {
   return value !== null && value !== undefined && value !== 0;
+}
+
+function movementCellClass(value: number | null | undefined) {
+  if (value === null || value === undefined || value === 0) {
+    return '';
+  }
+
+  return value > 0 ? 'movement-positive' : 'movement-negative';
 }
 
 function stableDomId(value: string) {

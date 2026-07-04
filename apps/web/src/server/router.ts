@@ -17,6 +17,7 @@ const paginationInput = {
 const pricesListInput = z.object({
   tradeDate: z.string().optional(),
   q: z.string().optional(),
+  sort: z.enum(['tickerAsc', 'price1dDesc', 'volume1dDesc', 'volume3dDesc']).default('tickerAsc'),
   ticker: z.string().optional(),
   ...paginationInput,
 });
@@ -51,6 +52,34 @@ type FivePctListInput = z.infer<typeof fivePctListInput>;
 type OnePctListInput = z.infer<typeof onePctListInput>;
 type InsiderTransactionsListInput = z.infer<typeof insiderTransactionsListInput>;
 
+const brokerCodesByAccountHolderName = new Map<string, string>([
+  ['AJAIB SEKURITAS ASIA', 'XC'],
+  ['BAHANA SEKURITAS', 'DX'],
+  ['BCA SEKURITAS', 'SQ'],
+  ['BNI SEKURITAS', 'NI'],
+  ['BRI DANAREKSA SEKURITAS', 'OD'],
+  ['CGS INTERNATIONAL SEKURITAS INDONESIA', 'YU'],
+  ['CIPTADANA SEKURITAS ASIA', 'KI'],
+  ['CLSA SEKURITAS INDONESIA', 'KZ'],
+  ['INDO PREMIER SEKURITAS', 'PD'],
+  ['KAY HIAN SEKURITAS', 'AI'],
+  ['KB VALBURY SEKURITAS', 'CP'],
+  ['KGI SEKURITAS INDONESIA', 'HD'],
+  ['MANDIRI SEKURITAS', 'CC'],
+  ['MAYBANK SEKURITAS INDONESIA', 'ZP'],
+  ['MIRAE ASSET SEKURITAS INDONESIA', 'YP'],
+  ['MNC SEKURITAS', 'EP'],
+  ['NH KORINDO SEKURITAS INDONESIA', 'XA'],
+  ['PANIN SEKURITAS', 'GR'],
+  ['PHILLIP SEKURITAS INDONESIA', 'KK'],
+  ['RHB SEKURITAS INDONESIA', 'DR'],
+  ['SAMUEL SEKURITAS INDONESIA', 'IF'],
+  ['SINARMAS SEKURITAS', 'DH'],
+  ['STOCKBIT SEKURITAS DIGITAL', 'XL'],
+  ['SUCOR SEKURITAS', 'AZ'],
+  ['TRIMEGAH SEKURITAS INDONESIA', 'LG'],
+]);
+
 type CountRow = {
   total: number;
 };
@@ -67,6 +96,10 @@ type DailyPriceRow = {
   tradeDate: string;
   ticker: string;
   name: string | null;
+  price: number | null;
+  price1dChangePercent: number | null;
+  volume1dChangePercent: number | null;
+  volume3dChangePercent: number | null;
   previous: number | null;
   open: number | null;
   high: number | null;
@@ -104,6 +137,7 @@ type FivePctOwnershipRow = {
 type FivePctOwnershipAccountRow = {
   id: string;
   accountHolderName: string | null;
+  brokerCode: string | null;
   accountName: string | null;
   investorStatus: string | null;
   previousShares: number | null;
@@ -116,7 +150,7 @@ type FivePctOwnershipAccountRow = {
   actualChange: number | null;
 };
 
-type FivePctOwnershipRawRow = FivePctOwnershipAccountRow & {
+type FivePctOwnershipRawRow = Omit<FivePctOwnershipAccountRow, 'brokerCode'> & {
   asOfDate: string;
   previousDate: string | null;
   sourceDate: string | null;
@@ -169,6 +203,37 @@ function normalizeLike(value: string) {
   return `%${value.trim().toLowerCase()}%`;
 }
 
+function activeSuspensionFilterSql(priceAlias: string) {
+  return `
+    NOT EXISTS (
+      SELECT 1
+      FROM idx_suspension_events latest_suspension
+      WHERE latest_suspension.ticker = ${priceAlias}.ticker
+        AND latest_suspension.event_type = 'SPT'
+        AND latest_suspension.event_at = (
+          SELECT MAX(candidate_suspension.event_at)
+          FROM idx_suspension_events candidate_suspension
+          WHERE candidate_suspension.ticker = ${priceAlias}.ticker
+            AND date(candidate_suspension.event_at) <= ${priceAlias}.trade_date
+        )
+    )
+  `;
+}
+
+function dailyPriceOrderBySql(sort: PricesListInput['sort']) {
+  switch (sort) {
+    case 'price1dDesc':
+      return 'price1dChangePercent IS NULL ASC, price1dChangePercent DESC, p.ticker ASC';
+    case 'volume1dDesc':
+      return 'volume1dChangePercent IS NULL ASC, volume1dChangePercent DESC, p.ticker ASC';
+    case 'volume3dDesc':
+      return 'volume3dChangePercent IS NULL ASC, volume3dChangePercent DESC, p.ticker ASC';
+    case 'tickerAsc':
+    default:
+      return 'p.ticker ASC';
+  }
+}
+
 function listPrices(context: ServerContext, input: PricesListInput) {
   return withReadonlyDatabase(context.databaseUrl, (database) => {
     const latestDate =
@@ -188,25 +253,26 @@ function listPrices(context: ServerContext, input: PricesListInput) {
       };
     }
 
-    const filters = ['trade_date = ?'];
+    const filters = ['p.trade_date = ?', activeSuspensionFilterSql('p')];
     const params: Array<number | string> = [latestDate];
 
     if (input.ticker?.trim()) {
-      filters.push('ticker = ?');
+      filters.push('p.ticker = ?');
       params.push(input.ticker.trim().toUpperCase());
     }
 
     if (input.q?.trim()) {
-      filters.push('(LOWER(ticker) LIKE ? OR LOWER(name) LIKE ?)');
+      filters.push('(LOWER(p.ticker) LIKE ? OR LOWER(p.name) LIKE ?)');
       const query = normalizeLike(input.q);
       params.push(query, query);
     }
 
     const whereSql = filters.join(' AND ');
+    const orderBySql = dailyPriceOrderBySql(input.sort);
     const total =
       database
         .prepare<unknown[], CountRow>(
-          `SELECT COUNT(*) AS total FROM daily_prices WHERE ${whereSql}`,
+          `SELECT COUNT(*) AS total FROM daily_prices p WHERE ${whereSql}`,
         )
         .get(...params)?.total ?? 0;
 
@@ -214,24 +280,72 @@ function listPrices(context: ServerContext, input: PricesListInput) {
       .prepare<unknown[], DailyPriceRow>(
         `
         SELECT
-          trade_date AS tradeDate,
-          ticker,
-          name,
-          previous,
-          open,
-          high,
-          low,
-          close,
-          volume,
-          value,
-          frequency,
-          foreign_buy AS foreignBuy,
-          foreign_sell AS foreignSell,
-          listed_shares AS listedShares,
-          tradeable_shares AS tradeableShares
-        FROM daily_prices
+          p.trade_date AS tradeDate,
+          p.ticker,
+          p.name,
+          p.close AS price,
+          CASE
+            WHEN p.close IS NULL OR previous.close IS NULL OR previous.close = 0
+            THEN NULL
+            ELSE ((p.close - previous.close) * 100.0) / previous.close
+          END AS price1dChangePercent,
+          CASE
+            WHEN p.volume IS NULL OR previous.volume IS NULL OR previous.volume = 0
+            THEN NULL
+            ELSE ((p.volume - previous.volume) * 100.0) / previous.volume
+          END AS volume1dChangePercent,
+          CASE
+            WHEN p.volume IS NULL
+              OR prior3.volumeCount < 3
+              OR prior3.averageVolume IS NULL
+              OR prior3.averageVolume = 0
+            THEN NULL
+            ELSE ((p.volume - prior3.averageVolume) * 100.0) / prior3.averageVolume
+          END AS volume3dChangePercent,
+          p.previous,
+          p.open,
+          p.high,
+          p.low,
+          p.close,
+          p.volume,
+          p.value,
+          p.frequency,
+          p.foreign_buy AS foreignBuy,
+          p.foreign_sell AS foreignSell,
+          p.listed_shares AS listedShares,
+          p.tradeable_shares AS tradeableShares
+        FROM daily_prices p
+        LEFT JOIN daily_prices previous
+          ON previous.ticker = p.ticker
+          AND previous.trade_date = (
+            SELECT MAX(history.trade_date)
+            FROM daily_prices history
+            WHERE history.ticker = p.ticker
+              AND history.trade_date < p.trade_date
+          )
+        LEFT JOIN (
+          SELECT
+            current_price.trade_date,
+            current_price.ticker,
+            COUNT(history.volume) AS volumeCount,
+            AVG(history.volume) AS averageVolume
+          FROM daily_prices current_price
+          JOIN daily_prices history
+            ON history.ticker = current_price.ticker
+            AND history.trade_date IN (
+              SELECT prior.trade_date
+              FROM daily_prices prior
+              WHERE prior.ticker = current_price.ticker
+                AND prior.trade_date < current_price.trade_date
+              ORDER BY prior.trade_date DESC
+              LIMIT 3
+            )
+          GROUP BY current_price.trade_date, current_price.ticker
+        ) prior3
+          ON prior3.trade_date = p.trade_date
+          AND prior3.ticker = p.ticker
         WHERE ${whereSql}
-        ORDER BY ticker ASC
+        ORDER BY ${orderBySql}
         LIMIT ? OFFSET ?
         `,
       )
@@ -245,6 +359,21 @@ function listPrices(context: ServerContext, input: PricesListInput) {
       total,
     };
   });
+}
+
+function listPriceDates(context: ServerContext) {
+  return withReadonlyDatabase(context.databaseUrl, (database) =>
+    database
+      .prepare<[], DateValueRow>(
+        `
+        SELECT DISTINCT trade_date AS value
+        FROM daily_prices
+        ORDER BY trade_date DESC
+        `,
+      )
+      .all()
+      .map((row) => row.value),
+  );
 }
 
 function listFivePctOwnership(context: ServerContext, input: FivePctListInput) {
@@ -362,7 +491,9 @@ function groupFivePctRows(
 
   for (const row of rows) {
     const shareholderName = normalizeNullableText(row.shareholderName);
-    const matchedShareholder = shareholderName ? null : matchShareholderGroup(row, shareholderGroups);
+    const matchedShareholder = shareholderName
+      ? null
+      : matchShareholderGroup(row, shareholderGroups);
     const groupKey =
       shareholderName || matchedShareholder
         ? `shareholder:${row.ticker}:${shareholderName ?? matchedShareholder!.shareholderName}`
@@ -384,6 +515,7 @@ function groupFivePctRows(
       const accounts = groupRows.map((row) => ({
         id: row.id,
         accountHolderName: row.accountHolderName,
+        brokerCode: brokerCodeForAccountHolder(row.accountHolderName),
         accountName: row.accountName,
         investorStatus: row.investorStatus,
         previousShares: row.previousShares,
@@ -403,7 +535,10 @@ function groupFivePctRows(
         sourceDate: metadataRow.sourceDate,
         kind,
         ticker: metadataRow.ticker,
-        issuerName: firstNonEmpty([metadataRow.issuerName, ...groupRows.map((row) => row.issuerName)]),
+        issuerName: firstNonEmpty([
+          metadataRow.issuerName,
+          ...groupRows.map((row) => row.issuerName),
+        ]),
         shareholderName: shareholderName ?? 'Account-only rows',
         investorStatus: firstNonEmpty(groupRows.map((row) => row.investorStatus)),
         previousPercent: firstNumber(groupRows.map((row) => row.previousPercent)),
@@ -437,11 +572,7 @@ function groupFivePctRows(
 function fivePctGroupHasPrimaryShareChange(groupRows: FivePctOwnershipRawRow[]) {
   return groupRows
     .filter((row) => normalizeNullableText(row.shareholderName))
-    .some(
-      (row) =>
-        hasNonZeroNumber(row.actualChange) ||
-        hasOwnershipBoundaryChange(row),
-    );
+    .some((row) => hasNonZeroNumber(row.actualChange) || hasOwnershipBoundaryChange(row));
 }
 
 function hasOwnershipBoundaryChange(row: FivePctOwnershipRawRow) {
@@ -508,7 +639,11 @@ function matchShareholderGroup(
       continue;
     }
 
-    if (!bestMatch || score > bestMatch.score || group.tokens.length > bestMatch.group.tokens.length) {
+    if (
+      !bestMatch ||
+      score > bestMatch.score ||
+      group.tokens.length > bestMatch.group.tokens.length
+    ) {
       bestMatch = { group, score };
     }
   }
@@ -552,6 +687,24 @@ function tokenizeOwnershipName(value: string | null) {
   );
 }
 
+function brokerCodeForAccountHolder(value: string | null) {
+  const normalized = normalizeBrokerName(value);
+  return normalized ? (brokerCodesByAccountHolderName.get(normalized) ?? null) : null;
+}
+
+function normalizeBrokerName(value: string | null) {
+  return (
+    value
+      ?.toUpperCase()
+      .replace(/&/g, ' AND ')
+      .replace(/[^A-Z0-9]+/g, ' ')
+      .split(/\s+/)
+      .filter((token) => token && !['PERSERO', 'PT', 'TBK'].includes(token))
+      .join(' ')
+      .trim() || null
+  );
+}
+
 function rowMatchesFivePctQuery(row: FivePctOwnershipRawRow, query: string) {
   const normalizedQuery = query.toLowerCase();
   return [
@@ -590,9 +743,7 @@ function maxNumber(values: Array<number | null>) {
 
 function sumNullable(values: Array<number | null>) {
   const numericValues = values.filter((value): value is number => value !== null);
-  return numericValues.length > 0
-    ? numericValues.reduce((total, value) => total + value, 0)
-    : null;
+  return numericValues.length > 0 ? numericValues.reduce((total, value) => total + value, 0) : null;
 }
 
 function listOnePctOwnership(context: ServerContext, input: OnePctListInput) {
@@ -875,6 +1026,9 @@ export const appRouter = t.router({
     }),
   }),
   prices: t.router({
+    dates: t.procedure.query(({ ctx }) => {
+      return listPriceDates(ctx);
+    }),
     list: t.procedure.input(pricesListInput).query(({ ctx, input }) => {
       return listPrices(ctx, input);
     }),

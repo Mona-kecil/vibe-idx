@@ -16,6 +16,7 @@ from idx_ingest.models import (
     KseiOnePctReport,
     MonthlyOwnershipSnapshot,
     RawFileRef,
+    SuspensionEvent,
 )
 
 
@@ -59,6 +60,19 @@ def _ensure_sqlite_compat_migrations(conn: sqlite3.Connection) -> None:
     }
     if "account_holder_name" not in columns:
         conn.execute("ALTER TABLE ksei_5pct_rows ADD COLUMN account_holder_name TEXT")
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS idx_suspension_events (
+          ticker TEXT NOT NULL,
+          event_type TEXT NOT NULL CHECK (event_type IN ('SPT', 'UPT')),
+          event_at TEXT NOT NULL,
+          title TEXT NOT NULL,
+          attachment_url TEXT,
+          ingested_at TEXT NOT NULL,
+          PRIMARY KEY (ticker, event_type, event_at, title)
+        )
+        """
+    )
 
 
 def upsert_raw_file(conn: Any, raw: RawFileRef) -> str:
@@ -210,6 +224,32 @@ def upsert_daily_prices(conn: Any, rows: Iterable[DailyPrice], raw_file_id: str)
                 row.listed_shares,
                 row.tradeable_shares,
                 raw_file_id,
+                dt.datetime.now(dt.UTC),
+            ),
+        )
+        count += 1
+    return count
+
+
+def upsert_suspension_events(conn: Any, rows: Iterable[SuspensionEvent]) -> int:
+    count = 0
+    for row in rows:
+        conn.execute(
+            """
+            INSERT INTO idx_suspension_events (
+              ticker, event_type, event_at, title, attachment_url, ingested_at
+            )
+            VALUES (%s, %s, %s, %s, %s, %s)
+            ON CONFLICT (ticker, event_type, event_at, title) DO UPDATE SET
+              attachment_url = excluded.attachment_url,
+              ingested_at = excluded.ingested_at
+            """,
+            (
+                row.ticker,
+                row.event_type,
+                row.event_at,
+                row.title,
+                row.attachment_url,
                 dt.datetime.now(dt.UTC),
             ),
         )
