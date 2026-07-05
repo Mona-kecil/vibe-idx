@@ -126,6 +126,76 @@ def test_latest_ksei_5pct_persists_account_holder_shareholder_and_account_distin
     )
 
 
+def test_historical_ksei_5pct_can_continue_after_bad_file(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    settings = Settings(
+        database_url=f"sqlite:///{tmp_path / 'vibe_idx.sqlite'}",
+        raw_dir=tmp_path / "raw",
+    )
+    monkeypatch.setattr(
+        ingest,
+        "fetch_json",
+        lambda url: {
+            "items": [
+                {
+                    "Description": "Pemegang Saham di Atas 5% per 2 Juli 2026",
+                    "Prospectus": "https://idx.test/bad.xlsx",
+                    "ListingDate": "2026-07-02T12:00:00",
+                },
+                {
+                    "Description": "Pemegang Saham di Atas 5% per 1 Juli 2026",
+                    "Prospectus": "https://idx.test/good.xlsx",
+                    "ListingDate": "2026-07-01T12:00:00",
+                },
+            ]
+        },
+    )
+    monkeypatch.setattr(ingest, "fetch_bytes", lambda url, accept="*/*": url.encode())
+
+    def parse_ksei_5pct_xlsx(
+        xlsx: bytes,
+        as_of_date: dt.date,
+        source_date: dt.date,
+    ) -> KseiFivePctReport:
+        if b"bad" in xlsx:
+            raise ValueError("No KSEI 5% XLSX header found")
+        return KseiFivePctReport(
+            as_of_date=as_of_date,
+            source_date=source_date,
+            rows=[KseiFivePctRow(ticker="BBCA", issuer_name=xlsx.decode())],
+        )
+
+    monkeypatch.setattr(ingest, "parse_ksei_5pct_xlsx", parse_ksei_5pct_xlsx)
+
+    result = ingest.ingest_ksei_5pct(
+        dt.date(2026, 7, 1),
+        dt.date(2026, 7, 2),
+        settings=settings,
+        continue_on_error=True,
+    )
+
+    assert result == {"reports": 1, "rows": 1, "failed": 1}
+    with sqlite3.connect(tmp_path / "vibe_idx.sqlite") as conn:
+        row = conn.execute(
+            """
+            SELECT r.as_of_date, item.ticker, item.issuer_name
+            FROM ksei_5pct_reports AS r
+            JOIN ksei_5pct_rows AS item ON item.report_id = r.id
+            """
+        ).fetchone()
+        failed = conn.execute(
+            """
+            SELECT parser_name, status, message
+            FROM parser_runs
+            WHERE status = 'failed'
+            """
+        ).fetchone()
+    assert row == ("2026-07-01", "BBCA", "https://idx.test/good.xlsx")
+    assert failed == ("ksei-5pct", "failed", "No KSEI 5% XLSX header found")
+
+
 def test_latest_market_summary_walks_back_to_populated_eod_snapshot(
     tmp_path: Path,
     monkeypatch,

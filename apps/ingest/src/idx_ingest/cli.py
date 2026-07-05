@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import time
 
 import typer
 
@@ -120,6 +121,152 @@ def laporan_efek(
     _print(ingest_laporan_efek(start, end, page_size))
 
 
+@app.command("backfill-year")
+def backfill_year(
+    year: int | None = typer.Option(None, "--year"),
+    date_from: str | None = typer.Option(None, "--from"),
+    date_to: str | None = typer.Option(None, "--to"),
+    daily_window_days: int = typer.Option(7, "--daily-window-days"),
+    pause_seconds: float = typer.Option(1.0, "--pause-seconds"),
+    continue_on_error: bool = typer.Option(False, "--continue-on-error"),
+    page_size: int = 50,
+) -> None:
+    start, end, selected_year = _year_range(year, date_from, date_to)
+    if daily_window_days < 1:
+        raise typer.BadParameter("--daily-window-days must be at least 1")
+    if pause_seconds < 0:
+        raise typer.BadParameter("--pause-seconds must be zero or greater")
+
+    daily_windows = list(_date_windows(start, end, daily_window_days))
+    monthly_windows = list(_month_windows(start, end))
+    total_periods = len(daily_windows) + len(monthly_windows)
+    periods: list[dict[str, object]] = []
+    totals: dict[str, dict[str, int]] = {}
+    errors: list[dict[str, str]] = []
+    completed_periods = 0
+
+    for window_start, window_end in daily_windows:
+        results: list[dict[str, object]] = []
+        for date in _dates_between(window_start, window_end):
+            result = _run_backfill_source(
+                "market-summary",
+                date,
+                date,
+                lambda date=date: ingest_market_summary(date),
+                continue_on_error,
+                errors,
+            )
+            if result is not None:
+                _merge_totals(totals, "market-summary", result)
+                results.append(
+                    {"source": "market-summary", "date": date.isoformat(), "result": result}
+                )
+
+        result = _run_backfill_source(
+            "ksei-5pct",
+            window_start,
+            window_end,
+            lambda start=window_start, end=window_end: ingest_ksei_5pct(
+                start,
+                end,
+                continue_on_error=continue_on_error,
+            ),
+            continue_on_error,
+            errors,
+        )
+        if result is not None:
+            _merge_totals(totals, "ksei-5pct", result)
+            results.append(_period_result("ksei-5pct", window_start, window_end, result))
+
+        result = _run_backfill_source(
+            "insider",
+            window_start,
+            window_end,
+            lambda start=window_start, end=window_end: ingest_insider(
+                start,
+                end,
+                page_size,
+            ),
+            continue_on_error,
+            errors,
+        )
+        if result is not None:
+            _merge_totals(totals, "insider", result)
+            results.append(_period_result("insider", window_start, window_end, result))
+
+        periods.append(
+            {
+                "frequency": "daily",
+                "from": window_start.isoformat(),
+                "to": window_end.isoformat(),
+                "results": results,
+            }
+        )
+        completed_periods += 1
+        _pause_between_periods(completed_periods, total_periods, pause_seconds)
+
+    for window_start, window_end in monthly_windows:
+        results = []
+
+        result = _run_backfill_source(
+            "ksei-1pct",
+            window_start,
+            window_end,
+            lambda start=window_start, end=window_end: ingest_ksei_1pct(
+                start,
+                end,
+                page_size,
+            ),
+            continue_on_error,
+            errors,
+        )
+        if result is not None:
+            _merge_totals(totals, "ksei-1pct", result)
+            results.append(_period_result("ksei-1pct", window_start, window_end, result))
+
+        result = _run_backfill_source(
+            "laporan-efek",
+            window_start,
+            window_end,
+            lambda start=window_start, end=window_end: ingest_laporan_efek(
+                start,
+                end,
+                page_size,
+            ),
+            continue_on_error,
+            errors,
+        )
+        if result is not None:
+            _merge_totals(totals, "laporan-efek", result)
+            results.append(_period_result("laporan-efek", window_start, window_end, result))
+
+        periods.append(
+            {
+                "frequency": "monthly",
+                "from": window_start.isoformat(),
+                "to": window_end.isoformat(),
+                "results": results,
+            }
+        )
+        completed_periods += 1
+        _pause_between_periods(completed_periods, total_periods, pause_seconds)
+
+    _print(
+        {
+            "year": selected_year,
+            "from": start.isoformat(),
+            "to": end.isoformat(),
+            "daily_window_days": daily_window_days,
+            "pause_seconds": pause_seconds,
+            "continue_on_error": continue_on_error,
+            "periods": total_periods,
+            "totals": totals,
+            "errors": errors,
+            "runs": periods,
+        }
+    )
+
+
 def _print(data: object) -> None:
     typer.echo(json.dumps(data, ensure_ascii=False, indent=2, default=str))
 
@@ -156,3 +303,114 @@ def _validate_monthly_options(
         )
     if month is not None and has_dates:
         raise typer.BadParameter("--month cannot be combined with --from or --to")
+
+
+def _year_range(
+    year: int | None,
+    date_from: str | None,
+    date_to: str | None,
+) -> tuple[dt.date, dt.date, int]:
+    today = _today()
+    selected_year = year or today.year
+    if selected_year > today.year:
+        raise typer.BadParameter("--year cannot be in the future")
+
+    start = parse_cli_date(date_from) if date_from else dt.date(selected_year, 1, 1)
+    if date_to:
+        end = parse_cli_date(date_to)
+    elif selected_year == today.year:
+        end = today
+    else:
+        end = dt.date(selected_year, 12, 31)
+
+    if start.year != selected_year or end.year != selected_year:
+        raise typer.BadParameter("--from and --to must stay within --year")
+    if end < start:
+        raise typer.BadParameter("--to must be on or after --from")
+    return start, end, selected_year
+
+
+def _date_windows(
+    start: dt.date,
+    end: dt.date,
+    window_days: int,
+) -> list[tuple[dt.date, dt.date]]:
+    windows = []
+    current = start
+    while current <= end:
+        window_end = min(current + dt.timedelta(days=window_days - 1), end)
+        windows.append((current, window_end))
+        current = window_end + dt.timedelta(days=1)
+    return windows
+
+
+def _month_windows(start: dt.date, end: dt.date) -> list[tuple[dt.date, dt.date]]:
+    windows = []
+    current = start.replace(day=1)
+    while current <= end:
+        month_start, month_end = month_window(current.strftime("%Y-%m"))
+        windows.append((max(start, month_start), min(end, month_end)))
+        current = month_end + dt.timedelta(days=1)
+    return windows
+
+
+def _dates_between(start: dt.date, end: dt.date) -> list[dt.date]:
+    return [start + dt.timedelta(days=offset) for offset in range((end - start).days + 1)]
+
+
+def _period_result(
+    source: str,
+    date_from: dt.date,
+    date_to: dt.date,
+    result: dict[str, int | str],
+) -> dict[str, object]:
+    return {
+        "source": source,
+        "from": date_from.isoformat(),
+        "to": date_to.isoformat(),
+        "result": result,
+    }
+
+
+def _merge_totals(
+    totals: dict[str, dict[str, int]],
+    source: str,
+    result: dict[str, int | str],
+) -> None:
+    source_totals = totals.setdefault(source, {})
+    for key, value in result.items():
+        if isinstance(value, int):
+            source_totals[key] = source_totals.get(key, 0) + value
+
+
+def _run_backfill_source(
+    source: str,
+    date_from: dt.date,
+    date_to: dt.date,
+    operation,
+    continue_on_error: bool,
+    errors: list[dict[str, str]],
+) -> dict[str, int | str] | None:
+    try:
+        return operation()
+    except Exception as exc:
+        if not continue_on_error:
+            raise
+        errors.append(
+            {
+                "source": source,
+                "from": date_from.isoformat(),
+                "to": date_to.isoformat(),
+                "error": str(exc),
+            }
+        )
+        return None
+
+
+def _pause_between_periods(
+    completed_periods: int,
+    total_periods: int,
+    pause_seconds: float,
+) -> None:
+    if pause_seconds and completed_periods < total_periods:
+        time.sleep(pause_seconds)

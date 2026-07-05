@@ -273,13 +273,14 @@ def ingest_ksei_5pct(
     date_from: dt.date,
     date_to: dt.date,
     settings: Settings | None = None,
+    continue_on_error: bool = False,
 ) -> dict[str, int]:
     settings = settings or Settings()
     payloads = [
         _store_ownership_list(settings, year)
         for year in range(date_from.year, date_to.year + 1)
     ]
-    reports_seen = rows_seen = 0
+    reports_seen = rows_seen = failed_seen = 0
     with connect(settings.database_url) as conn:
         for payload, response_id in payloads:
             record_parser_run(conn, response_id, "ksei-5pct-ownership-list", "parsed")
@@ -307,9 +308,14 @@ def ingest_ksei_5pct(
                     reports_seen += 1
                 except Exception as exc:
                     record_parser_run(conn, raw_xlsx_id, "ksei-5pct", "failed", str(exc))
-                    raise
+                    failed_seen += 1
+                    if not continue_on_error:
+                        raise
         conn.commit()
-    return {"reports": reports_seen, "rows": rows_seen}
+    result = {"reports": reports_seen, "rows": rows_seen}
+    if failed_seen:
+        result["failed"] = failed_seen
+    return result
 
 
 def ingest_latest_ksei_5pct(
