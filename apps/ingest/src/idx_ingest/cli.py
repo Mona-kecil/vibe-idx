@@ -3,10 +3,13 @@ from __future__ import annotations
 import datetime as dt
 import json
 import time
+from pathlib import Path
 
 import typer
 
+from idx_ingest.db import backup_database, inspect_database, restore_database
 from idx_ingest.ingest import (
+    Settings,
     ingest_insider,
     ingest_ksei_1pct,
     ingest_ksei_5pct,
@@ -23,6 +26,63 @@ from idx_ingest.sources import SOURCES, month_window, previous_month_window, sou
 from idx_ingest.util import parse_cli_date
 
 app = typer.Typer(no_args_is_help=True)
+db_app = typer.Typer(no_args_is_help=True)
+app.add_typer(db_app, name="db")
+
+DATABASE_URL_OPTION = typer.Option(None, "--database-url")
+BACKUP_OUTPUT_OPTION = typer.Option(None, "--output", "--backup-dir")
+BACKUP_PATH_ARGUMENT = typer.Argument(...)
+YES_OPTION = typer.Option(False, "--yes")
+
+
+@db_app.command("backup")
+def db_backup(
+    database_url: str | None = DATABASE_URL_OPTION,
+    backup_dir: Path | None = BACKUP_OUTPUT_OPTION,
+) -> None:
+    _print(
+        _run_job(
+            "db.backup",
+            lambda: backup_database(_database_url(database_url), backup_dir),
+            result_context=lambda result: {
+                "backup_path": result["path"],
+                "database_path": result["source"],
+            },
+        )
+    )
+
+
+@db_app.command("restore")
+def db_restore(
+    backup_path: Path = BACKUP_PATH_ARGUMENT,
+    database_url: str | None = DATABASE_URL_OPTION,
+    yes: bool = YES_OPTION,
+) -> None:
+    if not yes:
+        raise typer.BadParameter("restore requires --yes")
+    _print(
+        _run_job(
+            "db.restore",
+            lambda: restore_database(_database_url(database_url), backup_path),
+            result_context=lambda result: {
+                "backup_path": result["restored_from"],
+                "database_path": result["path"],
+            },
+        )
+    )
+
+
+@db_app.command("inspect")
+def db_inspect(
+    database_url: str | None = DATABASE_URL_OPTION,
+) -> None:
+    _print(
+        _run_job(
+            "db.inspect",
+            lambda: inspect_database(_database_url(database_url)),
+            result_context=lambda result: {"database_path": result["path"]},
+        )
+    )
 
 
 @app.command("sources")
@@ -38,14 +98,14 @@ def sources(source: str | None = typer.Argument(None)) -> None:
 @app.command("market-summary")
 def market_summary(date: str | None = None) -> None:
     if date:
-        _print(ingest_market_summary(_date_or_today(date)))
+        _print(_run_job("market-summary", lambda: ingest_market_summary(_date_or_today(date))))
         return
-    _print(ingest_latest_market_summary())
+    _print(_run_job("market-summary", ingest_latest_market_summary))
 
 
 @app.command("suspension-events")
 def suspension_events(page_size: int = 9999) -> None:
-    _print(ingest_suspension_events(page_size=page_size))
+    _print(_run_job("suspension-events", lambda: ingest_suspension_events(page_size=page_size)))
 
 
 @app.command("ksei-5pct")
@@ -54,10 +114,10 @@ def ksei_5pct(
     date_to: str | None = typer.Option(None, "--to"),
 ) -> None:
     if date_from is None and date_to is None:
-        _print(ingest_latest_ksei_5pct())
+        _print(_run_job("ksei-5pct", ingest_latest_ksei_5pct))
         return
     start, end = _date_range(date_from, date_to)
-    _print(ingest_ksei_5pct(start, end))
+    _print(_run_job("ksei-5pct", lambda: ingest_ksei_5pct(start, end)))
 
 
 @app.command("ksei-1pct")
@@ -71,17 +131,17 @@ def ksei_1pct(
     _validate_monthly_options(date_from, date_to, month, period)
     if month is not None:
         start, end = month_window(month)
-        _print(ingest_ksei_1pct(start, end, page_size))
+        _print(_run_job("ksei-1pct", lambda: ingest_ksei_1pct(start, end, page_size)))
         return
     if period == "previous-month":
         start, end = previous_month_window(_today())
-        _print(ingest_ksei_1pct(start, end, page_size))
+        _print(_run_job("ksei-1pct", lambda: ingest_ksei_1pct(start, end, page_size)))
         return
     if date_from is None and date_to is None:
-        _print(ingest_latest_ksei_1pct(page_size=page_size))
+        _print(_run_job("ksei-1pct", lambda: ingest_latest_ksei_1pct(page_size=page_size)))
         return
     start, end = _date_range(date_from, date_to)
-    _print(ingest_ksei_1pct(start, end, page_size))
+    _print(_run_job("ksei-1pct", lambda: ingest_ksei_1pct(start, end, page_size)))
 
 
 @app.command("insider")
@@ -91,10 +151,10 @@ def insider(
     page_size: int = 50,
 ) -> None:
     if date_from is None and date_to is None:
-        _print(ingest_latest_insider(page_size=page_size))
+        _print(_run_job("insider", lambda: ingest_latest_insider(page_size=page_size)))
         return
     start, end = _date_range(date_from, date_to)
-    _print(ingest_insider(start, end, page_size))
+    _print(_run_job("insider", lambda: ingest_insider(start, end, page_size)))
 
 
 @app.command("laporan-efek")
@@ -108,17 +168,22 @@ def laporan_efek(
     _validate_monthly_options(date_from, date_to, month, period)
     if month is not None:
         start, end = month_window(month)
-        _print(ingest_laporan_efek(start, end, page_size))
+        _print(_run_job("laporan-efek", lambda: ingest_laporan_efek(start, end, page_size)))
         return
     if period == "previous-month":
         start, end = previous_month_window(_today())
-        _print(ingest_laporan_efek(start, end, page_size))
+        _print(_run_job("laporan-efek", lambda: ingest_laporan_efek(start, end, page_size)))
         return
     if date_from is None and date_to is None:
-        _print(ingest_latest_laporan_efek(page_size=page_size))
+        _print(
+            _run_job(
+                "laporan-efek",
+                lambda: ingest_latest_laporan_efek(page_size=page_size),
+            )
+        )
         return
     start, end = _date_range(date_from, date_to)
-    _print(ingest_laporan_efek(start, end, page_size))
+    _print(_run_job("laporan-efek", lambda: ingest_laporan_efek(start, end, page_size)))
 
 
 @app.command("backfill-year")
@@ -271,6 +336,60 @@ def _print(data: object) -> None:
     typer.echo(json.dumps(data, ensure_ascii=False, indent=2, default=str))
 
 
+def _run_job(job: str, operation, result_context=None):
+    started = time.perf_counter()
+    try:
+        result = operation()
+    except Exception as exc:
+        _log_job(job, "error", started, str(exc), {})
+        raise
+    context = result_context(result) if result_context else _result_context(result)
+    _log_job(job, "success", started, None, context)
+    return result
+
+
+def _log_job(
+    job: str,
+    outcome: str,
+    started: float,
+    error: str | None,
+    context: dict[str, object],
+) -> None:
+    duration = time.perf_counter() - started
+    typer.echo(
+        json.dumps(
+            {
+                "timestamp": dt.datetime.now(dt.UTC).isoformat(),
+                "service": "vibe-idx-ingest",
+                "event": "ingest_job",
+                "job": job,
+                "source": job,
+                "outcome": outcome,
+                "duration": round(duration, 6),
+                "duration_ms": round(duration * 1000, 3),
+                "error": error,
+                **context,
+            },
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ),
+        err=True,
+    )
+
+
+def _result_context(result: object) -> dict[str, object]:
+    if not isinstance(result, dict):
+        return {}
+
+    return {
+        "result": {
+            key: value
+            for key, value in result.items()
+            if isinstance(value, (int, float, str, bool)) or value is None
+        }
+    }
+
+
 def _date_or_today(value: str | None):
     return parse_cli_date(value) if value else dt.date.today()
 
@@ -283,6 +402,10 @@ def _date_range(date_from: str | None, date_to: str | None):
 
 def _today() -> dt.date:
     return dt.date.today()
+
+
+def _database_url(value: str | None) -> str:
+    return value or Settings().database_url
 
 
 def _validate_monthly_options(

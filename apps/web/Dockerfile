@@ -22,12 +22,6 @@ COPY apps/web apps/web
 
 RUN pnpm --filter @vibe-idx/web build
 
-FROM build-deps AS dev
-
-EXPOSE 5173 20240
-
-CMD ["pnpm", "--filter", "@vibe-idx/web", "server"]
-
 FROM base AS prod-deps
 
 RUN apt-get update \

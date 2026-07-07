@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import os
 import sqlite3
 from collections.abc import Iterable
 from decimal import Decimal
@@ -29,6 +30,117 @@ def connect(database_url: str):
         conn.executescript(file.read())
     _ensure_sqlite_compat_migrations(conn)
     return conn
+
+
+def sqlite_database_path(database_url: str) -> Path:
+    if not database_url.startswith("sqlite:///"):
+        raise ValueError("only sqlite:/// database URLs are supported")
+    return Path(database_url.removeprefix("sqlite:///")).expanduser()
+
+
+def backup_database(
+    database_url: str,
+    backup_dir: str | Path | None = None,
+    now: dt.datetime | None = None,
+) -> dict[str, object]:
+    source_path = sqlite_database_path(database_url)
+    if not source_path.exists():
+        raise FileNotFoundError(f"SQLite database does not exist: {source_path}")
+
+    destination_dir = Path(
+        backup_dir
+        or os.environ.get("VIBE_IDX_BACKUP_DIR")
+        or source_path.parent / "backups"
+    ).expanduser()
+    destination_dir.mkdir(parents=True, exist_ok=True)
+
+    timestamp = (now or dt.datetime.now(dt.UTC)).strftime("%Y%m%dT%H%M%SZ")
+    destination_path = destination_dir / f"{source_path.stem}-{timestamp}.sqlite"
+    if destination_path.exists():
+        timestamp = (now or dt.datetime.now(dt.UTC)).strftime("%Y%m%dT%H%M%S%fZ")
+        destination_path = destination_dir / f"{source_path.stem}-{timestamp}.sqlite"
+
+    with sqlite3.connect(source_path) as source, sqlite3.connect(destination_path) as destination:
+        source.backup(destination)
+
+    return {
+        "path": str(destination_path),
+        "source": str(source_path),
+        "size_bytes": destination_path.stat().st_size,
+    }
+
+
+def restore_database(database_url: str, backup_path: str | Path) -> dict[str, object]:
+    source_path = Path(backup_path).expanduser()
+    if not source_path.exists():
+        raise FileNotFoundError(f"SQLite backup does not exist: {source_path}")
+
+    target_path = sqlite_database_path(database_url)
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = target_path.with_name(f".{target_path.name}.restore-tmp")
+    temp_path.unlink(missing_ok=True)
+
+    with sqlite3.connect(f"file:{source_path}?mode=ro", uri=True) as source:
+        integrity = source.execute("PRAGMA integrity_check").fetchone()[0]
+        if integrity != "ok":
+            raise ValueError(f"SQLite backup failed integrity_check: {integrity}")
+        with sqlite3.connect(temp_path) as destination:
+            source.backup(destination)
+
+    os.replace(temp_path, target_path)
+    return {
+        "path": str(target_path),
+        "restored_from": str(source_path),
+        "size_bytes": target_path.stat().st_size,
+    }
+
+
+def inspect_database(database_url: str) -> dict[str, object]:
+    path = sqlite_database_path(database_url)
+    if not path.exists():
+        return {
+            "path": str(path),
+            "exists": False,
+            "size_bytes": 0,
+            "page_count": 0,
+            "page_size": 0,
+            "table_count": 0,
+            "tables": [],
+        }
+
+    with sqlite3.connect(f"file:{path}?mode=ro", uri=True) as conn:
+        page_count = int(conn.execute("PRAGMA page_count").fetchone()[0])
+        page_size = int(conn.execute("PRAGMA page_size").fetchone()[0])
+        table_names = [
+            str(row[0])
+            for row in conn.execute(
+                """
+                SELECT name
+                FROM sqlite_schema
+                WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
+                ORDER BY name
+                """
+            ).fetchall()
+        ]
+        tables = [
+            {"name": name, "rows": _table_row_count(conn, name)}
+            for name in table_names
+        ]
+
+    return {
+        "path": str(path),
+        "exists": True,
+        "size_bytes": path.stat().st_size,
+        "page_count": page_count,
+        "page_size": page_size,
+        "table_count": len(tables),
+        "tables": tables,
+    }
+
+
+def _table_row_count(conn: sqlite3.Connection, table_name: str) -> int:
+    quoted_name = table_name.replace('"', '""')
+    return int(conn.execute(f'SELECT COUNT(*) FROM "{quoted_name}"').fetchone()[0])
 
 
 def _json(data: dict[str, Any]) -> str:

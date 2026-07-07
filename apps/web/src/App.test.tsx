@@ -11,13 +11,16 @@ import {
   FivePctOwnershipTable,
   SnapshotDateSelector,
   createListFilters,
+  createListFiltersFromSearch,
   dailyPricesPrefetchPages,
+  filtersToSearch,
   keepPreviousListResult,
   nextPageFilters,
   pageFromPaginationHotkey,
   prefetchPageFilters,
   prefetchSequentially,
   renderAppTitle,
+  resolveWorkspaceRoute,
   rowIndexFromKeyboard,
 } from './App';
 
@@ -33,6 +36,28 @@ describe('App', () => {
     expect(markup).toContain('5% Ownership');
     expect(markup).toContain('1% Ownership');
     expect(markup).toContain('Insider Transactions');
+  });
+
+  it('renders a deep-linked 5% ownership page without resetting to daily prices', () => {
+    const markup = renderToStaticMarkup(<App initialUrl="/ownership/5pct" />);
+
+    expect(markup).toContain('aria-current="page"');
+    expect(markup).toContain('<h2 id="surface-title">5% Ownership</h2>');
+    expect(markup).not.toContain('<h2 id="surface-title">Daily Prices</h2>');
+  });
+
+  it('keeps root as the daily prices page and renders unknown routes as a 404 page', () => {
+    expect(resolveWorkspaceRoute('/')).toEqual(
+      expect.objectContaining({ id: 'prices', status: 'ok' }),
+    );
+    expect(resolveWorkspaceRoute('/prices')).toEqual(
+      expect.objectContaining({ id: 'prices', status: 'ok' }),
+    );
+
+    const markup = renderToStaticMarkup(<App initialUrl="/missing-page" />);
+
+    expect(markup).toContain('Page not found');
+    expect(markup).not.toContain('<h2 id="surface-title">Daily Prices</h2>');
   });
 
   it('renders 5% ownership as expandable summaries with account details', () => {
@@ -251,6 +276,33 @@ describe('App', () => {
         tradeDate: '',
       }),
     );
+  });
+
+  it('initializes list filters from URL search params and writes changed filters back to search', () => {
+    const filters = createListFiltersFromSearch(
+      '?q=dbs&ticker=bbca&page=3&pageSize=25&date=2026-07-01&sort=price1dDesc',
+      { sort: 'tickerAsc', tradeDate: '' },
+      { pageSize: 10, urlKeys: { tradeDate: 'date' } },
+    );
+
+    expect(filters).toEqual(
+      expect.objectContaining({
+        page: 3,
+        pageSize: 25,
+        q: 'dbs',
+        sort: 'price1dDesc',
+        ticker: 'BBCA',
+        tradeDate: '2026-07-01',
+      }),
+    );
+
+    expect(
+      filtersToSearch(
+        { ...filters, page: 1, q: '', sort: 'tickerAsc', ticker: '', tradeDate: '' },
+        createListFilters({ sort: 'tickerAsc', tradeDate: '' }, { pageSize: 10 }),
+        { tradeDate: 'date' },
+      ),
+    ).toBe('?pageSize=25');
   });
 
   it('derives the next daily prices page for prefetching until the final page', () => {

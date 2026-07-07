@@ -127,12 +127,14 @@ h2 {
 }
 
 .surface-tab {
+  display: block;
   min-height: 84px;
   padding: 14px;
   border: 1px solid #b9c5bf;
   border-radius: 6px;
   background: #f8faf7;
   color: #1d2825;
+  text-decoration: none;
   text-align: left;
   transition:
     background-color 160ms ease,
@@ -141,12 +143,12 @@ h2 {
 }
 
 .surface-tab:hover,
-.surface-tab[aria-pressed='true'] {
+.surface-tab[aria-current='page'] {
   border-color: #123c35;
   background: #e6f0ea;
 }
 
-.surface-tab[aria-pressed='true'] {
+.surface-tab[aria-current='page'] {
   transform: translateY(-2px);
 }
 

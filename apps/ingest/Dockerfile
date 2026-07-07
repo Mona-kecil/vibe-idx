@@ -39,7 +39,7 @@ RUN case "$TARGETARCH" in \
 
 COPY apps/ingest/cron/ /etc/vibe-idx/
 
-RUN chmod +x /etc/vibe-idx/run-daily.sh /etc/vibe-idx/run-monthly.sh
+RUN chmod +x /etc/vibe-idx/run-daily.sh /etc/vibe-idx/run-monthly.sh /etc/vibe-idx/run-backup.sh
 
-ENTRYPOINT ["supercronic"]
+ENTRYPOINT ["/usr/local/bin/supercronic"]
 CMD ["/etc/vibe-idx/ingest.cron"]

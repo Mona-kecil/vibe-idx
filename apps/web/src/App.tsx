@@ -10,7 +10,17 @@ import {
   type ColumnDef,
   type SortingState,
 } from '@tanstack/react-table';
-import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react';
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type Dispatch,
+  type MouseEvent,
+  type ReactNode,
+  type SetStateAction,
+} from 'react';
 
 import { trpc, type RouterInputs, type RouterOutputs } from './trpc';
 
@@ -37,35 +47,50 @@ type DataColumn<T> = {
   sortValue: (row: T) => Primitive;
 };
 
-const surfaces: Array<{ id: SurfaceId; label: string; description: string }> = [
+const surfaces: Array<{ id: SurfaceId; label: string; description: string; path: string }> = [
   {
     id: 'prices',
     label: 'Daily Prices',
     description: 'Latest IDX trading summary by ticker.',
+    path: '/prices',
   },
   {
     id: 'fivePct',
     label: '5% Ownership',
     description: 'KSEI major shareholder rows and percentage-change summary.',
+    path: '/ownership/5pct',
   },
   {
     id: 'onePct',
     label: '1% Ownership',
     description: 'Monthly KSEI shareholder concentration list.',
+    path: '/ownership/1pct',
   },
   {
     id: 'insiders',
     label: 'Insider Transactions',
     description: 'Daily ownership-change disclosures at transaction level.',
+    path: '/insiders',
   },
 ];
 const defaultSurface = surfaces[0]!;
+type WorkspaceRoute = { id: SurfaceId; status: 'ok' } | { pathname: string; status: 'notFound' };
+
+type WorkspaceLocation = {
+  pathname: string;
+  search: string;
+};
+
+type UrlFilterProps = {
+  onUrlSearchChange: (search: string) => void;
+  urlSearch: string;
+};
 
 export function renderAppTitle() {
   return 'Vibe IDX';
 }
 
-export function App() {
+export function App({ initialUrl }: { initialUrl?: string } = {}) {
   const [queryClient] = useState(() => new QueryClient());
   const [trpcClient] = useState(() =>
     trpc.createClient({
@@ -80,16 +105,20 @@ export function App() {
   return (
     <trpc.Provider client={trpcClient} queryClient={queryClient}>
       <QueryClientProvider client={queryClient}>
-        <Workspace />
+        <Workspace initialUrl={initialUrl} />
       </QueryClientProvider>
     </trpc.Provider>
   );
 }
 
-function Workspace() {
-  const [activeSurface, setActiveSurface] = useState<SurfaceId>('prices');
+function Workspace({ initialUrl }: { initialUrl?: string }) {
+  const [location, navigateToPath, replaceSearch] = useWorkspaceLocation(initialUrl);
+  const route = resolveWorkspaceRoute(location.pathname);
   const latestDates = trpc.meta.latestDates.useQuery();
-  const active = surfaces.find((surface) => surface.id === activeSurface) ?? defaultSurface;
+  const active =
+    route.status === 'ok'
+      ? (surfaces.find((surface) => surface.id === route.id) ?? defaultSurface)
+      : null;
 
   return (
     <main className="app-shell">
@@ -108,34 +137,164 @@ function Workspace() {
 
       <nav className="surface-nav" aria-label="Data surfaces">
         {surfaces.map((surface) => (
-          <button
-            aria-pressed={surface.id === activeSurface}
+          <a
+            aria-current={active?.id === surface.id ? 'page' : undefined}
             className="surface-tab"
+            href={surface.path}
             key={surface.id}
-            onClick={() => setActiveSurface(surface.id)}
-            type="button"
+            onClick={(event) => {
+              if (shouldHandleAppLink(event)) {
+                event.preventDefault();
+                navigateToPath(surface.path);
+              }
+            }}
           >
             <span>{surface.label}</span>
             <small>{surface.description}</small>
-          </button>
+          </a>
         ))}
       </nav>
 
-      <section className="workspace-panel" aria-labelledby="surface-title">
-        <div className="surface-heading">
-          <div>
-            <p className="eyebrow">Read-only SQLite view</p>
-            <h2 id="surface-title">{active.label}</h2>
+      {active ? (
+        <section className="workspace-panel" aria-labelledby="surface-title">
+          <div className="surface-heading">
+            <div>
+              <p className="eyebrow">Read-only SQLite view</p>
+              <h2 id="surface-title">{active.label}</h2>
+            </div>
+            <p>{active.description}</p>
           </div>
-          <p>{active.description}</p>
-        </div>
 
-        {activeSurface === 'prices' ? <PricesSurface /> : null}
-        {activeSurface === 'fivePct' ? <FivePctSurface /> : null}
-        {activeSurface === 'onePct' ? <OnePctSurface /> : null}
-        {activeSurface === 'insiders' ? <InsidersSurface /> : null}
-      </section>
+          {active.id === 'prices' ? (
+            <PricesSurface onUrlSearchChange={replaceSearch} urlSearch={location.search} />
+          ) : null}
+          {active.id === 'fivePct' ? (
+            <FivePctSurface onUrlSearchChange={replaceSearch} urlSearch={location.search} />
+          ) : null}
+          {active.id === 'onePct' ? (
+            <OnePctSurface onUrlSearchChange={replaceSearch} urlSearch={location.search} />
+          ) : null}
+          {active.id === 'insiders' ? (
+            <InsidersSurface onUrlSearchChange={replaceSearch} urlSearch={location.search} />
+          ) : null}
+        </section>
+      ) : (
+        <section className="workspace-panel" aria-labelledby="surface-title">
+          <div className="surface-heading">
+            <div>
+              <p className="eyebrow">Unknown route</p>
+              <h2 id="surface-title">Page not found</h2>
+            </div>
+            <p>The requested Vibe IDX page does not exist.</p>
+          </div>
+        </section>
+      )}
     </main>
+  );
+}
+
+export function resolveWorkspaceRoute(pathname: string): WorkspaceRoute {
+  const normalizedPathname = normalizeWorkspacePath(pathname);
+
+  if (normalizedPathname === '/') {
+    return { id: 'prices', status: 'ok' };
+  }
+
+  const surface = surfaces.find((candidate) => candidate.path === normalizedPathname);
+  if (surface) {
+    return { id: surface.id, status: 'ok' };
+  }
+
+  return { pathname: normalizedPathname, status: 'notFound' };
+}
+
+function normalizeWorkspacePath(pathname: string) {
+  const pathOnly = pathname.split('?')[0] || '/';
+  const withLeadingSlash = pathOnly.startsWith('/') ? pathOnly : `/${pathOnly}`;
+  return withLeadingSlash.length > 1 ? withLeadingSlash.replace(/\/+$/, '') : '/';
+}
+
+function useWorkspaceLocation(initialUrl?: string) {
+  const [location, setLocation] = useState<WorkspaceLocation>(() =>
+    initialWorkspaceLocation(initialUrl),
+  );
+
+  useEffect(() => {
+    if (!canUseBrowserHistory()) {
+      return;
+    }
+
+    const handlePopState = () => setLocation(currentBrowserLocation());
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  const navigateToPath = useCallback((pathname: string) => {
+    const nextLocation = { pathname: normalizeWorkspacePath(pathname), search: '' };
+    if (canUseBrowserHistory()) {
+      window.history.pushState(null, '', nextLocation.pathname);
+    }
+    setLocation(nextLocation);
+  }, []);
+
+  const replaceSearch = useCallback((search: string) => {
+    setLocation((current) => {
+      const nextLocation = {
+        ...current,
+        search: normalizeSearch(search),
+      };
+      if (canUseBrowserHistory()) {
+        window.history.replaceState(null, '', `${current.pathname}${nextLocation.search}`);
+      }
+      return nextLocation;
+    });
+  }, []);
+
+  return [location, navigateToPath, replaceSearch] as const;
+}
+
+function initialWorkspaceLocation(initialUrl?: string): WorkspaceLocation {
+  if (initialUrl) {
+    const url = new URL(initialUrl, 'http://vibe-idx.local');
+    return {
+      pathname: normalizeWorkspacePath(url.pathname),
+      search: normalizeSearch(url.search),
+    };
+  }
+
+  if (canUseBrowserHistory()) {
+    return currentBrowserLocation();
+  }
+
+  return { pathname: '/', search: '' };
+}
+
+function currentBrowserLocation(): WorkspaceLocation {
+  return {
+    pathname: normalizeWorkspacePath(window.location.pathname),
+    search: normalizeSearch(window.location.search),
+  };
+}
+
+function canUseBrowserHistory() {
+  return typeof window !== 'undefined' && typeof window.history?.pushState === 'function';
+}
+
+function normalizeSearch(search: string) {
+  if (!search) {
+    return '';
+  }
+  return search.startsWith('?') ? search : `?${search}`;
+}
+
+function shouldHandleAppLink(event: MouseEvent<HTMLAnchorElement>) {
+  return (
+    event.button === 0 &&
+    !event.defaultPrevented &&
+    !event.metaKey &&
+    !event.altKey &&
+    !event.ctrlKey &&
+    !event.shiftKey
   );
 }
 
@@ -258,10 +417,12 @@ function isKeyboardTargetEditable(event: PaginationHotkey) {
   return ['INPUT', 'SELECT', 'TEXTAREA'].includes(event.targetTagName ?? '');
 }
 
-function PricesSurface() {
-  const [filters, setFilters] = useListFilters(
+function PricesSurface({ onUrlSearchChange, urlSearch }: UrlFilterProps) {
+  const [filters, setFilters] = useUrlListFilters(
+    urlSearch,
+    onUrlSearchChange,
     { sort: 'tickerAsc' as PriceSort, tradeDate: '' },
-    { pageSize: 10 },
+    { pageSize: 10, urlKeys: { tradeDate: 'date' } },
   );
   const trpcUtils = trpc.useUtils();
   const priceQueryInput = useMemo(
@@ -339,11 +500,16 @@ function PricesSurface() {
   );
 }
 
-function FivePctSurface() {
-  const [filters, setFilters] = useListFilters<{
+function FivePctSurface({ onUrlSearchChange, urlSearch }: UrlFilterProps) {
+  const [filters, setFilters] = useUrlListFilters<{
     asOfDate: string;
     view: 'all' | 'percentageChanges';
-  }>({ asOfDate: '', view: 'all' });
+  }>(
+    urlSearch,
+    onUrlSearchChange,
+    { asOfDate: '', view: 'all' },
+    { urlKeys: { asOfDate: 'date' } },
+  );
   const query = trpc.ownership.fivePct.list.useQuery(
     {
       ...filters,
@@ -491,8 +657,8 @@ export function DailyPriceSortSelector({
   );
 }
 
-function OnePctSurface() {
-  const [filters, setFilters] = useListFilters({ investor: '' });
+function OnePctSurface({ onUrlSearchChange, urlSearch }: UrlFilterProps) {
+  const [filters, setFilters] = useUrlListFilters(urlSearch, onUrlSearchChange, { investor: '' });
   const query = trpc.ownership.onePct.list.useQuery(filters, {
     placeholderData: keepPreviousListResult,
   });
@@ -526,8 +692,8 @@ function OnePctSurface() {
   );
 }
 
-function InsidersSurface() {
-  const [filters, setFilters] = useListFilters({
+function InsidersSurface({ onUrlSearchChange, urlSearch }: UrlFilterProps) {
+  const [filters, setFilters] = useUrlListFilters(urlSearch, onUrlSearchChange, {
     type: '' as '' | TransactionType,
   });
   const query = trpc.insiders.transactions.list.useQuery(
@@ -589,11 +755,98 @@ export function createListFilters<T extends Record<string, unknown> = Record<nev
   } as BaseFilters & T;
 }
 
-function useListFilters<T extends Record<string, unknown> = Record<never, never>>(
+export function createListFiltersFromSearch<
+  T extends Record<string, unknown> = Record<never, never>,
+>(
+  search: string,
   extra?: T,
-  options?: { pageSize?: number },
+  options: { pageSize?: number; urlKeys?: Record<string, string> } = {},
 ) {
-  return useState<BaseFilters & T>(() => createListFilters(extra, options));
+  const filters = createListFilters(extra, options);
+  const params = new URLSearchParams(normalizeSearch(search).slice(1));
+
+  filters.page = positiveIntegerParam(params.get('page'), filters.page);
+  filters.pageSize = positiveIntegerParam(params.get('pageSize'), filters.pageSize);
+  filters.q = params.get('q') ?? filters.q;
+  filters.ticker = (params.get('ticker') ?? filters.ticker).toUpperCase();
+
+  for (const [key, defaultValue] of Object.entries(extra ?? {})) {
+    const paramName = options.urlKeys?.[key] ?? key;
+    const value = params.get(paramName);
+    if (value === null) {
+      continue;
+    }
+
+    (filters as Record<string, unknown>)[key] =
+      typeof defaultValue === 'number' ? Number(value) : value;
+  }
+
+  return filters;
+}
+
+export function filtersToSearch<F extends Record<string, unknown>>(
+  filters: F,
+  defaults: F,
+  urlKeys: Record<string, string> = {},
+) {
+  const params = new URLSearchParams();
+  const orderedKeys = [
+    'q',
+    'ticker',
+    'page',
+    'pageSize',
+    ...Object.keys(filters).filter((key) => !['q', 'ticker', 'page', 'pageSize'].includes(key)),
+  ];
+
+  for (const key of orderedKeys) {
+    if (!(key in filters)) {
+      continue;
+    }
+
+    const value = filters[key];
+    const defaultValue = defaults[key];
+
+    if (!isUrlParamValue(value) || value === '') {
+      continue;
+    }
+
+    if (isUrlParamValue(defaultValue) && String(value) === String(defaultValue)) {
+      continue;
+    }
+
+    params.set(urlKeys[key] ?? key, String(value));
+  }
+
+  const encoded = params.toString();
+  return encoded ? `?${encoded}` : '';
+}
+
+function isUrlParamValue(value: unknown): value is boolean | number | string {
+  return ['boolean', 'number', 'string'].includes(typeof value);
+}
+
+function positiveIntegerParam(value: string | null, fallback: number) {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function useUrlListFilters<T extends Record<string, unknown> = Record<never, never>>(
+  search: string,
+  onSearchChange: (search: string) => void,
+  extra?: T,
+  options: { pageSize?: number; urlKeys?: Record<string, string> } = {},
+) {
+  const filters = createListFiltersFromSearch(search, extra, options);
+  const setFilters: Dispatch<SetStateAction<BaseFilters & T>> = (nextFilters) => {
+    const currentFilters = createListFiltersFromSearch(search, extra, options);
+    const resolvedFilters =
+      typeof nextFilters === 'function' ? nextFilters(currentFilters) : nextFilters;
+    onSearchChange(
+      filtersToSearch(resolvedFilters, createListFilters(extra, options), options.urlKeys),
+    );
+  };
+
+  return [filters, setFilters] as const;
 }
 
 function SurfaceFrame<

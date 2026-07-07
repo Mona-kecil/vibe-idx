@@ -21,7 +21,7 @@ Install these tools before running the project locally:
 - pnpm 11.9.0 or newer
 - Python 3.12
 - uv
-- Docker and Docker Compose, for containerized runs
+- Docker and Docker Compose, for production container runs
 
 If pnpm is not already available, enable it through Corepack:
 
@@ -47,8 +47,9 @@ cd ../..
 
 ## Run Locally in Development Mode
 
-The web server reads from `data/vibe_idx.sqlite` by default. Create and populate
-that database by running at least one ingest command:
+Development runs directly from the local CLI, not Docker. The web server reads
+from `data/vibe_idx.sqlite` by default. Create and populate that database by
+running at least one ingest command:
 
 ```bash
 cd apps/ingest
@@ -75,36 +76,6 @@ pnpm --filter @vibe-idx/web dev:web
 Open the web app at `http://localhost:5173`. The API listens on
 `http://localhost:20240/trpc`, and Vite proxies `/trpc` requests to it.
 
-## Run in Docker for Development
-
-Build the Compose images:
-
-```bash
-docker compose --profile tools build
-```
-
-Populate the shared Docker SQLite volume:
-
-```bash
-docker compose run --rm ingest market-summary
-docker compose run --rm ingest ksei-5pct
-docker compose run --rm ingest insider
-docker compose run --rm ingest ksei-1pct
-docker compose run --rm ingest laporan-efek
-```
-
-Start the dev web and API services:
-
-```bash
-docker compose up web api
-```
-
-Open `http://localhost:5173`. The API is exposed at
-`http://localhost:20240/trpc`.
-
-Docker Compose stores SQLite data and downloaded raw files in the named volume
-`vibe-idx-data`.
-
 ## Run on a Server with Docker
 
 For a compiled production-style container that serves both the React build and
@@ -124,11 +95,14 @@ docker compose --profile prod up --build app scheduler
 
 The scheduler uses `supercronic` and
 [`apps/ingest/cron/ingest.cron`](apps/ingest/cron/ingest.cron). It writes to the
-same `vibe-idx-data` volume as the app and stops when the Compose stack stops.
-Scheduled ingestion runs in Jakarta time:
+same `vibe-idx-data` volume as the app. Docker Compose mounts host-visible
+SQLite backups at `./backups`, separate from the data volume. The scheduler
+stops when the Compose stack stops.
+Scheduled jobs run in Jakarta time:
 
 - Weekdays every 30 minutes from 19:00 through 22:00: daily sources.
 - Calendar days 2 through 10 each month at 09:00: monthly sources.
+- Every day at 23:15: SQLite backup to `/backups`.
 
 ## Ingestion Commands
 
@@ -169,6 +143,45 @@ Historical date basis:
   monthly disclosure cycle.
 - `--period latest` is equivalent to the no-argument default and cannot be
   combined with `--from`, `--to`, or `--month`.
+
+## SQLite Backups
+
+Create a consistent SQLite backup with SQLite's backup API:
+
+```bash
+cd apps/ingest
+uv run idx-ingest db backup
+uv run idx-ingest db backup --output ../../backups
+```
+
+Inspect the active database:
+
+```bash
+uv run idx-ingest db inspect
+```
+
+Restore from a backup:
+
+```bash
+uv run idx-ingest db restore ../../backups/vibe_idx-YYYYMMDDTHHMMSSZ.sqlite --yes
+```
+
+In Docker, backups are written to `/backups` inside containers and `./backups`
+on the host:
+
+```bash
+docker compose --profile prod run --rm ingest db backup --output /backups
+docker compose --profile prod run --rm ingest db inspect
+docker compose --profile prod run --rm ingest db restore /backups/vibe_idx-YYYYMMDDTHHMMSSZ.sqlite --yes
+```
+
+The production scheduler also runs this backup automatically every day at 23:15
+Jakarta time. The manual command is still useful before migrations, restores,
+or risky maintenance.
+
+To move servers, run `db backup` on the old server, copy the `.sqlite` file from
+`./backups` to the new server's `./backups`, run `db restore` on the new server,
+then restart the app and scheduler containers.
 
 ## Checks
 

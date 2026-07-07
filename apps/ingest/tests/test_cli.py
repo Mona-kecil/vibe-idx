@@ -2,13 +2,133 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import sqlite3
+from pathlib import Path
 
 from typer.testing import CliRunner
 
 from idx_ingest import cli
 from idx_ingest.cli import _date_range
+from idx_ingest.db import backup_database, connect
 
 runner = CliRunner()
+
+
+def test_db_backup_creates_valid_sqlite_copy(tmp_path: Path) -> None:
+    db_path = tmp_path / "vibe_idx.sqlite"
+    backup_dir = tmp_path / "backups"
+    database_url = f"sqlite:///{db_path}"
+
+    with connect(database_url) as conn:
+        conn.execute(
+            """
+            INSERT INTO raw_files (
+              sha256, kind, size_bytes, local_path, fetched_at
+            )
+            VALUES ('abc123', 'fixture', 10, '/tmp/raw.json', '2026-07-07T00:00:00+00:00')
+            """
+        )
+        conn.commit()
+
+    result = runner.invoke(
+        cli.app,
+        ["db", "backup", "--database-url", database_url, "--output", str(backup_dir)],
+    )
+
+    assert result.exit_code == 0
+    data = json.loads(result.stdout)
+    log = json.loads(result.stderr)
+    backup_path = Path(data["path"])
+    assert backup_path.parent == backup_dir
+    assert backup_path.exists()
+    assert log["event"] == "ingest_job"
+    assert log["job"] == "db.backup"
+    assert log["outcome"] == "success"
+    assert log["database_path"] == str(db_path)
+    assert log["backup_path"] == str(backup_path)
+
+    with sqlite3.connect(backup_path) as conn:
+        assert conn.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+        assert conn.execute("SELECT COUNT(*) FROM raw_files").fetchone()[0] == 1
+
+
+def test_db_restore_requires_yes_and_replaces_database(tmp_path: Path) -> None:
+    db_path = tmp_path / "vibe_idx.sqlite"
+    database_url = f"sqlite:///{db_path}"
+
+    with connect(database_url) as conn:
+        conn.execute(
+            """
+            INSERT INTO raw_files (
+              sha256, kind, size_bytes, local_path, fetched_at
+            )
+            VALUES ('original', 'fixture', 10, '/tmp/original.json', '2026-07-07T00:00:00+00:00')
+            """
+        )
+        conn.commit()
+    backup_path = Path(backup_database(database_url, tmp_path / "backups")["path"])
+
+    with connect(database_url) as conn:
+        conn.execute("DELETE FROM raw_files")
+        conn.execute(
+            """
+            INSERT INTO raw_files (
+              sha256, kind, size_bytes, local_path, fetched_at
+            )
+            VALUES ('changed', 'fixture', 20, '/tmp/changed.json', '2026-07-07T01:00:00+00:00')
+            """
+        )
+        conn.commit()
+
+    denied = runner.invoke(
+        cli.app,
+        ["db", "restore", str(backup_path), "--database-url", database_url],
+    )
+
+    assert denied.exit_code != 0
+    assert "requires --yes" in denied.output
+    with sqlite3.connect(db_path) as conn:
+        assert conn.execute("SELECT sha256 FROM raw_files").fetchone()[0] == "changed"
+
+    restored = runner.invoke(
+        cli.app,
+        ["db", "restore", str(backup_path), "--database-url", database_url, "--yes"],
+    )
+
+    assert restored.exit_code == 0
+    assert json.loads(restored.stdout)["restored_from"] == str(backup_path)
+    with sqlite3.connect(db_path) as conn:
+        assert conn.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+        assert conn.execute("SELECT sha256 FROM raw_files").fetchone()[0] == "original"
+
+
+def test_db_inspect_returns_sqlite_metadata(tmp_path: Path) -> None:
+    db_path = tmp_path / "vibe_idx.sqlite"
+    database_url = f"sqlite:///{db_path}"
+
+    with connect(database_url) as conn:
+        conn.execute(
+            """
+            INSERT INTO raw_files (
+              sha256, kind, size_bytes, local_path, fetched_at
+            )
+            VALUES ('inspect', 'fixture', 10, '/tmp/inspect.json', '2026-07-07T00:00:00+00:00')
+            """
+        )
+        conn.commit()
+
+    result = runner.invoke(cli.app, ["db", "inspect", "--database-url", database_url])
+
+    assert result.exit_code == 0
+    data = json.loads(result.stdout)
+    tables = {table["name"]: table["rows"] for table in data["tables"]}
+    assert data["path"] == str(db_path)
+    assert data["exists"] is True
+    assert data["size_bytes"] > 0
+    assert data["page_count"] > 0
+    assert data["page_size"] > 0
+    assert data["table_count"] == len(data["tables"])
+    assert tables["raw_files"] == 1
 
 
 def test_date_range_defaults_to_single_latest_day() -> None:
@@ -53,9 +173,43 @@ def test_no_arg_commands_use_latest_aware_ingest(monkeypatch) -> None:
     for command in ("market-summary", "ksei-5pct", "ksei-1pct", "insider", "laporan-efek"):
         result = runner.invoke(cli.app, [command])
         assert result.exit_code == 0
-        assert json.loads(result.output)
+        assert json.loads(result.stdout)
 
     assert calls == ["market-summary", "ksei-5pct", "ksei-1pct", "insider", "laporan-efek"]
+
+
+def test_ingest_command_emits_structured_success_log(monkeypatch) -> None:
+    monkeypatch.setattr(cli, "ingest_latest_market_summary", lambda: {"rows": 3})
+
+    result = runner.invoke(cli.app, ["market-summary"])
+
+    assert result.exit_code == 0
+    assert json.loads(result.stdout) == {"rows": 3}
+    log = json.loads(result.stderr)
+    assert log["event"] == "ingest_job"
+    assert log["job"] == "market-summary"
+    assert log["outcome"] == "success"
+    assert log["duration"] >= 0
+    assert log["duration_ms"] >= 0
+    assert log["error"] is None
+
+
+def test_ingest_command_emits_structured_error_log(monkeypatch) -> None:
+    def fail() -> dict[str, int]:
+        raise RuntimeError("IDX is unavailable")
+
+    monkeypatch.setattr(cli, "ingest_latest_market_summary", fail)
+
+    result = runner.invoke(cli.app, ["market-summary"])
+
+    assert result.exit_code != 0
+    log = json.loads(result.stderr)
+    assert log["event"] == "ingest_job"
+    assert log["job"] == "market-summary"
+    assert log["outcome"] == "error"
+    assert log["duration"] >= 0
+    assert log["duration_ms"] >= 0
+    assert log["error"] == "IDX is unavailable"
 
 
 def test_sources_command_prints_source_policy_metadata() -> None:

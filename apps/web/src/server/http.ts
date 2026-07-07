@@ -2,8 +2,10 @@ import { createReadStream, existsSync, statSync } from 'node:fs';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { dirname, extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { randomUUID } from 'node:crypto';
 import { createHTTPHandler } from '@trpc/server/adapters/standalone';
 
+import { createHttpRequestEvent, createLifecycleEvent, writeLogEvent } from './logging.js';
 import { appRouter } from './router.js';
 
 const port = Number(process.env.VIBE_IDX_API_PORT ?? 20240);
@@ -22,19 +24,58 @@ const trpcHandler = createHTTPHandler({
 });
 
 const server = createServer((request, response) => {
-  const url = new URL(request.url ?? '/', `http://${request.headers.host ?? `${host}:${port}`}`);
+  const startedAt = Date.now();
+  const requestId = requestIdFromHeader(request.headers['x-request-id']);
+  let capturedError: unknown;
+  let logged = false;
 
-  if (url.pathname.startsWith('/trpc')) {
-    trpcHandler(request, response);
-    return;
+  response.setHeader('x-request-id', requestId);
+  response.on('finish', () => {
+    logRequest();
+  });
+  response.on('close', () => {
+    if (!logged && !response.writableEnded) {
+      logRequest(499);
+    }
+  });
+
+  function logRequest(statusCode = response.statusCode) {
+    if (logged) {
+      return;
+    }
+    logged = true;
+    writeLogEvent(
+      createHttpRequestEvent({
+        durationMs: Date.now() - startedAt,
+        error: capturedError,
+        method: request.method ?? 'GET',
+        path: request.url ?? '/',
+        requestId,
+        statusCode,
+      }),
+      statusCode >= 500 ? console.error : console.log,
+    );
   }
 
-  serveStatic(request, response, url.pathname);
+  const url = new URL(request.url ?? '/', `http://${request.headers.host ?? `${host}:${port}`}`);
+
+  try {
+    if (url.pathname.startsWith('/trpc')) {
+      trpcHandler(request, response);
+      return;
+    }
+
+    serveStatic(request, response, url.pathname);
+  } catch (error) {
+    capturedError = error;
+    response.writeHead(500);
+    response.end('Internal server error');
+  }
 });
 
 server.listen(port, host);
 
-console.log(`Vibe IDX server listening on http://${host}:${port}`);
+writeLogEvent(createLifecycleEvent('server_started', { binding: `${host}:${port}` }));
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.on(signal, () => {
@@ -42,6 +83,13 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
       process.exit(0);
     });
   });
+}
+
+function requestIdFromHeader(value: IncomingMessage['headers'][string]) {
+  if (Array.isArray(value)) {
+    return value[0] ?? randomUUID();
+  }
+  return value ?? randomUUID();
 }
 
 const contentTypes: Record<string, string> = {

@@ -6,3 +6,6 @@
 
 # Monthly sources, daily from calendar day 2 through day 10.
 0 9 2-10 * * /etc/vibe-idx/run-monthly.sh
+
+# SQLite backup, daily after market ingestion windows.
+15 23 * * * /etc/vibe-idx/run-backup.sh

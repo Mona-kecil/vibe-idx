@@ -7,7 +7,6 @@ from pathlib import Path
 
 import pytest
 
-
 REPO_ROOT = Path(__file__).resolve().parents[3]
 CRON_PATH = REPO_ROOT / "apps/ingest/cron/ingest.cron"
 
@@ -27,30 +26,42 @@ def _compose_config(*profiles: str) -> dict:
     return json.loads(result.stdout)
 
 
-def test_compose_exposes_web_api_and_ingest_with_shared_data_volume():
-    config = _compose_config("tools")
+def _has_volume(service: dict, source: str, target: str) -> bool:
+    return any(
+        volume["source"] == source and volume["target"] == target
+        for volume in service["volumes"]
+    )
+
+
+def _has_backup_bind(service: dict) -> bool:
+    return any(
+        volume["type"] == "bind"
+        and Path(volume["source"]).name == "backups"
+        and volume["target"] == "/backups"
+        for volume in service["volumes"]
+    )
+
+
+def test_compose_exposes_production_app_scheduler_and_ingest_only():
+    config = _compose_config("prod")
 
     services = config["services"]
-    assert set(services) >= {"web", "api", "ingest"}
+    assert set(services) >= {"app", "scheduler", "ingest"}
+    assert "web" not in services
+    assert "api" not in services
 
     data_volume = "vibe-idx-data"
     assert data_volume in config["volumes"]
 
-    web = services["web"]
-    api = services["api"]
     ingest = services["ingest"]
 
-    assert web["environment"]["VIBE_IDX_API_PROXY_TARGET"] == "http://api:20240"
-    assert api["environment"]["VIBE_IDX_API_HOST"] == "0.0.0.0"
-    assert api["environment"]["VIBE_IDX_DATABASE_URL"] == "sqlite:////data/vibe_idx.sqlite"
     assert ingest["build"]["target"] == "ingest"
     assert ingest["environment"]["VIBE_IDX_DATABASE_URL"] == "sqlite:////data/vibe_idx.sqlite"
     assert ingest["environment"]["VIBE_IDX_RAW_DIR"] == "/data/raw"
+    assert ingest["environment"]["VIBE_IDX_BACKUP_DIR"] == "/backups"
 
-    assert any(volume["source"] == data_volume and volume["target"] == "/data" for volume in api["volumes"])
-    assert any(
-        volume["source"] == data_volume and volume["target"] == "/data" for volume in ingest["volumes"]
-    )
+    assert _has_volume(ingest, data_volume, "/data")
+    assert _has_backup_bind(ingest)
 
 
 def test_compose_exposes_compiled_app_for_production():
@@ -64,7 +75,9 @@ def test_compose_exposes_compiled_app_for_production():
     assert app["environment"]["VIBE_IDX_API_HOST"] == "0.0.0.0"
     assert app["environment"]["VIBE_IDX_API_PORT"] == "8080"
     assert app["environment"]["VIBE_IDX_DATABASE_URL"] == "sqlite:////data/vibe_idx.sqlite"
-    assert any(volume["source"] == "vibe-idx-data" and volume["target"] == "/data" for volume in app["volumes"])
+    assert app["environment"]["VIBE_IDX_BACKUP_DIR"] == "/backups"
+    assert _has_volume(app, "vibe-idx-data", "/data")
+    assert _has_backup_bind(app)
 
 
 def test_compose_exposes_scheduler_for_production_ingestion():
@@ -79,12 +92,11 @@ def test_compose_exposes_scheduler_for_production_ingestion():
     assert scheduler["environment"]["TZ"] == "Asia/Jakarta"
     assert scheduler["environment"]["VIBE_IDX_DATABASE_URL"] == "sqlite:////data/vibe_idx.sqlite"
     assert scheduler["environment"]["VIBE_IDX_RAW_DIR"] == "/data/raw"
-    assert scheduler["command"] == ["/etc/vibe-idx/ingest.cron"]
-    assert scheduler["entrypoint"] == ["supercronic"]
-    assert any(
-        volume["source"] == "vibe-idx-data" and volume["target"] == "/data"
-        for volume in scheduler["volumes"]
-    )
+    assert scheduler["environment"]["VIBE_IDX_BACKUP_DIR"] == "/backups"
+    assert scheduler["command"] is None
+    assert scheduler["entrypoint"] is None
+    assert _has_volume(scheduler, "vibe-idx-data", "/data")
+    assert _has_backup_bind(scheduler)
 
 
 def test_scheduler_cron_runs_daily_and_monthly_ingestion_commands():
@@ -102,3 +114,26 @@ def test_scheduler_cron_runs_daily_and_monthly_ingestion_commands():
     monthly_script = (CRON_PATH.parent / "run-monthly.sh").read_text()
     assert "/app/apps/ingest/.venv/bin/idx-ingest ksei-1pct" in monthly_script
     assert "/app/apps/ingest/.venv/bin/idx-ingest laporan-efek" in monthly_script
+
+
+def test_scheduler_cron_runs_daily_sqlite_backup():
+    cron = CRON_PATH.read_text()
+
+    assert "15 23 * * * /etc/vibe-idx/run-backup.sh" in cron
+
+    backup_script = (CRON_PATH.parent / "run-backup.sh").read_text()
+    assert "/app/apps/ingest/.venv/bin/idx-ingest db backup --output /backups" in backup_script
+
+    dockerfile = (REPO_ROOT / "apps/ingest/Dockerfile").read_text()
+    assert (
+        "chmod +x /etc/vibe-idx/run-daily.sh "
+        "/etc/vibe-idx/run-monthly.sh /etc/vibe-idx/run-backup.sh"
+    ) in dockerfile
+    assert 'ENTRYPOINT ["/usr/local/bin/supercronic"]' in dockerfile
+    assert 'CMD ["/etc/vibe-idx/ingest.cron"]' in dockerfile
+
+
+def test_web_dockerfile_does_not_define_dev_server_target():
+    dockerfile = (REPO_ROOT / "apps/web/Dockerfile").read_text()
+
+    assert " AS dev" not in dockerfile
