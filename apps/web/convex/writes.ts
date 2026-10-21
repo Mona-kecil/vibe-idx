@@ -52,7 +52,9 @@ export const onePct = internalMutation({
       const old = await ctx.db
         .query('onePctHoldings')
         .withIndex('by_asOf_ticker', (q) => q.eq('asOf', row.asOf).eq('ticker', row.ticker))
-        .filter((q) => q.eq(q.field('investorName'), row.investorName))
+        .filter((q) =>
+          q.and(q.eq(q.field('investorName'), row.investorName), q.eq(q.field('seq'), row.seq)),
+        )
         .unique();
       if (old) await ctx.db.replace(old._id, row);
       else await ctx.db.insert('onePctHoldings', row);

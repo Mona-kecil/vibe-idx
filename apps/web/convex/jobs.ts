@@ -62,7 +62,10 @@ function failedPatch(job: Doc<'ingestJobs'>, error: string): Partial<Doc<'ingest
     status: 'failed',
     attempts,
     lastError: error,
-    nextRunAt: attempts < 5 ? Date.now() + 60000 * 2 ** (attempts - 1) : undefined,
+    nextRunAt:
+      job.source === 'fivePct' || attempts < 5
+        ? Date.now() + Math.min(60000 * 2 ** (attempts - 1), 6 * 60 * 60000)
+        : undefined,
     updatedAt: Date.now(),
   };
 }
@@ -86,9 +89,10 @@ export const claim = internalMutation({
       .query('ingestJobs')
       .withIndex('by_status_nextRunAt', (q) => q.eq('status', 'failed'))
       .collect();
-    const candidates = [...pending, ...failed.filter((j) => j.attempts < 5)].sort(
-      (a, b) => a.payload.date.localeCompare(b.payload.date) || a.key.localeCompare(b.key),
-    );
+    const candidates = [
+      ...pending,
+      ...failed.filter((j) => j.source === 'fivePct' || j.attempts < 5),
+    ].sort((a, b) => a.payload.date.localeCompare(b.payload.date) || a.key.localeCompare(b.key));
     const firstFive = candidates.find((j) => j.source === 'fivePct');
     const job = candidates.find(
       (j) => (j.nextRunAt ?? 0) <= now && (j.source !== 'fivePct' || j._id === firstFive?._id),

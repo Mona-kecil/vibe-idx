@@ -35,6 +35,7 @@ export const fiveChange = z.object({
   localForeign: z.string(),
 });
 export const oneHolding = z.object({
+  seq: z.number(),
   asOf: z.string(),
   ticker: z.string(),
   issuerName: z.string(),

@@ -80,6 +80,7 @@ describe('IDX fixture ingestion', () => {
     expect(rows).toHaveLength(7154);
     expect(rows[0]).toEqual({
       asOf: '2026-09-30',
+      seq: 0,
       ticker: 'AADI',
       issuerName: 'ADARO ANDALAN INDONESIA Tbk',
       investorName: 'PT PERSADA CAPITAL INVESTAMA',
@@ -92,6 +93,18 @@ describe('IDX fixture ingestion', () => {
       total: 119887170,
       percent: 1.54,
     });
+  });
+  it('keeps duplicate 1% investors as separate rows in file order', () => {
+    const rows = parseOnePct(bytes('ownership-1pct-2026-02.xlsx'));
+    expect(rows).toHaveLength(7257);
+    expect(
+      rows
+        .filter((r) => r.ticker === 'ICON' && r.investorName === 'ISLAND REGENCY GROUP LIMITED')
+        .map(({ asOf, seq, total, percent }) => ({ asOf, seq, total, percent })),
+    ).toEqual([
+      { asOf: '2026-02-27', seq: 0, total: 42187000, percent: 3.87 },
+      { asOf: '2026-02-27', seq: 1, total: 20000000, percent: 1.84 },
+    ]);
   });
   it('keeps every stock and COMPOSITE index row and rejects truncated responses', () => {
     const prices = parsePrices(json('stock-summary-idxid.json'));

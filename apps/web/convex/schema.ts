@@ -85,6 +85,7 @@ export const fiveChange = v.object({
   localForeign: v.string(),
 });
 export const oneHolding = v.object({
+  seq: v.number(),
   asOf: v.string(),
   ticker: v.string(),
   issuerName: v.string(),
