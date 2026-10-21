@@ -83,7 +83,7 @@ h2 {
 
 .status-strip {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   border: 1px solid #b9c5bf;
   background: #f8faf7;
 }
@@ -121,7 +121,7 @@ h2 {
 
 .surface-nav {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
   margin: 20px 0;
 }
@@ -315,10 +315,6 @@ h2 {
 
 .ownership-col-ticker {
   width: 78px;
-}
-
-.ownership-col-issuer {
-  width: 270px;
 }
 
 .ownership-col-shareholder {

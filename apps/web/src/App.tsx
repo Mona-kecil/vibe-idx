@@ -1,7 +1,8 @@
 import './styles.css';
 
-import { httpBatchLink } from '@trpc/client';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { useQuery } from 'convex/react';
+import { api } from '../convex/_generated/api';
+import type { Doc } from '../convex/_generated/dataModel';
 import {
   flexRender,
   getCoreRowModel,
@@ -16,27 +17,16 @@ import {
   useEffect,
   useMemo,
   useState,
-  type Dispatch,
   type MouseEvent,
   type ReactNode,
-  type SetStateAction,
 } from 'react';
 
-import { trpc, type RouterInputs, type RouterOutputs } from './trpc';
-
-type SurfaceId = 'prices' | 'fivePct' | 'onePct' | 'insiders';
-type Primitive = number | string | null;
-type BaseFilters = { page: number; pageSize: number; q: string; ticker: string };
-type TransactionType = 'BUY' | 'SELL' | 'BUYBACK' | 'GRANT' | 'TRANSFER' | 'OTHER';
-
-type PriceRow = RouterOutputs['prices']['list']['rows'][number];
-type PriceSort = NonNullable<RouterInputs['prices']['list']['sort']>;
-type FivePctRow = RouterOutputs['ownership']['fivePct']['list']['rows'][number];
+type SurfaceId = 'prices' | 'fivePct' | 'onePct';
+type Primitive = number | string | null | undefined;
+type PriceRow = Omit<Doc<'dailyPrices'>, '_id' | '_creationTime'>;
+type FivePctRow = Omit<Doc<'fivePctChanges'>, '_id' | '_creationTime'> & { _id: string };
 type FivePctAccountRow = FivePctRow['accounts'][number];
-type OnePctRow = RouterOutputs['ownership']['onePct']['list']['rows'][number];
-type InsiderRow = RouterOutputs['insiders']['transactions']['list']['rows'][number];
-
-export const dailyPricesPrefetchPages = 5;
+type OnePctRow = Doc<'onePctHoldings'>;
 
 type DataColumn<T> = {
   align?: 'right';
@@ -57,7 +47,7 @@ const surfaces: Array<{ id: SurfaceId; label: string; description: string; path:
   {
     id: 'fivePct',
     label: '5% Ownership',
-    description: 'KSEI major shareholder rows and percentage-change summary.',
+    description: 'KSEI major shareholder changes by date.',
     path: '/ownership/5pct',
   },
   {
@@ -65,12 +55,6 @@ const surfaces: Array<{ id: SurfaceId; label: string; description: string; path:
     label: '1% Ownership',
     description: 'Monthly KSEI shareholder concentration list.',
     path: '/ownership/1pct',
-  },
-  {
-    id: 'insiders',
-    label: 'Insider Transactions',
-    description: 'Daily ownership-change disclosures at transaction level.',
-    path: '/insiders',
   },
 ];
 const defaultSurface = surfaces[0]!;
@@ -91,30 +75,9 @@ export function renderAppTitle() {
 }
 
 export function App({ initialUrl }: { initialUrl?: string } = {}) {
-  const [queryClient] = useState(() => new QueryClient());
-  const [trpcClient] = useState(() =>
-    trpc.createClient({
-      links: [
-        httpBatchLink({
-          url: '/trpc',
-        }),
-      ],
-    }),
-  );
-
-  return (
-    <trpc.Provider client={trpcClient} queryClient={queryClient}>
-      <QueryClientProvider client={queryClient}>
-        <Workspace initialUrl={initialUrl} />
-      </QueryClientProvider>
-    </trpc.Provider>
-  );
-}
-
-function Workspace({ initialUrl }: { initialUrl?: string }) {
   const [location, navigateToPath, replaceSearch] = useWorkspaceLocation(initialUrl);
   const route = resolveWorkspaceRoute(location.pathname);
-  const latestDates = trpc.meta.latestDates.useQuery();
+  const latestDates = useQuery(api.ui.latestDates);
   const active =
     route.status === 'ok'
       ? (surfaces.find((surface) => surface.id === route.id) ?? defaultSurface)
@@ -128,10 +91,9 @@ function Workspace({ initialUrl }: { initialUrl?: string }) {
           <h1>{renderAppTitle()}</h1>
         </div>
         <div className="status-strip" aria-label="Latest available data dates">
-          <Metric label="Prices" value={latestDates.data?.prices} />
-          <Metric label="5%" value={latestDates.data?.fivePctOwnership} />
-          <Metric label="1%" value={latestDates.data?.onePctOwnership} />
-          <Metric label="Insider" value={latestDates.data?.insiderTransactions} />
+          <Metric label="Prices" value={latestDates?.prices} />
+          <Metric label="5%" value={latestDates?.fivePctOwnership} />
+          <Metric label="1%" value={latestDates?.onePctOwnership} />
         </div>
       </header>
 
@@ -159,24 +121,18 @@ function Workspace({ initialUrl }: { initialUrl?: string }) {
         <section className="workspace-panel" aria-labelledby="surface-title">
           <div className="surface-heading">
             <div>
-              <p className="eyebrow">Read-only SQLite view</p>
+              <p className="eyebrow">IDX source data</p>
               <h2 id="surface-title">{active.label}</h2>
             </div>
             <p>{active.description}</p>
           </div>
 
-          {active.id === 'prices' ? (
-            <PricesSurface onUrlSearchChange={replaceSearch} urlSearch={location.search} />
-          ) : null}
-          {active.id === 'fivePct' ? (
-            <FivePctSurface onUrlSearchChange={replaceSearch} urlSearch={location.search} />
-          ) : null}
-          {active.id === 'onePct' ? (
-            <OnePctSurface onUrlSearchChange={replaceSearch} urlSearch={location.search} />
-          ) : null}
-          {active.id === 'insiders' ? (
-            <InsidersSurface onUrlSearchChange={replaceSearch} urlSearch={location.search} />
-          ) : null}
+          <DataSurface
+            key={active.id}
+            kind={active.id}
+            onUrlSearchChange={replaceSearch}
+            urlSearch={location.search}
+          />
         </section>
       ) : (
         <section className="workspace-panel" aria-labelledby="surface-title">
@@ -307,62 +263,6 @@ function Metric({ label, value }: { label: string; value?: string | null }) {
   );
 }
 
-export function keepPreviousListResult<T>(previousData: T | undefined) {
-  return previousData;
-}
-
-export function maxPageForTotal(total: number, pageSize: number) {
-  return Math.max(1, Math.ceil(total / pageSize));
-}
-
-export function nextPageFilters<F extends BaseFilters>(filters: F, total: number) {
-  const maxPage = maxPageForTotal(total, filters.pageSize);
-
-  if (filters.page >= maxPage) {
-    return null;
-  }
-
-  return {
-    ...filters,
-    page: filters.page + 1,
-  };
-}
-
-export function prefetchPageFilters<F extends BaseFilters>(
-  filters: F,
-  total: number,
-  pagesAhead: number,
-) {
-  const maxPage = maxPageForTotal(total, filters.pageSize);
-  const pageFilters: F[] = [];
-
-  for (
-    let page = filters.page + 1;
-    page <= Math.min(maxPage, filters.page + pagesAhead);
-    page += 1
-  ) {
-    pageFilters.push({
-      ...filters,
-      page,
-    });
-  }
-
-  return pageFilters;
-}
-
-export async function prefetchSequentially<T>(
-  items: T[],
-  prefetch: (item: T) => Promise<unknown> | void,
-  shouldContinue: () => boolean = () => true,
-) {
-  for (const item of items) {
-    if (!shouldContinue()) {
-      return;
-    }
-    await prefetch(item);
-  }
-}
-
 type PaginationHotkey = {
   key: string;
   targetIsContentEditable?: boolean;
@@ -417,179 +317,142 @@ function isKeyboardTargetEditable(event: PaginationHotkey) {
   return ['INPUT', 'SELECT', 'TEXTAREA'].includes(event.targetTagName ?? '');
 }
 
-function PricesSurface({ onUrlSearchChange, urlSearch }: UrlFilterProps) {
-  const [filters, setFilters] = useUrlListFilters(
-    urlSearch,
-    onUrlSearchChange,
-    { sort: 'tickerAsc' as PriceSort, tradeDate: '' },
-    { pageSize: 10, urlKeys: { tradeDate: 'date' } },
+function DataSurface({ kind, onUrlSearchChange, urlSearch }: UrlFilterProps & { kind: SurfaceId }) {
+  const dates = useQuery(api.ui.dates, { kind });
+  const params = new URLSearchParams(urlSearch);
+  const selectedDate = params.get('date') ?? '';
+  const date = selectedDate || dates?.[0] || '';
+  const ticker = params.get('ticker') ?? '';
+  const search = params.get('q') ?? '';
+
+  function changeFilter(key: string, value: string) {
+    const next = new URLSearchParams(urlSearch);
+    if (value) next.set(key, value);
+    else next.delete(key);
+    onUrlSearchChange(next.size ? `?${next}` : '');
+  }
+
+  return (
+    <>
+      <div className="toolbar">
+        <label className="field">
+          Search this page
+          <input
+            onChange={(event) => changeFilter('q', event.target.value)}
+            placeholder="ticker, holder"
+            value={search}
+          />
+        </label>
+        <label className="field ticker-field">
+          Exact ticker
+          <input
+            maxLength={8}
+            onChange={(event) => changeFilter('ticker', event.target.value.toUpperCase())}
+            placeholder="AADI"
+            value={ticker}
+          />
+        </label>
+        <SnapshotDateSelector
+          dates={dates ?? []}
+          isLoading={dates === undefined}
+          onDateChange={(value) => changeFilter('date', value)}
+          selectedDate={selectedDate}
+        />
+      </div>
+      {date ? (
+        <SnapshotPage
+          key={`${kind}:${date}:${ticker}`}
+          kind={kind}
+          date={date}
+          ticker={ticker}
+          search={search}
+        />
+      ) : (
+        <p className="query-state">
+          {dates === undefined ? 'Loading dates...' : 'No data available.'}
+        </p>
+      )}
+    </>
   );
-  const trpcUtils = trpc.useUtils();
-  const priceQueryInput = useMemo(
-    () => ({
-      ...filters,
-      tradeDate: filters.tradeDate || undefined,
-    }),
-    [filters],
-  );
-  const query = trpc.prices.list.useQuery(priceQueryInput, {
-    placeholderData: keepPreviousListResult,
+}
+
+function SnapshotPage({
+  kind,
+  date,
+  ticker,
+  search,
+}: {
+  kind: SurfaceId;
+  date: string;
+  ticker: string;
+  search: string;
+}) {
+  const [cursors, setCursors] = useState<Array<string | null>>([null]);
+  const result = useQuery(api.ui.list, {
+    kind,
+    date,
+    ticker,
+    cursor: cursors[cursors.length - 1] ?? null,
   });
-  const datesQuery = trpc.prices.dates.useQuery();
+  const isLoading = result === undefined;
+  const canNext = result !== undefined && !result.isDone;
+
+  const previous = useCallback(() => setCursors((current) => current.slice(0, -1)), []);
+  const next = useCallback(() => {
+    if (result && !result.isDone) setCursors((current) => [...current, result.continueCursor]);
+  }, [result]);
 
   useEffect(() => {
-    if (!query.data || query.isPlaceholderData) {
-      return;
+    function handleKeyDown(event: KeyboardEvent) {
+      const target = event.target instanceof HTMLElement ? event.target : null;
+      const page = pageFromPaginationHotkey(
+        {
+          key: event.key,
+          targetIsContentEditable: target?.isContentEditable,
+          targetTagName: target?.tagName,
+        },
+        cursors.length,
+        cursors.length + (canNext ? 1 : 0),
+      );
+      if (page === null || isLoading) return;
+      event.preventDefault();
+      if (page < cursors.length) previous();
+      else next();
     }
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [cursors.length, canNext, isLoading, previous, next]);
 
-    let isActive = true;
-    const pageInputs = prefetchPageFilters(
-      priceQueryInput,
-      query.data.total,
-      dailyPricesPrefetchPages,
+  const matches = (row: { ticker: string; investorName?: string; issuerName?: string }) =>
+    [row.ticker, row.investorName, row.issuerName].some((value) =>
+      value?.toLowerCase().includes(search.toLowerCase()),
     );
 
-    void prefetchSequentially(
-      pageInputs,
-      (pageInput) => trpcUtils.prices.list.prefetch(pageInput),
-      () => isActive,
-    );
-
-    return () => {
-      isActive = false;
-    };
-  }, [priceQueryInput, query.data, query.isPlaceholderData, trpcUtils]);
-
   return (
-    <SurfaceFrame
-      dateLabel={filters.tradeDate ? 'Date' : 'Latest'}
-      filters={filters}
-      isLoading={query.isLoading}
-      onFiltersChange={setFilters}
-      pageInfo={query.data}
-      extraControls={
-        <>
-          <DailyPriceSortSelector
-            onSortChange={(sort) =>
-              setFilters((current) => ({
-                ...current,
-                page: 1,
-                sort,
-              }))
-            }
-            selectedSort={filters.sort}
-          />
-          <SnapshotDateSelector
-            dates={datesQuery.data ?? []}
-            isLoading={datesQuery.isLoading}
-            onDateChange={(tradeDate) =>
-              setFilters((current) => ({
-                ...current,
-                page: 1,
-                tradeDate,
-              }))
-            }
-            selectedDate={filters.tradeDate}
-          />
-        </>
-      }
-    >
-      <DailyPricesTable rows={query.data?.rows ?? []} />
-      <QueryState error={query.error?.message} isLoading={query.isLoading} />
-    </SurfaceFrame>
-  );
-}
-
-function FivePctSurface({ onUrlSearchChange, urlSearch }: UrlFilterProps) {
-  const [filters, setFilters] = useUrlListFilters<{
-    asOfDate: string;
-    view: 'all' | 'percentageChanges';
-  }>(
-    urlSearch,
-    onUrlSearchChange,
-    { asOfDate: '', view: 'all' },
-    { urlKeys: { asOfDate: 'date' } },
-  );
-  const query = trpc.ownership.fivePct.list.useQuery(
-    {
-      ...filters,
-      asOfDate: filters.asOfDate || undefined,
-    },
-    {
-      placeholderData: keepPreviousListResult,
-    },
-  );
-  const datesQuery = trpc.ownership.fivePct.dates.useQuery();
-
-  return (
-    <SurfaceFrame
-      dateLabel={filters.asOfDate ? 'Date' : 'Latest'}
-      filters={filters}
-      isLoading={query.isLoading}
-      onFiltersChange={setFilters}
-      pageInfo={query.data}
-      extraControls={
-        <>
-          <FivePctDateSelector
-            dates={datesQuery.data ?? []}
-            isLoading={datesQuery.isLoading}
-            onDateChange={(asOfDate) =>
-              setFilters((current) => ({
-                ...current,
-                asOfDate,
-                page: 1,
-              }))
-            }
-            selectedDate={filters.asOfDate}
-          />
-          <div className="segmented" aria-label="5 percent ownership view">
-            {[
-              ['all', 'All rows'],
-              ['percentageChanges', '% Changes'],
-            ].map(([view, label]) => (
-              <button
-                aria-pressed={filters.view === view}
-                key={view}
-                onClick={() =>
-                  setFilters((current) => ({
-                    ...current,
-                    page: 1,
-                    view: view as 'all' | 'percentageChanges',
-                  }))
-                }
-                type="button"
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        </>
-      }
-    >
-      <FivePctOwnershipTable rows={query.data?.rows ?? []} />
-      <QueryState error={query.error?.message} isLoading={query.isLoading} />
-    </SurfaceFrame>
-  );
-}
-
-export function FivePctDateSelector({
-  dates,
-  isLoading = false,
-  onDateChange,
-  selectedDate,
-}: {
-  dates: string[];
-  isLoading?: boolean;
-  onDateChange: (date: string) => void;
-  selectedDate: string;
-}) {
-  return (
-    <SnapshotDateSelector
-      dates={dates}
-      isLoading={isLoading}
-      onDateChange={onDateChange}
-      selectedDate={selectedDate}
-    />
+    <>
+      <div className="result-meta">
+        <span>
+          {kind === 'onePct' ? 'As of' : 'Date'}: {date} · Sort and search apply to this page.
+        </span>
+        <div className="pager" aria-label="Pagination">
+          <button disabled={cursors.length <= 1 || isLoading} onClick={previous} type="button">
+            Prev
+          </button>
+          <span>Page {cursors.length}</span>
+          <button disabled={!canNext || isLoading} onClick={next} type="button">
+            Next
+          </button>
+        </div>
+      </div>
+      {isLoading ? <p className="query-state">Loading rows...</p> : null}
+      {result?.kind === 'prices' ? <DailyPricesTable rows={result.page.filter(matches)} /> : null}
+      {result?.kind === 'fivePct' ? (
+        <FivePctOwnershipTable rows={result.page.filter(matches)} />
+      ) : null}
+      {result?.kind === 'onePct' ? (
+        <DataTable columns={onePctColumns} rows={result.page.filter(matches)} />
+      ) : null}
+    </>
   );
 }
 
@@ -623,354 +486,6 @@ export function SnapshotDateSelector({
         ))}
       </select>
     </label>
-  );
-}
-
-export function DailyPriceSortSelector({
-  onSortChange,
-  selectedSort,
-}: {
-  onSortChange: (sort: PriceSort) => void;
-  selectedSort: PriceSort;
-}) {
-  const options: Array<{ label: string; value: PriceSort }> = [
-    { label: 'Ticker A-Z', value: 'tickerAsc' },
-    { label: '%1d price high', value: 'price1dDesc' },
-    { label: '%1d volume high', value: 'volume1dDesc' },
-    { label: '%3d volume high', value: 'volume3dDesc' },
-  ];
-
-  return (
-    <label className="field compact-field sort-field">
-      Sort
-      <select
-        onChange={(event) => onSortChange(event.target.value as PriceSort)}
-        value={selectedSort}
-      >
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
-}
-
-function OnePctSurface({ onUrlSearchChange, urlSearch }: UrlFilterProps) {
-  const [filters, setFilters] = useUrlListFilters(urlSearch, onUrlSearchChange, { investor: '' });
-  const query = trpc.ownership.onePct.list.useQuery(filters, {
-    placeholderData: keepPreviousListResult,
-  });
-
-  return (
-    <SurfaceFrame
-      filters={filters}
-      isLoading={query.isLoading}
-      onFiltersChange={setFilters}
-      pageInfo={query.data}
-      extraControls={
-        <label className="field compact-field">
-          Investor
-          <input
-            onChange={(event) =>
-              setFilters((current) => ({
-                ...current,
-                investor: event.target.value,
-                page: 1,
-              }))
-            }
-            placeholder="holder name"
-            value={filters.investor}
-          />
-        </label>
-      }
-    >
-      <DataTable columns={onePctColumns} rows={query.data?.rows ?? []} />
-      <QueryState error={query.error?.message} isLoading={query.isLoading} />
-    </SurfaceFrame>
-  );
-}
-
-function InsidersSurface({ onUrlSearchChange, urlSearch }: UrlFilterProps) {
-  const [filters, setFilters] = useUrlListFilters(urlSearch, onUrlSearchChange, {
-    type: '' as '' | TransactionType,
-  });
-  const query = trpc.insiders.transactions.list.useQuery(
-    {
-      ...filters,
-      type: filters.type || undefined,
-    },
-    {
-      placeholderData: keepPreviousListResult,
-    },
-  );
-
-  return (
-    <SurfaceFrame
-      filters={filters}
-      isLoading={query.isLoading}
-      onFiltersChange={setFilters}
-      pageInfo={query.data}
-      extraControls={
-        <label className="field compact-field">
-          Type
-          <select
-            onChange={(event) =>
-              setFilters((current) => ({
-                ...current,
-                page: 1,
-                type: event.target.value as '' | TransactionType,
-              }))
-            }
-            value={filters.type}
-          >
-            <option value="">All</option>
-            <option value="BUY">Buy</option>
-            <option value="SELL">Sell</option>
-            <option value="BUYBACK">Buyback</option>
-            <option value="GRANT">Grant</option>
-            <option value="TRANSFER">Transfer</option>
-            <option value="OTHER">Other</option>
-          </select>
-        </label>
-      }
-    >
-      <DataTable columns={insiderColumns} rows={query.data?.rows ?? []} />
-      <QueryState error={query.error?.message} isLoading={query.isLoading} />
-    </SurfaceFrame>
-  );
-}
-
-export function createListFilters<T extends Record<string, unknown> = Record<never, never>>(
-  extra?: T,
-  options: { pageSize?: number } = {},
-) {
-  return {
-    page: 1,
-    pageSize: options.pageSize ?? 50,
-    q: '',
-    ticker: '',
-    ...extra,
-  } as BaseFilters & T;
-}
-
-export function createListFiltersFromSearch<
-  T extends Record<string, unknown> = Record<never, never>,
->(
-  search: string,
-  extra?: T,
-  options: { pageSize?: number; urlKeys?: Record<string, string> } = {},
-) {
-  const filters = createListFilters(extra, options);
-  const params = new URLSearchParams(normalizeSearch(search).slice(1));
-
-  filters.page = positiveIntegerParam(params.get('page'), filters.page);
-  filters.pageSize = positiveIntegerParam(params.get('pageSize'), filters.pageSize);
-  filters.q = params.get('q') ?? filters.q;
-  filters.ticker = (params.get('ticker') ?? filters.ticker).toUpperCase();
-
-  for (const [key, defaultValue] of Object.entries(extra ?? {})) {
-    const paramName = options.urlKeys?.[key] ?? key;
-    const value = params.get(paramName);
-    if (value === null) {
-      continue;
-    }
-
-    (filters as Record<string, unknown>)[key] =
-      typeof defaultValue === 'number' ? Number(value) : value;
-  }
-
-  return filters;
-}
-
-export function filtersToSearch<F extends Record<string, unknown>>(
-  filters: F,
-  defaults: F,
-  urlKeys: Record<string, string> = {},
-) {
-  const params = new URLSearchParams();
-  const orderedKeys = [
-    'q',
-    'ticker',
-    'page',
-    'pageSize',
-    ...Object.keys(filters).filter((key) => !['q', 'ticker', 'page', 'pageSize'].includes(key)),
-  ];
-
-  for (const key of orderedKeys) {
-    if (!(key in filters)) {
-      continue;
-    }
-
-    const value = filters[key];
-    const defaultValue = defaults[key];
-
-    if (!isUrlParamValue(value) || value === '') {
-      continue;
-    }
-
-    if (isUrlParamValue(defaultValue) && String(value) === String(defaultValue)) {
-      continue;
-    }
-
-    params.set(urlKeys[key] ?? key, String(value));
-  }
-
-  const encoded = params.toString();
-  return encoded ? `?${encoded}` : '';
-}
-
-function isUrlParamValue(value: unknown): value is boolean | number | string {
-  return ['boolean', 'number', 'string'].includes(typeof value);
-}
-
-function positiveIntegerParam(value: string | null, fallback: number) {
-  const parsed = Number(value);
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
-}
-
-function useUrlListFilters<T extends Record<string, unknown> = Record<never, never>>(
-  search: string,
-  onSearchChange: (search: string) => void,
-  extra?: T,
-  options: { pageSize?: number; urlKeys?: Record<string, string> } = {},
-) {
-  const filters = createListFiltersFromSearch(search, extra, options);
-  const setFilters: Dispatch<SetStateAction<BaseFilters & T>> = (nextFilters) => {
-    const currentFilters = createListFiltersFromSearch(search, extra, options);
-    const resolvedFilters =
-      typeof nextFilters === 'function' ? nextFilters(currentFilters) : nextFilters;
-    onSearchChange(
-      filtersToSearch(resolvedFilters, createListFilters(extra, options), options.urlKeys),
-    );
-  };
-
-  return [filters, setFilters] as const;
-}
-
-function SurfaceFrame<
-  F extends BaseFilters,
-  T extends { latestDate: string | null; page: number; pageSize: number; total: number },
->({
-  children,
-  dateLabel = 'Latest',
-  extraControls,
-  filters,
-  isLoading,
-  onFiltersChange,
-  pageInfo,
-}: {
-  children: ReactNode;
-  dateLabel?: string;
-  extraControls?: ReactNode;
-  filters: F;
-  isLoading: boolean;
-  onFiltersChange: React.Dispatch<React.SetStateAction<F>>;
-  pageInfo?: T;
-}) {
-  const total = pageInfo?.total ?? 0;
-  const maxPage = maxPageForTotal(total, filters.pageSize);
-
-  useEffect(() => {
-    function handleKeyDown(event: KeyboardEvent) {
-      const target = event.target instanceof HTMLElement ? event.target : null;
-      const nextPage = pageFromPaginationHotkey(
-        {
-          key: event.key,
-          targetIsContentEditable: target?.isContentEditable,
-          targetTagName: target?.tagName,
-        },
-        filters.page,
-        maxPage,
-      );
-
-      if (nextPage === null || isLoading) {
-        return;
-      }
-
-      event.preventDefault();
-      onFiltersChange((current) => ({
-        ...current,
-        page: nextPage,
-      }));
-    }
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [filters.page, isLoading, maxPage, onFiltersChange]);
-
-  return (
-    <>
-      <div className="toolbar">
-        <label className="field">
-          Search
-          <input
-            onChange={(event) =>
-              onFiltersChange((current) => ({
-                ...current,
-                page: 1,
-                q: event.target.value,
-              }))
-            }
-            placeholder="ticker, issuer, holder"
-            value={filters.q}
-          />
-        </label>
-        <label className="field ticker-field">
-          Ticker
-          <input
-            maxLength={8}
-            onChange={(event) =>
-              onFiltersChange((current) => ({
-                ...current,
-                page: 1,
-                ticker: event.target.value.toUpperCase(),
-              }))
-            }
-            placeholder="AADI"
-            value={filters.ticker}
-          />
-        </label>
-        {extraControls}
-        <div className="pager" aria-label="Pagination">
-          <button
-            disabled={filters.page <= 1 || isLoading}
-            onClick={() =>
-              onFiltersChange((current) => ({
-                ...current,
-                page: Math.max(1, current.page - 1),
-              }))
-            }
-            type="button"
-          >
-            Prev
-          </button>
-          <span>
-            Page {filters.page} / {maxPage}
-          </span>
-          <button
-            disabled={filters.page >= maxPage || isLoading}
-            onClick={() =>
-              onFiltersChange((current) => ({
-                ...current,
-                page: current.page + 1,
-              }))
-            }
-            type="button"
-          >
-            Next
-          </button>
-        </div>
-      </div>
-      <div className="result-meta">
-        <span>
-          {dateLabel}: {pageInfo?.latestDate ?? '-'}
-        </span>
-        <span>{formatNumber(total)} rows</span>
-      </div>
-      {children}
-    </>
   );
 }
 
@@ -1124,10 +639,10 @@ export function FivePctOwnershipTable({
         <colgroup>
           <col className="ownership-col-expand" />
           <col className="ownership-col-ticker" />
-          <col className="ownership-col-issuer" />
           <col className="ownership-col-shareholder" />
           <col className="ownership-col-percent" />
           <col className="ownership-col-percent" />
+          <col className="ownership-col-shares" />
           <col className="ownership-col-shares" />
           <col className="ownership-col-delta" />
           <col className="ownership-col-count" />
@@ -1138,39 +653,37 @@ export function FivePctOwnershipTable({
               <span className="visually-hidden">Expand</span>
             </th>
             <th>Ticker</th>
-            <th>Issuer</th>
             <th>Shareholder</th>
             <th className="numeric">Current %</th>
             <th className="numeric">Prev %</th>
-            <th className="numeric">Current total shares</th>
+            <th className="numeric">Previous shares</th>
+            <th className="numeric">Current shares</th>
             <th className="numeric">Share delta</th>
             <th className="numeric">Account count</th>
           </tr>
         </thead>
         <tbody>
           {rows.map((row) => {
-            const isExpanded = expandedIds.has(row.id);
-            const detailId = `details-${stableDomId(row.id)}`;
-            const hasShareDelta =
-              hasNonZeroValue(row.actualChange) || hasNonZeroValue(row.reportedChange);
+            const isExpanded = expandedIds.has(row._id);
+            const detailId = `details-${stableDomId(row._id)}`;
+            const hasShareDelta = hasNonZeroValue(row.currentCombined - row.previousCombined);
 
             return (
-              <Fragment key={row.id}>
+              <Fragment key={row._id}>
                 <tr className="ownership-summary-row">
                   <td className="expand-column">
                     <button
                       aria-controls={detailId}
                       aria-expanded={isExpanded}
-                      aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${row.ticker} ${row.shareholderName}`}
+                      aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${row.ticker} ${row.investorName}`}
                       className="expand-button"
-                      onClick={() => toggleRow(row.id)}
+                      onClick={() => toggleRow(row._id)}
                       type="button"
                     >
                       <span aria-hidden="true">{isExpanded ? '-' : '+'}</span>
                     </button>
                   </td>
                   <td className="ticker-cell">{row.ticker}</td>
-                  <td>{formatText(row.issuerName)}</td>
                   <td>
                     <span
                       className={
@@ -1179,17 +692,17 @@ export function FivePctOwnershipTable({
                           : 'shareholder-name'
                       }
                     >
-                      {formatText(row.shareholderName)}
+                      {formatText(row.investorName)}
                     </span>
-                    {row.kind === 'unlinkedAccounts' ? (
-                      <span className="row-badge">Unlinked</span>
-                    ) : null}
                   </td>
                   <td className="numeric">{formatPercent(row.currentPercent)}</td>
                   <td className="numeric">{formatPercent(row.previousPercent)}</td>
-                  <td className="numeric">{formatNumber(row.currentTotalShares)}</td>
-                  <td className="numeric">{formatNumber(row.actualChange)}</td>
-                  <td className="numeric">{formatNumber(row.accountCount)}</td>
+                  <td className="numeric">{formatNumber(row.previousCombined)}</td>
+                  <td className="numeric">{formatNumber(row.currentCombined)}</td>
+                  <td className="numeric">
+                    {formatNumber(row.currentCombined - row.previousCombined)}
+                  </td>
+                  <td className="numeric">{formatNumber(row.accounts.length)}</td>
                 </tr>
                 {isExpanded ? (
                   <tr className="ownership-detail-row">
@@ -1220,49 +733,27 @@ function FivePctAccountDetails({ accounts }: { accounts: FivePctAccountRow[] }) 
       <table className="account-detail-table">
         <thead>
           <tr>
-            <th className="broker-code-column">Broker</th>
             <th>Nama Pemegang Rekening Efek</th>
             <th>Nama Rekening Efek</th>
-            <th>Status</th>
-            <th className="numeric">Prev account shares</th>
-            <th className="numeric">Current account shares</th>
-            <th className="numeric">Prev %</th>
-            <th className="numeric">Current %</th>
-            <th className="numeric">Reported change</th>
-            <th className="numeric">Actual change</th>
+            <th className="numeric">Previous shares</th>
+            <th className="numeric">Current shares</th>
+            <th className="numeric">Share change</th>
           </tr>
         </thead>
         <tbody>
-          {accounts.map((account) => (
-            <tr key={account.id}>
-              <td className="broker-code-cell">{formatText(account.brokerCode)}</td>
-              <td>{formatText(account.accountHolderName)}</td>
-              <td>{formatText(account.accountName)}</td>
-              <td>{formatInvestorStatus(account.investorStatus)}</td>
+          {accounts.map((account, index) => (
+            <tr key={index}>
+              <td>{account.holderName}</td>
+              <td>{account.accountName}</td>
               <td className="numeric">{formatNumber(account.previousShares)}</td>
               <td className="numeric">{formatNumber(account.currentShares)}</td>
-              <td className="numeric">{formatPercent(account.previousPercent)}</td>
-              <td className="numeric">{formatPercent(account.currentPercent)}</td>
-              <td className="numeric">{formatNumber(account.reportedChange)}</td>
-              <td className="numeric">{formatNumber(account.actualChange)}</td>
+              <td className="numeric">{formatNumber(account.change)}</td>
             </tr>
           ))}
         </tbody>
       </table>
     </div>
   );
-}
-
-function QueryState({ error, isLoading }: { error?: string; isLoading: boolean }) {
-  if (isLoading) {
-    return <p className="query-state">Loading rows from SQLite...</p>;
-  }
-
-  if (error) {
-    return <p className="query-state error">Backend unavailable: {error}</p>;
-  }
-
-  return null;
 }
 
 function columnAlign<T>(columnDef: ColumnDef<T, unknown>) {
@@ -1288,34 +779,25 @@ export function DailyPricesTable({ rows }: { rows: PriceRow[] }) {
 
 const priceColumns: Array<DataColumn<PriceRow>> = [
   textColumn('ticker', 'Ticker', (row) => row.ticker),
-  textColumn('name', 'Name', (row) => row.name),
-  numberColumn('price', 'Price', (row) => row.price),
-  movementPercentColumn('price1dChangePercent', '%1d price', (row) => row.price1dChangePercent),
-  movementPercentColumn('volume1dChangePercent', '%1d volume', (row) => row.volume1dChangePercent),
-  movementPercentColumn('volume3dChangePercent', '%3d volume', (row) => row.volume3dChangePercent),
+  numberColumn('close', 'Price', (row) => row.close),
+  movementPercentColumn('price1dChangePercent', '%1d price', (row) =>
+    row.previous ? (row.change / row.previous) * 100 : null,
+  ),
+  numberColumn('open', 'Open', (row) => row.open),
+  numberColumn('high', 'High', (row) => row.high),
+  numberColumn('low', 'Low', (row) => row.low),
+  numberColumn('volume', 'Volume', (row) => row.volume),
+  numberColumn('value', 'Value', (row) => row.value),
 ];
 
 const onePctColumns: Array<DataColumn<OnePctRow>> = [
   textColumn('ticker', 'Ticker', (row) => row.ticker),
   textColumn('issuerName', 'Issuer', (row) => row.issuerName),
   textColumn('investorName', 'Investor', (row) => row.investorName),
-  textColumn('investorClassification', 'Class', (row) => row.investorClassification),
+  textColumn('classification', 'Class', (row) => row.classification),
   textColumn('nationality', 'Nationality', (row) => row.nationality),
-  numberColumn('totalHoldingShares', 'Shares', (row) => row.totalHoldingShares),
-  percentColumn('percentage', 'Pct', (row) => row.percentage),
-];
-
-const insiderColumns: Array<DataColumn<InsiderRow>> = [
-  textColumn('publishedDate', 'Published', (row) => row.publishedDate),
-  textColumn('transactionDate', 'Transaction', (row) => row.transactionDate),
-  textColumn('ticker', 'Ticker', (row) => row.ticker),
-  textColumn('issuerName', 'Issuer', (row) => row.issuerName),
-  textColumn('reporterName', 'Reporter', (row) => row.reporterName),
-  textColumn('transactionType', 'Type', (row) => row.transactionType),
-  numberColumn('shares', 'Shares', (row) => row.shares),
-  numberColumn('price', 'Price', (row) => row.price),
-  numberColumn('deltaTotal', 'Delta', (row) => row.deltaTotal),
-  textColumn('purpose', 'Purpose', (row) => row.purpose),
+  numberColumn('total', 'Shares', (row) => row.total),
+  percentColumn('percent', 'Pct', (row) => row.percent),
 ];
 
 function textColumn<T>(id: string, header: string, value: (row: T) => Primitive): DataColumn<T> {
@@ -1367,7 +849,7 @@ function movementPercentColumn<T>(
 }
 
 function formatText(value: Primitive) {
-  return value === null || value === '' ? '-' : String(value);
+  return value === undefined || value === null || value === '' ? '-' : String(value);
 }
 
 function formatNumber(value: number | null | undefined) {
@@ -1376,18 +858,6 @@ function formatNumber(value: number | null | undefined) {
 
 function formatPercent(value: number | null | undefined) {
   return value === null || value === undefined ? '-' : `${value.toFixed(2)}%`;
-}
-
-function formatInvestorStatus(value: string | null) {
-  if (value === 'L') {
-    return 'Local';
-  }
-
-  if (value === 'A') {
-    return 'Foreign';
-  }
-
-  return formatText(value);
 }
 
 function hasNonZeroValue(value: number | null | undefined) {

@@ -3,5 +3,4 @@ packages:
 confirmModulesPurge: false
 verifyDepsBeforeRun: false
 allowBuilds:
-  better-sqlite3: true
   esbuild: true

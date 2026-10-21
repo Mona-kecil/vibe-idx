@@ -20,6 +20,7 @@ import type * as lib_ownershipList from "../lib/ownershipList.js";
 import type * as lib_prices from "../lib/prices.js";
 import type * as lib_rows from "../lib/rows.js";
 import type * as lib_xlsx from "../lib/xlsx.js";
+import type * as ui from "../ui.js";
 import type * as writes from "../writes.js";
 
 import type {
@@ -41,6 +42,7 @@ declare const fullApi: ApiFromModules<{
   "lib/prices": typeof lib_prices;
   "lib/rows": typeof lib_rows;
   "lib/xlsx": typeof lib_xlsx;
+  ui: typeof ui;
   writes: typeof writes;
 }>;
 
