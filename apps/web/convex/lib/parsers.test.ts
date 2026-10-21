@@ -1,0 +1,156 @@
+import { readFileSync } from 'node:fs';
+import { describe, expect, it } from 'vite-plus/test';
+import { parseFivePct, deriveFivePct } from './fivePct';
+import { parseOnePct } from './onePct';
+import { parsePrices } from './prices';
+import { parseIndices } from './indices';
+import { parseIssuers } from './issuers';
+import { parseOwnershipList } from './ownershipList';
+const bytes = (name: string) => readFileSync(new URL(`../fixtures/${name}`, import.meta.url));
+const json = (name: string): unknown => JSON.parse(bytes(name).toString());
+const five = parseFivePct(bytes('ownership-5pct-2026-10-19.xlsx'));
+
+describe('IDX fixture ingestion', () => {
+  it('retains investor identity and combined totals across 5% continuation accounts', () => {
+    expect(five.asOf).toBe('2026-10-19');
+    expect(five.previousDate).toBe('2026-10-16');
+    expect(five.groups).toHaveLength(1915);
+    const group = five.groups.find(
+      (g) =>
+        g.holding.ticker === 'AADI' && g.holding.investorName === 'ADARO STRATEGIC INVESTMENTS',
+    );
+    expect(group?.holding).toMatchObject({
+      ticker: 'AADI',
+      investorName: 'ADARO STRATEGIC INVESTMENTS',
+      combinedShares: 3200142830,
+      percent: 41.1,
+      localForeign: 'L',
+      domicile: 'INDONESIA',
+    });
+    expect(group?.holding.accounts).toHaveLength(10);
+    expect(group?.holding.accounts[1]).toEqual({
+      holderName: 'BUT DEUTSCHE BANK AG',
+      accountName: 'UBS AG SG BRANCH TR AC CL PT ADARO STRA IN -2023904118',
+      shares: 34176349,
+    });
+    expect(group?.holding.accounts.reduce((sum, a) => sum + a.shares, 0)).toBe(3200142830);
+    expect(JSON.stringify(five)).not.toContain('Data tidak ditampilkan');
+    expect(
+      five.groups.find(
+        (g) =>
+          g.holding.ticker === 'CPGT' &&
+          g.holding.investorName === 'ASIA ARGENTUM ASSETS HONG KONG LIMITED',
+      )?.holding,
+    ).toMatchObject({
+      combinedShares: 1156687126,
+      percent: 29.12,
+      accounts: [
+        expect.objectContaining({ shares: 324374252 }),
+        expect.objectContaining({ shares: 832312874 }),
+      ],
+    });
+  });
+  it('does not append 5% changes on replay, records exits, and rejects stale holdings', () => {
+    const first = deriveFivePct(five, []);
+    expect(first.changes.length).toBeGreaterThan(0);
+    expect(first.changes.every((c) => c.accounts.every((a) => a.change !== 0))).toBe(true);
+    const replay = deriveFivePct(five, first.holdings);
+    expect(replay).toEqual({ holdings: [], changes: [], exits: [] });
+    const old = { ...five.groups[0]!.holding, investorName: 'EXITED INVESTOR', asOf: '2026-10-16' };
+    const exit = deriveFivePct(five, [old]).changes.find(
+      (c) => c.investorName === old.investorName,
+    );
+    expect(exit).toMatchObject({
+      date: '2026-10-19',
+      previousDate: '2026-10-16',
+      ticker: 'AADI',
+      previousCombined: 3200142830,
+      currentCombined: 0,
+      previousPercent: 41.1,
+      currentPercent: 0,
+    });
+    expect(exit?.accounts.reduce((sum, a) => sum + a.change, 0)).toBe(-3200142830);
+    const newer = first.holdings.map((h) => ({ ...h, asOf: '2026-10-20' }));
+    expect(deriveFivePct(five, newer).holdings).toEqual([]);
+    expect(deriveFivePct(five, newer).exits).toEqual([]);
+    expect(deriveFivePct(five, newer.slice(0, 1)).holdings).toEqual([]);
+  });
+  it('reads all 1% rows after disclaimers and converts Excel dates and numbers', () => {
+    const rows = parseOnePct(bytes('ownership-1pct-2026-09.xlsx'));
+    expect(rows).toHaveLength(7154);
+    expect(rows[0]).toEqual({
+      asOf: '2026-09-30',
+      ticker: 'AADI',
+      issuerName: 'ADARO ANDALAN INDONESIA Tbk',
+      investorName: 'PT PERSADA CAPITAL INVESTAMA',
+      classification: 'Corporate',
+      localForeign: 'L',
+      nationality: undefined,
+      domicile: 'INDONESIA',
+      scripless: 119887170,
+      scrip: 0,
+      total: 119887170,
+      percent: 1.54,
+    });
+  });
+  it('keeps every stock and COMPOSITE index row and rejects truncated responses', () => {
+    const prices = parsePrices(json('stock-summary-idxid.json'));
+    expect(prices).toHaveLength(963);
+    expect(prices[0]).toEqual({
+      date: '2026-10-20',
+      ticker: 'AADI',
+      previous: 10175,
+      open: 10450,
+      high: 10950,
+      low: 10300,
+      close: 10950,
+      change: 775,
+      volume: 20132300,
+      value: 215030807500,
+      frequency: 13438,
+      foreignBuy: 3299600,
+      foreignSell: 11209200,
+      listedShares: 7786891760,
+      tradableShares: 7786891760,
+      remarks: '--MO1SD0F70000A121------------',
+    });
+    expect(parseIndices(json('index-summary-idxid.json'))).toHaveLength(45);
+    expect(parseIndices(json('index-summary-idxid.json'))[0]).toMatchObject({
+      date: '2026-10-20',
+      code: 'COMPOSITE',
+      previous: 4996.609,
+      high: 5278.888,
+      low: 4980.163,
+      close: 5278.888,
+      change: 282.279,
+    });
+    expect(parsePrices({ recordsTotal: 0, data: [] })).toEqual([]);
+    expect(() => parsePrices({ recordsTotal: 1, data: [] })).toThrow('Incomplete');
+  });
+  it('classifies ownership files with dates, rewrites the host, and sorts oldest first', () => {
+    const files = parseOwnershipList(json('ownership-list-2026-all.json'));
+    expect(files.filter((f) => f.source === 'fivePct')).toHaveLength(98);
+    expect(files.filter((f) => f.source === 'onePct')).toHaveLength(8);
+    expect(files.filter((f) => f.source === 'fivePct')[0]).toMatchObject({ date: '2026-05-29' });
+    expect(files.find((f) => f.url.endsWith('peng-2026-09-00024-satu-persen.xlsx'))).toEqual({
+      source: 'onePct',
+      date: '2026-09-30',
+      url: 'https://www.idx.id/Media/yqjhhsee/peng-2026-09-00024-satu-persen.xlsx',
+    });
+    expect(files.every((f) => new URL(f.url).hostname === 'www.idx.id')).toBe(true);
+  });
+  it('preserves issuer board and industry fields from the company response', () => {
+    const rows = parseIssuers(json('company-profiles.json'), 123);
+    expect(rows).toHaveLength(962);
+    expect(rows[0]).toEqual({
+      ticker: 'AADI',
+      name: 'PT Adaro Andalan Indonesia Tbk',
+      board: 'Utama',
+      sector: 'Energi',
+      subSector: 'Minyak, Gas & Batu Bara',
+      industry: 'Batu Bara',
+      subIndustry: 'Produksi Batu Bara',
+      updatedAt: 123,
+    });
+  });
+});

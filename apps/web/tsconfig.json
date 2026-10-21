@@ -19,5 +19,5 @@
     "types": ["node", "vite-plus/client", "vite-plus/test"],
     "useDefineForClassFields": true
   },
-  "include": ["src", "vite.config.ts"]
+  "include": ["src", "convex", "vite.config.ts"]
 }
