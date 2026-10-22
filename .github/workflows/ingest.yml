@@ -20,8 +20,8 @@ jobs:
       AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
       AWS_DEFAULT_REGION: auto
       R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
-      DATA: ${{ runner.temp }}/idx-data
-      OUT: ${{ runner.temp }}/idx-public
+      DATA: /tmp/idx-data
+      OUT: /tmp/idx-public
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
