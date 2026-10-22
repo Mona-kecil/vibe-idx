@@ -1,0 +1,16 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "vite",
+  "buildCommand": "pnpm run build:client",
+  "outputDirectory": "dist",
+  "rewrites": [
+    {
+      "source": "/data/:path*",
+      "destination": "https://pub-7982bfb066694e6e8615750132283eba.r2.dev/:path*"
+    },
+    {
+      "source": "/((?!assets/|data(?:/|$)).*)",
+      "destination": "/index.html"
+    }
+  ]
+}

@@ -1,0 +1,42 @@
+name: Daily IDX batch
+
+on:
+  schedule:
+    - cron: '17 10 * * 1-5'
+  workflow_dispatch:
+
+concurrency:
+  group: idx-batch-ingest
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: auto
+      R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+      DATA: /tmp/idx-data
+      OUT: /tmp/idx-public
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Restore Parquet ledger
+        run: mkdir -p "$DATA/raw" && aws s3 sync s3://vibe-idx-private/parquet "$DATA/parquet" --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+      - name: Ingest IDX and emit website JSON
+        run: pnpm --filter @vibe-idx/pipeline ingest -- --data "$DATA" --out "$OUT"
+      - name: Archive raw responses
+        run: aws s3 sync "$DATA/raw" s3://vibe-idx-private/raw --no-overwrite --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+      - name: Upload Parquet ledger
+        run: aws s3 sync "$DATA/parquet" s3://vibe-idx-private/parquet --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+      - name: Publish website JSON
+        run: aws s3 sync "$OUT" s3://vibe-idx-public --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"

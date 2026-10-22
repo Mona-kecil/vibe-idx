@@ -26,7 +26,6 @@ body {
 
 button,
 input,
-select,
 textarea {
   font: inherit;
 }
@@ -121,7 +120,7 @@ h2 {
 
 .surface-nav {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
   margin: 20px 0;
 }
@@ -208,8 +207,7 @@ h2 {
   text-transform: uppercase;
 }
 
-.field input,
-.field select {
+.field input {
   width: 100%;
   min-height: 40px;
   border: 1px solid #b8c3bd;
@@ -220,66 +218,6 @@ h2 {
   text-transform: none;
 }
 
-.ticker-field,
-.compact-field {
-  min-width: 150px;
-}
-
-.date-field {
-  min-width: 170px;
-}
-
-.sort-field {
-  min-width: 160px;
-}
-
-.segmented {
-  display: inline-flex;
-  min-height: 40px;
-  padding: 3px;
-  border: 1px solid #b8c3bd;
-  border-radius: 5px;
-  background: #eef1ed;
-}
-
-.segmented button {
-  border: 0;
-  border-radius: 3px;
-  background: transparent;
-  color: #3f4d48;
-  padding: 0 12px;
-  font-weight: 800;
-}
-
-.segmented button[aria-pressed='true'] {
-  background: #123c35;
-  color: #f8faf7;
-}
-
-.pager {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  margin-left: auto;
-}
-
-.pager button {
-  min-height: 40px;
-  border: 1px solid #123c35;
-  border-radius: 4px;
-  background: #123c35;
-  color: #f8faf7;
-  padding: 0 13px;
-  font-weight: 850;
-}
-
-.pager button:disabled {
-  border-color: #c4cdc7;
-  background: #e5ebe7;
-  color: #7f8a86;
-}
-
-.pager span,
 .result-meta {
   color: #51605b;
   font-size: 0.86rem;
@@ -298,47 +236,6 @@ h2 {
   border: 1px solid #b9c5bf;
   border-radius: 6px;
   background: #ffffff;
-}
-
-.ownership-table-wrap {
-  background: #fbfcfb;
-}
-
-.ownership-table {
-  min-width: 1320px;
-  table-layout: fixed;
-}
-
-.ownership-col-expand {
-  width: 44px;
-}
-
-.ownership-col-ticker {
-  width: 78px;
-}
-
-.ownership-col-issuer {
-  width: 270px;
-}
-
-.ownership-col-shareholder {
-  width: 300px;
-}
-
-.ownership-col-percent {
-  width: 106px;
-}
-
-.ownership-col-shares {
-  width: 178px;
-}
-
-.ownership-col-delta {
-  width: 136px;
-}
-
-.ownership-col-count {
-  width: 126px;
 }
 
 table {
@@ -391,18 +288,6 @@ tbody tr.data-row-highlighted td {
   font-variant-numeric: tabular-nums;
 }
 
-.broker-code-column,
-.broker-code-cell {
-  width: 72px;
-  min-width: 72px;
-  text-align: center;
-}
-
-.broker-code-cell {
-  color: #263834;
-  font-weight: 850;
-}
-
 .movement-positive {
   background: #edf7f1;
   color: #1f6b45;
@@ -415,38 +300,8 @@ tbody tr.data-row-highlighted td {
   font-weight: 850;
 }
 
-.expand-column {
-  width: 44px;
-  min-width: 44px;
-  text-align: center;
-}
-
-.expand-button {
-  display: inline-grid;
-  width: 28px;
-  height: 28px;
-  place-items: center;
-  border: 1px solid #aebbb5;
-  border-radius: 4px;
-  background: #ffffff;
-  color: #123c35;
-  font-weight: 900;
-  line-height: 1;
-}
-
-.expand-button:hover,
-.expand-button[aria-expanded='true'] {
-  border-color: #123c35;
-  background: #e6f0ea;
-}
-
-.ticker-cell,
-.shareholder-name {
+.ticker-cell {
   font-weight: 850;
-}
-
-.shareholder-name-changed {
-  color: #1167b1;
 }
 
 .row-badge {
@@ -459,49 +314,6 @@ tbody tr.data-row-highlighted td {
   font-size: 0.72rem;
   font-weight: 850;
   text-transform: uppercase;
-}
-
-.ownership-detail-row > td {
-  padding: 0;
-  background: #f4f7f5;
-}
-
-.account-detail-panel {
-  max-height: min(360px, 48vh);
-  overflow: auto;
-  padding: 8px 10px 10px;
-  border-top: 1px solid #d6ded9;
-}
-
-.account-detail-table {
-  min-width: 1120px;
-  border: 1px solid #d8e0dc;
-  background: #ffffff;
-}
-
-.account-detail-table th {
-  position: static;
-  background: #eef3ef;
-  font-size: 0.68rem;
-}
-
-.account-detail-table th,
-.account-detail-table td {
-  padding: 9px 10px;
-}
-
-.account-detail-table tr:last-child td {
-  border-bottom: 0;
-}
-
-.visually-hidden {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  white-space: nowrap;
-  clip-path: inset(50%);
 }
 
 .sort-button {
@@ -564,12 +376,6 @@ tbody tr.data-row-highlighted td {
   .metric:nth-child(-n + 2) {
     border-bottom: 1px solid #d5ddd8;
   }
-
-  .pager {
-    width: 100%;
-    justify-content: space-between;
-    margin-left: 0;
-  }
 }
 
 @media (max-width: 620px) {
@@ -586,5 +392,106 @@ tbody tr.data-row-highlighted td {
 
   .metric:last-child {
     border-bottom: 0;
+  }
+}
+
+.feed-group {
+  margin-top: 28px;
+}
+
+h3 {
+  margin: 28px 0 10px;
+  color: #123c35;
+  font-size: 1.25rem;
+}
+
+.rule {
+  margin: 0 0 14px;
+  color: #56635f;
+  line-height: 1.5;
+}
+
+.feed-list,
+.changes-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid #b9c5bf;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.feed-list li {
+  display: grid;
+  grid-template-columns: 80px 100px minmax(0, 1fr);
+  gap: 12px;
+  padding: 14px;
+  border-bottom: 1px solid #e0e6e2;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.changes-list li {
+  padding: 14px;
+  border-bottom: 1px solid #e0e6e2;
+  line-height: 1.5;
+}
+
+.feed-list li:last-child,
+.changes-list li:last-child {
+  border-bottom: 0;
+}
+
+a {
+  color: #123c35;
+  text-underline-offset: 3px;
+}
+
+time {
+  color: #65736e;
+  font-variant-numeric: tabular-nums;
+}
+
+.line-chart {
+  margin: 20px 0;
+  padding: 14px;
+  border: 1px solid #b9c5bf;
+  border-radius: 6px;
+  background: #f8faf7;
+  color: #123c35;
+}
+
+.line-chart svg {
+  display: block;
+  width: 100%;
+  height: 200px;
+}
+
+.sparkline svg {
+  height: 64px;
+}
+
+.line-chart figcaption {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 10px;
+  color: #65736e;
+  font-size: 0.75rem;
+}
+
+.surface-heading .quote {
+  font-size: 1.5rem;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 620px) {
+  .feed-list li {
+    grid-template-columns: 80px minmax(0, 1fr);
+  }
+
+  .feed-list li > div {
+    grid-column: 1 / -1;
   }
 }
