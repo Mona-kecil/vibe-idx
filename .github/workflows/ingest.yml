@@ -22,6 +22,7 @@ jobs:
       R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
       DATA: /tmp/idx-data
       OUT: /tmp/idx-public
+      PRIVATE_OUT: /tmp/idx-private
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -40,3 +41,31 @@ jobs:
         run: aws s3 sync "$DATA/parquet" s3://vibe-idx-private/parquet --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
       - name: Publish website JSON
         run: aws s3 sync "$OUT" s3://vibe-idx-public --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+      - name: Restore Stockbit token
+        run: aws s3 cp s3://vibe-idx-private/auth/stockbit.json "$DATA/stockbit.json" --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+      - name: Ingest private broker summaries
+        run: pnpm --filter @vibe-idx/pipeline brokers -- --data "$DATA" --feed "$OUT/feed.json" --token "$DATA/stockbit.json" --out "$PRIVATE_OUT"
+      - name: Save Stockbit token
+        if: always()
+        run: |
+          if [ -f "$DATA/stockbit.json" ]; then
+            aws s3 cp "$DATA/stockbit.json" s3://vibe-idx-private/auth/stockbit.json --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          fi
+      - name: Archive broker raw responses
+        if: always()
+        run: |
+          if [ -d "$DATA/raw/broker" ]; then
+            aws s3 sync "$DATA/raw/broker" s3://vibe-idx-private/raw/broker --no-overwrite --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          fi
+      - name: Upload broker Parquet ledger
+        if: always()
+        run: |
+          if [ -d "$DATA/parquet/brokers" ]; then
+            aws s3 sync "$DATA/parquet/brokers" s3://vibe-idx-private/parquet/brokers --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          fi
+      - name: Upload private broker JSON
+        if: always()
+        run: |
+          if [ -d "$PRIVATE_OUT" ]; then
+            aws s3 sync "$PRIVATE_OUT" s3://vibe-idx-private/site/ --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          fi
