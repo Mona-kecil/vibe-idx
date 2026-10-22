@@ -115,6 +115,10 @@ SELECT
   count(*) FILTER (WHERE close < prev)::INTEGER down
 FROM prices WHERE date = (SELECT date FROM latest)`;
 
+export const stockTable = `
+SELECT ticker, name, close, change_pct, volume, value, net_foreign
+FROM features WHERE date = (SELECT date FROM latest) ORDER BY ticker`;
+
 export const tickers = `
 WITH universe AS (SELECT ticker FROM issuers UNION SELECT ticker FROM prices UNION SELECT ticker FROM five_pct),
 history AS (

@@ -1,8 +1,5 @@
 import './styles.css';
 
-import { useQuery } from 'convex/react';
-import { api } from '../convex/_generated/api';
-import type { Doc } from '../convex/_generated/dataModel';
 import {
   flexRender,
   getCoreRowModel,
@@ -11,23 +8,19 @@ import {
   type ColumnDef,
   type SortingState,
 } from '@tanstack/react-table';
+import { useCallback, useEffect, useMemo, useState, type MouseEvent, type ReactNode } from 'react';
+
 import {
-  Fragment,
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-  type MouseEvent,
-  type ReactNode,
-} from 'react';
+  load,
+  type Health,
+  type Market,
+  type Feed,
+  type Stock,
+  type Ticker,
+  type OwnershipChange,
+} from './data';
 
-type SurfaceId = 'prices' | 'fivePct' | 'onePct';
 type Primitive = number | string | null | undefined;
-type PriceRow = Omit<Doc<'dailyPrices'>, '_id' | '_creationTime'>;
-type FivePctRow = Omit<Doc<'fivePctChanges'>, '_id' | '_creationTime'> & { _id: string };
-type FivePctAccountRow = FivePctRow['accounts'][number];
-type OnePctRow = Doc<'onePctHoldings'>;
-
 type DataColumn<T> = {
   align?: 'right';
   cellClass?: (row: T) => string;
@@ -37,131 +30,455 @@ type DataColumn<T> = {
   sortValue: (row: T) => Primitive;
 };
 
-const surfaces: Array<{ id: SurfaceId; label: string; description: string; path: string }> = [
-  {
-    id: 'prices',
-    label: 'Daily Prices',
-    description: 'Latest IDX trading summary by ticker.',
-    path: '/prices',
-  },
-  {
-    id: 'fivePct',
-    label: '5% Ownership',
-    description: 'KSEI major shareholder changes by date.',
-    path: '/ownership/5pct',
-  },
-  {
-    id: 'onePct',
-    label: '1% Ownership',
-    description: 'Monthly KSEI shareholder concentration list.',
-    path: '/ownership/1pct',
-  },
-];
-const defaultSurface = surfaces[0]!;
-type WorkspaceRoute = { id: SurfaceId; status: 'ok' } | { pathname: string; status: 'notFound' };
+type WorkspaceLocation = { pathname: string; search: string };
+type WorkspaceRoute =
+  | { id: 'radar' | 'stocks' }
+  | { id: 'ticker'; ticker: string }
+  | { id: 'notFound' };
+type InitialData = {
+  health?: Health;
+  radar?: { market: Market; feed: Feed };
+  ticker?: Ticker | null;
+};
+type DataState<T> = { status: 'loading' } | { status: 'error' } | { status: 'ready'; data: T };
 
-type WorkspaceLocation = {
-  pathname: string;
-  search: string;
+const readHealth = () => load('health.json');
+const readStocks = () => load('tickers.json');
+const readRadar = async () => {
+  const [market, feed] = await Promise.all([load('market.json'), load('feed.json')]);
+  return { market, feed };
 };
 
-type UrlFilterProps = {
-  onUrlSearchChange: (search: string) => void;
-  urlSearch: string;
-};
-
-export function renderAppTitle() {
-  return 'Vibe IDX';
+function useData<T>(read: () => Promise<T>, initial?: T): DataState<T> {
+  const [state, setState] = useState<DataState<T>>(() =>
+    initial === undefined ? { status: 'loading' } : { status: 'ready', data: initial },
+  );
+  useEffect(() => {
+    if (initial !== undefined) return;
+    let active = true;
+    read().then(
+      (data) => {
+        if (active) setState({ status: 'ready', data });
+      },
+      () => {
+        if (active) setState({ status: 'error' });
+      },
+    );
+    return () => {
+      active = false;
+    };
+  }, [read, initial]);
+  return state;
 }
 
-export function App({ initialUrl }: { initialUrl?: string } = {}) {
+function QueryState({ status }: { status: 'loading' | 'error' }) {
+  return (
+    <p
+      role={status === 'error' ? 'alert' : 'status'}
+      className={`query-state ${status === 'error' ? 'error' : ''}`}
+    >
+      {status === 'loading' ? 'Loading data…' : 'Could not load data. Reload to try again.'}
+    </p>
+  );
+}
+
+export function App({
+  initialUrl,
+  initialData = {},
+}: { initialUrl?: string; initialData?: InitialData } = {}) {
   const [location, navigateToPath, replaceSearch] = useWorkspaceLocation(initialUrl);
   const route = resolveWorkspaceRoute(location.pathname);
-  const latestDates = useQuery(api.ui.latestDates);
-  const active =
-    route.status === 'ok'
-      ? (surfaces.find((surface) => surface.id === route.id) ?? defaultSurface)
-      : null;
+  const health = useData(readHealth, initialData.health);
+
+  function followLink(event: MouseEvent<HTMLElement>) {
+    const anchor = event.target instanceof Element ? event.target.closest('a') : null;
+    const href = anchor?.getAttribute('href');
+    if (
+      href?.startsWith('/') &&
+      event.button === 0 &&
+      !event.defaultPrevented &&
+      !event.metaKey &&
+      !event.altKey &&
+      !event.ctrlKey &&
+      !event.shiftKey
+    ) {
+      event.preventDefault();
+      navigateToPath(href);
+    }
+  }
 
   return (
-    <main className="app-shell">
+    <main className="app-shell" onClick={followLink}>
       <header className="topbar">
         <div>
-          <p className="eyebrow">IDX monitoring workspace</p>
-          <h1>{renderAppTitle()}</h1>
+          <p className="eyebrow">IDX anomaly radar</p>
+          <h1>Vibe IDX</h1>
         </div>
-        <div className="status-strip" aria-label="Latest available data dates">
-          <Metric label="Prices" value={latestDates?.prices} />
-          <Metric label="5%" value={latestDates?.fivePctOwnership} />
-          <Metric label="1%" value={latestDates?.onePctOwnership} />
-        </div>
+        {health.status === 'ready' ? (
+          <div className="status-strip" aria-label="Latest available data dates">
+            <Metric label="Prices" value={health.data.prices} />
+            <Metric label="IHSG" value={health.data.indices} />
+            <Metric label="5% ownership" value={health.data.five_pct} />
+            <Metric label="Issuers" value={health.data.issuers} />
+          </div>
+        ) : (
+          <QueryState status={health.status} />
+        )}
       </header>
-
       <nav className="surface-nav" aria-label="Data surfaces">
-        {surfaces.map((surface) => (
-          <a
-            aria-current={active?.id === surface.id ? 'page' : undefined}
-            className="surface-tab"
-            href={surface.path}
-            key={surface.id}
-            onClick={(event) => {
-              if (shouldHandleAppLink(event)) {
-                event.preventDefault();
-                navigateToPath(surface.path);
-              }
-            }}
-          >
-            <span>{surface.label}</span>
-            <small>{surface.description}</small>
-          </a>
-        ))}
+        <a
+          className="surface-tab"
+          aria-current={route.id === 'radar' ? 'page' : undefined}
+          href="/"
+        >
+          <span>Radar</span>
+          <small>Daily signals across the market.</small>
+        </a>
+        <a
+          className="surface-tab"
+          aria-current={route.id === 'stocks' ? 'page' : undefined}
+          href="/stocks"
+        >
+          <span>Stocks</span>
+          <small>Prices, volume and foreign flows.</small>
+        </a>
       </nav>
-
-      {active ? (
-        <section className="workspace-panel" aria-labelledby="surface-title">
-          <div className="surface-heading">
-            <div>
-              <p className="eyebrow">IDX source data</p>
-              <h2 id="surface-title">{active.label}</h2>
-            </div>
-            <p>{active.description}</p>
-          </div>
-
-          <DataSurface
-            key={active.id}
-            kind={active.id}
-            onUrlSearchChange={replaceSearch}
+      <section className="workspace-panel">
+        {route.id === 'radar' ? <RadarPage initial={initialData.radar} /> : null}
+        {route.id === 'stocks' ? (
+          <StocksPage
             urlSearch={location.search}
+            onUrlSearchChange={replaceSearch}
+            date={health.status === 'ready' ? health.data.prices : null}
           />
-        </section>
-      ) : (
-        <section className="workspace-panel" aria-labelledby="surface-title">
-          <div className="surface-heading">
-            <div>
-              <p className="eyebrow">Unknown route</p>
-              <h2 id="surface-title">Page not found</h2>
-            </div>
-            <p>The requested Vibe IDX page does not exist.</p>
-          </div>
-        </section>
-      )}
+        ) : null}
+        {route.id === 'ticker' ? (
+          <TickerPage
+            key={route.ticker}
+            ticker={route.ticker}
+            initial={initialData.ticker}
+            ownershipDate={health.status === 'ready' ? health.data.five_pct : null}
+          />
+        ) : null}
+        {route.id === 'notFound' ? <NotFound /> : null}
+      </section>
     </main>
   );
 }
 
-export function resolveWorkspaceRoute(pathname: string): WorkspaceRoute {
-  const normalizedPathname = normalizeWorkspacePath(pathname);
+function NotFound() {
+  return (
+    <div className="surface-heading">
+      <div>
+        <p className="eyebrow">Unknown route</p>
+        <h2 id="surface-title">Page not found</h2>
+      </div>
+      <p>The requested Vibe IDX page does not exist.</p>
+    </div>
+  );
+}
 
-  if (normalizedPathname === '/') {
-    return { id: 'prices', status: 'ok' };
+function resolveWorkspaceRoute(pathname: string): WorkspaceRoute {
+  const path = normalizeWorkspacePath(pathname);
+  if (path === '/') return { id: 'radar' };
+  if (path === '/stocks') return { id: 'stocks' };
+  const match = /^\/t\/([A-Z0-9-]+)$/.exec(path);
+  if (match?.[1]) return { id: 'ticker', ticker: match[1] };
+  return { id: 'notFound' };
+}
+
+function Metric({ label, value }: { label: string; value?: string | null }) {
+  return (
+    <div className="metric">
+      <span>{label}</span>
+      <strong>{value ?? '—'}</strong>
+    </div>
+  );
+}
+
+const feedGroups = [
+  {
+    kind: 'volume_spike',
+    title: 'Volume spikes',
+    rule: 'Volume is at least 5× the prior 20-day average, with at least Rp 5 billion traded.',
+  },
+  {
+    kind: 'ara',
+    title: 'ARA moves',
+    rule: 'Price rose at least 34% below Rp 200, 24% below Rp 5,000, or 19% above, based on the previous close.',
+  },
+  {
+    kind: 'foreign_streak',
+    title: 'Foreign buying streaks',
+    rule: 'Foreign investors bought more than they sold for at least 5 trading days in a row.',
+  },
+  {
+    kind: 'green_on_red',
+    title: 'Green on red',
+    rule: 'The stock rose while IHSG fell at least 2%, with at least Rp 1 billion traded.',
+  },
+  {
+    kind: 'five_pct_change',
+    title: '5% ownership changes',
+    rule: 'An investor changed shares or left the 5% list. An exit means a holding fell below 5%.',
+  },
+] satisfies Array<{ kind: Feed[number]['kind']; title: string; rule: string }>;
+
+function RadarPage({ initial }: { initial?: InitialData['radar'] }) {
+  const state = useData(readRadar, initial);
+  if (state.status !== 'ready') return <QueryState status={state.status} />;
+  const { market, feed } = state.data;
+  const latest = market.history.at(-1);
+  return (
+    <>
+      <div className="surface-heading">
+        <div>
+          <p className="eyebrow">Radar · {market.date}</p>
+          <h2>IHSG {formatNumber(latest?.close)}</h2>
+        </div>
+        <p>
+          <span className={movementCellClass(latest?.change_pct)}>
+            {formatNumber(latest?.change)} · {formatPercent(latest?.change_pct)}
+          </span>
+          {' · '}
+          {market.up} up · {market.down} down · Index date: {latest?.date ?? '—'}
+        </p>
+      </div>
+      <LineChart points={market.history} label="IHSG close history" compact />
+      {feedGroups.map((group) => {
+        const items = feed.filter((item) => item.kind === group.kind);
+        return (
+          <section className="feed-group" key={group.kind} aria-label={group.title}>
+            <h3>
+              {group.title} <span className="row-badge">{items.length}</span>
+            </h3>
+            <p className="rule">{group.rule}</p>
+            {items.length ? (
+              <ul className="feed-list">
+                {items.map((item, index) => (
+                  <li key={`${item.ticker}:${index}`}>
+                    <a className="ticker-cell" href={`/t/${item.ticker}`}>
+                      {item.ticker}
+                    </a>
+                    <time>{item.date}</time>
+                    <div>
+                      <FeedNumbers item={item} />
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="empty">No signals.</p>
+            )}
+          </section>
+        );
+      })}
+    </>
+  );
+}
+
+function FeedNumbers({ item }: { item: Feed[number] }) {
+  switch (item.kind) {
+    case 'volume_spike':
+      return (
+        <>
+          {formatNumber(item.numbers.volume)} shares · {item.numbers.multiple.toFixed(2)}× average (
+          {formatNumber(item.numbers.avg_volume)} over {item.numbers.prior_days} days) · Rp{' '}
+          {formatNumber(item.numbers.value)}
+        </>
+      );
+    case 'ara':
+      return (
+        <>
+          {formatNumber(item.numbers.prev)} → {formatNumber(item.numbers.close)} ·{' '}
+          {formatPercent(item.numbers.change_pct)}
+          {' · '}
+          {item.numbers.band_pct}% threshold
+        </>
+      );
+    case 'foreign_streak':
+      return (
+        <>
+          {item.numbers.streak_days} trading days · Net foreign Rp{' '}
+          {formatNumber(item.numbers.net_foreign)}
+        </>
+      );
+    case 'green_on_red':
+      return (
+        <>
+          Stock {formatPercent(item.numbers.change_pct)} · IHSG{' '}
+          {formatPercent(item.numbers.market_change_pct)}
+          {' · '}Rp {formatNumber(item.numbers.value)}
+        </>
+      );
+    case 'five_pct_change':
+      return (
+        <>
+          <OwnershipMovement change={item.numbers} /> · Since {item.numbers.previous_date}
+        </>
+      );
   }
+}
 
-  const surface = surfaces.find((candidate) => candidate.path === normalizedPathname);
-  if (surface) {
-    return { id: surface.id, status: 'ok' };
-  }
+function OwnershipMovement({ change }: { change: OwnershipChange }) {
+  const exit = change.shares_after === null;
+  const entry = change.pct_before === 0 && change.net_shares !== null && change.net_shares > 0;
+  return (
+    <>
+      {change.investor} · {formatPercent(change.pct_before)} →{' '}
+      {exit ? 'below 5%' : formatPercent(change.pct_after)}
+      {' · '}
+      {exit ? 'Exit' : entry ? 'Entry' : 'Change'} · Net shares: {formatNumber(change.net_shares)}
+    </>
+  );
+}
 
-  return { pathname: normalizedPathname, status: 'notFound' };
+function StocksPage({
+  urlSearch,
+  onUrlSearchChange,
+  date,
+}: {
+  urlSearch: string;
+  onUrlSearchChange: (search: string) => void;
+  date: string | null;
+}) {
+  const state = useData(readStocks);
+  const search = new URLSearchParams(urlSearch).get('q') ?? '';
+  return (
+    <>
+      <div className="surface-heading">
+        <h2>Stocks</h2>
+        <p>Prices: {date ?? '—'} · All stocks on the latest trading date.</p>
+      </div>
+      <div className="toolbar">
+        <label className="field">
+          Filter stocks
+          <input
+            placeholder="Ticker or company name"
+            value={search}
+            onChange={(event) => {
+              const params = new URLSearchParams();
+              if (event.target.value) params.set('q', event.target.value);
+              onUrlSearchChange(params.size ? `?${params}` : '');
+            }}
+          />
+        </label>
+      </div>
+      {state.status !== 'ready' ? (
+        <QueryState status={state.status} />
+      ) : (
+        <>
+          <p className="result-meta">{state.data.length} stocks · Click a column to sort.</p>
+          <DataTable
+            columns={stockColumns}
+            rows={state.data.filter((row) =>
+              `${row.ticker} ${row.name}`.toLowerCase().includes(search.toLowerCase()),
+            )}
+          />
+        </>
+      )}
+    </>
+  );
+}
+
+function TickerPage({
+  ticker,
+  initial,
+  ownershipDate,
+}: {
+  ticker: string;
+  initial?: Ticker | null;
+  ownershipDate: string | null;
+}) {
+  const read = useCallback(() => load(`ticker/${ticker}.json`), [ticker]);
+  const state = useData(read, initial);
+  if (state.status !== 'ready') return <QueryState status={state.status} />;
+  if (!state.data || state.data.ticker !== ticker) return <NotFound />;
+  const data = state.data;
+  const latest = data.prices.at(-1);
+  const previous = data.prices.at(-2);
+  const change =
+    latest && previous && previous.close ? (latest.close / previous.close - 1) * 100 : null;
+  return (
+    <>
+      <div className="surface-heading">
+        <div>
+          <p className="eyebrow">
+            {ticker} · Prices: {latest?.date ?? '—'}
+          </p>
+          <h2>{data.name}</h2>
+        </div>
+        <p className="quote">
+          Rp {formatNumber(latest?.close)}{' '}
+          <span className={movementCellClass(change)}>{formatPercent(change)}</span>
+        </p>
+      </div>
+      <LineChart points={data.prices} label={`${ticker} closing price history`} />
+      <h3>Recent trading days</h3>
+      <DataTable columns={recentColumns} rows={data.prices.slice(-10).reverse()} />
+      <h3>Current 5% holders</h3>
+      <p className="rule">Ownership as of {ownershipDate ?? '—'}</p>
+      <DataTable columns={holderColumns} rows={data.holders} />
+      <h3>5% changes · Last 90 days</h3>
+      <p className="rule">
+        Ownership through {ownershipDate ?? '—'} · Each change uses its own reporting date.
+      </p>
+      {data.changes.length ? (
+        <ul className="changes-list">
+          {data.changes.map((change, index) => (
+            <li key={`${change.date}:${index}`}>
+              <time>{change.date}</time> · <OwnershipMovement change={change} />
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="query-state">No 5% changes in this period.</p>
+      )}
+    </>
+  );
+}
+
+function LineChart({
+  points,
+  label,
+  compact = false,
+}: {
+  points: Array<{ date: string; close: number }>;
+  label: string;
+  compact?: boolean;
+}) {
+  if (!points.length) return <p className="query-state">No price history.</p>;
+  const low = Math.min(...points.map((point) => point.close));
+  const high = Math.max(...points.map((point) => point.close));
+  const height = compact ? 64 : 200;
+  const line = points
+    .map(
+      (point, index) =>
+        `${8 + (index / Math.max(1, points.length - 1)) * 984},${8 + ((high - point.close) / (high - low || 1)) * (height - 16)}`,
+    )
+    .join(' ');
+  return (
+    <figure className={`line-chart ${compact ? 'sparkline' : ''}`}>
+      <svg viewBox={`0 0 1000 ${height}`} role="img" aria-label={label} preserveAspectRatio="none">
+        <title>{label}</title>
+        <polyline
+          points={line}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          vectorEffect="non-scaling-stroke"
+        />
+      </svg>
+      <figcaption>
+        <span>
+          {points[0]?.date} → {points.at(-1)?.date}
+        </span>
+        <span>
+          Close range {formatNumber(low)}–{formatNumber(high)}
+        </span>
+      </figcaption>
+    </figure>
+  );
 }
 
 function normalizeWorkspacePath(pathname: string) {
@@ -243,51 +560,11 @@ function normalizeSearch(search: string) {
   return search.startsWith('?') ? search : `?${search}`;
 }
 
-function shouldHandleAppLink(event: MouseEvent<HTMLAnchorElement>) {
-  return (
-    event.button === 0 &&
-    !event.defaultPrevented &&
-    !event.metaKey &&
-    !event.altKey &&
-    !event.ctrlKey &&
-    !event.shiftKey
-  );
-}
-
-function Metric({ label, value }: { label: string; value?: string | null }) {
-  return (
-    <div className="metric">
-      <span>{label}</span>
-      <strong>{value ?? '-'}</strong>
-    </div>
-  );
-}
-
 type PaginationHotkey = {
   key: string;
   targetIsContentEditable?: boolean;
   targetTagName?: string;
 };
-
-export function pageFromPaginationHotkey(
-  event: PaginationHotkey,
-  currentPage: number,
-  maxPage: number,
-) {
-  if (isKeyboardTargetEditable(event)) {
-    return null;
-  }
-
-  if (event.key === 'ArrowLeft') {
-    return currentPage > 1 ? currentPage - 1 : null;
-  }
-
-  if (event.key === 'ArrowRight') {
-    return currentPage < maxPage ? currentPage + 1 : null;
-  }
-
-  return null;
-}
 
 export function rowIndexFromKeyboard(
   event: PaginationHotkey,
@@ -315,178 +592,6 @@ function isKeyboardTargetEditable(event: PaginationHotkey) {
   }
 
   return ['INPUT', 'SELECT', 'TEXTAREA'].includes(event.targetTagName ?? '');
-}
-
-function DataSurface({ kind, onUrlSearchChange, urlSearch }: UrlFilterProps & { kind: SurfaceId }) {
-  const dates = useQuery(api.ui.dates, { kind });
-  const params = new URLSearchParams(urlSearch);
-  const selectedDate = params.get('date') ?? '';
-  const date = selectedDate || dates?.[0] || '';
-  const ticker = params.get('ticker') ?? '';
-  const search = params.get('q') ?? '';
-
-  function changeFilter(key: string, value: string) {
-    const next = new URLSearchParams(urlSearch);
-    if (value) next.set(key, value);
-    else next.delete(key);
-    onUrlSearchChange(next.size ? `?${next}` : '');
-  }
-
-  return (
-    <>
-      <div className="toolbar">
-        <label className="field">
-          Search this page
-          <input
-            onChange={(event) => changeFilter('q', event.target.value)}
-            placeholder="ticker, holder"
-            value={search}
-          />
-        </label>
-        <label className="field ticker-field">
-          Exact ticker
-          <input
-            maxLength={8}
-            onChange={(event) => changeFilter('ticker', event.target.value.toUpperCase())}
-            placeholder="AADI"
-            value={ticker}
-          />
-        </label>
-        <SnapshotDateSelector
-          dates={dates ?? []}
-          isLoading={dates === undefined}
-          onDateChange={(value) => changeFilter('date', value)}
-          selectedDate={selectedDate}
-        />
-      </div>
-      {date ? (
-        <SnapshotPage
-          key={`${kind}:${date}:${ticker}`}
-          kind={kind}
-          date={date}
-          ticker={ticker}
-          search={search}
-        />
-      ) : (
-        <p className="query-state">
-          {dates === undefined ? 'Loading dates...' : 'No data available.'}
-        </p>
-      )}
-    </>
-  );
-}
-
-function SnapshotPage({
-  kind,
-  date,
-  ticker,
-  search,
-}: {
-  kind: SurfaceId;
-  date: string;
-  ticker: string;
-  search: string;
-}) {
-  const [cursors, setCursors] = useState<Array<string | null>>([null]);
-  const result = useQuery(api.ui.list, {
-    kind,
-    date,
-    ticker,
-    cursor: cursors[cursors.length - 1] ?? null,
-  });
-  const isLoading = result === undefined;
-  const canNext = result !== undefined && !result.isDone;
-
-  const previous = useCallback(() => setCursors((current) => current.slice(0, -1)), []);
-  const next = useCallback(() => {
-    if (result && !result.isDone) setCursors((current) => [...current, result.continueCursor]);
-  }, [result]);
-
-  useEffect(() => {
-    function handleKeyDown(event: KeyboardEvent) {
-      const target = event.target instanceof HTMLElement ? event.target : null;
-      const page = pageFromPaginationHotkey(
-        {
-          key: event.key,
-          targetIsContentEditable: target?.isContentEditable,
-          targetTagName: target?.tagName,
-        },
-        cursors.length,
-        cursors.length + (canNext ? 1 : 0),
-      );
-      if (page === null || isLoading) return;
-      event.preventDefault();
-      if (page < cursors.length) previous();
-      else next();
-    }
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [cursors.length, canNext, isLoading, previous, next]);
-
-  const matches = (row: { ticker: string; investorName?: string; issuerName?: string }) =>
-    [row.ticker, row.investorName, row.issuerName].some((value) =>
-      value?.toLowerCase().includes(search.toLowerCase()),
-    );
-
-  return (
-    <>
-      <div className="result-meta">
-        <span>
-          {kind === 'onePct' ? 'As of' : 'Date'}: {date} · Sort and search apply to this page.
-        </span>
-        <div className="pager" aria-label="Pagination">
-          <button disabled={cursors.length <= 1 || isLoading} onClick={previous} type="button">
-            Prev
-          </button>
-          <span>Page {cursors.length}</span>
-          <button disabled={!canNext || isLoading} onClick={next} type="button">
-            Next
-          </button>
-        </div>
-      </div>
-      {isLoading ? <p className="query-state">Loading rows...</p> : null}
-      {result?.kind === 'prices' ? <DailyPricesTable rows={result.page.filter(matches)} /> : null}
-      {result?.kind === 'fivePct' ? (
-        <FivePctOwnershipTable rows={result.page.filter(matches)} />
-      ) : null}
-      {result?.kind === 'onePct' ? (
-        <DataTable columns={onePctColumns} rows={result.page.filter(matches)} />
-      ) : null}
-    </>
-  );
-}
-
-export function SnapshotDateSelector({
-  dates,
-  isLoading = false,
-  onDateChange,
-  selectedDate,
-}: {
-  dates: string[];
-  isLoading?: boolean;
-  onDateChange: (date: string) => void;
-  selectedDate: string;
-}) {
-  const visibleDates =
-    selectedDate && !dates.includes(selectedDate) ? [selectedDate, ...dates] : dates;
-
-  return (
-    <label className="field compact-field date-field">
-      Date
-      <select
-        disabled={isLoading && dates.length === 0}
-        onChange={(event) => onDateChange(event.target.value)}
-        value={selectedDate}
-      >
-        <option value="">Latest</option>
-        {visibleDates.map((date) => (
-          <option key={date} value={date}>
-            {date}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
 }
 
 function DataTable<T extends object>({
@@ -611,151 +716,6 @@ function DataTable<T extends object>({
   );
 }
 
-export function FivePctOwnershipTable({
-  initialExpandedIds = [],
-  rows,
-}: {
-  initialExpandedIds?: string[];
-  rows: FivePctRow[];
-}) {
-  const [expandedIds, setExpandedIds] = useState(() => new Set(initialExpandedIds));
-
-  function toggleRow(rowId: string) {
-    setExpandedIds((current) => {
-      const next = new Set(current);
-      if (next.has(rowId)) {
-        next.delete(rowId);
-      } else {
-        next.add(rowId);
-      }
-
-      return next;
-    });
-  }
-
-  return (
-    <div className="table-wrap ownership-table-wrap">
-      <table className="ownership-table">
-        <colgroup>
-          <col className="ownership-col-expand" />
-          <col className="ownership-col-ticker" />
-          <col className="ownership-col-shareholder" />
-          <col className="ownership-col-percent" />
-          <col className="ownership-col-percent" />
-          <col className="ownership-col-shares" />
-          <col className="ownership-col-shares" />
-          <col className="ownership-col-delta" />
-          <col className="ownership-col-count" />
-        </colgroup>
-        <thead>
-          <tr>
-            <th className="expand-column">
-              <span className="visually-hidden">Expand</span>
-            </th>
-            <th>Ticker</th>
-            <th>Shareholder</th>
-            <th className="numeric">Current %</th>
-            <th className="numeric">Prev %</th>
-            <th className="numeric">Previous shares</th>
-            <th className="numeric">Current shares</th>
-            <th className="numeric">Share delta</th>
-            <th className="numeric">Account count</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => {
-            const isExpanded = expandedIds.has(row._id);
-            const detailId = `details-${stableDomId(row._id)}`;
-            const hasShareDelta = hasNonZeroValue(row.currentCombined - row.previousCombined);
-
-            return (
-              <Fragment key={row._id}>
-                <tr className="ownership-summary-row">
-                  <td className="expand-column">
-                    <button
-                      aria-controls={detailId}
-                      aria-expanded={isExpanded}
-                      aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${row.ticker} ${row.investorName}`}
-                      className="expand-button"
-                      onClick={() => toggleRow(row._id)}
-                      type="button"
-                    >
-                      <span aria-hidden="true">{isExpanded ? '-' : '+'}</span>
-                    </button>
-                  </td>
-                  <td className="ticker-cell">{row.ticker}</td>
-                  <td>
-                    <span
-                      className={
-                        hasShareDelta
-                          ? 'shareholder-name shareholder-name-changed'
-                          : 'shareholder-name'
-                      }
-                    >
-                      {formatText(row.investorName)}
-                    </span>
-                  </td>
-                  <td className="numeric">{formatPercent(row.currentPercent)}</td>
-                  <td className="numeric">{formatPercent(row.previousPercent)}</td>
-                  <td className="numeric">{formatNumber(row.previousCombined)}</td>
-                  <td className="numeric">{formatNumber(row.currentCombined)}</td>
-                  <td className="numeric">
-                    {formatNumber(row.currentCombined - row.previousCombined)}
-                  </td>
-                  <td className="numeric">{formatNumber(row.accounts.length)}</td>
-                </tr>
-                {isExpanded ? (
-                  <tr className="ownership-detail-row">
-                    <td colSpan={9} id={detailId}>
-                      <FivePctAccountDetails accounts={row.accounts} />
-                    </td>
-                  </tr>
-                ) : null}
-              </Fragment>
-            );
-          })}
-          {rows.length === 0 ? (
-            <tr>
-              <td className="empty" colSpan={9}>
-                No rows for the current filters.
-              </td>
-            </tr>
-          ) : null}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-function FivePctAccountDetails({ accounts }: { accounts: FivePctAccountRow[] }) {
-  return (
-    <div className="account-detail-panel">
-      <table className="account-detail-table">
-        <thead>
-          <tr>
-            <th>Nama Pemegang Rekening Efek</th>
-            <th>Nama Rekening Efek</th>
-            <th className="numeric">Previous shares</th>
-            <th className="numeric">Current shares</th>
-            <th className="numeric">Share change</th>
-          </tr>
-        </thead>
-        <tbody>
-          {accounts.map((account, index) => (
-            <tr key={index}>
-              <td>{account.holderName}</td>
-              <td>{account.accountName}</td>
-              <td className="numeric">{formatNumber(account.previousShares)}</td>
-              <td className="numeric">{formatNumber(account.currentShares)}</td>
-              <td className="numeric">{formatNumber(account.change)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
 function columnAlign<T>(columnDef: ColumnDef<T, unknown>) {
   return (columnDef.meta as { align?: 'right' } | undefined)?.align;
 }
@@ -773,31 +733,33 @@ function cellClassName<T>(columnDef: ColumnDef<T, unknown>, row: T) {
     .join(' ');
 }
 
-export function DailyPricesTable({ rows }: { rows: PriceRow[] }) {
-  return <DataTable columns={priceColumns} rows={rows} />;
-}
-
-const priceColumns: Array<DataColumn<PriceRow>> = [
-  textColumn('ticker', 'Ticker', (row) => row.ticker),
-  numberColumn('close', 'Price', (row) => row.close),
-  movementPercentColumn('price1dChangePercent', '%1d price', (row) =>
-    row.previous ? (row.change / row.previous) * 100 : null,
-  ),
-  numberColumn('open', 'Open', (row) => row.open),
-  numberColumn('high', 'High', (row) => row.high),
-  numberColumn('low', 'Low', (row) => row.low),
+const stockColumns: Array<DataColumn<Stock>> = [
+  {
+    ...textColumn<Stock>('ticker', 'Ticker', (row) => row.ticker),
+    render: (row) => (
+      <a className="ticker-cell" href={`/t/${row.ticker}`}>
+        {row.ticker}
+      </a>
+    ),
+  },
+  textColumn('name', 'Company', (row) => row.name),
+  numberColumn('close', 'Close', (row) => row.close),
+  movementPercentColumn('change_pct', 'Change', (row) => row.change_pct),
   numberColumn('volume', 'Volume', (row) => row.volume),
-  numberColumn('value', 'Value', (row) => row.value),
+  numberColumn('value', 'Value (Rp)', (row) => row.value),
+  numberColumn('net_foreign', 'Net foreign (Rp)', (row) => row.net_foreign),
 ];
-
-const onePctColumns: Array<DataColumn<OnePctRow>> = [
-  textColumn('ticker', 'Ticker', (row) => row.ticker),
-  textColumn('issuerName', 'Issuer', (row) => row.issuerName),
-  textColumn('investorName', 'Investor', (row) => row.investorName),
-  textColumn('classification', 'Class', (row) => row.classification),
-  textColumn('nationality', 'Nationality', (row) => row.nationality),
-  numberColumn('total', 'Shares', (row) => row.total),
-  percentColumn('percent', 'Pct', (row) => row.percent),
+const recentColumns: Array<DataColumn<Ticker['prices'][number]>> = [
+  textColumn('date', 'Date', (row) => row.date),
+  numberColumn('close', 'Close', (row) => row.close),
+  numberColumn('volume', 'Volume', (row) => row.volume),
+  numberColumn('value', 'Value (Rp)', (row) => row.value),
+  numberColumn('net_foreign', 'Net foreign (Rp)', (row) => row.net_foreign),
+];
+const holderColumns: Array<DataColumn<Ticker['holders'][number]>> = [
+  textColumn('investor', 'Investor', (row) => row.investor),
+  numberColumn('shares', 'Shares', (row) => row.shares),
+  percentColumn('pct', 'Holding', (row) => row.pct),
 ];
 
 function textColumn<T>(id: string, header: string, value: (row: T) => Primitive): DataColumn<T> {
@@ -860,20 +822,12 @@ function formatPercent(value: number | null | undefined) {
   return value === null || value === undefined ? '-' : `${value.toFixed(2)}%`;
 }
 
-function hasNonZeroValue(value: number | null | undefined) {
-  return value !== null && value !== undefined && value !== 0;
-}
-
 function movementCellClass(value: number | null | undefined) {
   if (value === null || value === undefined || value === 0) {
     return '';
   }
 
   return value > 0 ? 'movement-positive' : 'movement-negative';
-}
-
-function stableDomId(value: string) {
-  return value.replace(/[^a-zA-Z0-9_-]/g, '-');
 }
 
 function sortGlyph(sort: false | 'asc' | 'desc') {

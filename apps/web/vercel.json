@@ -5,7 +5,11 @@
   "outputDirectory": "dist",
   "rewrites": [
     {
-      "source": "/((?!assets/).*)",
+      "source": "/data/:path*",
+      "destination": "https://pub-7982bfb066694e6e8615750132283eba.r2.dev/:path*"
+    },
+    {
+      "source": "/((?!assets/|data(?:/|$)).*)",
       "destination": "/index.html"
     }
   ]

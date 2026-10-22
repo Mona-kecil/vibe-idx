@@ -12,7 +12,7 @@ import { parseIssuers } from '../web/convex/lib/issuers';
 import { parseFivePct } from '../web/convex/lib/fivePct';
 import { idxUrl, parseOwnershipList } from '../web/convex/lib/ownershipList';
 import { date } from '../web/convex/lib/rows';
-import { analytics, health, market, schema, tickers } from './sql';
+import { analytics, health, market, schema, stockTable, tickers } from './sql';
 
 const tables = ['prices', 'indices', 'five_pct', 'issuers'] as const;
 type Table = (typeof tables)[number];
@@ -258,6 +258,7 @@ export async function ingest({
       `[${(await output('SELECT * FROM feed ORDER BY kind, ticker')).join(',')}]\n`,
     );
     await writeFile(join(out, 'market.json'), `${(await output(market))[0]}\n`);
+    await writeFile(join(out, 'tickers.json'), `[${(await output(stockTable)).join(',')}]\n`);
     await writeFile(join(out, 'health.json'), `${(await output(health))[0]}\n`);
     for (const row of await output(tickers)) {
       const parsed: unknown = JSON.parse(row);

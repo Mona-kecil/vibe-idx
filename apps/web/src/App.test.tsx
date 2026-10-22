@@ -1,91 +1,171 @@
-import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vite-plus/test';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { ConvexProvider, ConvexReactClient } from 'convex/react';
-import { parseFivePct, deriveFivePct } from '../convex/lib/fivePct';
-import { parsePrices } from '../convex/lib/prices';
-import {
-  App,
-  DailyPricesTable,
-  FivePctOwnershipTable,
-  pageFromPaginationHotkey,
-  rowIndexFromKeyboard,
-} from './App';
+import { App, rowIndexFromKeyboard } from './App';
+import type { Feed, Health, Market, Ticker } from './data';
 
-describe('Convex market UI', () => {
-  it('keeps ownership deep links and removes the unsupported insiders surface', async () => {
-    const client = new ConvexReactClient('http://127.0.0.1:3210');
-    try {
-      const markup = renderToStaticMarkup(
-        <ConvexProvider client={client}>
-          <App initialUrl="/ownership/5pct" />
-        </ConvexProvider>,
-      );
-      expect(markup).toContain('<h2 id="surface-title">5% Ownership</h2>');
-      expect(markup).toContain('Daily Prices');
-      expect(markup).toContain('1% Ownership');
-      expect(markup).not.toContain('Insider');
-      expect(markup).not.toContain('SQLite');
+const health: Health = {
+  prices: '2026-10-22',
+  indices: '2026-10-22',
+  five_pct: '2026-10-21',
+  issuers: '2026-10-22',
+  run_at: '2026-10-22 15:00:00+00',
+};
+const market: Market = {
+  date: '2026-10-22',
+  up: 100,
+  down: 200,
+  history: [{ date: '2026-10-22', close: 5000, change: -150, change_pct: -3 }],
+};
+const feed: Feed = [
+  {
+    kind: 'volume_spike',
+    ticker: 'VOL',
+    date: '2026-10-22',
+    numbers: {
+      volume: 60000000,
+      avg_volume: 10000000,
+      multiple: 6,
+      value: 6000000000,
+      prior_days: 20,
+    },
+  },
+  {
+    kind: 'ara',
+    ticker: 'ARA',
+    date: '2026-10-22',
+    numbers: { prev: 100, close: 135, change_pct: 35, band_pct: 34 },
+  },
+  {
+    kind: 'foreign_streak',
+    ticker: 'BUY',
+    date: '2026-10-22',
+    numbers: { streak_days: 7, net_foreign: 123456789 },
+  },
+  {
+    kind: 'green_on_red',
+    ticker: 'GREEN',
+    date: '2026-10-22',
+    numbers: { change_pct: 2, market_change_pct: -3, value: 2000000000 },
+  },
+  {
+    kind: 'five_pct_change',
+    ticker: 'EXIT',
+    date: '2026-10-21',
+    numbers: {
+      investor: 'Departing investor',
+      previous_date: '2026-10-20',
+      shares_before: 6000,
+      shares_after: null,
+      net_shares: null,
+      pct_before: 6,
+      pct_after: null,
+    },
+  },
+  {
+    kind: 'five_pct_change',
+    ticker: 'ENTRY',
+    date: '2026-10-21',
+    numbers: {
+      investor: 'New investor',
+      previous_date: '2026-10-20',
+      shares_before: 0,
+      shares_after: 7000,
+      net_shares: 7000,
+      pct_before: 0,
+      pct_after: 7,
+    },
+  },
+];
+const ticker: Ticker = {
+  ticker: 'BBCA',
+  name: 'PT Bank Central Asia Tbk.',
+  prices: [
+    { date: '2026-10-21', close: 5000, volume: 100, value: 500000, net_foreign: 10000 },
+    { date: '2026-10-22', close: 5500, volume: 200, value: 1100000, net_foreign: -20000 },
+  ],
+  holders: [{ investor: 'Current investor', shares: 8000, pct: 8 }],
+  changes: [
+    {
+      date: '2026-10-21',
+      investor: 'Current investor',
+      shares_before: 7000,
+      shares_after: 8000,
+      net_shares: 1000,
+      pct_before: 7,
+      pct_after: 8,
+    },
+  ],
+};
+
+describe('IDX anomaly radar', () => {
+  it('renders all signal kinds and ticker links without turning 5% exits into zero holdings', () => {
+    const markup = renderToStaticMarkup(
+      <App initialUrl="/" initialData={{ health, radar: { market, feed } }} />,
+    );
+    for (const title of [
+      'Volume spikes',
+      'ARA moves',
+      'Foreign buying streaks',
+      'Green on red',
+      '5% ownership changes',
+    ]) {
+      expect(markup).toContain(title);
+    }
+    expect(markup.match(/href="\/t\/[^"]+"/g)).toHaveLength(feed.length);
+    for (const item of feed) expect(markup).toContain(`href="/t/${item.ticker}"`);
+    for (const evidence of [
+      '60,000,000',
+      '6.00×',
+      '135',
+      '35.00%',
+      '7 trading days',
+      '123,456,789',
+      '2.00%',
+      '-3.00%',
+    ]) {
+      expect(markup).toContain(evidence);
+    }
+    const start = markup.indexOf('href="/t/EXIT"');
+    const exit = markup.slice(start, markup.indexOf('</li>', start));
+    expect(exit).toContain('Departing investor');
+    expect(exit).toContain('6.00% → below 5%');
+    expect(exit).toContain('Exit');
+    expect(exit).toContain('Net shares: -');
+    expect(exit).not.toContain('0.00%');
+    expect(exit).not.toContain('Change');
+    expect(markup).toContain('Entry · Net shares: 7,000');
+    expect(markup).toContain('2026-10-21');
+    expect(markup).toContain('Since 2026-10-20');
+  });
+
+  it('routes BBCA to its history and ownership and rejects missing tickers and removed paths', () => {
+    const markup = renderToStaticMarkup(
+      <App initialUrl="/t/BBCA" initialData={{ health, ticker }} />,
+    );
+    for (const text of [
+      'PT Bank Central Asia Tbk.',
+      '5,500',
+      '10.00%',
+      'BBCA closing price history',
+      'Recent trading days',
+      'Current 5% holders',
+      'Current investor',
+      '8.00%',
+      'Net shares: 1,000',
+      'Last 90 days',
+      'Prices: 2026-10-22',
+      'Ownership as of 2026-10-21',
+    ]) {
+      expect(markup).toContain(text);
+    }
+    expect(markup).not.toContain('Page not found');
+    for (const path of ['/t/NOPE', '/insiders']) {
       const missing = renderToStaticMarkup(
-        <ConvexProvider client={client}>
-          <App initialUrl="/insiders" />
-        </ConvexProvider>,
+        <App initialUrl={path} initialData={{ health, ticker: null }} />,
       );
       expect(missing).toContain('Page not found');
-    } finally {
-      await client.close();
+      expect(missing).not.toContain('Recent trading days');
     }
-  });
-
-  it('renders source price values and combined ownership changes without inventing v1 fields', () => {
-    const prices = parsePrices(
-      JSON.parse(
-        readFileSync(
-          new URL('../convex/fixtures/stock-summary-idxid.json', import.meta.url),
-          'utf8',
-        ),
-      ),
-    );
-    const priceMarkup = renderToStaticMarkup(<DailyPricesTable rows={prices.slice(0, 1)} />);
-    expect(priceMarkup).toContain('AADI');
-    expect(priceMarkup).toContain('10,950');
-    expect(priceMarkup).toContain('7.62%');
-    expect(priceMarkup).not.toContain('%3d volume');
-    const five = parseFivePct(
-      readFileSync(new URL('../convex/fixtures/ownership-5pct-2026-10-19.xlsx', import.meta.url)),
-    );
-    const changes = deriveFivePct(five, [])
-      .changes.slice(0, 1)
-      .map((row) => ({ ...row, _id: 'change' }));
-    expect(changes).toHaveLength(1);
-    const markup = renderToStaticMarkup(
-      <FivePctOwnershipTable initialExpandedIds={['change']} rows={changes} />,
-    );
-    expect(markup).toContain(changes[0]!.investorName);
-    expect(markup).toContain(new Intl.NumberFormat('en-US').format(changes[0]!.previousCombined));
-    expect(markup).toContain(new Intl.NumberFormat('en-US').format(changes[0]!.currentCombined));
-    expect(markup).toContain('Previous shares');
-    expect(markup).toContain('Share delta');
-    expect(markup).toContain('Nama Rekening Efek');
-    expect(markup).not.toContain('SID total');
-  });
-
-  it('maps left and right arrow hotkeys to bounded pagination changes', () => {
-    expect(pageFromPaginationHotkey({ key: 'ArrowRight', targetTagName: 'BODY' }, 1, 3)).toBe(2);
-    expect(pageFromPaginationHotkey({ key: 'ArrowLeft', targetTagName: 'BODY' }, 2, 3)).toBe(1);
-    expect(pageFromPaginationHotkey({ key: 'ArrowLeft', targetTagName: 'BODY' }, 1, 3)).toBeNull();
-    expect(pageFromPaginationHotkey({ key: 'ArrowRight', targetTagName: 'BODY' }, 3, 3)).toBeNull();
-    expect(
-      pageFromPaginationHotkey({ key: 'ArrowRight', targetTagName: 'INPUT' }, 1, 3),
-    ).toBeNull();
-    expect(
-      pageFromPaginationHotkey(
-        { key: 'ArrowRight', targetIsContentEditable: true, targetTagName: 'DIV' },
-        1,
-        3,
-      ),
-    ).toBeNull();
-    expect(pageFromPaginationHotkey({ key: 'x', targetTagName: 'BODY' }, 1, 3)).toBeNull();
   });
 
   it('maps up and down arrow hotkeys to bounded row highlight changes', () => {
