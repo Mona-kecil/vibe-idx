@@ -1,0 +1,17 @@
+{
+  "name": "@vibe-idx/pipeline",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "ingest": "tsx ingest.ts",
+    "test": "CI=true vp test"
+  },
+  "dependencies": {
+    "@duckdb/node-api": "^1.4.3-r.3",
+    "tsx": "^4.20.6"
+  },
+  "devDependencies": {
+    "@types/node": "^26.0.1",
+    "vite-plus": "^0.2.1"
+  }
+}
