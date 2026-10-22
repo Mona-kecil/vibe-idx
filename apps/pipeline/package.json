@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "brokers": "tsx brokers.ts",
     "ingest": "tsx ingest.ts",
     "test": "CI=true vp test"
   },
