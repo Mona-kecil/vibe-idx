@@ -505,12 +505,13 @@ describe('private broker pipeline', () => {
     }
   });
 
-  it('recovers remote raw and ledger publication cut points without fetching completed pairs again', async () => {
+  it('recovers publication failures on reused and fresh runners without losing rows or refetching pairs', async () => {
     for (const cut of [
       'raw-write',
       'raw-cas',
       'raw-readback',
       'year',
+      'year-fresh',
       'coverage',
       'empty-coverage',
       'json',
@@ -528,6 +529,7 @@ describe('private broker pipeline', () => {
             key ===
               {
                 year: `parquet/brokers/${year}.parquet`,
+                'year-fresh': `parquet/brokers/${year}.parquet`,
                 coverage: 'parquet/broker-coverage.parquet',
                 'empty-coverage': 'parquet/broker-coverage.parquet',
                 json: 'site/broker/AAA.json',
@@ -544,6 +546,12 @@ describe('private broker pipeline', () => {
       const options = { ...f.options, fetcher: net.fetcher };
       try {
         await prices(f.data, [{ ticker: 'AAA', date: day, volume: 1 }]);
+        const ledger = join(f.data, 'parquet', 'brokers', `${year}.parquet`);
+        await mkdir(dirname(ledger), { recursive: true });
+        await query(`COPY (SELECT DATE '${day}' date, 'HISTORY' ticker, 'buy' side, 'AA' broker,
+          'Asing' investor_type, 1250::DOUBLE shares, 625000::DOUBLE AS value, 500::DOUBLE avg_price, 3::DOUBLE freq)
+          TO '${ledger}' (FORMAT PARQUET)`);
+        await f.save(`parquet/brokers/${year}.parquet`, await readFile(ledger));
         await expect(brokers(options)).rejects.toThrow(
           cut === 'raw-cas' ? 'PreconditionFailed' : 'synthetic storage failure',
         );
@@ -551,7 +559,7 @@ describe('private broker pipeline', () => {
         expect(JSON.parse((await f.load('auth/stockbit.json')).toString()).refresh).toBe(
           'synthetic-refresh-1',
         );
-        if (cut === 'year')
+        if (cut.startsWith('year'))
           expect(existsSync(join(f.remote, 'parquet/broker-coverage.parquet'))).toBe(false);
         if (cut === 'coverage')
           expect(existsSync(join(f.remote, `parquet/brokers/${year}.parquet`))).toBe(true);
@@ -565,13 +573,36 @@ describe('private broker pipeline', () => {
         net.calls.length = 0;
         await expect(brokers(options)).rejects.toThrow('marker');
         expect(net.calls).toEqual([]);
-        if (cut !== 'raw-write') await f.restart();
+        if (cut !== 'raw-write' && cut !== 'year') await f.restart();
         f.hooks.before = undefined;
         await rm(join(f.remote, 'broker-run.json'));
         const progress = await brokers(options);
         expect(progress.fetched).toBe(0);
         expect(progress.pending).toBe(0);
         expect(net.calls).toEqual([]);
+        const rows = await query(`SELECT date::VARCHAR date, ticker, side, broker, investor_type,
+          shares, value, avg_price, freq FROM read_parquet('${join(f.remote, `parquet/brokers/${year}.parquet`)}') ORDER BY ticker, side`);
+        expect(rows).toEqual([
+          ...(cut === 'empty-coverage'
+            ? []
+            : [
+                { date: day, ticker: 'AAA', side: 'buy', ...buy },
+                { date: day, ticker: 'AAA', side: 'sell', ...sell },
+              ]),
+          { date: day, ticker: 'HISTORY', side: 'buy', ...buy },
+        ]);
+        await f.restart();
+        expect(await brokers(options)).toEqual({
+          fetched: 0,
+          replayed: 0,
+          completed: 0,
+          pending: 0,
+        });
+        expect(net.calls).toEqual([]);
+        expect(
+          await query(`SELECT date::VARCHAR date, ticker, side, broker, investor_type,
+          shares, value, avg_price, freq FROM read_parquet('${ledger}') ORDER BY ticker, side`),
+        ).toEqual(rows);
         expect(JSON.parse((await f.load('site/broker/AAA.json')).toString())).toEqual([
           {
             date: day,
@@ -701,7 +732,7 @@ describe('private broker pipeline', () => {
         await rm(f.root, { recursive: true, force: true });
       }
     }
-  });
+  }, 30000);
 
   it('checkpoints cached imports before the next provider request can interrupt the runner', async () => {
     const f = await fixture();

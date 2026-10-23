@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { chmod, mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { setTimeout } from 'node:timers/promises';
@@ -258,14 +258,19 @@ export async function brokers({
           throw new Error('Invalid broker target');
         return { ticker: entry.ticker, date: entry.date };
       });
-      const years = new Set<string>();
+      const years = new Map<string, boolean>();
+      if (existsSync(parquet))
+        for (const file of await readdir(parquet))
+          if (file.endsWith('.parquet')) years.set(file.slice(0, -8), false);
       async function checkpoint() {
-        for (const year of years) {
+        for (const [year, changed] of years) {
           const file = join(parquet, `${year}.parquet`);
-          await mkdir(dirname(file), { recursive: true });
-          await db.run(`COPY (SELECT * FROM brokers WHERE year(date) = ${Number(year)} ORDER BY ALL)
+          if (changed) {
+            await mkdir(dirname(file), { recursive: true });
+            await db.run(`COPY (SELECT * FROM brokers WHERE year(date) = ${Number(year)} ORDER BY ALL)
           TO ${literal(file + '.tmp')} (FORMAT PARQUET, COMPRESSION ZSTD)`);
-          await rename(file + '.tmp', file);
+            await rename(file + '.tmp', file);
+          }
           await put(`parquet/brokers/${year}.parquet`, file);
         }
         await mkdir(dirname(coverage), { recursive: true });
@@ -356,7 +361,7 @@ export async function brokers({
             await db.run('ROLLBACK');
             throw error;
           }
-          if (rows.length) years.add(day.slice(0, 4));
+          if (rows.length) years.set(day.slice(0, 4), true);
           if (archived.cached) replayed++;
           completed++;
         } catch (error) {
