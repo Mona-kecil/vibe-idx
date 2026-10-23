@@ -1,4 +1,3 @@
-/// <reference types="node" />
 import { existsSync } from 'node:fs';
 import { chmod, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';

@@ -148,7 +148,6 @@ function network({ monthly = false, reports = false } = {}) {
       name = url.pathname.includes('GetStockSummary')
         ? 'stock-summary-idxid.json'
         : 'index-summary-idxid.json';
-      // The market fixtures are dated October 20; align them with the ownership regression day.
       return new Response((await fixture(name)).toString().replaceAll('2026-10-20', '2026-10-21'));
     }
     if (url.pathname.includes('GetCompanyProfiles')) name = 'company-profiles.json';

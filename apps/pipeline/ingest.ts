@@ -1,4 +1,3 @@
-/// <reference types="node" />
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
