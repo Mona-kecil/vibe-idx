@@ -342,12 +342,13 @@ export async function ingest({
       const disclosures: ReturnType<typeof parseAnnouncements>['disclosures'] = [];
       const ids = new Set<string>();
       let offset = 0;
+      let pageNumber = 0;
       let total: number | undefined;
       while (total === undefined || offset < total) {
         const params = new URLSearchParams({
           kodeEmiten: '',
           emitenType: '*',
-          indexFrom: String(offset),
+          indexFrom: String(pageNumber),
           pageSize: '100',
           dateFrom: first.replaceAll('-', ''),
           dateTo: today.replaceAll('-', ''),
@@ -372,6 +373,7 @@ export async function ingest({
           disclosures.push(d);
         }
         offset += page.disclosures.length;
+        pageNumber++;
       }
       const years = {
         disclosures: new Set<string>(),

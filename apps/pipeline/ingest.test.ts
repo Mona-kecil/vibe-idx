@@ -153,7 +153,7 @@ function network({ monthly = false, reports = false } = {}) {
     }
     if (url.pathname.includes('GetCompanyProfiles')) name = 'company-profiles.json';
     else if (url.pathname.includes('GetAnnouncement')) {
-      const start = Number(url.searchParams.get('indexFrom'));
+      const start = Number(url.searchParams.get('indexFrom')) * 2;
       const from = url.searchParams.get('dateFrom') ?? '';
       const to = url.searchParams.get('dateTo') ?? '';
       const rows = disclosures.filter((d) => {
@@ -356,7 +356,7 @@ describe('batch pipeline', () => {
         net.urls
           .filter((u) => u.includes('GetAnnouncement'))
           .map((u) => new URL(u).searchParams.get('indexFrom')),
-      ).toEqual(['0', '2', '4', '6', '8']);
+      ).toEqual(['0', '1', '2', '3', '4']);
       expect(JSON.parse(await readFile(join(root, 'out/health.json'), 'utf8'))).toMatchObject({
         prices: '2026-10-21',
         five_pct: '2026-10-21',
@@ -462,7 +462,7 @@ describe('batch pipeline', () => {
             const url = new URL(input instanceof Request ? input.url : input);
             if (
               url.pathname.includes('GetAnnouncement') &&
-              url.searchParams.get('indexFrom') === '2'
+              url.searchParams.get('indexFrom') === '1'
             )
               return Response.json({ ResultCount: 10, Replies: [] });
             return net.fetcher(input, init);
