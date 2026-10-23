@@ -52,7 +52,7 @@ export function createBrokerHandler({
     try {
       const { payload } = await jwtVerify(bearer[1], jwks, {
         algorithms: ['RS256'],
-        issuer: 'https://api.workos.com/',
+        issuer: `https://api.workos.com/user_management/${clientId.data}`,
         requiredClaims: ['sub', 'sid', 'exp', 'iat'],
       });
       if (
