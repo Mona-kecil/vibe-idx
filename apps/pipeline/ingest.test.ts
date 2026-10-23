@@ -148,7 +148,10 @@ function network({ monthly = false, reports = false } = {}) {
       name = url.pathname.includes('GetStockSummary')
         ? 'stock-summary-idxid.json'
         : 'index-summary-idxid.json';
-      return new Response((await fixture(name)).toString().replaceAll('2026-10-20', '2026-10-21'));
+      const marketFixtureForOwnershipDay = (await fixture(name))
+        .toString()
+        .replaceAll('2026-10-20', '2026-10-21');
+      return new Response(marketFixtureForOwnershipDay);
     }
     if (url.pathname.includes('GetCompanyProfiles')) name = 'company-profiles.json';
     else if (url.pathname.includes('GetAnnouncement')) {
