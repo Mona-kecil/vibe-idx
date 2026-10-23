@@ -202,6 +202,84 @@ function network({ monthly = false, reports = false } = {}) {
 }
 
 describe('batch pipeline', () => {
+  it('recovers stock and index rows after empty summaries were cached in persistent data', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'idx-empty-summary-'));
+    const net = network();
+    const options = {
+      data: join(root, 'data'),
+      out: join(root, 'out'),
+      since: '2026-10-20',
+      today: '2026-10-21',
+    };
+    try {
+      const first = await ingest({
+        ...options,
+        fetcher: async (input, init) => {
+          const url = new URL(input instanceof Request ? input.url : input);
+          if (url.pathname.includes('TradingSummary')) {
+            if (url.searchParams.get('date') === '20261021')
+              return Response.json({ recordsTotal: 0, data: [] });
+            return new Response(
+              new Uint8Array(
+                await fixture(
+                  url.pathname.includes('GetStockSummary')
+                    ? 'stock-summary-idxid.json'
+                    : 'index-summary-idxid.json',
+                ),
+              ),
+            );
+          }
+          return net.fetcher(input, init);
+        },
+      });
+      expect(first.counts).toMatchObject({ prices: 963, indices: 45 });
+      const rawPaths = ['prices', 'indices'].map((table) =>
+        join(options.data, 'raw', table, '2026-10-21.json'),
+      );
+      const archived = await Promise.all(rawPaths.map((path) => readFile(path)));
+      expect(archived.map((bytes) => JSON.parse(bytes.toString()))).toEqual([
+        { recordsTotal: 0, data: [] },
+        { recordsTotal: 0, data: [] },
+      ]);
+      net.urls.length = 0;
+      const recovered = await ingest({ ...options, fetcher: net.fetcher });
+      expect(recovered.counts).toMatchObject({ prices: 1926, indices: 90 });
+      expect(
+        net.urls
+          .filter((url) => url.includes('TradingSummary'))
+          .map((url) => new URL(url).searchParams.get('date')),
+      ).toEqual(['20261021', '20261021']);
+      expect(await Promise.all(rawPaths.map((path) => readFile(path)))).toEqual(archived);
+      const instance = await DuckDBInstance.create(':memory:');
+      const db = await instance.connect();
+      try {
+        for (const [table, n] of [
+          ['prices', 963],
+          ['indices', 45],
+        ] as const) {
+          const rows = (
+            await db.runAndReadAll(`SELECT date::VARCHAR date, count(*)::INTEGER n
+              FROM read_parquet('${join(options.data, 'parquet', table, '2026.parquet')}')
+              GROUP BY date ORDER BY date`)
+          ).getRowObjectsJson();
+          expect(rows).toEqual([
+            { date: '2026-10-20', n },
+            { date: '2026-10-21', n },
+          ]);
+        }
+      } finally {
+        db.closeSync();
+        instance.closeSync();
+      }
+      net.urls.length = 0;
+      const replay = await ingest({ ...options, fetcher: net.fetcher });
+      expect(replay.counts).toEqual(recovered.counts);
+      expect(net.urls.filter((url) => url.includes('TradingSummary'))).toEqual([]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it('keeps source dates, duplicate 1% holders, paginated disclosures, and verified PDF values without losing 5% signals', async () => {
     const root = await mkdtemp(join(tmpdir(), 'idx-fixture-'));
     try {
@@ -409,9 +487,11 @@ describe('batch pipeline', () => {
       expect(
         await Promise.all(paths.map((p) => readFile(join(options.data, 'parquet', p)))),
       ).toEqual(before);
-      expect(net.urls.every((url) => /data-kepemilikan-saham|GetAnnouncement/.test(url))).toBe(
-        true,
-      );
+      expect(
+        net.urls.every((url) =>
+          /data-kepemilikan-saham|GetAnnouncement|GetStockSummary|GetIndexSummary/.test(url),
+        ),
+      ).toBe(true);
       expect(second.report_gaps).toEqual(first.report_gaps);
       const beforeRaw = await readdir(join(options.data, 'raw/disclosures/2026-07-25-2026-10-22'));
       expect(beforeRaw).toHaveLength(5);

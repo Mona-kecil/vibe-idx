@@ -166,7 +166,7 @@ export async function parseReport({
     (m) => Number(m[1]?.replace(',', '.')),
   ).filter((n) => n <= 100);
   const sid =
-    /Jumlah Pemegang Saham Nasabah Pemilik SID Bulan Sebelumnya Bulan Sekarang Perubahan ([\d.]+) ([\d.]+) ([\d.]+)/.exec(
+    /Jumlah Pemegang Saham Nasabah Pemilik SID Bulan Sebelumnya Bulan Sekarang Perubahan ([\d.]+) ([\d.]+) (-?[\d.]+)/.exec(
       text,
     )?.[2];
   const free_float_pct = percentages.length === 2 ? (percentages[1] ?? null) : null;

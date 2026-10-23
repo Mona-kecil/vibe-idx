@@ -79,7 +79,13 @@ export async function ingest({
   }
   async function raw(path: string, url: string) {
     const file = join(data, 'raw', path);
-    if (existsSync(file)) return readFile(file);
+    if (existsSync(file)) {
+      const bytes = await readFile(file);
+      const emptySummary =
+        (path.startsWith('prices/') && !parsePrices(json(bytes)).length) ||
+        (path.startsWith('indices/') && !parseIndices(json(bytes)).length);
+      if (!emptySummary) return bytes;
+    }
     const bytes = await download(url);
     await archive(path, bytes);
     return bytes;
