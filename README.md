@@ -45,15 +45,21 @@ CI runs package checks, tests, and the client build on pull requests and pushes 
 
 ## Run the batch
 
+Install the AWS CLI. Set `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_DEFAULT_REGION=auto`, and `R2_ACCOUNT_ID` for the pipeline's R2 credential. Broker collection reads and writes private R2, including when launched locally. Run it only after draining hosted collectors.
+
 ```sh
 pnpm --filter @vibe-idx/pipeline ingest -- --data /tmp/idx-data --out /tmp/idx-public
 pnpm --filter @vibe-idx/pipeline brokers -- --data /tmp/idx-data --token /path/to/stockbit.json --out /tmp/idx-private
 ```
 
-The Stockbit token file has `access` and `refresh` fields. Treat it as a secret. The broker command rotates both tokens and saves the pair before collecting data.
+Seed `auth/stockbit.json` in `vibe-idx-private` with `access` and `refresh` fields. Treat it as a secret. The broker command reads the current cloud pair and writes its rotated replacement to R2 before collecting data. The `--token` path is its local checkpoint, not a seed that replaces cloud state.
 
-The daily GitHub Actions workflow restores private Parquet, fetches IDX data, publishes public JSON, then collects broker summaries for traded stocks. It runs daily at 17:17 Jakarta so token renewal continues over weekends. Completed empty summaries and pending failures remain in a private pair ledger. The first collection starts on the latest trading day. Later runs fill gaps from that start date.
+GitHub Actions fetches IDX data and publishes public JSON daily at 17:17 Jakarta, then collects broker summaries. Eleven broker-only slots fill the remaining two-hour intervals. All runs share one queue. Targets are positive-volume price pairs from June 1, 2026 through the latest completed trading day, newest first. Existing raw responses and completed empty summaries prevent repeat source requests.
 
-GitHub Actions uses `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY` secrets with read and write access to both buckets, plus the `R2_ACCOUNT_ID` repository variable. Seed `auth/stockbit.json` in the private bucket before the first broker run. Vercel needs its own server environment variables. GitHub secrets do not sync to Vercel.
+Each broker run allows at most 500 Stockbit attempts and 50 minutes. All auth and summary requests start at least six seconds apart. `BROKER_RUN_KIND=backfill` skips auth when no pair remains; the default `daily` run maintains auth over weekends. Ten requests per minute is a collection ceiling, not a verified provider quota.
+
+The collector acquires `broker-run.json` in private R2 before auth. It removes the marker after a successful checkpoint and publication. Any error or interruption leaves it in place and blocks later broker runs while daily IDX publication continues. Before removing a marker, confirm no collector is active, inspect the failed run and cloud token/raw state, and resolve any ambiguous write or token rotation. Do not clear a marker based on age. Manual workflow launches verify R2 conditional writes before starting the collector.
+
+GitHub Actions uses `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY` secrets with read and write access to both buckets, plus the `R2_ACCOUNT_ID` repository variable. Vercel needs its own server environment variables. GitHub secrets do not sync to Vercel. June history remains in private raw and Parquet storage; the existing broker view shows only the last 90 calendar days.
 
 See [the architecture and source contracts](docs/v2.md) for storage paths, source dates, and parsing limits.
