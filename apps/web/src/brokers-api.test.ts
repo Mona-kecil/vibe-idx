@@ -1,6 +1,12 @@
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { exportJWK, generateKeyPair, SignJWT } from 'jose';
+import ts from 'typescript';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vite-plus/test';
 import type { JWTPayload } from 'jose';
 import api, { createBrokerHandler } from '../api/brokers';
@@ -122,6 +128,48 @@ afterAll(async () => {
 });
 
 describe('private broker API', () => {
+  it('loads emitted broker and news APIs in native Node ESM without missing shared modules', () => {
+    const webRoot = fileURLToPath(new URL('..', import.meta.url));
+    const output = mkdtempSync(join(tmpdir(), 'vibe-idx-api-esm-'));
+    try {
+      const program = ts.createProgram(
+        [join(webRoot, 'api/brokers.ts'), join(webRoot, 'api/news.ts')],
+        {
+          rootDir: webRoot,
+          outDir: output,
+          target: ts.ScriptTarget.ES2022,
+          module: ts.ModuleKind.ESNext,
+          moduleResolution: ts.ModuleResolutionKind.Bundler,
+        },
+      );
+      expect(program.emit().emitSkipped).toBe(false);
+      writeFileSync(join(output, 'package.json'), '{"type":"module"}');
+      symlinkSync(join(webRoot, 'node_modules'), join(output, 'node_modules'), 'dir');
+      execFileSync(
+        process.execPath,
+        [
+          '--input-type=module',
+          '--eval',
+          `
+            import assert from 'node:assert/strict';
+            globalThis.fetch = () => { throw new Error('Unexpected upstream request'); };
+            const { default: brokers } = await import('./api/brokers.js');
+            const { default: news } = await import('./api/news.js');
+            const brokerResponse = await brokers.fetch(new Request('https://vibe.test/api/brokers?ticker=BBCA'));
+            assert.equal(brokerResponse.status, 401);
+            assert.deepEqual(await brokerResponse.json(), { error: 'unauthorized' });
+            const newsResponse = await news.fetch(new Request('https://vibe.test/api/news?ticker=../auth/stockbit'));
+            assert.equal(newsResponse.status, 400);
+            assert.deepEqual(await newsResponse.json(), { error: 'invalid_ticker' });
+          `,
+        ],
+        { cwd: output, env: {} },
+      );
+    } finally {
+      rmSync(output, { recursive: true, force: true });
+    }
+  });
+
   it('rejects missing, forged, wrong-client, wrong-issuer, expired, and incomplete JWTs before R2 reads', async () => {
     const handle = createBrokerHandler({ env, fetcher });
     const hmac = await new SignJWT({ sub: 'user_test', exp: 9999999999 })

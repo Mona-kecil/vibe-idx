@@ -1,6 +1,6 @@
 import { XMLParser } from 'fast-xml-parser';
 import { z } from 'zod';
-import { brokerTickerSchema } from '../src/brokers';
+import { brokerTickerSchema } from '../src/brokers.js';
 
 const article = z.object({
   title: z.string(),

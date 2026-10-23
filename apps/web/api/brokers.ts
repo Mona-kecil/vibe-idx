@@ -1,7 +1,7 @@
 import { AwsClient } from 'aws4fetch';
 import { createRemoteJWKSet, customFetch, errors, jwtVerify } from 'jose';
 import { z } from 'zod';
-import { brokerDaySchema, brokerTickerSchema } from '../src/brokers';
+import { brokerDaySchema, brokerTickerSchema } from '../src/brokers.js';
 
 const clientIdSchema = z.string().regex(/^client_[a-zA-Z0-9]+$/);
 const storageConfigSchema = z.object({
