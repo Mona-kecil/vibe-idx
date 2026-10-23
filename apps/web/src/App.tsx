@@ -279,7 +279,7 @@ function RadarPage({ initial }: { initial?: InitialData['radar'] }) {
           {latest?.date ?? '—'}
         </p>
       </div>
-      <LineChart points={market.history} label="IHSG close history" compact />
+      <LineChart points={market.history} label={t('IHSG close history')} compact />
       {feedGroups.map((group) => {
         const items = feed.filter((item) => item.kind === group.kind);
         return (
@@ -313,13 +313,17 @@ function RadarPage({ initial }: { initial?: InitialData['radar'] }) {
 }
 
 function FeedNumbers({ item }: { item: Feed[number] }) {
-  const { t, n, p } = useLocale();
+  const { locale, t, n, p } = useLocale();
   switch (item.kind) {
     case 'volume_spike':
       return (
         <>
-          {n(item.numbers.volume)} {t('shares')} · {item.numbers.multiple.toFixed(2)}×{' '}
-          {t('average')} ({n(item.numbers.avg_volume)} {t('over')} {item.numbers.prior_days}{' '}
+          {n(item.numbers.volume)} {t('shares')} ·{' '}
+          {item.numbers.multiple.toLocaleString(locale === 'id' ? 'id-ID' : 'en-US', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          })}
+          × {t('average')} ({n(item.numbers.avg_volume)} {t('over')} {item.numbers.prior_days}{' '}
           {t('days')}) · Rp {n(item.numbers.value)}
         </>
       );
@@ -452,7 +456,7 @@ function TickerPage({
           Rp {n(latest?.close)} <span className={movementCellClass(change)}>{p(change)}</span>
         </p>
       </div>
-      <LineChart points={data.prices} label={`${ticker} closing price history`} />
+      <LineChart points={data.prices} label={`${ticker} ${t('closing price history')}`} />
       <h3>{t('Recent trading days')}</h3>
       <DataTable columns={recentColumns} rows={data.prices.slice(-10).reverse()} />
       <h3>{t('Current 5% holders')}</h3>

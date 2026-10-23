@@ -143,7 +143,7 @@ const ticker: Ticker = {
 };
 
 describe('IDX anomaly radar', () => {
-  it('keeps public ticker evidence and a passwordless broker gate in both languages', () => {
+  it('keeps public ticker evidence and a passwordless broker gate without English chart labels in Indonesian', () => {
     const english = renderToStaticMarkup(
       <App initialUrl="/t/BBCA" initialData={{ health, ticker }} initialLocale="en" />,
     );
@@ -155,6 +155,10 @@ describe('IDX anomaly radar', () => {
     expect(indonesian).toContain('Gunakan kode sekali pakai');
     expect(indonesian).toContain('Pemegang saham 5% terakhir');
     expect(indonesian).toContain('5.500');
+    expect(english).toContain('aria-label="BBCA closing price history"');
+    expect(english).toContain('<title>BBCA closing price history</title>');
+    expect(indonesian).toContain('aria-label="BBCA riwayat harga penutupan"');
+    expect(indonesian).toContain('<title>BBCA riwayat harga penutupan</title>');
     for (const markup of [english, indonesian]) {
       expect(markup).toContain('PT Bank Central Asia Tbk.');
       expect(markup).toContain('Current investor');
@@ -165,7 +169,7 @@ describe('IDX anomaly radar', () => {
       expect(markup).not.toContain('fixture-access-key');
     }
   });
-  it('renders all signal kinds and ticker links without turning 5% exits into zero holdings', () => {
+  it('renders localized signals without English decimals or zero holdings for 5% exits', () => {
     const markup = renderToStaticMarkup(
       <App initialUrl="/" initialData={{ health, radar: { market, feed } }} />,
     );
@@ -203,6 +207,15 @@ describe('IDX anomaly radar', () => {
     expect(markup).toContain('Entry · Net shares: 7,000');
     expect(markup).toContain('2026-10-21');
     expect(markup).toContain('Since 2026-10-20');
+    const indonesian = renderToStaticMarkup(
+      <App initialUrl="/" initialData={{ health, radar: { market, feed } }} initialLocale="id" />,
+    );
+    expect(markup).toContain('aria-label="IHSG close history"');
+    expect(markup).toContain('<title>IHSG close history</title>');
+    expect(indonesian).toContain('6,00×');
+    expect(indonesian).not.toContain('6.00×');
+    expect(indonesian).toContain('aria-label="Riwayat penutupan IHSG"');
+    expect(indonesian).toContain('<title>Riwayat penutupan IHSG</title>');
   });
 
   it('routes BBCA to its history and ownership and rejects missing tickers and removed paths', () => {

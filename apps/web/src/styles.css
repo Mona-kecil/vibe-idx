@@ -40,6 +40,10 @@ textarea {
   font-size: 0.9rem;
 }
 
+.account-controls > span {
+  overflow-wrap: anywhere;
+}
+
 .account-controls button,
 .account-controls select,
 .broker-panel button {

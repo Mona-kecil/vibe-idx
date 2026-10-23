@@ -216,7 +216,7 @@ function BrokerData({ ticker, tradingDates }: { ticker: string; tradingDates: st
               <tr>
                 {[
                   'Broker',
-                  'Investor type',
+                  'Source type',
                   'Buy shares',
                   'Sell shares',
                   'Net shares',
