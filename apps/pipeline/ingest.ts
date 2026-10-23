@@ -1,4 +1,5 @@
 /// <reference types="node" />
+import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
@@ -6,18 +7,33 @@ import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 import { dateValue, DuckDBInstance } from '@duckdb/node-api';
 import type { DuckDBValue } from '@duckdb/node-api';
-import { parsePrices } from '../web/convex/lib/prices';
-import { parseIndices } from '../web/convex/lib/indices';
-import { parseIssuers } from '../web/convex/lib/issuers';
-import { parseFivePct } from '../web/convex/lib/fivePct';
-import { idxUrl, parseOwnershipList } from '../web/convex/lib/ownershipList';
-import { date } from '../web/convex/lib/rows';
+import { parsePrices } from './lib/prices';
+import { parseIndices } from './lib/indices';
+import { parseIssuers } from './lib/issuers';
+import { parseFivePct } from './lib/fivePct';
+import { parseOnePct } from './lib/onePct';
+import { idxUrl, parseOwnershipList } from './lib/ownershipList';
+import { date } from './lib/rows';
+import { parseAnnouncements, parseReport } from './reports';
 import { analytics, health, market, schema, stockTable, tickers } from './sql';
 
-const tables = ['prices', 'indices', 'five_pct', 'issuers'] as const;
+const tables = [
+  'prices',
+  'indices',
+  'five_pct',
+  'one_pct',
+  'ownership_files',
+  'disclosures',
+  'insiders',
+  'registry',
+  'issuers',
+] as const;
 type Table = (typeof tables)[number];
 const literal = (s: string) => `'${s.replaceAll("'", "''")}'`;
 const dayValue = (s: string) => dateValue(Date.parse(s) / 86400000);
+const hash = (value: string | Uint8Array) => createHash('sha256').update(value).digest('hex');
+const shiftDay = (day: string, offset: number) =>
+  new Date(Date.parse(day) + offset * 86400000).toISOString().slice(0, 10);
 
 export async function ingest({
   data,
@@ -55,13 +71,18 @@ export async function ingest({
     requests++;
     return new Uint8Array(await response.arrayBuffer());
   }
+  async function archive(path: string, bytes: Uint8Array) {
+    const file = join(data, 'raw', path);
+    if (existsSync(file)) return;
+    fetched++;
+    await mkdir(dirname(file), { recursive: true });
+    await writeFile(file, bytes, { flag: 'wx' });
+  }
   async function raw(path: string, url: string) {
     const file = join(data, 'raw', path);
     if (existsSync(file)) return readFile(file);
     const bytes = await download(url);
-    fetched++;
-    await mkdir(dirname(file), { recursive: true });
-    await writeFile(file, bytes, { flag: 'wx' });
+    await archive(path, bytes);
     return bytes;
   }
   async function append(table: Table | 'incoming_five', rows: DuckDBValue[][]) {
@@ -203,25 +224,73 @@ export async function ingest({
       const dates = await present('five_pct');
       const years = new Set<string>();
       const first = since ?? [...dates].sort((a, b) => b.localeCompare(a))[0] ?? '2026-05-29';
-      for (let year = Number(first.slice(0, 4)); year <= Number(today.slice(0, 4)); year++) {
-        const files = parseOwnershipList(
-          json(
-            await download(
-              `/primary/list/id/perusahaan-tercatat/data-kepemilikan-saham/?year=${year}&lang=id&start=0&length=9999`,
-            ),
-          ),
+      const monthlyDates = await present('one_pct');
+      const monthlyYears = new Set<string>();
+      const fileYears = new Set<string>();
+      const monthlyFirst =
+        since ?? [...monthlyDates].sort((a, b) => b.localeCompare(a))[0] ?? '2026-02-01';
+      const knownFiles = new Set(
+        (await query('SELECT url FROM ownership_files')).map((r) => r.url),
+      );
+      for (
+        let year = Math.min(Number(first.slice(0, 4)), Number(monthlyFirst.slice(0, 4)));
+        year <= Number(today.slice(0, 4));
+        year++
+      ) {
+        const bytes = await download(
+          `/primary/list/id/perusahaan-tercatat/data-kepemilikan-saham/?year=${year}&lang=id&start=0&length=9999`,
         );
+        await archive(`ownership-list/${year}-${hash(bytes)}.json`, bytes);
+        const files = parseOwnershipList(json(bytes));
         for (const file of files) {
-          if (
-            file.source !== 'fivePct' ||
-            file.date < first ||
-            file.date > today ||
-            dates.has(file.date)
-          )
+          if (file.date > today || knownFiles.has(file.url)) continue;
+          if (file.source === 'onePct') {
+            if (file.date < monthlyFirst) continue;
+            const rows = parseOnePct(await raw(`one-pct/${hash(file.url)}.xlsx`, file.url));
+            if (!rows.length) throw new Error(`Empty 1% ownership file: ${file.url}`);
+            const incomingDates = new Set(rows.map((r) => r.asOf));
+            if (incomingDates.size !== 1) throw new Error(`Mixed 1% snapshot dates: ${file.url}`);
+            const incoming = rows.filter(
+              (r) => r.asOf >= monthlyFirst && r.asOf <= today && !monthlyDates.has(r.asOf),
+            );
+            await append(
+              'one_pct',
+              incoming.map((r) => [
+                dayValue(r.asOf),
+                r.ticker,
+                r.investorName,
+                r.seq,
+                r.issuerName,
+                r.total,
+                r.percent,
+                r.classification ?? null,
+                r.localForeign ?? null,
+                r.nationality ?? null,
+                r.domicile ?? null,
+                r.scripless ?? null,
+                r.scrip ?? null,
+                file.url,
+              ]),
+            );
+            for (const r of incoming) {
+              monthlyDates.add(r.asOf);
+              monthlyYears.add(r.asOf.slice(0, 4));
+            }
+            for (const asOf of incomingDates) {
+              if (asOf < monthlyFirst || asOf > today) continue;
+              await append('ownership_files', [[dayValue(asOf), file.source, file.url]]);
+              fileYears.add(asOf.slice(0, 4));
+              knownFiles.add(file.url);
+            }
             continue;
-          const parsed = parseFivePct(await raw(`five-pct/${file.date}.xlsx`, file.url));
-          if (parsed.asOf !== file.date)
-            throw new Error(`Ownership date mismatch: ${file.date} vs ${parsed.asOf}`);
+          }
+          if (file.date < first) continue;
+          const parsed = parseFivePct(await raw(`five-pct/${hash(file.url)}.xlsx`, file.url));
+          if (parsed.asOf < first || parsed.asOf > today) continue;
+          await append('ownership_files', [[dayValue(parsed.asOf), file.source, file.url]]);
+          fileYears.add(parsed.asOf.slice(0, 4));
+          knownFiles.add(file.url);
+          if (dates.has(parsed.asOf)) continue;
           const rows = parsed.groups.flatMap((g) =>
             g.accounts.map((a) => [
               dayValue(parsed.asOf),
@@ -250,6 +319,146 @@ export async function ingest({
         }
       }
       await save('five_pct', years);
+      await save('one_pct', monthlyYears);
+      await save('ownership_files', fileYears);
+    }
+    {
+      const known = new Map(
+        (await query('SELECT id, date::VARCHAR date, source_json FROM disclosures')).map((r) => {
+          if (
+            typeof r.id !== 'string' ||
+            typeof r.date !== 'string' ||
+            typeof r.source_json !== 'string'
+          )
+            throw new Error('Expected disclosure ledger identity');
+          return [r.id, { date: r.date, source: r.source_json }];
+        }),
+      );
+      const latest = [...known.values()]
+        .map((r) => r.date)
+        .sort()
+        .at(-1);
+      const first = since ?? (latest ? shiftDay(latest, -2) : shiftDay(today, -89));
+      const disclosures: ReturnType<typeof parseAnnouncements>['disclosures'] = [];
+      const ids = new Set<string>();
+      let offset = 0;
+      let total: number | undefined;
+      while (total === undefined || offset < total) {
+        const params = new URLSearchParams({
+          kodeEmiten: '',
+          emitenType: '*',
+          indexFrom: String(offset),
+          pageSize: '100',
+          dateFrom: first.replaceAll('-', ''),
+          dateTo: today.replaceAll('-', ''),
+          lang: 'id',
+          keyword: '',
+        });
+        const url = `/primary/ListedCompany/GetAnnouncement?${params}`;
+        const bytes = await download(url);
+        await archive(`disclosures/${first}-${today}/${offset}-${hash(bytes)}.json`, bytes);
+        const page = parseAnnouncements(json(bytes));
+        if (total !== undefined && total !== page.total)
+          throw new Error('Announcement count changed during pagination; retry the run');
+        total = page.total;
+        if (
+          (!page.disclosures.length && offset < total) ||
+          offset + page.disclosures.length > total
+        )
+          throw new Error(`Incomplete announcement page at ${offset} of ${total}`);
+        for (const d of page.disclosures) {
+          if (ids.has(d.id)) throw new Error(`Repeated announcement during pagination: ${d.id}`);
+          ids.add(d.id);
+          disclosures.push(d);
+        }
+        offset += page.disclosures.length;
+      }
+      const years = {
+        disclosures: new Set<string>(),
+        insiders: new Set<string>(),
+        registry: new Set<string>(),
+      };
+      for (const d of disclosures) {
+        const source = JSON.stringify(d);
+        if (known.get(d.id)?.source === source) continue;
+        const gaps: { url: string; reason: string }[] = [];
+        const reports: {
+          url: string;
+          report: Extract<Awaited<ReturnType<typeof parseReport>>, { kind: 'parsed' }>['report'];
+        }[] = [];
+        if (d.kind !== 'other' && d.ticker) {
+          if (!d.reports.length)
+            gaps.push({ url: d.url, reason: 'No supported report PDF attachment' });
+          for (const attachment of d.reports) {
+            const result = await parseReport({
+              bytes: await raw(`reports/${hash(attachment.url)}.pdf`, attachment.url),
+              ticker: d.ticker,
+              kind: d.kind,
+            });
+            if (result.kind === 'unsupported')
+              gaps.push({ url: attachment.url, reason: result.reason });
+            else {
+              reports.push({ url: attachment.url, report: result.report });
+              gaps.push(...result.gaps.map((reason) => ({ url: attachment.url, reason })));
+            }
+          }
+        }
+        for (const table of ['disclosures', 'insiders', 'registry'] as const) {
+          for (const r of await query(
+            `SELECT DISTINCT year(date)::VARCHAR AS partition_year FROM ${table} WHERE id = ${literal(d.id)}`,
+          )) {
+            if (typeof r.partition_year !== 'string')
+              throw new Error('Expected report ledger year');
+            years[table].add(r.partition_year);
+          }
+          await db.run(`DELETE FROM ${table} WHERE id = ${literal(d.id)}`);
+        }
+        await append('disclosures', [
+          [
+            dayValue(date(d.published_at)),
+            d.id,
+            d.ticker,
+            d.title,
+            d.published_at,
+            d.url,
+            d.kind,
+            JSON.stringify(d.attachments),
+            source,
+            JSON.stringify(gaps),
+          ],
+        ]);
+        years.disclosures.add(d.published_at.slice(0, 4));
+        for (const { report: r, url } of reports) {
+          if (r.kind === 'insider')
+            await append('insiders', [
+              [
+                dayValue(r.date),
+                d.id,
+                d.ticker,
+                r.reporter,
+                r.shares_before,
+                r.shares_after,
+                r.net_shares,
+                url,
+              ],
+            ]);
+          else
+            await append('registry', [
+              [
+                dayValue(r.date),
+                d.id,
+                d.ticker,
+                r.free_float_pct,
+                r.total_shares,
+                r.sid_count,
+                url,
+              ],
+            ]);
+          years[r.kind === 'insider' ? 'insiders' : 'registry'].add(r.date.slice(0, 4));
+        }
+      }
+      for (const table of ['disclosures', 'insiders', 'registry'] as const)
+        await save(table, years[table]);
     }
     await db.run(analytics);
     await mkdir(join(out, 'ticker'), { recursive: true });
@@ -280,7 +489,9 @@ export async function ingest({
         ]),
       ),
     );
-    return { fetched, requests, counts };
+    const report_gaps = await query(`SELECT d.id, g.value->>'url' url, g.value->>'reason' reason
+      FROM disclosures d, json_each(d.report_gaps) g ORDER BY d.id, url, reason`);
+    return { fetched, requests, counts, report_gaps };
   } finally {
     db.closeSync();
     instance.closeSync();
