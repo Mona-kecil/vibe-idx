@@ -2,7 +2,7 @@ name: Daily IDX batch
 
 on:
   schedule:
-    - cron: '17 10 * * 1-5'
+    - cron: '17 10 * * *'
   workflow_dispatch:
 
 concurrency:
@@ -44,7 +44,7 @@ jobs:
       - name: Restore Stockbit token
         run: aws s3 cp s3://vibe-idx-private/auth/stockbit.json "$DATA/stockbit.json" --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
       - name: Ingest private broker summaries
-        run: pnpm --filter @vibe-idx/pipeline brokers -- --data "$DATA" --feed "$OUT/feed.json" --token "$DATA/stockbit.json" --out "$PRIVATE_OUT"
+        run: pnpm --filter @vibe-idx/pipeline brokers -- --data "$DATA" --token "$DATA/stockbit.json" --out "$PRIVATE_OUT"
       - name: Save Stockbit token
         if: always()
         run: |
@@ -62,6 +62,9 @@ jobs:
         run: |
           if [ -d "$DATA/parquet/brokers" ]; then
             aws s3 sync "$DATA/parquet/brokers" s3://vibe-idx-private/parquet/brokers --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          fi
+          if [ -f "$DATA/parquet/broker-coverage.parquet" ]; then
+            aws s3 cp "$DATA/parquet/broker-coverage.parquet" s3://vibe-idx-private/parquet/broker-coverage.parquet --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
           fi
       - name: Upload private broker JSON
         if: always()

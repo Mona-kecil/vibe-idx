@@ -14,26 +14,6 @@ export const fiveHolding = z.object({
     z.object({ holderName: z.string(), accountName: z.string(), shares: z.number() }),
   ),
 });
-export const fiveChange = z.object({
-  date: z.string(),
-  previousDate: z.string(),
-  ticker: z.string(),
-  investorName: z.string(),
-  previousCombined: z.number(),
-  currentCombined: z.number(),
-  previousPercent: z.number(),
-  currentPercent: z.number(),
-  accounts: z.array(
-    z.object({
-      holderName: z.string(),
-      accountName: z.string(),
-      previousShares: z.number(),
-      currentShares: z.number(),
-      change: z.number(),
-    }),
-  ),
-  localForeign: z.string(),
-});
 export const oneHolding = z.object({
   seq: z.number(),
   asOf: z.string(),
@@ -50,7 +30,6 @@ export const oneHolding = z.object({
   percent: z.number(),
 });
 export type FiveHolding = z.infer<typeof fiveHolding>;
-export type FiveChange = z.infer<typeof fiveChange>;
 
 export function date(value: string): string {
   const result = value.slice(0, 10);

@@ -9,9 +9,12 @@ import {
   type SortingState,
 } from '@tanstack/react-table';
 import { useCallback, useEffect, useMemo, useState, type MouseEvent, type ReactNode } from 'react';
+import { LocaleProvider, useLocale, type Locale } from './locale';
+import { AccountControls, BrokerPanel, LoginPage } from './BrokerPanel';
 
 import {
   load,
+  loadNews,
   type Health,
   type Market,
   type Feed,
@@ -32,7 +35,7 @@ type DataColumn<T> = {
 
 type WorkspaceLocation = { pathname: string; search: string };
 type WorkspaceRoute =
-  | { id: 'radar' | 'stocks' }
+  | { id: 'radar' | 'stocks' | 'login' | 'callback' }
   | { id: 'ticker'; ticker: string }
   | { id: 'notFound' };
 type InitialData = {
@@ -72,12 +75,13 @@ function useData<T>(read: () => Promise<T>, initial?: T): DataState<T> {
 }
 
 function QueryState({ status }: { status: 'loading' | 'error' }) {
+  const { t } = useLocale();
   return (
     <p
       role={status === 'error' ? 'alert' : 'status'}
       className={`query-state ${status === 'error' ? 'error' : ''}`}
     >
-      {status === 'loading' ? 'Loading data…' : 'Could not load data. Reload to try again.'}
+      {t(status === 'loading' ? 'Loading data…' : 'Could not load data. Reload to try again.')}
     </p>
   );
 }
@@ -85,7 +89,17 @@ function QueryState({ status }: { status: 'loading' | 'error' }) {
 export function App({
   initialUrl,
   initialData = {},
-}: { initialUrl?: string; initialData?: InitialData } = {}) {
+  initialLocale,
+}: { initialUrl?: string; initialData?: InitialData; initialLocale?: Locale } = {}) {
+  return (
+    <LocaleProvider initialLocale={initialLocale}>
+      <Workspace initialUrl={initialUrl} initialData={initialData} />
+    </LocaleProvider>
+  );
+}
+
+function Workspace({ initialUrl, initialData }: { initialUrl?: string; initialData: InitialData }) {
+  const { locale, setLocale, t } = useLocale();
   const [location, navigateToPath, replaceSearch] = useWorkspaceLocation(initialUrl);
   const route = resolveWorkspaceRoute(location.pathname);
   const health = useData(readHealth, initialData.health);
@@ -111,11 +125,24 @@ export function App({
     <main className="app-shell" onClick={followLink}>
       <header className="topbar">
         <div>
-          <p className="eyebrow">IDX anomaly radar</p>
+          <p className="eyebrow">{t('IDX anomaly radar')}</p>
           <h1>Vibe IDX</h1>
+          <div className="account-controls">
+            <label>
+              <span className="sr-only">Language / Bahasa</span>
+              <select
+                value={locale}
+                onChange={(event) => setLocale(event.target.value === 'id' ? 'id' : 'en')}
+              >
+                <option value="en">English</option>
+                <option value="id">Bahasa Indonesia</option>
+              </select>
+            </label>
+            <AccountControls />
+          </div>
         </div>
         {health.status === 'ready' ? (
-          <div className="status-strip" aria-label="Latest available data dates">
+          <div className="status-strip" aria-label={t('Latest available data dates')}>
             <Metric label="Prices" value={health.data.prices} />
             <Metric label="IHSG" value={health.data.indices} />
             <Metric label="5% ownership" value={health.data.five_pct} />
@@ -125,22 +152,22 @@ export function App({
           <QueryState status={health.status} />
         )}
       </header>
-      <nav className="surface-nav" aria-label="Data surfaces">
+      <nav className="surface-nav" aria-label={t('Data surfaces')}>
         <a
           className="surface-tab"
           aria-current={route.id === 'radar' ? 'page' : undefined}
           href="/"
         >
           <span>Radar</span>
-          <small>Daily signals across the market.</small>
+          <small>{t('Daily signals across the market.')}</small>
         </a>
         <a
           className="surface-tab"
           aria-current={route.id === 'stocks' ? 'page' : undefined}
           href="/stocks"
         >
-          <span>Stocks</span>
-          <small>Prices, volume and foreign flows.</small>
+          <span>{t('Stocks')}</span>
+          <small>{t('Prices, volume and foreign flows.')}</small>
         </a>
       </nav>
       <section className="workspace-panel">
@@ -161,19 +188,22 @@ export function App({
           />
         ) : null}
         {route.id === 'notFound' ? <NotFound /> : null}
+        {route.id === 'login' ? <LoginPage /> : null}
+        {route.id === 'callback' ? <p role="status">{t('Signing you in…')}</p> : null}
       </section>
     </main>
   );
 }
 
 function NotFound() {
+  const { t } = useLocale();
   return (
     <div className="surface-heading">
       <div>
-        <p className="eyebrow">Unknown route</p>
-        <h2 id="surface-title">Page not found</h2>
+        <p className="eyebrow">{t('Unknown route')}</p>
+        <h2 id="surface-title">{t('Page not found')}</h2>
       </div>
-      <p>The requested Vibe IDX page does not exist.</p>
+      <p>{t('The requested Vibe IDX page does not exist.')}</p>
     </div>
   );
 }
@@ -182,15 +212,18 @@ function resolveWorkspaceRoute(pathname: string): WorkspaceRoute {
   const path = normalizeWorkspacePath(pathname);
   if (path === '/') return { id: 'radar' };
   if (path === '/stocks') return { id: 'stocks' };
+  if (path === '/login') return { id: 'login' };
+  if (path === '/callback') return { id: 'callback' };
   const match = /^\/t\/([A-Z0-9-]+)$/.exec(path);
   if (match?.[1]) return { id: 'ticker', ticker: match[1] };
   return { id: 'notFound' };
 }
 
 function Metric({ label, value }: { label: string; value?: string | null }) {
+  const { t } = useLocale();
   return (
     <div className="metric">
-      <span>{label}</span>
+      <span>{t(label)}</span>
       <strong>{value ?? '—'}</strong>
     </div>
   );
@@ -225,6 +258,7 @@ const feedGroups = [
 ] satisfies Array<{ kind: Feed[number]['kind']; title: string; rule: string }>;
 
 function RadarPage({ initial }: { initial?: InitialData['radar'] }) {
+  const { t, n, p } = useLocale();
   const state = useData(readRadar, initial);
   if (state.status !== 'ready') return <QueryState status={state.status} />;
   const { market, feed } = state.data;
@@ -234,25 +268,26 @@ function RadarPage({ initial }: { initial?: InitialData['radar'] }) {
       <div className="surface-heading">
         <div>
           <p className="eyebrow">Radar · {market.date}</p>
-          <h2>IHSG {formatNumber(latest?.close)}</h2>
+          <h2>IHSG {n(latest?.close)}</h2>
         </div>
         <p>
           <span className={movementCellClass(latest?.change_pct)}>
-            {formatNumber(latest?.change)} · {formatPercent(latest?.change_pct)}
+            {n(latest?.change)} · {p(latest?.change_pct)}
           </span>
           {' · '}
-          {market.up} up · {market.down} down · Index date: {latest?.date ?? '—'}
+          {n(market.up)} {t('up')} · {n(market.down)} {t('down')} · {t('Index date')}:{' '}
+          {latest?.date ?? '—'}
         </p>
       </div>
-      <LineChart points={market.history} label="IHSG close history" compact />
+      <LineChart points={market.history} label={t('IHSG close history')} compact />
       {feedGroups.map((group) => {
         const items = feed.filter((item) => item.kind === group.kind);
         return (
-          <section className="feed-group" key={group.kind} aria-label={group.title}>
+          <section className="feed-group" key={group.kind} aria-label={t(group.title)}>
             <h3>
-              {group.title} <span className="row-badge">{items.length}</span>
+              {t(group.title)} <span className="row-badge">{items.length}</span>
             </h3>
-            <p className="rule">{group.rule}</p>
+            <p className="rule">{t(group.rule)}</p>
             {items.length ? (
               <ul className="feed-list">
                 {items.map((item, index) => (
@@ -268,7 +303,7 @@ function RadarPage({ initial }: { initial?: InitialData['radar'] }) {
                 ))}
               </ul>
             ) : (
-              <p className="empty">No signals.</p>
+              <p className="empty">{t('No signals.')}</p>
             )}
           </section>
         );
@@ -278,57 +313,60 @@ function RadarPage({ initial }: { initial?: InitialData['radar'] }) {
 }
 
 function FeedNumbers({ item }: { item: Feed[number] }) {
+  const { locale, t, n, p } = useLocale();
   switch (item.kind) {
     case 'volume_spike':
       return (
         <>
-          {formatNumber(item.numbers.volume)} shares · {item.numbers.multiple.toFixed(2)}× average (
-          {formatNumber(item.numbers.avg_volume)} over {item.numbers.prior_days} days) · Rp{' '}
-          {formatNumber(item.numbers.value)}
+          {n(item.numbers.volume)} {t('shares')} ·{' '}
+          {item.numbers.multiple.toLocaleString(locale === 'id' ? 'id-ID' : 'en-US', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          })}
+          × {t('average')} ({n(item.numbers.avg_volume)} {t('over')} {item.numbers.prior_days}{' '}
+          {t('days')}) · Rp {n(item.numbers.value)}
         </>
       );
     case 'ara':
       return (
         <>
-          {formatNumber(item.numbers.prev)} → {formatNumber(item.numbers.close)} ·{' '}
-          {formatPercent(item.numbers.change_pct)}
+          {n(item.numbers.prev)} → {n(item.numbers.close)} · {p(item.numbers.change_pct)}
           {' · '}
-          {item.numbers.band_pct}% threshold
+          {item.numbers.band_pct}% {t('threshold')}
         </>
       );
     case 'foreign_streak':
       return (
         <>
-          {item.numbers.streak_days} trading days · Net foreign Rp{' '}
-          {formatNumber(item.numbers.net_foreign)}
+          {item.numbers.streak_days} {t('trading days')} · {t('Net foreign Rp')}{' '}
+          {n(item.numbers.net_foreign)}
         </>
       );
     case 'green_on_red':
       return (
         <>
-          Stock {formatPercent(item.numbers.change_pct)} · IHSG{' '}
-          {formatPercent(item.numbers.market_change_pct)}
-          {' · '}Rp {formatNumber(item.numbers.value)}
+          {t('Stock')} {p(item.numbers.change_pct)} · IHSG {p(item.numbers.market_change_pct)}
+          {' · '}Rp {n(item.numbers.value)}
         </>
       );
     case 'five_pct_change':
       return (
         <>
-          <OwnershipMovement change={item.numbers} /> · Since {item.numbers.previous_date}
+          <OwnershipMovement change={item.numbers} /> · {t('Since')} {item.numbers.previous_date}
         </>
       );
   }
 }
 
 function OwnershipMovement({ change }: { change: OwnershipChange }) {
+  const { t, n, p } = useLocale();
   const exit = change.shares_after === null;
   const entry = change.pct_before === 0 && change.net_shares !== null && change.net_shares > 0;
   return (
     <>
-      {change.investor} · {formatPercent(change.pct_before)} →{' '}
-      {exit ? 'below 5%' : formatPercent(change.pct_after)}
+      {change.investor} · {p(change.pct_before)} → {exit ? t('below 5%') : p(change.pct_after)}
       {' · '}
-      {exit ? 'Exit' : entry ? 'Entry' : 'Change'} · Net shares: {formatNumber(change.net_shares)}
+      {t(exit ? 'Exit' : entry ? 'Entry' : 'Change')} · {t('Net shares')}: {n(change.net_shares)}
     </>
   );
 }
@@ -342,19 +380,22 @@ function StocksPage({
   onUrlSearchChange: (search: string) => void;
   date: string | null;
 }) {
+  const { t } = useLocale();
   const state = useData(readStocks);
   const search = new URLSearchParams(urlSearch).get('q') ?? '';
   return (
     <>
       <div className="surface-heading">
-        <h2>Stocks</h2>
-        <p>Prices: {date ?? '—'} · All stocks on the latest trading date.</p>
+        <h2>{t('Stocks')}</h2>
+        <p>
+          {t('Prices')}: {date ?? '—'} · {t('All stocks on the latest trading date.')}
+        </p>
       </div>
       <div className="toolbar">
         <label className="field">
-          Filter stocks
+          {t('Filter stocks')}
           <input
-            placeholder="Ticker or company name"
+            placeholder={t('Ticker or company name')}
             value={search}
             onChange={(event) => {
               const params = new URLSearchParams();
@@ -368,7 +409,9 @@ function StocksPage({
         <QueryState status={state.status} />
       ) : (
         <>
-          <p className="result-meta">{state.data.length} stocks · Click a column to sort.</p>
+          <p className="result-meta">
+            {state.data.length} {t('stocks')} · {t('Click a column to sort.')}
+          </p>
           <DataTable
             columns={stockColumns}
             rows={state.data.filter((row) =>
@@ -390,6 +433,7 @@ function TickerPage({
   initial?: Ticker | null;
   ownershipDate: string | null;
 }) {
+  const { t, n, p } = useLocale();
   const read = useCallback(() => load(`ticker/${ticker}.json`), [ticker]);
   const state = useData(read, initial);
   if (state.status !== 'ready') return <QueryState status={state.status} />;
@@ -404,24 +448,28 @@ function TickerPage({
       <div className="surface-heading">
         <div>
           <p className="eyebrow">
-            {ticker} · Prices: {latest?.date ?? '—'}
+            {ticker} · {t('Prices')}: {latest?.date ?? '—'}
           </p>
           <h2>{data.name}</h2>
         </div>
         <p className="quote">
-          Rp {formatNumber(latest?.close)}{' '}
-          <span className={movementCellClass(change)}>{formatPercent(change)}</span>
+          Rp {n(latest?.close)} <span className={movementCellClass(change)}>{p(change)}</span>
         </p>
       </div>
-      <LineChart points={data.prices} label={`${ticker} closing price history`} />
-      <h3>Recent trading days</h3>
+      <LineChart points={data.prices} label={`${ticker} ${t('closing price history')}`} />
+      <h3>{t('Recent trading days')}</h3>
       <DataTable columns={recentColumns} rows={data.prices.slice(-10).reverse()} />
-      <h3>Current 5% holders</h3>
-      <p className="rule">Ownership as of {ownershipDate ?? '—'}</p>
-      <DataTable columns={holderColumns} rows={data.holders} />
-      <h3>5% changes · Last 90 days</h3>
+      <h3>{t('Current 5% holders')}</h3>
       <p className="rule">
-        Ownership through {ownershipDate ?? '—'} · Each change uses its own reporting date.
+        {t('Ownership as of')} {ownershipDate ?? '—'}
+      </p>
+      <DataTable columns={holderColumns} rows={data.holders} />
+      <h3>
+        {t('5% changes')} · {t('Last 90 days')}
+      </h3>
+      <p className="rule">
+        {t('Ownership through')} {ownershipDate ?? '—'} ·{' '}
+        {t('Each change uses its own reporting date.')}
       </p>
       {data.changes.length ? (
         <ul className="changes-list">
@@ -432,9 +480,109 @@ function TickerPage({
           ))}
         </ul>
       ) : (
-        <p className="query-state">No 5% changes in this period.</p>
+        <p className="query-state">{t('No 5% changes in this period.')}</p>
       )}
+      <BrokerPanel
+        ticker={ticker}
+        tradingDates={data.prices.filter((row) => row.volume > 0).map((row) => row.date)}
+      />
+      <h3>{t('Current 1% holders')}</h3>
+      <p className="rule">
+        {t('Ownership as of')} {data.one_pct.date ?? t('Not reported')}
+      </p>
+      <DataTable columns={onePctColumns} rows={data.one_pct.holders} />
+      <h3>{t('Registry report')}</h3>
+      {data.registry ? (
+        <div className="registry-metrics">
+          <Metric label="Date" value={data.registry.date} />
+          <Metric
+            label="Reported free float"
+            value={
+              data.registry.free_float_pct === null
+                ? t('Not reported')
+                : p(data.registry.free_float_pct)
+            }
+          />
+          <Metric
+            label="Total shares"
+            value={
+              data.registry.total_shares === null
+                ? t('Not reported')
+                : n(data.registry.total_shares)
+            }
+          />
+          <Metric
+            label="SID count"
+            value={
+              data.registry.sid_count === null ? t('Not reported') : n(data.registry.sid_count)
+            }
+          />
+          <a href={data.registry.url} target="_blank" rel="noreferrer">
+            {t('Source')}
+          </a>
+        </div>
+      ) : (
+        <p>{t('Not reported')}</p>
+      )}
+      <h3>{t('Insider share changes')}</h3>
+      <DataTable columns={insiderColumns} rows={data.insiders} />
+      <h3>{t('Disclosures and reports')}</h3>
+      {data.disclosures.length ? (
+        <ul className="changes-list">
+          {data.disclosures.map((report) => (
+            <li key={report.id}>
+              <time>{report.published_at}</time>
+              {' · '}
+              <a href={report.url} target="_blank" rel="noreferrer">
+                {report.title}
+              </a>
+              {report.attachments.map((attachment) => (
+                <p key={attachment.url}>
+                  <a href={attachment.url} target="_blank" rel="noreferrer">
+                    {attachment.name}
+                  </a>
+                </p>
+              ))}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p>{t('No disclosures in this period.')}</p>
+      )}
+      <NewsPanel ticker={ticker} />
     </>
+  );
+}
+
+function NewsPanel({ ticker }: { ticker: string }) {
+  const { t } = useLocale();
+  const read = useCallback(() => loadNews(ticker), [ticker]);
+  const state = useData(read);
+  return (
+    <section aria-label={t('News')}>
+      <h3>{t('News')}</h3>
+      <p className="rule">{t('News matches the stock code and may include unrelated articles.')}</p>
+      {state.status === 'loading' ? (
+        <p role="status">{t('Loading data…')}</p>
+      ) : state.status === 'error' ? (
+        <p role="alert">{t('Could not load news.')}</p>
+      ) : state.data.length ? (
+        <ul className="changes-list">
+          {state.data.map((article) => (
+            <li key={article.url}>
+              <a href={article.url} target="_blank" rel="noreferrer">
+                {article.title}
+              </a>
+              <p>
+                <time>{article.published_at}</time> · {article.source}
+              </p>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p>{t('No recent news.')}</p>
+      )}
+    </section>
   );
 }
 
@@ -447,7 +595,8 @@ function LineChart({
   label: string;
   compact?: boolean;
 }) {
-  if (!points.length) return <p className="query-state">No price history.</p>;
+  const { t, n } = useLocale();
+  if (!points.length) return <p className="query-state">{t('No price history.')}</p>;
   const low = Math.min(...points.map((point) => point.close));
   const high = Math.max(...points.map((point) => point.close));
   const height = compact ? 64 : 200;
@@ -474,7 +623,7 @@ function LineChart({
           {points[0]?.date} → {points.at(-1)?.date}
         </span>
         <span>
-          Close range {formatNumber(low)}–{formatNumber(high)}
+          {t('Close range')} {n(low)}–{n(high)}
         </span>
       </figcaption>
     </figure>
@@ -601,6 +750,7 @@ function DataTable<T extends object>({
   columns: Array<DataColumn<T>>;
   rows: T[];
 }) {
+  const { t } = useLocale();
   const [highlightedRowIndex, setHighlightedRowIndex] = useState<number | null>(null);
   const [sorting, setSorting] = useState<SortingState>([]);
   const tableColumns = useMemo<Array<ColumnDef<T, Primitive>>>(
@@ -614,7 +764,7 @@ function DataTable<T extends object>({
             onClick={tableColumn.getToggleSortingHandler()}
             type="button"
           >
-            {column.header}
+            {t(column.header)}
             <span>{sortGlyph(tableColumn.getIsSorted())}</span>
           </button>
         ),
@@ -624,7 +774,7 @@ function DataTable<T extends object>({
           cellClass: column.cellClass,
         },
       })),
-    [columns],
+    [columns, t],
   );
   const table = useReactTable({
     columns: tableColumns,
@@ -706,7 +856,7 @@ function DataTable<T extends object>({
           {rows.length === 0 ? (
             <tr>
               <td className="empty" colSpan={columns.length}>
-                No rows for the current filters.
+                {t('No rows for the current filters.')}
               </td>
             </tr>
           ) : null}
@@ -761,6 +911,28 @@ const holderColumns: Array<DataColumn<Ticker['holders'][number]>> = [
   numberColumn('shares', 'Shares', (row) => row.shares),
   percentColumn('pct', 'Holding', (row) => row.pct),
 ];
+const onePctColumns: Array<DataColumn<Ticker['one_pct']['holders'][number]>> = [
+  textColumn('investor', 'Investor', (row) => row.investor),
+  numberColumn('shares', 'Shares', (row) => row.shares),
+  percentColumn('pct', 'Holding', (row) => row.pct),
+  textColumn('classification', 'Classification', (row) => row.classification),
+  textColumn('local_foreign', 'Local / foreign', (row) => row.local_foreign),
+];
+const insiderColumns: Array<DataColumn<Ticker['insiders'][number]>> = [
+  textColumn('date', 'Date', (row) => row.date),
+  textColumn('reporter', 'Reporter', (row) => row.reporter),
+  numberColumn('before', 'Before', (row) => row.shares_before),
+  numberColumn('after', 'After', (row) => row.shares_after),
+  numberColumn('net', 'Net shares', (row) => row.net_shares),
+  {
+    ...textColumn('source', 'Source', (row) => row.url),
+    render: (row) => (
+      <a href={row.url} target="_blank" rel="noreferrer">
+        PDF
+      </a>
+    ),
+  },
+];
 
 function textColumn<T>(id: string, header: string, value: (row: T) => Primitive): DataColumn<T> {
   return {
@@ -780,7 +952,7 @@ function numberColumn<T>(
     align: 'right',
     header,
     id,
-    render: (row) => formatNumber(value(row)),
+    render: (row) => <FormattedNumber value={value(row)} />,
     sortValue: value,
   };
 }
@@ -794,7 +966,7 @@ function percentColumn<T>(
     align: 'right',
     header,
     id,
-    render: (row) => formatPercent(value(row)),
+    render: (row) => <FormattedPercent value={value(row)} />,
     sortValue: value,
   };
 }
@@ -814,12 +986,14 @@ function formatText(value: Primitive) {
   return value === undefined || value === null || value === '' ? '-' : String(value);
 }
 
-function formatNumber(value: number | null | undefined) {
-  return value === null || value === undefined ? '-' : new Intl.NumberFormat('en-US').format(value);
+function FormattedNumber({ value }: { value: number | null }) {
+  const { n } = useLocale();
+  return n(value);
 }
 
-function formatPercent(value: number | null | undefined) {
-  return value === null || value === undefined ? '-' : `${value.toFixed(2)}%`;
+function FormattedPercent({ value }: { value: number | null }) {
+  const { p } = useLocale();
+  return p(value);
 }
 
 function movementCellClass(value: number | null | undefined) {

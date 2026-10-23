@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vite-plus/test';
-import { parseFivePct, deriveFivePct } from './fivePct';
+import { parseFivePct } from './fivePct';
 import { parseOnePct } from './onePct';
 import { parsePrices } from './prices';
 import { parseIndices } from './indices';
@@ -49,31 +49,6 @@ describe('IDX fixture ingestion', () => {
         expect.objectContaining({ shares: 832312874 }),
       ],
     });
-  });
-  it('does not append 5% changes on replay, records exits, and rejects stale holdings', () => {
-    const first = deriveFivePct(five, []);
-    expect(first.changes.length).toBeGreaterThan(0);
-    expect(first.changes.every((c) => c.accounts.every((a) => a.change !== 0))).toBe(true);
-    const replay = deriveFivePct(five, first.holdings);
-    expect(replay).toEqual({ holdings: [], changes: [], exits: [] });
-    const old = { ...five.groups[0]!.holding, investorName: 'EXITED INVESTOR', asOf: '2026-10-16' };
-    const exit = deriveFivePct(five, [old]).changes.find(
-      (c) => c.investorName === old.investorName,
-    );
-    expect(exit).toMatchObject({
-      date: '2026-10-19',
-      previousDate: '2026-10-16',
-      ticker: 'AADI',
-      previousCombined: 3200142830,
-      currentCombined: 0,
-      previousPercent: 41.1,
-      currentPercent: 0,
-    });
-    expect(exit?.accounts.reduce((sum, a) => sum + a.change, 0)).toBe(-3200142830);
-    const newer = first.holdings.map((h) => ({ ...h, asOf: '2026-10-20' }));
-    expect(deriveFivePct(five, newer).holdings).toEqual([]);
-    expect(deriveFivePct(five, newer).exits).toEqual([]);
-    expect(deriveFivePct(five, newer.slice(0, 1)).holdings).toEqual([]);
   });
   it('reads all 1% rows after disclaimers and converts Excel dates and numbers', () => {
     const rows = parseOnePct(bytes('ownership-1pct-2026-09.xlsx'));

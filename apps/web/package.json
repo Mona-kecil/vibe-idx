@@ -13,8 +13,10 @@
   },
   "dependencies": {
     "@tanstack/react-table": "^8.21.3",
-    "convex": "^1.47.0",
-    "fflate": "^0.8.3",
+    "@workos-inc/authkit-react": "^0.16.3",
+    "aws4fetch": "^1.0.20",
+    "fast-xml-parser": "^5.11.2",
+    "jose": "^6.2.13",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "zod": "^4.4.3"

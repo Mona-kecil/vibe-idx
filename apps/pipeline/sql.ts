@@ -32,6 +32,27 @@ CREATE TABLE five_pct (
   pct_before DOUBLE, pct_after DOUBLE,
   previous_date DATE, PRIMARY KEY(date, ticker, investor, account)
 );
+CREATE TABLE one_pct (
+  date DATE, ticker VARCHAR, investor VARCHAR, seq INTEGER, issuer_name VARCHAR,
+  shares DOUBLE, pct DOUBLE, classification VARCHAR, local_foreign VARCHAR,
+  nationality VARCHAR, domicile VARCHAR, scripless DOUBLE, scrip DOUBLE, url VARCHAR,
+  PRIMARY KEY(date, ticker, investor, seq)
+);
+CREATE TABLE ownership_files (date DATE, source VARCHAR, url VARCHAR PRIMARY KEY);
+CREATE TABLE disclosures (
+  date DATE, id VARCHAR PRIMARY KEY, ticker VARCHAR, title VARCHAR,
+  published_at VARCHAR, url VARCHAR, kind VARCHAR, attachments JSON,
+  source_json VARCHAR, report_gaps JSON
+);
+CREATE TABLE insiders (
+  date DATE, id VARCHAR, ticker VARCHAR, reporter VARCHAR,
+  shares_before DOUBLE, shares_after DOUBLE, net_shares DOUBLE, url VARCHAR,
+  PRIMARY KEY(id, url)
+);
+CREATE TABLE registry (
+  date DATE, id VARCHAR, ticker VARCHAR, free_float_pct DOUBLE,
+  total_shares DOUBLE, sid_count DOUBLE, url VARCHAR, PRIMARY KEY(id, url)
+);
 CREATE TABLE issuers (
   date DATE, ticker VARCHAR PRIMARY KEY, name VARCHAR, board VARCHAR, sector VARCHAR,
   sub_sector VARCHAR, industry VARCHAR, sub_industry VARCHAR
@@ -120,7 +141,10 @@ SELECT ticker, name, close, change_pct, volume, value, net_foreign
 FROM features WHERE date = (SELECT date FROM latest) ORDER BY ticker`;
 
 export const tickers = `
-WITH universe AS (SELECT ticker FROM issuers UNION SELECT ticker FROM prices UNION SELECT ticker FROM five_pct),
+WITH universe AS (
+  SELECT ticker FROM issuers UNION SELECT ticker FROM prices UNION SELECT ticker FROM five_pct
+  UNION SELECT ticker FROM one_pct UNION SELECT ticker FROM disclosures WHERE ticker IS NOT NULL
+),
 history AS (
   SELECT ticker, list(struct_pack(date := date, close := close, volume := volume,
     value := value, net_foreign := net_foreign) ORDER BY date) prices
@@ -135,17 +159,40 @@ history AS (
     pct_before := pct_before, pct_after := pct_after) ORDER BY date DESC, investor) changes
   FROM investor_changes WHERE date >= (SELECT date FROM latest) - INTERVAL '${thresholds.ownershipDays} days'
   GROUP BY ticker
+), monthly AS (
+  SELECT ticker, list(struct_pack(investor := investor, shares := shares, pct := pct,
+    classification := classification, local_foreign := local_foreign) ORDER BY investor, seq) holders
+  FROM one_pct WHERE date = (SELECT max(date) FROM one_pct) GROUP BY ticker
+), announcements AS (
+  SELECT ticker, list(struct_pack(id := id, title := title, published_at := published_at,
+    url := url, kind := kind, attachments := attachments) ORDER BY published_at DESC, id) disclosures
+  FROM disclosures GROUP BY ticker
+), trades AS (
+  SELECT ticker, list(struct_pack(date := date, reporter := reporter,
+    shares_before := shares_before, shares_after := shares_after, net_shares := net_shares,
+    url := url) ORDER BY date DESC, id, url) insiders FROM insiders GROUP BY ticker
+), registers AS (
+  SELECT r.*, row_number() OVER (PARTITION BY r.ticker ORDER BY r.date DESC,
+    d.published_at DESC, r.id DESC, r.url) n FROM registry r JOIN disclosures d USING(id)
 )
 SELECT u.ticker, coalesce(i.name, p.name, u.ticker) AS name,
-  coalesce(h.prices, []) prices, coalesce(o.holders, []) holders, coalesce(c.changes, []) changes
+  coalesce(h.prices, []) prices, coalesce(o.holders, []) holders, coalesce(c.changes, []) changes,
+  struct_pack(date := (SELECT max(date) FROM one_pct), holders := coalesce(m.holders, [])) one_pct,
+  coalesce(a.disclosures, []) disclosures, coalesce(t.insiders, []) insiders,
+  CASE WHEN r.ticker IS NULL THEN NULL ELSE struct_pack(date := r.date,
+    free_float_pct := r.free_float_pct, total_shares := r.total_shares,
+    sid_count := r.sid_count, url := r.url) END registry
 FROM universe u LEFT JOIN issuers i USING(ticker)
 LEFT JOIN (SELECT ticker, arg_max(name, date) AS name FROM prices GROUP BY ticker) p USING(ticker)
 LEFT JOIN history h USING(ticker) LEFT JOIN holders o USING(ticker) LEFT JOIN changes c USING(ticker)
+LEFT JOIN monthly m USING(ticker) LEFT JOIN announcements a USING(ticker)
+LEFT JOIN trades t USING(ticker) LEFT JOIN registers r ON r.ticker = u.ticker AND r.n = 1
 ORDER BY u.ticker`;
 
 export const health = `SELECT
   (SELECT max(date) FROM prices) prices,
   (SELECT max(date) FROM indices) indices,
   (SELECT max(date) FROM five_pct) five_pct,
+  (SELECT max(date) FROM one_pct) one_pct,
   (SELECT max(date) FROM issuers) issuers,
   current_timestamp run_at`;
