@@ -33,12 +33,22 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Restore Parquet ledger
         run: mkdir -p "$DATA/raw" && aws s3 sync s3://vibe-idx-private/parquet "$DATA/parquet" --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+      - name: Restore IDX raw responses
+        run: aws s3 sync s3://vibe-idx-private/raw "$DATA/raw" --exclude "broker/*" --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
       - name: Ingest IDX and emit website JSON
         run: pnpm --filter @vibe-idx/pipeline ingest -- --data "$DATA" --out "$OUT"
       - name: Archive raw responses
-        run: aws s3 sync "$DATA/raw" s3://vibe-idx-private/raw --no-overwrite --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+        if: always()
+        run: |
+          if [ -d "$DATA/raw" ]; then
+            aws s3 sync "$DATA/raw" s3://vibe-idx-private/raw --no-overwrite --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          fi
       - name: Upload Parquet ledger
-        run: aws s3 sync "$DATA/parquet" s3://vibe-idx-private/parquet --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+        if: always()
+        run: |
+          if [ -d "$DATA/parquet" ]; then
+            aws s3 sync "$DATA/parquet" s3://vibe-idx-private/parquet --exclude "*.tmp" --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          fi
       - name: Publish website JSON
         run: aws s3 sync "$OUT" s3://vibe-idx-public --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
       - name: Restore Stockbit token

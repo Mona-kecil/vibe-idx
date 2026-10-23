@@ -464,7 +464,7 @@ export async function ingest({
           years[r.kind === 'insider' ? 'insiders' : 'registry'].add(r.date.slice(0, 4));
         }
       }
-      for (const table of ['disclosures', 'insiders', 'registry'] as const)
+      for (const table of ['insiders', 'registry', 'disclosures'] as const)
         await save(table, years[table]);
     }
     await db.run(analytics);

@@ -1,6 +1,6 @@
-import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join, relative } from 'node:path';
 import { DuckDBInstance } from '@duckdb/node-api';
 import { describe, expect, it } from 'vite-plus/test';
 import { ingest } from './ingest';
@@ -278,7 +278,7 @@ describe('batch pipeline', () => {
     } finally {
       await rm(root, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   it('preserves source dates, duplicate holders, paginated disclosures, and SID counts with negative deltas', async () => {
     const root = await mkdtemp(join(tmpdir(), 'idx-fixture-'));
@@ -580,7 +580,7 @@ describe('batch pipeline', () => {
     }
   }, 30000);
 
-  it('rejects truncated pages and failed fetches but retains unreadable PDFs as linked disclosures', async () => {
+  it('rejects truncated pages and failed fetches, recovers interrupted report saves, and retains unreadable PDFs as linked disclosures', async () => {
     const root = await mkdtemp(join(tmpdir(), 'idx-source-failure-'));
     const net = network({ reports: true });
     const options = {
@@ -621,14 +621,41 @@ describe('batch pipeline', () => {
       await expect(
         readFile(join(options.data, 'parquet/disclosures/2026.parquet')),
       ).rejects.toMatchObject({ code: 'ENOENT' });
-      const withUnreadableReport = await ingest({
-        ...options,
-        fetcher: async (input, init) => {
-          const url = new URL(input instanceof Request ? input.url : input);
-          if (url.pathname.endsWith('/unsupported.pdf')) return new Response('%PDF-1.7\ntruncated');
-          return net.fetcher(input, init);
-        },
+      await expect(
+        ingest({
+          ...options,
+          fetcher: async (input, init) => {
+            const url = new URL(input instanceof Request ? input.url : input);
+            if (url.pathname.endsWith('/unsupported.pdf')) {
+              await mkdir(join(options.data, 'parquet/insiders/2026.parquet'), {
+                recursive: true,
+              });
+              return new Response('%PDF-1.7\ntruncated');
+            }
+            return net.fetcher(input, init);
+          },
+        }),
+      ).rejects.toMatchObject({ code: 'EISDIR' });
+      const restored = { ...options, data: join(root, 'restored') };
+      await cp(join(options.data, 'raw'), join(restored.data, 'raw'), { recursive: true });
+      for (const entry of await readdir(join(options.data, 'parquet'), {
+        recursive: true,
+        withFileTypes: true,
+      })) {
+        if (!entry.isFile() || !entry.name.endsWith('.parquet')) continue;
+        const source = join(entry.parentPath, entry.name);
+        const target = join(restored.data, relative(options.data, source));
+        await mkdir(dirname(target), { recursive: true });
+        await cp(source, target);
+      }
+      net.urls.length = 0;
+      const withUnreadableReport = await ingest({ ...restored, fetcher: net.fetcher });
+      expect(withUnreadableReport.counts).toMatchObject({
+        disclosures: 10,
+        insiders: 4,
+        registry: 4,
       });
+      expect(net.urls.filter((url) => /From_KSEI|From_EREP/.test(url))).toEqual([]);
       expect(withUnreadableReport.report_gaps).toContainEqual({
         id: 'registry/unsupported',
         url: 'https://www.idx.id/StaticData/From_EREP/unsupported.pdf',
@@ -639,7 +666,7 @@ describe('batch pipeline', () => {
         expect.objectContaining({ id: 'registry/unsupported' }),
       );
       expect(published.registry).toBeNull();
-      const recovered = await ingest({ ...options, fetcher: net.fetcher });
+      const recovered = await ingest({ ...restored, fetcher: net.fetcher });
       expect(recovered.counts).toMatchObject({
         disclosures: 10,
         insiders: 4,
