@@ -1,0 +1,103 @@
+import { AwsClient } from 'aws4fetch';
+import { createRemoteJWKSet, customFetch, errors, jwtVerify } from 'jose';
+import { z } from 'zod';
+import { brokerDaySchema, brokerTickerSchema } from '../src/brokers';
+
+const clientIdSchema = z.string().regex(/^client_[a-zA-Z0-9]+$/);
+const storageConfigSchema = z.object({
+  R2_ACCOUNT_ID: z.string().regex(/^[a-f0-9]{32}$/),
+  R2_ACCESS_KEY_ID: z.string().min(1),
+  R2_SECRET_ACCESS_KEY: z.string().min(1),
+});
+const sourceSchema = z.array(brokerDaySchema);
+
+function json(body: unknown, status: number, headers?: Record<string, string>) {
+  return Response.json(body, {
+    status,
+    headers: {
+      'Cache-Control': 'private, no-store',
+      Vary: 'Authorization',
+      ...headers,
+    },
+  });
+}
+
+export function createBrokerHandler({
+  env = process.env,
+  fetcher = fetch,
+}: {
+  env?: NodeJS.ProcessEnv;
+  fetcher?: typeof fetch;
+} = {}) {
+  const clientId = clientIdSchema.safeParse(env.WORKOS_CLIENT_ID);
+  const jwks = clientId.success
+    ? createRemoteJWKSet(new URL(`https://api.workos.com/sso/jwks/${clientId.data}`), {
+        [customFetch]: fetcher,
+      })
+    : null;
+
+  return async function handle(request: Request): Promise<Response> {
+    if (request.method !== 'GET') {
+      return json({ error: 'method_not_allowed' }, 405, { Allow: 'GET' });
+    }
+
+    const tickers = new URL(request.url).searchParams.getAll('ticker');
+    const ticker = brokerTickerSchema.safeParse(tickers.length === 1 ? tickers[0] : undefined);
+    if (!ticker.success) return json({ error: 'invalid_ticker' }, 400);
+
+    const bearer = /^Bearer (\S+)$/i.exec(request.headers.get('Authorization') ?? '');
+    if (!bearer?.[1]) return json({ error: 'unauthorized' }, 401);
+    if (!jwks) return json({ error: 'unavailable' }, 503);
+
+    try {
+      const { payload } = await jwtVerify(bearer[1], jwks, {
+        algorithms: ['RS256'],
+        issuer: 'https://api.workos.com/',
+        requiredClaims: ['sub', 'exp'],
+      });
+      if (typeof payload.sub !== 'string' || !payload.sub.trim()) {
+        return json({ error: 'unauthorized' }, 401);
+      }
+    } catch (error) {
+      if (
+        error instanceof errors.JWTClaimValidationFailed ||
+        error instanceof errors.JWTExpired ||
+        error instanceof errors.JWTInvalid ||
+        error instanceof errors.JWSInvalid ||
+        error instanceof errors.JWSSignatureVerificationFailed ||
+        error instanceof errors.JOSEAlgNotAllowed ||
+        error instanceof errors.JWKSNoMatchingKey
+      ) {
+        return json({ error: 'unauthorized' }, 401);
+      }
+      return json({ error: 'unavailable' }, 503);
+    }
+
+    const storage = storageConfigSchema.safeParse(env);
+    if (!storage.success) return json({ error: 'unavailable' }, 503);
+    const { R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY } = storage.data;
+    try {
+      const aws = new AwsClient({
+        accessKeyId: R2_ACCESS_KEY_ID,
+        secretAccessKey: R2_SECRET_ACCESS_KEY,
+        service: 's3',
+        region: 'auto',
+      });
+      const signed = await aws.sign(
+        `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com/vibe-idx-private/site/broker/${ticker.data}.json`,
+        { method: 'GET', cache: 'no-store', redirect: 'error', signal: AbortSignal.timeout(10000) },
+      );
+      const response = await fetcher(signed);
+      if (response.status === 404) return json({ error: 'not_found' }, 404);
+      if (!response.ok) return json({ error: 'unavailable' }, 503);
+      const body: unknown = await response.json();
+      const days = sourceSchema.parse(body);
+      days.sort((a, b) => b.date.localeCompare(a.date));
+      return json({ ticker: ticker.data, days: days.slice(0, 90) }, 200);
+    } catch {
+      return json({ error: 'unavailable' }, 503);
+    }
+  };
+}
+
+export default { fetch: createBrokerHandler() };
