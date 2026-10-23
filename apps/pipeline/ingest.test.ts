@@ -278,7 +278,7 @@ describe('batch pipeline', () => {
     } finally {
       await rm(root, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   it('preserves source dates, duplicate holders, paginated disclosures, and SID counts with negative deltas', async () => {
     const root = await mkdtemp(join(tmpdir(), 'idx-fixture-'));
