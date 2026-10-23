@@ -49,13 +49,11 @@ function number(row: Record<string, unknown>, key: string): number {
 
 export async function brokers({
   data,
-  feed,
   token,
   out,
   fetcher = fetch,
 }: {
   data: string;
-  feed: string;
   token: string;
   out: string;
   fetcher?: typeof fetch;
@@ -85,7 +83,6 @@ export async function brokers({
   let fetched = 0;
   async function raw(path: string, url: string) {
     const file = join(data, 'raw', 'broker', path);
-    if (existsSync(file)) return readFile(file);
     const response = await fetcher(url, {
       headers: { ...headers, Authorization: `Bearer ${access}` },
       redirect: 'error',
@@ -95,7 +92,7 @@ export async function brokers({
     const bytes = new Uint8Array(await response.arrayBuffer());
     fetched++;
     await mkdir(dirname(file), { recursive: true });
-    await writeFile(file, bytes, { flag: 'wx' });
+    await writeFile(file, bytes);
     return bytes;
   }
   async function append(rows: DuckDBValue[][]) {
@@ -121,25 +118,36 @@ export async function brokers({
       date DATE, ticker VARCHAR, side VARCHAR, broker VARCHAR, investor_type VARCHAR,
       shares DOUBLE, value DOUBLE, avg_price DOUBLE, freq DOUBLE,
       PRIMARY KEY(date, ticker, side, broker)
+    );
+    CREATE TABLE broker_pairs (
+      date DATE, ticker VARCHAR, complete BOOLEAN, PRIMARY KEY(date, ticker)
     )`);
     const parquet = join(data, 'parquet', 'brokers');
     if (existsSync(parquet))
       await db.run(
         `INSERT INTO brokers SELECT * FROM read_parquet(${literal(join(parquet, '*.parquet'))})`,
       );
-    const present = new Set(
-      (await query("SELECT DISTINCT ticker || '/' || date::VARCHAR AS pair FROM brokers")).map(
-        (row) => row.pair,
-      ),
+    const coverage = join(data, 'parquet', 'broker-coverage.parquet');
+    if (existsSync(coverage))
+      await db.run(`INSERT INTO broker_pairs SELECT * FROM read_parquet(${literal(coverage)})`);
+    await db.run(`CREATE TEMP VIEW traded AS
+      SELECT DISTINCT date, ticker
+      FROM read_parquet(${literal(join(data, 'parquet', 'prices', '*.parquet'))})
+      WHERE volume > 0;
+      INSERT INTO broker_pairs
+      SELECT date, ticker, false FROM traded
+      WHERE date >= coalesce((SELECT min(date) FROM broker_pairs), (SELECT max(date) FROM traded))
+      ON CONFLICT DO NOTHING;
+      UPDATE broker_pairs SET complete = true
+      WHERE EXISTS (SELECT 1 FROM brokers
+        WHERE brokers.date = broker_pairs.date AND brokers.ticker = broker_pairs.ticker)`);
+    const entries = await query(
+      'SELECT ticker, date::VARCHAR date FROM broker_pairs WHERE NOT complete ORDER BY date, ticker',
     );
-    const entries: unknown = JSON.parse(await readFile(feed, 'utf8'));
-    if (!Array.isArray(entries)) throw new Error('Invalid broker feed');
     const years = new Set<string>();
-    const tickers = new Set<string>();
     const failures: string[] = [];
     for (const entry of entries) {
       if (
-        !isObject(entry) ||
         typeof entry.ticker !== 'string' ||
         !/^[A-Z0-9-]+$/.test(entry.ticker) ||
         typeof entry.date !== 'string' ||
@@ -148,9 +156,6 @@ export async function brokers({
         throw new Error('Invalid broker target');
       const { ticker, date: day } = entry;
       const pair = `${ticker}/${day}`;
-      tickers.add(ticker);
-      if (present.has(pair)) continue;
-      present.add(pair);
       try {
         const url = new URL(`https://exodus.stockbit.com/marketdetectors/${ticker}`);
         url.search = new URLSearchParams({
@@ -182,19 +187,28 @@ export async function brokers({
           summary.brokers_sell.length !== counts.total_seller
         )
           throw new Error(`Incomplete broker summary: ${pair}`);
+        if (summary.symbol !== ticker) throw new Error(`Broker symbol mismatch: ${pair}`);
         const sides = [
           { side: 'buy', source: summary.brokers_buy },
           { side: 'sell', source: summary.brokers_sell },
         ];
         const rows = sides.flatMap(({ side, source }) => {
           const prefix = side === 'buy' ? 'b' : 's';
+          const codes = new Set<string>();
           return source.map((row: unknown) => {
             if (!isObject(row)) throw new Error(`Invalid broker row: ${pair}`);
+            if (row.netbs_date !== day.replaceAll('-', ''))
+              throw new Error(`Broker row date mismatch: ${pair}`);
+            if (row.netbs_stock_code !== ticker)
+              throw new Error(`Broker row symbol mismatch: ${pair}`);
+            const broker = field(row, 'netbs_broker_code');
+            if (codes.has(broker)) throw new Error(`Duplicate broker row: ${pair}`);
+            codes.add(broker);
             return [
               dateValue(Date.parse(day) / 86400000),
               ticker,
               side,
-              field(row, 'netbs_broker_code'),
+              broker,
               field(row, 'type'),
               number(row, `${prefix}lotv`),
               number(row, `${prefix}val`),
@@ -204,7 +218,9 @@ export async function brokers({
           });
         });
         await append(rows);
-        years.add(day.slice(0, 4));
+        if (rows.length) years.add(day.slice(0, 4));
+        await db.run(`UPDATE broker_pairs SET complete = true
+          WHERE date = ${literal(day)} AND ticker = ${literal(ticker)}`);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         failures.push(`${pair}: ${message}`);
@@ -218,7 +234,15 @@ export async function brokers({
         TO ${literal(file + '.tmp')} (FORMAT PARQUET, COMPRESSION ZSTD)`);
       await rename(file + '.tmp', file);
     }
-    for (const ticker of tickers) {
+    await mkdir(dirname(coverage), { recursive: true });
+    await db.run(`COPY (SELECT * FROM broker_pairs ORDER BY ALL)
+      TO ${literal(coverage + '.tmp')} (FORMAT PARQUET, COMPRESSION ZSTD)`);
+    await rename(coverage + '.tmp', coverage);
+    const tickers = await query(
+      'SELECT ticker FROM brokers UNION SELECT ticker FROM broker_pairs WHERE complete',
+    );
+    for (const { ticker } of tickers) {
+      if (typeof ticker !== 'string') throw new Error('Expected broker ticker');
       const rows = await output(`SELECT date,
         coalesce(list(struct_pack(broker := broker, investor_type := investor_type,
           shares := shares, value := value, avg_price := avg_price, freq := freq) ORDER BY broker)
@@ -226,10 +250,12 @@ export async function brokers({
         coalesce(list(struct_pack(broker := broker, investor_type := investor_type,
           shares := shares, value := value, avg_price := avg_price, freq := freq) ORDER BY broker)
           FILTER (WHERE side = 'sell'), []) sell
-        FROM brokers WHERE ticker = ${literal(ticker)}
+        FROM (SELECT date, ticker FROM brokers
+          UNION SELECT date, ticker FROM broker_pairs WHERE complete) days
+        LEFT JOIN brokers USING(date, ticker)
+        WHERE ticker = ${literal(ticker)}
           AND date >= current_date - INTERVAL '90 days'
         GROUP BY date ORDER BY date DESC`);
-      if (!rows.length) continue;
       await mkdir(join(out, 'broker'), { recursive: true });
       await writeFile(join(out, 'broker', `${ticker}.json`), `[${rows.join(',')}]\n`);
     }
@@ -246,16 +272,13 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     args: process.argv.slice(2).filter((s) => s !== '--'),
     options: {
       data: { type: 'string' },
-      feed: { type: 'string' },
       token: { type: 'string' },
       out: { type: 'string' },
     },
   });
-  if (!values.data || !values.feed || !values.token || !values.out)
-    throw new Error(
-      'Usage: brokers -- --data <dir> --feed <file> --token <file> --out <private dir>',
-    );
+  if (!values.data || !values.token || !values.out)
+    throw new Error('Usage: brokers -- --data <dir> --token <file> --out <private dir>');
   process.stdout.write(
-    `${JSON.stringify(await brokers({ data: resolve(values.data), feed: resolve(values.feed), token: resolve(values.token), out: resolve(values.out) }))}\n`,
+    `${JSON.stringify(await brokers({ data: resolve(values.data), token: resolve(values.token), out: resolve(values.out) }))}\n`,
   );
 }
