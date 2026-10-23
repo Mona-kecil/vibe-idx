@@ -280,16 +280,54 @@ describe('batch pipeline', () => {
     }
   });
 
-  it('keeps source dates, duplicate 1% holders, paginated disclosures, and verified PDF values without losing 5% signals', async () => {
+  it('preserves source dates, duplicate holders, paginated disclosures, and SID counts with negative deltas', async () => {
     const root = await mkdtemp(join(tmpdir(), 'idx-fixture-'));
     try {
       const net = network({ monthly: true, reports: true });
+      const text =
+        'Perihal X Laporan TEST 1 Laporan Bulanan Registrasi Pemegang Efek akhir bulan September - 2026 ' +
+        '% Saham Free Float 42,00 41,00 Pernyataan ' +
+        'Jumlah Pemegang Saham Nasabah Pemilik SID Bulan Sebelumnya Bulan Sekarang Perubahan 1.000 900 -100';
+      const stream = `BT /F1 10 Tf 10 700 Td (${text}) Tj ET`;
+      const objects = [
+        '<< /Type /Catalog /Pages 2 0 R >>',
+        '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+        '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 2000 1000] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>',
+        '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+        `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`,
+      ];
+      let pdf = '%PDF-1.4\n';
+      const offsets: number[] = [];
+      for (const [i, object] of objects.entries()) {
+        offsets.push(pdf.length);
+        pdf += `${i + 1} 0 obj\n${object}\nendobj\n`;
+      }
+      const xref = pdf.length;
+      pdf += `xref\n0 6\n0000000000 65535 f \n${offsets
+        .map((offset) => `${String(offset).padStart(10, '0')} 00000 n \n`)
+        .join('')}trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+      net.disclosures.push(
+        announcement({
+          ticker: 'TEST',
+          id: 'registry/negative-sid',
+          title: 'Laporan Bulanan Registrasi Pemegang Efek',
+          path: '/StaticData/From_EREP/negative-sid.pdf',
+        }),
+      );
+      const registryFetcher: typeof fetch = async (input, init) => {
+        const url = new URL(input instanceof Request ? input.url : input);
+        if (url.pathname === '/StaticData/From_EREP/negative-sid.pdf') {
+          net.urls.push(url.href);
+          return new Response(new TextEncoder().encode(pdf));
+        }
+        return net.fetcher(input, init);
+      };
       await ingest({
         data: join(root, 'data'),
         out: join(root, 'out'),
         since: '2026-02-01',
         today: '2026-03-02',
-        fetcher: net.fetcher,
+        fetcher: registryFetcher,
       });
       const icon = JSON.parse(await readFile(join(root, 'out/ticker/ICON.json'), 'utf8'));
       expect(icon.one_pct).toMatchObject({ date: '2026-02-27' });
@@ -313,17 +351,32 @@ describe('batch pipeline', () => {
         out: join(root, 'out'),
         since: '2026-02-01',
         today: '2026-10-22',
-        fetcher: net.fetcher,
+        fetcher: registryFetcher,
       });
       expect(result.counts).toMatchObject({
         prices: 963,
         indices: 45,
         issuers: 962,
         one_pct: 14411,
-        disclosures: 10,
+        disclosures: 11,
         insiders: 4,
-        registry: 4,
+        registry: 5,
       });
+      const negativeSid = JSON.parse(await readFile(join(root, 'out/ticker/TEST.json'), 'utf8'));
+      expect(negativeSid.registry).toEqual({
+        date: '2026-09-30',
+        free_float_pct: 41,
+        total_shares: null,
+        sid_count: 900,
+        url: 'https://www.idx.id/StaticData/From_EREP/negative-sid.pdf',
+      });
+      expect(result.report_gaps.filter((gap) => gap.id === 'registry/negative-sid')).toEqual([
+        {
+          id: 'registry/negative-sid',
+          url: negativeSid.registry.url,
+          reason: 'Registry total shares require a verified table-layout parser',
+        },
+      ]);
       const feed = JSON.parse(await readFile(join(root, 'out/feed.json'), 'utf8'));
       expect(feed).toContainEqual(
         expect.objectContaining({
@@ -436,7 +489,7 @@ describe('batch pipeline', () => {
         net.urls
           .filter((u) => u.includes('GetAnnouncement'))
           .map((u) => new URL(u).searchParams.get('indexFrom')),
-      ).toEqual(['0', '1', '2', '3', '4']);
+      ).toEqual(['0', '1', '2', '3', '4', '5']);
       expect(JSON.parse(await readFile(join(root, 'out/health.json'), 'utf8'))).toMatchObject({
         prices: '2026-10-21',
         five_pct: '2026-10-21',
