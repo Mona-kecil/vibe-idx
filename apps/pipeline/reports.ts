@@ -108,7 +108,15 @@ export async function parseReport({
   kind: 'insider' | 'registry';
   ticker: string;
 }): Promise<ReportResult> {
-  const { text: pages } = await extractText(new Uint8Array(bytes), { mergePages: false });
+  let pages: string[];
+  try {
+    const extracted = await extractText(new Uint8Array(bytes), { mergePages: false });
+    pages = extracted.text;
+  } catch (error) {
+    if (error instanceof Error && ['InvalidPDFException', 'PasswordException'].includes(error.name))
+      return { kind: 'unsupported', reason: `Unreadable PDF: ${error.name}` };
+    throw error;
+  }
   const first = (pages[0] ?? '').replace(/\s+/g, ' ');
   if (kind === 'insider') {
     const code = /Nama Perusahaan Tbk\s*:\s*([A-Z0-9-]+)\s+-/.exec(first)?.[1];

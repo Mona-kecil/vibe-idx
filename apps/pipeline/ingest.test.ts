@@ -447,7 +447,7 @@ describe('batch pipeline', () => {
     }
   });
 
-  it('rejects a truncated announcement page and a failed PDF fetch without publishing empty replacements', async () => {
+  it('rejects truncated pages and failed fetches but retains unreadable PDFs as linked disclosures', async () => {
     const root = await mkdtemp(join(tmpdir(), 'idx-source-failure-'));
     const net = network({ reports: true });
     const options = {
@@ -488,6 +488,24 @@ describe('batch pipeline', () => {
       await expect(
         readFile(join(options.data, 'parquet/disclosures/2026.parquet')),
       ).rejects.toMatchObject({ code: 'ENOENT' });
+      const withUnreadableReport = await ingest({
+        ...options,
+        fetcher: async (input, init) => {
+          const url = new URL(input instanceof Request ? input.url : input);
+          if (url.pathname.endsWith('/unsupported.pdf')) return new Response('%PDF-1.7\ntruncated');
+          return net.fetcher(input, init);
+        },
+      });
+      expect(withUnreadableReport.report_gaps).toContainEqual({
+        id: 'registry/unsupported',
+        url: 'https://www.idx.id/StaticData/From_EREP/unsupported.pdf',
+        reason: 'Unreadable PDF: InvalidPDFException',
+      });
+      const published = JSON.parse(await readFile(join(options.out, 'ticker/AADI.json'), 'utf8'));
+      expect(published.disclosures).toContainEqual(
+        expect.objectContaining({ id: 'registry/unsupported' }),
+      );
+      expect(published.registry).toBeNull();
       const recovered = await ingest({ ...options, fetcher: net.fetcher });
       expect(recovered.counts).toMatchObject({
         disclosures: 10,
