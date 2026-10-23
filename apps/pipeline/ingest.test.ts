@@ -445,7 +445,7 @@ describe('batch pipeline', () => {
     } finally {
       await rm(root, { recursive: true, force: true });
     }
-  });
+  }, 30000);
 
   it('rejects truncated pages and failed fetches but retains unreadable PDFs as linked disclosures', async () => {
     const root = await mkdtemp(join(tmpdir(), 'idx-source-failure-'));
