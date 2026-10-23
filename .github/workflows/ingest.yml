@@ -78,6 +78,8 @@ jobs:
           const body = join(dir, 'body');
           const received = join(dir, 'received');
           const key = `checks/brokers/${process.env.GITHUB_RUN_ID}-${randomUUID()}.json`;
+          const initial = `${key}:A`;
+          const updated = `${key}:B`;
           const args = ['--bucket', 'vibe-idx-private', '--key', key];
           const aws = (...args) => spawnSync('aws', ['s3api', ...args, '--endpoint-url', `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`], {
             encoding: 'utf8', env: { ...process.env, AWS_MAX_ATTEMPTS: '1' }, timeout: 30000,
@@ -92,18 +94,26 @@ jobs:
           };
           let created = false;
           try {
-            writeFileSync(body, 'A');
-            const first = ok(aws('put-object', ...args, '--body', body, '--if-none-match', '*'));
-            created = true;
+            writeFileSync(body, initial);
+            const result = aws('put-object', ...args, '--body', body, '--if-none-match', '*');
+            created = result.status === 0;
+            const first = ok(result);
             rejected(aws('put-object', ...args, '--body', body, '--if-none-match', '*'));
             rejected(aws('put-object', ...args, '--body', body, '--if-match', '"wrong-etag"'));
-            writeFileSync(body, 'B');
+            writeFileSync(body, updated);
             ok(aws('put-object', ...args, '--body', body, '--if-match', first.ETag));
             ok(aws('get-object', ...args, received));
-            assert.equal(readFileSync(received, 'utf8'), 'B');
+            assert.equal(readFileSync(received, 'utf8'), updated);
             console.log('R2 create-once, ETag conflict, conditional update, and readback passed');
           } finally {
             try {
+              if (!created) {
+                const saved = aws('get-object', ...args, received);
+                if (saved.status === 0) {
+                  const value = readFileSync(received, 'utf8');
+                  created = value === initial || value === updated;
+                }
+              }
               if (created) ok(aws('delete-object', ...args));
             } finally {
               rmSync(dir, { recursive: true, force: true });
