@@ -14,6 +14,6 @@ export default defineConfig({
     },
   },
   test: {
-    include: ['src/**/*.test.{ts,tsx}', 'api/**/*.test.ts', 'convex/**/*.test.ts'],
+    include: ['src/**/*.test.{ts,tsx}'],
   },
 });

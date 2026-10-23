@@ -4,6 +4,7 @@ export const healthSchema = z.object({
   prices: z.string().nullable(),
   indices: z.string().nullable(),
   five_pct: z.string().nullable(),
+  one_pct: z.string().nullable().default(null),
   issuers: z.string().nullable(),
   run_at: z.string(),
 });
@@ -97,7 +98,70 @@ export const tickerSchema = z.object({
   ),
   holders: z.array(z.object({ investor: z.string(), shares: z.number(), pct: z.number() })),
   changes: z.array(ownershipChangeSchema.extend({ date: z.string() })),
+  one_pct: z
+    .object({
+      date: z.string().nullable(),
+      holders: z.array(
+        z.object({
+          investor: z.string(),
+          shares: z.number(),
+          pct: z.number(),
+          classification: z.string().nullable(),
+          local_foreign: z.string().nullable(),
+        }),
+      ),
+    })
+    .default({ date: null, holders: [] }),
+  disclosures: z
+    .array(
+      z.object({
+        id: z.string(),
+        title: z.string(),
+        published_at: z.string(),
+        url: z.url(),
+        kind: z.enum(['insider', 'registry', 'other']),
+        attachments: z.array(z.object({ name: z.string(), url: z.url() })),
+      }),
+    )
+    .default([]),
+  insiders: z
+    .array(
+      z.object({
+        date: z.string(),
+        reporter: z.string().nullable(),
+        shares_before: z.number().nullable(),
+        shares_after: z.number().nullable(),
+        net_shares: z.number().nullable(),
+        url: z.url(),
+      }),
+    )
+    .default([]),
+  registry: z
+    .object({
+      date: z.string(),
+      free_float_pct: z.number().nullable(),
+      total_shares: z.number().nullable(),
+      sid_count: z.number().nullable(),
+      url: z.url(),
+    })
+    .nullable()
+    .default(null),
 });
+
+const newsSchema = z.array(
+  z.object({
+    title: z.string(),
+    url: z.url(),
+    published_at: z.string(),
+    source: z.string(),
+  }),
+);
+
+export async function loadNews(ticker: string) {
+  const response = await fetch(`/api/news?ticker=${encodeURIComponent(ticker)}`);
+  if (!response.ok) throw new Error('Could not load news');
+  return newsSchema.parse(await response.json());
+}
 
 export type Health = z.infer<typeof healthSchema>;
 export type Market = z.infer<typeof marketSchema>;

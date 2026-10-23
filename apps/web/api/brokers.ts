@@ -53,9 +53,14 @@ export function createBrokerHandler({
       const { payload } = await jwtVerify(bearer[1], jwks, {
         algorithms: ['RS256'],
         issuer: 'https://api.workos.com/',
-        requiredClaims: ['sub', 'exp'],
+        requiredClaims: ['sub', 'sid', 'exp', 'iat'],
       });
-      if (typeof payload.sub !== 'string' || !payload.sub.trim()) {
+      if (
+        typeof payload.sub !== 'string' ||
+        !payload.sub.trim() ||
+        typeof payload.sid !== 'string' ||
+        !payload.sid.trim()
+      ) {
         return json({ error: 'unauthorized' }, 401);
       }
     } catch (error) {

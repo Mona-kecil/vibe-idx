@@ -1,208 +1,59 @@
 # vibe-idx
 
-Local IDX/KSEI ingestion and web UI for market data, ownership disclosures, and
-IDX announcements.
+A daily IDX radar with price and volume signals, ownership changes, ticker research, and broker summaries behind WorkOS email-code login. The interface supports Indonesian and English.
 
-## Project Layout
+## Run locally
 
-```text
-apps/ingest/   Python ingestion CLI, source clients, and parsers
-apps/web/      React web app and tRPC HTTP server
-db/            SQLite schema
-samples/       Small IDX fixture PDFs/JSON for tests
-data/          Local runtime data, ignored by git
+Use Node 24 and pnpm 11.9.
+
+```sh
+pnpm install --frozen-lockfile
 ```
 
-## Prerequisites
+Add these variables to `apps/web/.env.local`. Use the same WorkOS environment for both client IDs.
 
-Install these tools before running the project locally:
-
-- Node.js 24 or newer
-- pnpm 11.9.0 or newer
-- Python 3.12
-- uv
-- Docker and Docker Compose, for production container runs
-
-If pnpm is not already available, enable it through Corepack:
-
-```bash
-corepack enable
+```dotenv
+VITE_WORKOS_CLIENT_ID=your_workos_client_id
+WORKOS_CLIENT_ID=your_workos_client_id
+R2_ACCOUNT_ID=your_cloudflare_account_id
+R2_ACCESS_KEY_ID=your_r2_access_key_id
+R2_SECRET_ACCESS_KEY=your_r2_secret_access_key
 ```
 
-## Install
+The R2 credential needs object read access to `vibe-idx-private`. Keep secret values out of `VITE_` variables and source control.
 
-Install the JavaScript workspace dependencies from the repo root:
+Register `http://localhost:5173/callback` as a WorkOS redirect URI, `http://localhost:5173` as an allowed origin and sign-out URI, and `http://localhost:5173/login` as the initiate-login URI. Enable Magic Auth for email-code sign-in.
 
-```bash
-pnpm install
+Start the website and its Vercel functions together.
+
+```sh
+pnpm dlx vercel dev --listen 5173 --cwd apps/web
 ```
 
-Install the Python ingest dependencies:
+Open `http://localhost:5173`. Public pages read the published R2 JSON. The broker endpoint reads private R2 after verifying the WorkOS session. `pnpm --filter @vibe-idx/web dev` runs only the frontend and its public-data proxy.
 
-```bash
-cd apps/ingest
-uv sync
-cd ../..
-```
+## Run checks
 
-## Run Locally in Development Mode
-
-Development runs directly from the local CLI, not Docker. The web server reads
-from `data/vibe_idx.sqlite` by default. Create and populate that database by
-running at least one ingest command:
-
-```bash
-cd apps/ingest
-uv run idx-ingest market-summary
-uv run idx-ingest ksei-5pct
-uv run idx-ingest insider
-uv run idx-ingest ksei-1pct
-uv run idx-ingest laporan-efek
-cd ../..
-```
-
-Start the API server in one terminal:
-
-```bash
-pnpm --filter @vibe-idx/web dev:server
-```
-
-Start the Vite web app in another terminal:
-
-```bash
-pnpm --filter @vibe-idx/web dev:web
-```
-
-Open the web app at `http://localhost:5173`. The API listens on
-`http://localhost:20240/trpc`, and Vite proxies `/trpc` requests to it.
-
-## Run on a Server with Docker
-
-For a compiled production-style container that serves both the React build and
-the `/trpc` API from one service:
-
-```bash
-docker compose --profile prod up --build app
-```
-
-Open `http://localhost:8080`.
-
-To run the compiled app with scheduled ingestion in the same Compose stack:
-
-```bash
-docker compose --profile prod up --build app scheduler
-```
-
-The scheduler uses `supercronic` and
-[`apps/ingest/cron/ingest.cron`](apps/ingest/cron/ingest.cron). It writes to the
-same `vibe-idx-data` volume as the app. Docker Compose mounts host-visible
-SQLite backups at `./backups`, separate from the data volume. The scheduler
-stops when the Compose stack stops.
-Scheduled jobs run in Jakarta time:
-
-- Weekdays every 30 minutes from 19:00 through 22:00: daily sources.
-- Calendar days 2 through 10 each month at 09:00: monthly sources.
-- Every day at 23:15: SQLite backup to `/backups`.
-
-## Ingestion Commands
-
-No-argument commands use source-specific latest behavior:
-
-```bash
-cd apps/ingest
-uv run idx-ingest market-summary
-uv run idx-ingest ksei-5pct
-uv run idx-ingest insider
-uv run idx-ingest ksei-1pct
-uv run idx-ingest laporan-efek
-```
-
-Inspect source-aware ingestion policy:
-
-```bash
-uv run idx-ingest sources
-uv run idx-ingest sources ksei-1pct
-```
-
-Backfill historical data:
-
-```bash
-uv run idx-ingest ksei-5pct --from 2026-06-01 --to 2026-06-28
-uv run idx-ingest insider --from 2026-06-01 --to 2026-06-28
-uv run idx-ingest ksei-1pct --month 2026-06
-uv run idx-ingest laporan-efek --period previous-month
-```
-
-Historical date basis:
-
-- Daily sources use source-specific daily dates: `market-summary` uses trade
-  date, `ksei-5pct` uses ownership-list listing date, and `insider` uses IDX
-  disclosure publish date.
-- Monthly sources use IDX disclosure publish month. Use `--month YYYY-MM` for a
-  specific disclosure month or `--period previous-month` for the previous
-  monthly disclosure cycle.
-- `--period latest` is equivalent to the no-argument default and cannot be
-  combined with `--from`, `--to`, or `--month`.
-
-## SQLite Backups
-
-Create a consistent SQLite backup with SQLite's backup API:
-
-```bash
-cd apps/ingest
-uv run idx-ingest db backup
-uv run idx-ingest db backup --output ../../backups
-```
-
-Inspect the active database:
-
-```bash
-uv run idx-ingest db inspect
-```
-
-Restore from a backup:
-
-```bash
-uv run idx-ingest db restore ../../backups/vibe_idx-YYYYMMDDTHHMMSSZ.sqlite --yes
-```
-
-In Docker, backups are written to `/backups` inside containers and `./backups`
-on the host:
-
-```bash
-docker compose --profile prod run --rm ingest db backup --output /backups
-docker compose --profile prod run --rm ingest db inspect
-docker compose --profile prod run --rm ingest db restore /backups/vibe_idx-YYYYMMDDTHHMMSSZ.sqlite --yes
-```
-
-The production scheduler also runs this backup automatically every day at 23:15
-Jakarta time. The manual command is still useful before migrations, restores,
-or risky maintenance.
-
-To move servers, run `db backup` on the old server, copy the `.sqlite` file from
-`./backups` to the new server's `./backups`, run `db restore` on the new server,
-then restart the app and scheduler containers.
-
-## Checks
-
-Run Python checks:
-
-```bash
-cd apps/ingest
-uv run pytest
-uv run ruff check .
-```
-
-Run web checks:
-
-```bash
+```sh
+pnpm exec vp check apps/pipeline apps/web .github/workflows vite.config.ts
+pnpm --filter @vibe-idx/pipeline test
 pnpm --filter @vibe-idx/web test
-pnpm --filter @vibe-idx/web check
 pnpm --filter @vibe-idx/web build
 ```
 
-The default local database path is:
+CI runs package checks, tests, and the client build on pull requests and pushes to `master`. It uses fixture data and needs no source credentials.
 
-```text
-data/vibe_idx.sqlite
+## Run the batch
+
+```sh
+pnpm --filter @vibe-idx/pipeline ingest -- --data /tmp/idx-data --out /tmp/idx-public
+pnpm --filter @vibe-idx/pipeline brokers -- --data /tmp/idx-data --token /path/to/stockbit.json --out /tmp/idx-private
 ```
+
+The Stockbit token file has `access` and `refresh` fields. Treat it as a secret. The broker command rotates both tokens and saves the pair before collecting data.
+
+The daily GitHub Actions workflow restores private Parquet, fetches IDX data, publishes public JSON, then collects broker summaries for traded stocks. It runs daily at 17:17 Jakarta so token renewal continues over weekends. Completed empty summaries and pending failures remain in a private pair ledger. The first collection starts on the latest trading day. Later runs fill gaps from that start date.
+
+GitHub Actions uses `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY` secrets with read and write access to both buckets, plus the `R2_ACCOUNT_ID` repository variable. Seed `auth/stockbit.json` in the private bucket before the first broker run. Vercel needs its own server environment variables. GitHub secrets do not sync to Vercel.
+
+See [the architecture and source contracts](docs/v2.md) for storage paths, source dates, and parsing limits.

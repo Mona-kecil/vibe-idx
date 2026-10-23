@@ -3,9 +3,9 @@ import { once } from 'node:events';
 import { exportJWK, generateKeyPair, SignJWT } from 'jose';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vite-plus/test';
 import type { JWTPayload } from 'jose';
-import api, { createBrokerHandler } from './brokers';
-import { brokerHistorySchema } from '../src/brokers';
-import type { BrokerDay, BrokerRow } from '../src/brokers';
+import api, { createBrokerHandler } from '../api/brokers';
+import { brokerHistorySchema } from './brokers';
+import type { BrokerDay, BrokerRow } from './brokers';
 
 const clientId = 'client_TEST';
 const accountId = 'a'.repeat(32);
@@ -78,6 +78,8 @@ function request({
 function token(claims: JWTPayload = {}, signingKey = keys.privateKey) {
   return new SignJWT({
     sub: 'user_test',
+    sid: 'session_test',
+    iat: Math.floor(Date.now() / 1000),
     iss: 'https://api.workos.com/',
     exp: Math.floor(Date.now() / 1000) + 300,
     ...claims,
@@ -135,6 +137,9 @@ describe('private broker API', () => {
       await token({ sub: undefined }),
       await token({ sub: '' }),
       await token({ sub: ' ' }),
+      await token({ sid: undefined }),
+      await token({ sid: '' }),
+      await token({ iat: undefined }),
       hmac,
     ]) {
       const response = await handle(request({ token: invalid }));

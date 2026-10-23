@@ -26,8 +26,50 @@ body {
 
 button,
 input,
+select,
 textarea {
   font: inherit;
+}
+
+.account-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: 20px;
+  font-size: 0.9rem;
+}
+
+.account-controls button,
+.account-controls select,
+.broker-panel button {
+  padding: 8px 12px;
+  border: 1px solid #b9c5bf;
+  border-radius: 4px;
+  color: #123c35;
+  background: #fff;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+.registry-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid #b9c5bf;
+  background: #f8faf7;
+}
+
+.broker-toolbar .field {
+  min-width: 160px;
 }
 
 button {

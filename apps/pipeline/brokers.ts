@@ -6,7 +6,7 @@ import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 import { dateValue, DuckDBInstance } from '@duckdb/node-api';
 import type { DuckDBValue } from '@duckdb/node-api';
-import { date } from '../web/convex/lib/rows';
+import { date } from './lib/rows';
 
 const literal = (s: string) => `'${s.replaceAll("'", "''")}'`;
 const headers = {
