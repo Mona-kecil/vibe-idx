@@ -45,7 +45,7 @@ CI runs package checks, tests, and the client build on pull requests and pushes 
 
 ## Run the batch
 
-Install the AWS CLI. Set `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_DEFAULT_REGION=auto`, and `R2_ACCOUNT_ID` for the pipeline's R2 credential. Broker collection reads and writes private R2, including when launched locally. Run it only after draining hosted collectors.
+Install the AWS CLI. Set `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_DEFAULT_REGION=auto`, and `R2_ACCOUNT_ID` for the pipeline's R2 credential. Set `BROKER_RUN_KIND` to `daily` or `backfill`. Broker collection reads and writes private R2, including when launched locally. Run it only after draining hosted collectors.
 
 ```sh
 pnpm --filter @vibe-idx/pipeline ingest -- --data /tmp/idx-data --out /tmp/idx-public
@@ -56,7 +56,7 @@ Seed `auth/stockbit.json` in `vibe-idx-private` with `access` and `refresh` fiel
 
 GitHub Actions fetches IDX data and publishes public JSON daily at 17:17 Jakarta, then collects broker summaries. Eleven broker-only slots fill the remaining two-hour intervals. All runs share one queue. Targets are positive-volume price pairs from June 1, 2026 through the latest completed trading day, newest first. Existing raw responses and completed empty summaries prevent repeat source requests.
 
-Each broker run allows at most 500 Stockbit attempts and 50 minutes. All auth and summary requests start at least six seconds apart. `BROKER_RUN_KIND=backfill` skips auth when no pair remains; the default `daily` run maintains auth over weekends. Ten requests per minute is a collection ceiling, not a verified provider quota.
+Each broker run allows at most 500 Stockbit attempts and 50 minutes. All auth and summary requests start at least six seconds apart. `BROKER_RUN_KIND=backfill` skips auth when no pair remains; `daily` maintains auth over weekends. Manual workflow launches require 17:17 Jakarta or later to avoid storing an intraday price snapshot. Ten requests per minute is a collection ceiling, not a verified provider quota.
 
 The collector acquires `broker-run.json` in private R2 before auth. It removes the marker after a successful checkpoint and publication. Any error or interruption leaves it in place and blocks later broker runs while daily IDX publication continues. Before removing a marker, confirm no collector is active, inspect the failed run and cloud token/raw state, and resolve any ambiguous write or token rotation. Do not clear a marker based on age. Manual workflow launches verify R2 conditional writes before starting the collector.
 

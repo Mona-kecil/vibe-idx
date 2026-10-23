@@ -42,7 +42,12 @@ jobs:
         run: aws s3 sync s3://vibe-idx-private/raw "$DATA/raw" --exclude "broker/*" --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
       - name: Ingest IDX and emit website JSON
         if: env.BROKER_RUN_KIND == 'daily'
-        run: pnpm --filter @vibe-idx/pipeline ingest -- --data "$DATA" --out "$OUT"
+        run: |
+          if [ "$(TZ=Asia/Jakarta date +%H%M)" -lt 1717 ]; then
+            echo 'IDX source ingestion requires 17:17 Jakarta or later'
+            exit 1
+          fi
+          pnpm --filter @vibe-idx/pipeline ingest -- --data "$DATA" --out "$OUT"
       - name: Archive raw responses
         if: ${{ always() && env.BROKER_RUN_KIND == 'daily' }}
         run: |
