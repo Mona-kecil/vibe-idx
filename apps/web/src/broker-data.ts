@@ -1,9 +1,12 @@
 import type { BrokerDay } from './brokers';
-import directory from '../../../docs/prototypes/workspace/research/broker-directory.json';
+import directory from './broker-directory.json';
 import type { ChartSeries } from './Chart';
 
+const brokers = new Map(Object.entries(directory.brokers));
+const aliases = new Map(Object.entries(directory.aliases));
+
 export function brokerName(code: string) {
-  const row = Object.entries(directory.brokers).find(([key]) => key === code)?.[1];
+  const row = brokers.get(code);
   return row
     ? row.name +
         ('historicalOnly' in row
@@ -24,7 +27,7 @@ export function accountIdentity(
   const normalized = normalize(name);
   const custodian = directory.custodians.find((row) => row.normalizedName === normalized);
   if (custodian) return { kind: 'custodian', name: custodian.name };
-  const code = Object.entries(directory.aliases).find(([alias]) => alias === normalized)?.[1];
+  const code = aliases.get(normalized);
   return code ? { kind: 'broker', code } : null;
 }
 export function aggregateBrokers(days: BrokerDay[]) {
