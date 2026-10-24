@@ -2,6 +2,7 @@ import { extractText } from 'unpdf';
 import { z } from 'zod';
 import { idxUrl } from './lib/ownershipList';
 import { date } from './lib/rows';
+import { parseRegistryLayout } from './registry';
 
 const announcementPage = z.object({
   ResultCount: z.number().int().nonnegative(),
@@ -72,12 +73,9 @@ type InsiderReport = {
   shares_after: number | null;
   net_shares: number | null;
 };
-type RegistryReport = {
+type RegistryReport = Omit<Awaited<ReturnType<typeof parseRegistryLayout>>, 'gaps'> & {
   kind: 'registry';
   date: string;
-  free_float_pct: number | null;
-  total_shares: number | null;
-  sid_count: number | null;
 };
 type ReportResult =
   | { kind: 'parsed'; report: InsiderReport | RegistryReport; gaps: string[] }
@@ -156,35 +154,14 @@ export async function parseReport({
       kind: 'unsupported',
       reason: 'Unrecognized IDX registry report header or reporting month',
     };
-  const text = pages.join(' ').replace(/\s+/g, ' ');
-  const section =
-    /% Saham Free Float\s+(.*?)(?:Jumlah saham yang harus dibatasi|Pernyataan|$)/i.exec(
-      text,
-    )?.[1] ?? '';
-  const percentages = Array.from(
-    section.matchAll(/(?<![\d.,])(\d{1,3}(?:,\d{1,4}|\.\d{1,4}))(?![\d.,])/g),
-    (m) => Number(m[1]?.replace(',', '.')),
-  ).filter((n) => n <= 100);
-  const sid =
-    /Jumlah Pemegang Saham Nasabah Pemilik SID Bulan Sebelumnya Bulan Sekarang Perubahan ([\d.]+) ([\d.]+) (-?[\d.]+)/.exec(
-      text,
-    )?.[2];
-  const free_float_pct = percentages.length === 2 ? (percentages[1] ?? null) : null;
+  const { gaps, ...fields } = await parseRegistryLayout(bytes);
   return {
     kind: 'parsed',
     report: {
       kind,
       date: new Date(Date.UTC(Number(period[2]), month, 0)).toISOString().slice(0, 10),
-      free_float_pct,
-      total_shares: null,
-      sid_count: sid ? integer(sid) : null,
+      ...fields,
     },
-    gaps: [
-      'Registry total shares require a verified table-layout parser',
-      ...(free_float_pct === null
-        ? ['Registry free float is not in the supported two-column format']
-        : []),
-      ...(!sid ? ['Registry SID count is not in the supported labeled format'] : []),
-    ],
+    gaps,
   };
 }

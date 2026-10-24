@@ -84,6 +84,31 @@ export const stocksSchema = z.array(
   }),
 );
 
+const registrySchema = z.object({
+  date: z.string(),
+  free_float_pct: z.number().nullable(),
+  total_shares: z.number().nullable(),
+  sid_count: z.number().nullable(),
+  url: z.url(),
+  free_float_shares: z.number().nullable().default(null),
+  investor_types: z
+    .array(
+      z.object({ label: z.string(), shares: z.number().nullable(), page: z.number().nullable() }),
+    )
+    .default([]),
+  holders: z
+    .array(
+      z.object({
+        investor: z.string(),
+        pct: z.number(),
+        controller: z.boolean().nullable(),
+        controller_affiliate: z.boolean().nullable(),
+        page: z.number(),
+      }),
+    )
+    .default([]),
+});
+
 export const tickerSchema = z.object({
   ticker: z.string(),
   name: z.string(),
@@ -136,16 +161,8 @@ export const tickerSchema = z.object({
       }),
     )
     .default([]),
-  registry: z
-    .object({
-      date: z.string(),
-      free_float_pct: z.number().nullable(),
-      total_shares: z.number().nullable(),
-      sid_count: z.number().nullable(),
-      url: z.url(),
-    })
-    .nullable()
-    .default(null),
+  registry: registrySchema.nullable().default(null),
+  registry_history: z.array(registrySchema).default([]),
 });
 
 const newsSchema = z.array(

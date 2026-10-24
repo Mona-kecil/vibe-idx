@@ -42,24 +42,28 @@ const registryExamples = [
     ticker: 'BBCA',
     file: 'BBCA_1_20260608_BBCA_Laporan Bulanan Registrasi Pemegang Efek_Perubahan Struktur Pemegang Saham_32098358.pdf',
     pct: 42.46,
+    total: 122042299500,
     sid: 767370,
   },
   {
     ticker: 'IMPC',
     file: 'IMPC_1_20260610_IMPC_Laporan Bulanan Registrasi Pemegang Efek_Perubahan Struktur Pemegang Saham_32099872.pdf',
     pct: 23.85,
+    total: 54907000000,
     sid: 19685,
   },
   {
     ticker: 'SINI',
     file: 'SINI_1_20260605_SINI_Laporan Bulanan Registrasi Pemegang Efek_Perubahan Struktur Pemegang Saham_32097662.pdf',
     pct: 25.07,
+    total: 481000000,
     sid: 5742,
   },
   {
     ticker: 'VKTR',
     file: 'VKTR_1_20260609_VKTR_Laporan Bulanan Registrasi Pemegang Efek_Perubahan Struktur Pemegang Saham_32099316.pdf',
     pct: 61.19,
+    total: 43750000000,
     sid: 28971,
   },
 ];
@@ -288,7 +292,14 @@ describe('batch pipeline', () => {
         'Perihal X Laporan TEST 1 Laporan Bulanan Registrasi Pemegang Efek akhir bulan September - 2026 ' +
         '% Saham Free Float 42,00 41,00 Pernyataan ' +
         'Jumlah Pemegang Saham Nasabah Pemilik SID Bulan Sebelumnya Bulan Sekarang Perubahan 1.000 900 -100';
-      const stream = `BT /F1 10 Tf 10 700 Td (${text}) Tj ET`;
+      const stream = `BT /F1 10 Tf 1 0 0 1 10 800 Tm (${text}) Tj ET
+BT /F1 10 Tf 1 0 0 1 34 600 Tm (Jumlah Pemegang Saham Nasabah Pemilik SID) Tj ET
+BT /F1 10 Tf 1 0 0 1 81 560 Tm (Bulan Sebelumnya) Tj ET
+BT /F1 10 Tf 1 0 0 1 259 560 Tm (Bulan Sekarang) Tj ET
+BT /F1 10 Tf 1 0 0 1 445 560 Tm (Perubahan) Tj ET
+BT /F1 10 Tf 1 0 0 1 172 530 Tm (1.000) Tj ET
+BT /F1 10 Tf 1 0 0 1 335 530 Tm (900) Tj ET
+BT /F1 10 Tf 1 0 0 1 529 530 Tm (-100) Tj ET`;
       const objects = [
         '<< /Type /Catalog /Pages 2 0 R >>',
         '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
@@ -363,20 +374,26 @@ describe('batch pipeline', () => {
         registry: 5,
       });
       const negativeSid = JSON.parse(await readFile(join(root, 'out/ticker/TEST.json'), 'utf8'));
-      expect(negativeSid.registry).toEqual({
+      expect(negativeSid.registry).toMatchObject({
         date: '2026-09-30',
-        free_float_pct: 41,
+        free_float_pct: null,
         total_shares: null,
         sid_count: 900,
         url: 'https://www.idx.id/StaticData/From_EREP/negative-sid.pdf',
       });
-      expect(result.report_gaps.filter((gap) => gap.id === 'registry/negative-sid')).toEqual([
-        {
+      for (const field of [
+        'total shares',
+        'free float percentage',
+        'free float shares',
+        'investor types',
+        'holder flags',
+      ]) {
+        expect(result.report_gaps).toContainEqual({
           id: 'registry/negative-sid',
           url: negativeSid.registry.url,
-          reason: 'Registry total shares require a verified table-layout parser',
-        },
-      ]);
+          reason: `Registry ${field}: unsupported or missing labeled cells`,
+        });
+      }
       const feed = JSON.parse(await readFile(join(root, 'out/feed.json'), 'utf8'));
       expect(feed).toContainEqual(
         expect.objectContaining({
@@ -455,17 +472,12 @@ describe('batch pipeline', () => {
         const ticker = JSON.parse(
           await readFile(join(root, `out/ticker/${r.ticker}.json`), 'utf8'),
         );
-        expect(ticker.registry).toEqual({
+        expect(ticker.registry).toMatchObject({
           date: '2026-05-31',
           free_float_pct: r.pct,
-          total_shares: null,
+          total_shares: r.total,
           sid_count: r.sid,
           url: `https://www.idx.id/StaticData/From_EREP/${r.ticker}.pdf`,
-        });
-        expect(result.report_gaps).toContainEqual({
-          id: `registry/${r.ticker}`,
-          url: ticker.registry.url,
-          reason: 'Registry total shares require a verified table-layout parser',
         });
       }
       const instance = await DuckDBInstance.create(':memory:');

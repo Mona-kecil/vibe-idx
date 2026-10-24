@@ -42,7 +42,7 @@ CREATE TABLE ownership_files (date DATE, source VARCHAR, url VARCHAR PRIMARY KEY
 CREATE TABLE disclosures (
   date DATE, id VARCHAR PRIMARY KEY, ticker VARCHAR, title VARCHAR,
   published_at VARCHAR, url VARCHAR, kind VARCHAR, attachments JSON,
-  source_json VARCHAR, report_gaps JSON
+  source_json VARCHAR, report_gaps JSON, registry_parser_version INTEGER
 );
 CREATE TABLE insiders (
   date DATE, id VARCHAR, ticker VARCHAR, reporter VARCHAR,
@@ -51,7 +51,16 @@ CREATE TABLE insiders (
 );
 CREATE TABLE registry (
   date DATE, id VARCHAR, ticker VARCHAR, free_float_pct DOUBLE,
-  total_shares DOUBLE, sid_count DOUBLE, url VARCHAR, PRIMARY KEY(id, url)
+  total_shares DOUBLE, sid_count DOUBLE, url VARCHAR, free_float_shares DOUBLE,
+  PRIMARY KEY(date, ticker)
+);
+CREATE TABLE registry_investors (
+  date DATE, ticker VARCHAR, label VARCHAR, shares DOUBLE, page INTEGER,
+  PRIMARY KEY(date, ticker, label)
+);
+CREATE TABLE registry_holders (
+  date DATE, ticker VARCHAR, investor VARCHAR, pct DOUBLE, controller BOOLEAN,
+  controller_affiliate BOOLEAN, page INTEGER, PRIMARY KEY(date, ticker, investor)
 );
 CREATE TABLE issuers (
   date DATE, ticker VARCHAR PRIMARY KEY, name VARCHAR, board VARCHAR, sector VARCHAR,
@@ -171,22 +180,34 @@ history AS (
   SELECT ticker, list(struct_pack(date := date, reporter := reporter,
     shares_before := shares_before, shares_after := shares_after, net_shares := net_shares,
     url := url) ORDER BY date DESC, id, url) insiders FROM insiders GROUP BY ticker
+), registry_types AS (
+  SELECT date, ticker, list(struct_pack(label := label, shares := shares, page := page) ORDER BY label) investor_types
+  FROM registry_investors GROUP BY date, ticker
+), registry_flags AS (
+  SELECT date, ticker, list(struct_pack(investor := investor, pct := pct, controller := controller,
+    controller_affiliate := controller_affiliate, page := page) ORDER BY investor) holders
+  FROM registry_holders GROUP BY date, ticker
 ), registers AS (
-  SELECT r.*, row_number() OVER (PARTITION BY r.ticker ORDER BY r.date DESC,
-    d.published_at DESC, r.id DESC, r.url) n FROM registry r JOIN disclosures d USING(id)
+  SELECT r.*, struct_pack(date := r.date, free_float_pct := r.free_float_pct,
+    total_shares := r.total_shares, sid_count := r.sid_count, url := r.url,
+    free_float_shares := r.free_float_shares, investor_types := coalesce(t.investor_types, []),
+    holders := coalesce(f.holders, [])) record
+  FROM registry r LEFT JOIN registry_types t USING(date, ticker)
+  LEFT JOIN registry_flags f USING(date, ticker)
+), registry_history AS (
+  SELECT ticker, list(record ORDER BY date) snapshots, arg_max(record, date) latest
+  FROM registers GROUP BY ticker
 )
 SELECT u.ticker, coalesce(i.name, p.name, u.ticker) AS name,
   coalesce(h.prices, []) prices, coalesce(o.holders, []) holders, coalesce(c.changes, []) changes,
   struct_pack(date := (SELECT max(date) FROM one_pct), holders := coalesce(m.holders, [])) one_pct,
   coalesce(a.disclosures, []) disclosures, coalesce(t.insiders, []) insiders,
-  CASE WHEN r.ticker IS NULL THEN NULL ELSE struct_pack(date := r.date,
-    free_float_pct := r.free_float_pct, total_shares := r.total_shares,
-    sid_count := r.sid_count, url := r.url) END registry
+  r.latest registry, coalesce(r.snapshots, []) registry_history
 FROM universe u LEFT JOIN issuers i USING(ticker)
 LEFT JOIN (SELECT ticker, arg_max(name, date) AS name FROM prices GROUP BY ticker) p USING(ticker)
 LEFT JOIN history h USING(ticker) LEFT JOIN holders o USING(ticker) LEFT JOIN changes c USING(ticker)
 LEFT JOIN monthly m USING(ticker) LEFT JOIN announcements a USING(ticker)
-LEFT JOIN trades t USING(ticker) LEFT JOIN registers r ON r.ticker = u.ticker AND r.n = 1
+LEFT JOIN trades t USING(ticker) LEFT JOIN registry_history r USING(ticker)
 ORDER BY u.ticker`;
 
 export const health = `SELECT

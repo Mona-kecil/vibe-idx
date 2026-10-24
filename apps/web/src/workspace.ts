@@ -31,7 +31,7 @@ const controlsSchema = z.object({
   query: z.string(),
   sort: z.enum(['ticker', 'close', 'change_pct', 'volume', 'value', 'net_foreign']),
   direction: z.number(),
-  ownershipView: z.enum(['five', 'one']),
+  ownershipView: z.enum(['five', 'registry', 'one']),
   reportMode: z.enum(['all', 'changed']),
   reportTicker: z.string(),
   marketFilter: z.string(),
