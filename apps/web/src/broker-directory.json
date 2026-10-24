@@ -1251,9 +1251,7 @@
     "securitiesAccountHolderNames": 9,
     "mappedSecuritiesAccountHolderNames": 9,
     "custodianBankNamesExcluded": 6,
-    "extraHistoricalCodes": [
-      "TX"
-    ]
+    "extraHistoricalCodes": ["TX"]
   },
   "gaps": [],
   "notes": [
