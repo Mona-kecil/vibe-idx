@@ -6,6 +6,7 @@ import { DuckDBInstance } from '@duckdb/node-api';
 import { z } from 'zod';
 import { expect, it } from 'vite-plus/test';
 import { ingest } from './ingest';
+import { parseRegistryLayout } from './registry';
 import { parseReport } from './reports';
 import { tickerSchema } from '../web/src/data';
 
@@ -44,6 +45,13 @@ const flags = z.record(
     }),
   ),
 );
+
+it('merges duplicate AIMS holder rows that would violate the registry primary key', async () => {
+  const bytes = await readFile(new URL('./fixtures/AIMS-2026-04-main.pdf', import.meta.url));
+  const { holders } = await parseRegistryLayout(bytes);
+  expect(holders.filter((holder) => holder.investor === 'Mohammad Adil Triansyah')).toHaveLength(1);
+  expect(new Set(holders.map((holder) => holder.investor)).size).toBe(holders.length);
+});
 
 it('keeps corrected monthly snapshots, KSEI cells and blank relationships through archive replay and Parquet reload', async () => {
   const registry = keys.parse(
