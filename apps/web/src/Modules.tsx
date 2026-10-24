@@ -613,7 +613,7 @@ function HolderName({
     </>
   );
 }
-export function registrySeries(
+function registrySeries(
   history: Ticker['registry_history'],
   field: 'sid_count' | 'free_float_pct',
 ): ChartSeries[] {

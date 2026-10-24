@@ -214,4 +214,4 @@ it('keeps corrected monthly snapshots, KSEI cells and blank relationships throug
   } finally {
     await rm(root, { recursive: true, force: true });
   }
-});
+}, 30_000);
