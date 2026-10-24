@@ -6,7 +6,6 @@ import { DuckDBInstance } from '@duckdb/node-api';
 import { z } from 'zod';
 import { expect, it } from 'vite-plus/test';
 import { ingest } from './ingest';
-import { parseRegistryLayout } from './registry';
 import { parseReport } from './reports';
 import { tickerSchema } from '../web/src/data';
 
@@ -46,12 +45,86 @@ const flags = z.record(
   ),
 );
 
-it('merges duplicate AIMS holder rows that would violate the registry primary key', async () => {
+it('repairs AIMS holder rows checkpointed before a duplicate-key failure', async () => {
   const bytes = await readFile(new URL('./fixtures/AIMS-2026-04-main.pdf', import.meta.url));
-  const { holders } = await parseRegistryLayout(bytes);
-  expect(holders.filter((holder) => holder.investor === 'Mohammad Adil Triansyah')).toHaveLength(1);
-  expect(new Set(holders.map((holder) => holder.investor)).size).toBe(holders.length);
-});
+  const root = await mkdtemp(join(tmpdir(), 'registry-checkpoint-'));
+  const data = join(root, 'data');
+  const out = join(root, 'out');
+  const url =
+    'https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202605/34d50f5633_c28b1d7fbe.pdf';
+  try {
+    await mkdir(join(data, 'raw/reports'), { recursive: true });
+    await writeFile(
+      join(data, `raw/reports/${createHash('sha256').update(url).digest('hex')}.pdf`),
+      bytes,
+    );
+    const options = {
+      data,
+      out,
+      since: '2026-05-01',
+      until: '2026-05-31',
+      today: '2026-10-25',
+      registryOnly: true,
+    };
+    await ingest({
+      ...options,
+      fetcher: async () =>
+        Response.json({
+          ResultCount: 1,
+          Replies: [
+            {
+              pengumuman: {
+                Id2: 'AIMS/2026-04-30',
+                Kode_Emiten: 'AIMS',
+                JudulPengumuman: 'Laporan Bulanan Registrasi Pemegang Efek',
+                TglPengumuman: '2026-05-06T18:17:41',
+              },
+              attachments: [
+                { OriginalFilename: 'main.pdf', FullSavePath: url, IsAttachment: false },
+              ],
+            },
+          ],
+        }),
+    });
+    const instance = await DuckDBInstance.create(':memory:');
+    const db = await instance.connect();
+    try {
+      const disclosures = join(data, 'parquet/disclosures/2026.parquet');
+      await db.run(
+        `CREATE TABLE checkpoint AS SELECT * REPLACE(1 AS registry_parser_version) FROM read_parquet('${disclosures}')`,
+      );
+      await rm(disclosures);
+      await db.run(`COPY checkpoint TO '${disclosures}' (FORMAT PARQUET)`);
+      const holders = join(data, 'parquet/registry_holders/2026.parquet');
+      await db.run(`CREATE TABLE missing AS SELECT * FROM read_parquet('${holders}') WHERE false`);
+      await rm(holders);
+      await db.run(`COPY missing TO '${holders}' (FORMAT PARQUET)`);
+    } finally {
+      db.closeSync();
+      instance.closeSync();
+    }
+    const offline: typeof fetch = () => {
+      throw new Error('Checkpoint repair fetched IDX');
+    };
+    const repaired = await ingest({ ...options, reparseRegistry: true, fetcher: offline });
+    expect(repaired.processed).toBe(1);
+    expect(repaired.requests).toBe(0);
+    const actual = tickerSchema.parse(
+      JSON.parse(await readFile(join(out, 'ticker/AIMS.json'), 'utf8')),
+    );
+    const holders = actual.registry_history[0]?.holders ?? [];
+    expect(holders).toHaveLength(8);
+    expect(holders.filter((holder) => holder.investor === 'Mohammad Adil Triansyah')).toHaveLength(
+      1,
+    );
+    expect(new Set(holders.map((holder) => holder.investor)).size).toBe(holders.length);
+    expect((await ingest({ ...options, reparseRegistry: true, fetcher: offline })).processed).toBe(
+      0,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+}, 30_000);
 
 it('keeps corrected monthly snapshots, KSEI cells and blank relationships through archive replay and Parquet reload', async () => {
   const registry = keys.parse(
