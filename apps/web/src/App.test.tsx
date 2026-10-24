@@ -256,6 +256,14 @@ describe('research workspace', () => {
     expect(accountIdentity('BANK CENTRAL ASIA Tbk, PT')?.kind).toBe('custodian');
     expect(accountIdentity('PT BCA SEKURITAS')).toEqual({ kind: 'broker', code: 'SQ' });
   });
+  it('shows every panel when the stored focus names a removed panel', async () => {
+    window.localStorage.setItem(
+      layoutKey,
+      JSON.stringify({ ...initialWorkspace(), activeId: 'p99', focusId: 'p99' }),
+    );
+    await render();
+    expect(host.querySelectorAll('.module-panel')).toHaveLength(4);
+  });
   it('adds any module and preserves independent dates while linked ticker changes propagate', async () => {
     const state = initialWorkspace();
     state.panels[0] = makePanel('p1', 'price', 'SINI');

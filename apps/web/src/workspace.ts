@@ -48,15 +48,24 @@ const panelSchema = z.object({
   height: z.number().min(280).max(1100),
   state: controlsSchema,
 });
-const workspaceSchema = z.object({
-  version: z.literal(1),
-  linked: z.boolean(),
-  collapsed: z.boolean(),
-  activeId: z.string().nullable(),
-  focusId: z.string().nullable(),
-  nextId: z.number().int().positive(),
-  panels: z.array(panelSchema),
-});
+const workspaceSchema = z
+  .object({
+    version: z.literal(1),
+    linked: z.boolean(),
+    collapsed: z.boolean(),
+    activeId: z.string().nullable(),
+    focusId: z.string().nullable(),
+    nextId: z.number().int().positive(),
+    panels: z.array(panelSchema),
+  })
+  .transform((state) => {
+    const exists = (id: string | null) => state.panels.some((panel) => panel.id === id);
+    return {
+      ...state,
+      activeId: exists(state.activeId) ? state.activeId : null,
+      focusId: exists(state.focusId) ? state.focusId : null,
+    };
+  });
 export type Panel = z.infer<typeof panelSchema>;
 export type Controls = Panel['state'];
 export type WorkspaceState = z.infer<typeof workspaceSchema>;
