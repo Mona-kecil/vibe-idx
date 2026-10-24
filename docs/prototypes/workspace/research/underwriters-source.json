@@ -1,0 +1,447 @@
+{
+  "BRPT": {
+    "asOf": "2026-10-23",
+    "ipoDate": "1993-10-01",
+    "offeringType": "original_equity_ipo",
+    "status": "verified",
+    "syndicateCoverage": "lead_only",
+    "syndicateComplete": false,
+    "underwriters": [
+      {
+        "name": "PT Makindo",
+        "role": "lead_underwriter",
+        "roleAsPublished": "IPO Lead Underwriter",
+        "sourceUrl": "https://www.idx.id/Media/20220907/idx-company-fact-sheet-lq45-2022-01.pdf",
+        "pdfPage": 44,
+        "page": null,
+        "sourceDate": "2022-01-31",
+        "accessedAt": "2026-10-23"
+      }
+    ],
+    "sources": [
+      {
+        "ticker": "BRPT",
+        "pdfPage": 44,
+        "headerText": "                  IDX Company Fact Sheet\n\n           BRPT   Barito Pacific Tbk\n\n                     Date:  31 Jan 2022                                                                                              v2.0.0\n\nC      P   fil                               C        Hi  t",
+        "field": {
+          "label": "IPO Lead Underwriter",
+          "rawText": "PT Makindo",
+          "bbox": [
+            496.3800048828125,
+            107.22078704833984,
+            587.0,
+            132.22078704833984
+          ]
+        },
+        "listingDateField": {
+          "rawText": "01 Oct 1993",
+          "bbox": [
+            381.1499938964844,
+            107.80162811279297,
+            436.75,
+            132.80162811279297
+          ]
+        },
+        "sourceUrl": "https://www.idx.id/Media/20220907/idx-company-fact-sheet-lq45-2022-01.pdf",
+        "discoveredFileUrl": "https://www.idx.co.id/Media/20220907/idx-company-fact-sheet-lq45-2022-01.pdf",
+        "sourceSha256": "314b4513365bc85dfd0a79c025ee34ce815b5c20484722a95860d00c6bbe45eb",
+        "textPath": "/private/tmp/vibe-idx-composable/underwriter-lookup/idx-company-fact-sheet-lq45-2022-01-BRPT-page-44.txt",
+        "renderPath": "/private/tmp/vibe-idx-composable/underwriter-lookup/idx-company-fact-sheet-lq45-2022-01-BRPT-page-44.png",
+        "manualOfferingScopeReviewRequired": false,
+        "evidencePath": "/private/tmp/vibe-idx-composable/underwriter-lookup/idx-company-fact-sheet-lq45-2022-01.pdf",
+        "directoryUrl": "https://www.idx.id/primary/StockData/GetPerfSumLq45Company?length=10&start=0&year=2022&lang=id-id",
+        "sourceDate": "2022-01-31"
+      },
+      {
+        "ticker": "BRPT",
+        "pdfPage": 56,
+        "headerText": "               IDX Company Fact Sheet\n\n                BRPT      Barito Pacific Tbk.\n\n                     Date: July 31, 2026                                                                                                v2.0.0\n\nC      P   fil                           C       Hi",
+        "field": {
+          "label": "IPO Lead Underwriter",
+          "rawText": "PT Makindo",
+          "bbox": [
+            453.6177978515625,
+            107.59638977050781,
+            570.5,
+            132.5963897705078
+          ]
+        },
+        "listingDateField": {
+          "rawText": "01 Oct 1993",
+          "bbox": [
+            355.03399658203125,
+            107.59638977050781,
+            402.325927734375,
+            132.5963897705078
+          ]
+        },
+        "sourceUrl": "https://www.idx.id/Media/d53ipuzh/cfs_2609.pdf",
+        "discoveredFileUrl": "https://www.idx.co.id/Media/d53ipuzh/cfs_2609.pdf",
+        "sourceSha256": "600609ae033e1104a6cd46d01428963bf5db21a60dbdf81cbc424dc083f05f22",
+        "textPath": "/private/tmp/vibe-idx-composable/underwriter-lookup/cfs_2609-BRPT-page-56.txt",
+        "renderPath": "/private/tmp/vibe-idx-composable/underwriter-lookup/cfs_2609-BRPT-page-56.png",
+        "manualOfferingScopeReviewRequired": false,
+        "evidencePath": "/private/tmp/vibe-idx-composable/underwriter-lookup/cfs_2609.pdf",
+        "directoryUrl": "https://www.idx.id/primary/StockData/GetPerfSumLq45Company?length=10&start=0&year=2026&lang=id-id"
+      }
+    ],
+    "notes": [
+      "PT Makindo is published in the official IDX IPO Lead Underwriter field. The fact sheet identifies the lead, not the full underwriting syndicate. Historical name retained; no current broker code or licence conclusion."
+    ],
+    "gaps": [
+      "No original 1993 prospectus was retrieved; additional syndicate members remain unknown."
+    ]
+  },
+  "SINI": {
+    "asOf": "2026-10-23",
+    "ipoDate": "2019-11-08",
+    "offeringType": "original_equity_ipo",
+    "status": "verified",
+    "syndicateCoverage": "full_prospectus_table",
+    "syndicateComplete": true,
+    "underwriters": [
+      {
+        "name": "PT Panca Global Sekuritas",
+        "role": "lead_underwriter",
+        "roleAsPublished": "Penjamin Pelaksana Emisi Efek",
+        "sourceUrl": "https://singarajaputra.com/wp-content/uploads/2019/10/Buku-Prospektus-Singaraja-Putra-Okt19_email.pdf",
+        "pdfPage": 91,
+        "page": 81,
+        "sourceDate": "2019-10-30",
+        "accessedAt": "2026-10-23",
+        "shares": 157500000,
+        "percent": 90.0,
+        "code": "PG",
+        "codeSourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+        "codeSourceLocator": {
+          "sheet": "Perusahaan Efek",
+          "codeCell": "B79",
+          "nameCell": "C79"
+        }
+      },
+      {
+        "name": "PT Dhanawibawa Sekuritas Indonesia",
+        "role": "underwriter",
+        "roleAsPublished": "Penjamin Emisi Efek",
+        "sourceUrl": "https://singarajaputra.com/wp-content/uploads/2019/10/Buku-Prospektus-Singaraja-Putra-Okt19_email.pdf",
+        "pdfPage": 91,
+        "page": 81,
+        "sourceDate": "2019-10-30",
+        "accessedAt": "2026-10-23",
+        "shares": 2500000,
+        "percent": 1.43,
+        "code": "TX",
+        "codeSourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+        "codeSourceLocator": "Perusahaan Efek!B129:C129 (revoked license table)",
+        "historicalCode": true
+      },
+      {
+        "name": "PT Investindo Nusantara Sekuritas",
+        "role": "underwriter",
+        "roleAsPublished": "Penjamin Emisi Efek",
+        "sourceUrl": "https://singarajaputra.com/wp-content/uploads/2019/10/Buku-Prospektus-Singaraja-Putra-Okt19_email.pdf",
+        "pdfPage": 91,
+        "page": 81,
+        "sourceDate": "2019-10-30",
+        "accessedAt": "2026-10-23",
+        "shares": 10000000,
+        "percent": 5.71,
+        "code": "IN",
+        "codeSourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+        "codeSourceLocator": {
+          "sheet": "Perusahaan Efek",
+          "codeCell": "B48",
+          "nameCell": "C48"
+        }
+      },
+      {
+        "name": "PT Minna Padi Investama Sekuritas Tbk",
+        "role": "underwriter",
+        "roleAsPublished": "Penjamin Emisi Efek",
+        "sourceUrl": "https://singarajaputra.com/wp-content/uploads/2019/10/Buku-Prospektus-Singaraja-Putra-Okt19_email.pdf",
+        "pdfPage": 91,
+        "page": 81,
+        "sourceDate": "2019-10-30",
+        "accessedAt": "2026-10-23",
+        "shares": 2500000,
+        "percent": 1.43,
+        "code": "MU",
+        "codeSourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+        "codeSourceLocator": {
+          "sheet": "Perusahaan Efek",
+          "codeCell": "B70",
+          "nameCell": "C70"
+        }
+      },
+      {
+        "name": "PT Panin Sekuritas Tbk",
+        "role": "underwriter",
+        "roleAsPublished": "Penjamin Emisi Efek",
+        "sourceUrl": "https://singarajaputra.com/wp-content/uploads/2019/10/Buku-Prospektus-Singaraja-Putra-Okt19_email.pdf",
+        "pdfPage": 91,
+        "page": 81,
+        "sourceDate": "2019-10-30",
+        "accessedAt": "2026-10-23",
+        "shares": 2500000,
+        "percent": 1.43,
+        "code": "GR",
+        "codeSourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+        "codeSourceLocator": {
+          "sheet": "Perusahaan Efek",
+          "codeCell": "B81",
+          "nameCell": "C81"
+        }
+      }
+    ],
+    "sources": [
+      {
+        "pdfPage": 91,
+        "sourceUrl": "https://singarajaputra.com/wp-content/uploads/2019/10/Buku-Prospektus-Singaraja-Putra-Okt19_email.pdf",
+        "sourceSha256": "0d6c461c25bc490d3065522f8fa26315e3b4c2b6d85158e75665eb2c08c5c6a2",
+        "textPath": "/private/tmp/vibe-idx-composable/underwriter-lookup/SINI-prospectus-page-91.txt",
+        "renderPath": "/private/tmp/vibe-idx-composable/underwriter-lookup/SINI-prospectus-page-91.png",
+        "manualOfferingScopeReviewRequired": false,
+        "page": 81,
+        "sourceDate": "2019-10-30",
+        "landingUrl": "https://singarajaputra.com/laporan/",
+        "directoryLocator": "h5: Buku Prospektus - Singaraja Putra; date 30/10/2019",
+        "evidencePath": "/private/tmp/vibe-idx-composable/underwriter-lookup/SINI-prospectus-original-date.pdf"
+      },
+      {
+        "title": "PT Singaraja Putra Tbk final IPO prospectus",
+        "url": "https://singarajaputra.com/wp-content/uploads/2019/10/Buku-Prospektus-Singaraja-Putra-Okt19_email.pdf",
+        "sourceDate": "2019-10-30",
+        "accessedAt": "2026-10-23",
+        "page": 81,
+        "pdfPage": 91,
+        "additionalPage": 93,
+        "additionalPdfPage": 103,
+        "evidencePath": "/tmp/vibe-idx-composable/broker-research/sini-ipo-prospectus.pdf"
+      },
+      {
+        "title": "OJK broker code/name directory (including revoked licenses)",
+        "url": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+        "sourceDate": "2026-08",
+        "accessedAt": "2026-10-23",
+        "locator": "Perusahaan Efek: TX code/name in B129/C129; revoked license table, decision KEP-58/D.04/2025 dated 20 November 2025",
+        "evidencePath": "/tmp/vibe-idx-composable/broker-research/ojk-2026-08.xlsx"
+      }
+    ],
+    "gaps": [],
+    "notes": [
+      "The current issuer directory links a missing 2022 upload. A single URL derived from the displayed 2019 document date and filename retrieves the final original IPO prospectus. Repair and both HTTP results are in collector-output.json."
+    ]
+  },
+  "BREN": {
+    "asOf": "2026-10-23",
+    "ipoDate": "2023-10-09",
+    "offeringType": "original_equity_ipo",
+    "status": "verified",
+    "syndicateCoverage": "full_prospectus_table",
+    "syndicateComplete": true,
+    "underwriters": [
+      {
+        "name": "PT BNI Sekuritas",
+        "role": "lead_underwriter",
+        "roleAsPublished": "Penjamin Pelaksana Emisi Efek dan Penjamin Emisi Efek",
+        "sourceUrl": "https://www.baritorenewables.co.id/uploads/2023/10/aef3669eea4a0433e4a22f819b4e002d_7d30d9d2fc7f7d22159e27493a5f97cd.pdf",
+        "pdfPage": 218,
+        "page": 195,
+        "sourceDate": "2023-10-03",
+        "accessedAt": "2026-10-23",
+        "shares": 3823107000,
+        "percent": 95.22,
+        "code": "NI",
+        "codeSourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+        "codeSourceLocator": {
+          "sheet": "Perusahaan Efek",
+          "codeCell": "B12",
+          "nameCell": "C12"
+        }
+      },
+      {
+        "name": "PT OCBC Sekuritas Indonesia",
+        "role": "underwriter",
+        "roleAsPublished": "Penjamin Emisi Efek",
+        "sourceUrl": "https://www.baritorenewables.co.id/uploads/2023/10/aef3669eea4a0433e4a22f819b4e002d_7d30d9d2fc7f7d22159e27493a5f97cd.pdf",
+        "pdfPage": 218,
+        "page": 195,
+        "sourceDate": "2023-10-03",
+        "accessedAt": "2026-10-23",
+        "shares": 191893000,
+        "percent": 4.78,
+        "code": "TP",
+        "codeSourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+        "codeSourceLocator": {
+          "sheet": "Perusahaan Efek",
+          "codeCell": "B77",
+          "nameCell": "C77"
+        }
+      }
+    ],
+    "sources": [
+      {
+        "pdfPage": 218,
+        "sourceUrl": "https://www.baritorenewables.co.id/uploads/2023/10/aef3669eea4a0433e4a22f819b4e002d_7d30d9d2fc7f7d22159e27493a5f97cd.pdf",
+        "sourceSha256": "a95be6d0ee9ad867c3cf76bdfcbbe9a53881b63d40354eeccad6819abe4c7bfc",
+        "textPath": "/private/tmp/vibe-idx-composable/underwriter-lookup/BREN-prospectus-page-218.txt",
+        "renderPath": "/private/tmp/vibe-idx-composable/underwriter-lookup/BREN-prospectus-page-218.png",
+        "manualOfferingScopeReviewRequired": false,
+        "page": 195,
+        "sourceDate": "2023-10-03",
+        "landingUrl": "https://www.baritorenewables.co.id/en/prospectus",
+        "directoryLocator": "table tr containing td: Final Prospectus; first PDF href",
+        "evidencePath": "/private/tmp/vibe-idx-composable/underwriter-lookup/BREN-prospectus-linked.pdf"
+      },
+      {
+        "title": "PT Barito Renewables Energy Tbk final IPO prospectus",
+        "url": "https://www.baritorenewables.co.id/uploads/2023/10/aef3669eea4a0433e4a22f819b4e002d_7d30d9d2fc7f7d22159e27493a5f97cd.pdf",
+        "sourceDate": "2023-10-03",
+        "accessedAt": "2026-10-23",
+        "page": 195,
+        "pdfPage": 218,
+        "additionalPage": 211,
+        "additionalPdfPage": 234,
+        "evidencePath": "/tmp/vibe-idx-composable/broker-research/bren-ipo-prospectus.pdf"
+      },
+      {
+        "title": "eIPO BREN offering page",
+        "url": "https://e-ipo.co.id/id/ipo/266/bren-pt-barito-renewables-energy-tbk",
+        "accessedAt": "2026-10-23",
+        "locator": "Penjamin Emisi Efek and Tanggal Pencatatan"
+      },
+      {
+        "title": "eIPO final BREN prospectus",
+        "url": "https://www.e-ipo.co.id/en/pipeline/get-propectus-file?id=266",
+        "sourceDate": "2023-10-03",
+        "accessedAt": "2026-10-23",
+        "page": 195,
+        "pdfPage": 218
+      }
+    ],
+    "gaps": [],
+    "notes": [
+      "BNI is both lead and underwriter; OCBC is a syndicate underwriter. The issuer directory labels this document Final Prospectus."
+    ]
+  },
+  "TPIA": {
+    "asOf": "2026-10-23",
+    "ipoDate": "1994-07-25",
+    "offeringType": "original_ads_public_offering",
+    "status": "unknown",
+    "syndicateCoverage": "unknown",
+    "syndicateComplete": false,
+    "underwriters": [],
+    "idxListingDate": "1996-06-24",
+    "idxRelistingDate": "2008-05-22",
+    "sources": [
+      {
+        "sourceUrl": "https://comsite-s3.s3.ap-southeast-3.amazonaws.com/images/post/ChandraAsriAnnualReport2024_en_1745995797.pdf",
+        "landingUrl": "https://chandra-asri.com/en/investor/reports",
+        "retrievalMode": "prior_public_download_from_parent_research",
+        "copiedFrom": "/tmp/vibe-idx-composable/broker-research/tpia-annual-2024.pdf",
+        "evidencePath": "/tmp/vibe-idx-composable/underwriter-lookup/TPIA-annual-report-2024.pdf",
+        "sha256": "ce1748bb0d9f5fc05c7fb11444d8b3d934bac4df0784b0ebb4bab327707f1b52",
+        "sourceDate": "2024",
+        "page": 143,
+        "pdfPage": 146,
+        "textPath": "/private/tmp/vibe-idx-composable/underwriter-lookup/TPIA-annual-report-page-146.txt",
+        "renderPath": "/private/tmp/vibe-idx-composable/underwriter-lookup/TPIA-annual-report-page-146.png",
+        "additionalPage": 70,
+        "additionalPdfPage": 73
+      },
+      {
+        "ticker": "TPIA",
+        "pdfPage": 164,
+        "headerText": "                  IDX Company Fact Sheet\n\n              TPIA   Chandra Asri Petrochemical Tbk\n\n                     Date:  31 Jan 2022                                                                                              v2.0.0\n\nC      P   fil                               C        Hi  t",
+        "field": {
+          "label": "IPO Lead Underwriter",
+          "rawText": "Truscel Capital",
+          "bbox": [
+            496.3800048828125,
+            107.22078704833984,
+            587.0,
+            132.22078704833984
+          ]
+        },
+        "listingDateField": {
+          "rawText": "24 Jun 1996",
+          "bbox": [
+            381.1499938964844,
+            107.80162811279297,
+            436.75,
+            132.80162811279297
+          ]
+        },
+        "sourceUrl": "https://www.idx.id/Media/20220907/idx-company-fact-sheet-lq45-2022-01.pdf",
+        "discoveredFileUrl": "https://www.idx.co.id/Media/20220907/idx-company-fact-sheet-lq45-2022-01.pdf",
+        "sourceSha256": "314b4513365bc85dfd0a79c025ee34ce815b5c20484722a95860d00c6bbe45eb",
+        "textPath": "/private/tmp/vibe-idx-composable/underwriter-lookup/idx-company-fact-sheet-lq45-2022-01-TPIA-page-164.txt",
+        "renderPath": "/private/tmp/vibe-idx-composable/underwriter-lookup/idx-company-fact-sheet-lq45-2022-01-TPIA-page-164.png",
+        "manualOfferingScopeReviewRequired": false,
+        "evidencePath": "/private/tmp/vibe-idx-composable/underwriter-lookup/idx-company-fact-sheet-lq45-2022-01.pdf",
+        "directoryUrl": "https://www.idx.id/primary/StockData/GetPerfSumLq45Company?length=10&start=0&year=2022&lang=id-id",
+        "sourceDate": "2022-01-31"
+      }
+    ],
+    "idxOriginalListingUnderwriterEvidence": {
+      "eventType": "first_indonesian_equity_listing",
+      "listingDate": "1996-06-24",
+      "status": "verified_official_field",
+      "syndicateCoverage": "lead_only",
+      "underwriters": [
+        {
+          "name": "Truscel Capital",
+          "role": "lead_underwriter",
+          "roleAsPublished": "IPO Lead Underwriter",
+          "sourceUrl": "https://www.idx.id/Media/20220907/idx-company-fact-sheet-lq45-2022-01.pdf",
+          "pdfPage": 164,
+          "page": null,
+          "sourceDate": "2022-01-31",
+          "accessedAt": "2026-10-23"
+        }
+      ],
+      "source": {
+        "ticker": "TPIA",
+        "pdfPage": 164,
+        "headerText": "                  IDX Company Fact Sheet\n\n              TPIA   Chandra Asri Petrochemical Tbk\n\n                     Date:  31 Jan 2022                                                                                              v2.0.0\n\nC      P   fil                               C        Hi  t",
+        "field": {
+          "label": "IPO Lead Underwriter",
+          "rawText": "Truscel Capital",
+          "bbox": [
+            496.3800048828125,
+            107.22078704833984,
+            587.0,
+            132.22078704833984
+          ]
+        },
+        "listingDateField": {
+          "rawText": "24 Jun 1996",
+          "bbox": [
+            381.1499938964844,
+            107.80162811279297,
+            436.75,
+            132.80162811279297
+          ]
+        },
+        "sourceUrl": "https://www.idx.id/Media/20220907/idx-company-fact-sheet-lq45-2022-01.pdf",
+        "discoveredFileUrl": "https://www.idx.co.id/Media/20220907/idx-company-fact-sheet-lq45-2022-01.pdf",
+        "sourceSha256": "314b4513365bc85dfd0a79c025ee34ce815b5c20484722a95860d00c6bbe45eb",
+        "textPath": "/private/tmp/vibe-idx-composable/underwriter-lookup/idx-company-fact-sheet-lq45-2022-01-TPIA-page-164.txt",
+        "renderPath": "/private/tmp/vibe-idx-composable/underwriter-lookup/idx-company-fact-sheet-lq45-2022-01-TPIA-page-164.png",
+        "manualOfferingScopeReviewRequired": false,
+        "evidencePath": "/private/tmp/vibe-idx-composable/underwriter-lookup/idx-company-fact-sheet-lq45-2022-01.pdf",
+        "directoryUrl": "https://www.idx.id/primary/StockData/GetPerfSumLq45Company?length=10&start=0&year=2022&lang=id-id",
+        "sourceDate": "2022-01-31"
+      },
+      "scopeCaveat": "The official field is beside the 24 Jun 1996 listing date. It does not establish the underwriter for the 25 Jul 1994 overseas ADS offering. Preserve Truscel Capital as published; do not map it to a current broker."
+    },
+    "gaps": [
+      "The issuer chronology names no underwriter for the 1994 ADS offering. The public SEC company lookup returned 403. No retrieved original 1994 prospectus names a syndicate."
+    ],
+    "notes": [
+      "IDX profile TanggalPencatatan=2008-05-26 is not the original IPO. The 1994 ADS offering, 1996 Indonesian listing, 2008 relisting, rights issues and bonds are separate events."
+    ],
+    "attemptRecord": "/private/tmp/vibe-idx-composable/underwriter-lookup/TPIA-original-ads-attempts.json"
+  }
+}

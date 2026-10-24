@@ -1,0 +1,461 @@
+{
+  "SINI": {
+    "snapshots": [
+      {
+        "asOf": "2026-05-31",
+        "sourceUrl": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202606/afb7f5198b_b93ce9d598.pdf",
+        "sourceFile": "/tmp/vibe-idx-composable/registry-research/SINI-2026-05-main.pdf",
+        "sourcePage": 6,
+        "sourcePages": {
+          "reportPeriod": 1,
+          "sidCount": 7,
+          "reportedFreeFloatPct": 6,
+          "totalShares": 6
+        },
+        "sidCount": 5742,
+        "reportedFreeFloatPct": 25.07,
+        "totalShares": 481000000,
+        "reportedFreeFloatShares": 120591000,
+        "categories": [
+          {
+            "label": "Saham dengan Sertifikat Kolektif - >=5%",
+            "localShares": 0,
+            "foreignShares": 0,
+            "localPct": 0.0,
+            "foreignPct": 0.0
+          },
+          {
+            "label": "Saham dengan Sertifikat Kolektif - Lainnya",
+            "localShares": 0,
+            "foreignShares": 0,
+            "localPct": 0.0,
+            "foreignPct": 0.0
+          },
+          {
+            "label": "PT Autum Prima Indonesia (KSEI, >=5%)",
+            "localShares": 144300000,
+            "foreignShares": null,
+            "localPct": 30.0,
+            "foreignPct": null
+          },
+          {
+            "label": "PT Kreasi Jasa Persada (KSEI, >=5%)",
+            "localShares": 94940000,
+            "foreignShares": null,
+            "localPct": 19.74,
+            "foreignPct": null
+          },
+          {
+            "label": "Hapsoro (KSEI, >=5%)",
+            "localShares": 43290000,
+            "foreignShares": null,
+            "localPct": 9.0,
+            "foreignPct": null
+          },
+          {
+            "label": "Batubara Development Pte. Ltd. (KSEI, >=5%)",
+            "localShares": null,
+            "foreignShares": 74530000,
+            "localPct": null,
+            "foreignPct": 15.49
+          },
+          {
+            "label": "Lainnya (KSEI, <5%)",
+            "localShares": 121776800,
+            "foreignShares": 2163200,
+            "localPct": 25.32,
+            "foreignPct": 0.45
+          }
+        ],
+        "categorySource": {
+          "sourceUrl": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202606/b4c2d5a00f_96a2a55ffd.pdf",
+          "sourceFile": "/tmp/vibe-idx-composable/registry-research/SINI-2026-05-lamp1.pdf",
+          "sourcePage": 2
+        },
+        "categoryTotals": {
+          "localShares": 404306800,
+          "foreignShares": 76693200,
+          "localPct": 84.06,
+          "foreignPct": 15.94
+        },
+        "categoryCoverage": "Whole issued share base; category shares sum to primary report totalShares.",
+        "gaps": []
+      },
+      {
+        "asOf": "2026-06-30",
+        "sourceUrl": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202607/85c897e5ea_b7208d1683.pdf",
+        "sourceFile": "/tmp/vibe-idx-composable/registry-research/SINI-2026-06-main.pdf",
+        "sourcePage": 6,
+        "sourcePages": {
+          "reportPeriod": 1,
+          "sidCount": 7,
+          "reportedFreeFloatPct": 6,
+          "totalShares": 6
+        },
+        "sidCount": 6944,
+        "reportedFreeFloatPct": 25.21,
+        "totalShares": 481000000,
+        "reportedFreeFloatShares": 121273100,
+        "categories": [
+          {
+            "label": "Saham dengan Sertifikat Kolektif - >=5%",
+            "localShares": 0,
+            "foreignShares": 0,
+            "localPct": 0.0,
+            "foreignPct": 0.0
+          },
+          {
+            "label": "Saham dengan Sertifikat Kolektif - Lainnya",
+            "localShares": 0,
+            "foreignShares": 0,
+            "localPct": 0.0,
+            "foreignPct": 0.0
+          },
+          {
+            "label": "PT Autum Prima Indonesia (KSEI, >=5%)",
+            "localShares": 144300000,
+            "foreignShares": null,
+            "localPct": 30.0,
+            "foreignPct": null
+          },
+          {
+            "label": "PT Kreasi Jasa Persada (KSEI, >=5%)",
+            "localShares": 94940000,
+            "foreignShares": null,
+            "localPct": 19.74,
+            "foreignPct": null
+          },
+          {
+            "label": "Hapsoro (KSEI, >=5%)",
+            "localShares": 43290000,
+            "foreignShares": null,
+            "localPct": 9.0,
+            "foreignPct": null
+          },
+          {
+            "label": "Batubara Development Pte. Ltd. (KSEI, >=5%)",
+            "localShares": null,
+            "foreignShares": 74530000,
+            "localPct": null,
+            "foreignPct": 15.49
+          },
+          {
+            "label": "Lainnya (KSEI, <5%)",
+            "localShares": 121852300,
+            "foreignShares": 2087700,
+            "localPct": 25.33,
+            "foreignPct": 0.43
+          }
+        ],
+        "categorySource": {
+          "sourceUrl": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202607/c30e37ff11_6b91272710.pdf",
+          "sourceFile": "/tmp/vibe-idx-composable/registry-research/SINI-2026-06-lamp1.pdf",
+          "sourcePage": 2
+        },
+        "categoryTotals": {
+          "localShares": 404382300,
+          "foreignShares": 76617700,
+          "localPct": 84.07,
+          "foreignPct": 15.93
+        },
+        "categoryCoverage": "Whole issued share base; category shares sum to primary report totalShares.",
+        "gaps": []
+      }
+    ],
+    "gaps": [
+      "Nationality is disclosed for named >=5% holders and Lainnya, not as an investor-type-by-nationality matrix. KSEI investor-type totals in the primary report do not supply that missing cross-tab."
+    ]
+  },
+  "BRPT": {
+    "snapshots": [
+      {
+        "asOf": "2026-05-31",
+        "sourceUrl": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202606/0edd0e524c_a4e5ae3ab7.pdf",
+        "sourceFile": "/tmp/vibe-idx-composable/registry-research/BRPT-2026-05-main.pdf",
+        "sourcePage": 7,
+        "sourcePages": {
+          "reportPeriod": 1,
+          "sidCount": 8,
+          "reportedFreeFloatPct": 7,
+          "totalShares": 7
+        },
+        "sidCount": 134193,
+        "reportedFreeFloatPct": 26.93,
+        "totalShares": 93747218044,
+        "reportedFreeFloatShares": 25250648582,
+        "categories": [],
+        "categorySource": null,
+        "categoryTotals": null,
+        "categoryCoverage": "No verified whole-holder-base local/foreign cross-tab in reviewed documents.",
+        "gaps": []
+      },
+      {
+        "asOf": "2026-06-30",
+        "sourceUrl": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202607/02b74c93ac_70ad396702.pdf",
+        "sourceFile": "/tmp/vibe-idx-composable/registry-research/BRPT-2026-06-main.pdf",
+        "sourcePage": 7,
+        "sourcePages": {
+          "reportPeriod": 1,
+          "sidCount": 8,
+          "reportedFreeFloatPct": 7,
+          "totalShares": 7
+        },
+        "sidCount": 141451,
+        "reportedFreeFloatPct": 26.9,
+        "totalShares": 93747218044,
+        "reportedFreeFloatShares": 25217448582,
+        "categories": [],
+        "categorySource": null,
+        "categoryTotals": null,
+        "categoryCoverage": "No verified whole-holder-base local/foreign cross-tab in reviewed documents.",
+        "gaps": []
+      }
+    ],
+    "gaps": [
+      "Reviewed primary reports and attachments have no whole-holder-base local/foreign category split. categories is empty and categoryTotals is null.",
+      "Attachment holder totals include 225 scrip holders; use the primary report's labeled Nasabah Pemilik SID count for sidCount."
+    ]
+  },
+  "TPIA": {
+    "snapshots": [
+      {
+        "asOf": "2026-05-31",
+        "sourceUrl": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202606/4012dfc539_777330d22a.pdf",
+        "sourceFile": "/tmp/vibe-idx-composable/registry-research/TPIA-2026-05-main.pdf",
+        "sourcePage": 9,
+        "sourcePages": {
+          "reportPeriod": 1,
+          "sidCount": 10,
+          "reportedFreeFloatPct": 9,
+          "totalShares": 9
+        },
+        "sidCount": 38456,
+        "reportedFreeFloatPct": 10.56,
+        "totalShares": 86511545092,
+        "reportedFreeFloatShares": 9133336275,
+        "categories": [],
+        "categorySource": null,
+        "categoryTotals": null,
+        "categoryCoverage": "No verified whole-holder-base local/foreign cross-tab in reviewed documents.",
+        "gaps": [
+          "Attachment >=5% list totals 64,571,567,664 shares (74.64%); its named positions differ from the primary summary. It cannot establish whole-holder-base nationality percentages."
+        ]
+      },
+      {
+        "asOf": "2026-06-30",
+        "sourceUrl": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202607/e2cac25d2d_6c67e315e8.pdf",
+        "sourceFile": "/tmp/vibe-idx-composable/registry-research/TPIA-2026-06-main.pdf",
+        "sourcePage": 9,
+        "sourcePages": {
+          "reportPeriod": 1,
+          "sidCount": 10,
+          "reportedFreeFloatPct": 9,
+          "totalShares": 9
+        },
+        "sidCount": 110840,
+        "reportedFreeFloatPct": 25.41,
+        "totalShares": 86511545092,
+        "reportedFreeFloatShares": 21980220234,
+        "categories": [],
+        "categorySource": null,
+        "categoryTotals": null,
+        "categoryCoverage": "No verified whole-holder-base local/foreign cross-tab in reviewed documents.",
+        "gaps": [],
+        "notes": [
+          "Uses correction 168/LCM-DOC/CAP/VII/2026 filed 2026-07-09; it supersedes correction 163/LCM-DOC/CAP/VII/2026 filed 2026-07-08 and the original report."
+        ]
+      }
+    ],
+    "gaps": [
+      "Attachments list >=5% holders only, not the whole holder base. No whole-holder-base local/foreign category split was obtained; categories is empty and categoryTotals is null."
+    ]
+  },
+  "BREN": {
+    "snapshots": [
+      {
+        "asOf": "2026-05-31",
+        "sourceUrl": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202606/1e08d0f9b5_23e82ef5bb.pdf",
+        "sourceFile": "/tmp/vibe-idx-composable/registry-research/BREN-2026-05-main.pdf",
+        "sourcePage": 7,
+        "sourcePages": {
+          "reportPeriod": 1,
+          "sidCount": 8,
+          "reportedFreeFloatPct": 7,
+          "totalShares": 7
+        },
+        "sidCount": 37361,
+        "reportedFreeFloatPct": 12.58,
+        "totalShares": 133786220000,
+        "reportedFreeFloatShares": 16831096767,
+        "categories": [
+          {
+            "label": "PERORANGAN INDONESIA",
+            "localShares": 510942410,
+            "foreignShares": null,
+            "localPct": 0.38191,
+            "foreignPct": null
+          },
+          {
+            "label": "DANA PENSIUN",
+            "localShares": 1448400,
+            "foreignShares": null,
+            "localPct": 0.00108,
+            "foreignPct": null
+          },
+          {
+            "label": "ASURANSI",
+            "localShares": 226700,
+            "foreignShares": null,
+            "localPct": 0.00017,
+            "foreignPct": null
+          },
+          {
+            "label": "PERSEROAN TERBATAS",
+            "localShares": 86972545944,
+            "foreignShares": null,
+            "localPct": 65.0086,
+            "foreignPct": null
+          },
+          {
+            "label": "BADAN USAHA LAIN",
+            "localShares": 45000,
+            "foreignShares": null,
+            "localPct": 3e-05,
+            "foreignPct": null
+          },
+          {
+            "label": "REKSADANA",
+            "localShares": 2405700,
+            "foreignShares": null,
+            "localPct": 0.0018,
+            "foreignPct": null
+          },
+          {
+            "label": "PERORANGAN ASING",
+            "localShares": null,
+            "foreignShares": 17260000,
+            "localPct": null,
+            "foreignPct": 0.0129
+          },
+          {
+            "label": "BADAN USAHA ASING",
+            "localShares": null,
+            "foreignShares": 46281345846,
+            "localPct": null,
+            "foreignPct": 34.59351
+          }
+        ],
+        "categorySource": {
+          "sourceUrl": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202606/4f97f55220_a0e40d9e89.pdf",
+          "sourceFile": "/tmp/vibe-idx-composable/registry-research/BREN-2026-05-lamp1.pdf",
+          "sourcePage": 2
+        },
+        "categoryTotals": {
+          "localShares": 87487614154,
+          "foreignShares": 46298605846,
+          "localPct": 65.39359,
+          "foreignPct": 34.60641
+        },
+        "categoryCoverage": "Whole issued share base; category shares sum to primary report totalShares.",
+        "gaps": []
+      },
+      {
+        "asOf": "2026-06-30",
+        "sourceUrl": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202607/1f50eadefb_0b7588adac.pdf",
+        "sourceFile": "/tmp/vibe-idx-composable/registry-research/BREN-2026-06-main.pdf",
+        "sourcePage": 7,
+        "sourcePages": {
+          "reportPeriod": 1,
+          "sidCount": 8,
+          "reportedFreeFloatPct": 7,
+          "totalShares": 7
+        },
+        "sidCount": 39820,
+        "reportedFreeFloatPct": 12.58,
+        "totalShares": 133786220000,
+        "reportedFreeFloatShares": 16831856144,
+        "categories": [
+          {
+            "label": "PERORANGAN INDONESIA",
+            "localShares": 502114210,
+            "foreignShares": null,
+            "localPct": 0.37531,
+            "foreignPct": null
+          },
+          {
+            "label": "YAYASAN",
+            "localShares": 153100,
+            "foreignShares": null,
+            "localPct": 0.00011,
+            "foreignPct": null
+          },
+          {
+            "label": "DANA PENSIUN",
+            "localShares": 1917900,
+            "foreignShares": null,
+            "localPct": 0.00143,
+            "foreignPct": null
+          },
+          {
+            "label": "ASURANSI",
+            "localShares": 543700,
+            "foreignShares": null,
+            "localPct": 0.00041,
+            "foreignPct": null
+          },
+          {
+            "label": "PERSEROAN TERBATAS",
+            "localShares": 87050273507,
+            "foreignShares": null,
+            "localPct": 65.0667,
+            "foreignPct": null
+          },
+          {
+            "label": "BADAN USAHA LAIN",
+            "localShares": 145000,
+            "foreignShares": null,
+            "localPct": 0.00011,
+            "foreignPct": null
+          },
+          {
+            "label": "REKSADANA",
+            "localShares": 46196800,
+            "foreignShares": null,
+            "localPct": 0.03453,
+            "foreignPct": null
+          },
+          {
+            "label": "PERORANGAN ASING",
+            "localShares": null,
+            "foreignShares": 1984600,
+            "localPct": null,
+            "foreignPct": 0.00148
+          },
+          {
+            "label": "BADAN USAHA ASING",
+            "localShares": null,
+            "foreignShares": 46182891183,
+            "localPct": null,
+            "foreignPct": 34.51992
+          }
+        ],
+        "categorySource": {
+          "sourceUrl": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202607/4ecc040ba2_f2611ab6ae.pdf",
+          "sourceFile": "/tmp/vibe-idx-composable/registry-research/BREN-2026-06-lamp1.pdf",
+          "sourcePage": 2
+        },
+        "categoryTotals": {
+          "localShares": 87601344217,
+          "foreignShares": 46184875783,
+          "localPct": 65.4786,
+          "foreignPct": 34.5214
+        },
+        "categoryCoverage": "Whole issued share base; category shares sum to primary report totalShares.",
+        "gaps": []
+      }
+    ],
+    "gaps": [
+      "The attachment's register holder counts differ from the primary report's SID count. sidCount comes from Nasabah Pemilik SID, not the attachment's Jumlah P.S."
+    ]
+  }
+}

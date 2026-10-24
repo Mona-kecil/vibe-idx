@@ -1,0 +1,1262 @@
+{
+  "asOf": "2026-10-23",
+  "sources": [
+    {
+      "id": "ojk-2026-08",
+      "title": "OJK Data Perusahaan Efek - Agustus 2026",
+      "url": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "landingUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Pages/Data-Perusahaan-Efek-Agustus-2026.aspx",
+      "dataAsOf": "2026-08",
+      "publishedOn": "2026-09-18",
+      "accessedAt": "2026-10-23",
+      "evidencePath": "/tmp/vibe-idx-composable/broker-research/ojk-2026-08.xlsx"
+    },
+    {
+      "id": "ksei-brokers",
+      "title": "KSEI Perusahaan Efek",
+      "url": "https://web.ksei.co.id/services/participants/brokers",
+      "accessedAt": "2026-10-23",
+      "evidencePath": "/tmp/vibe-idx-composable/broker-research/ksei-web-evidence.json"
+    },
+    {
+      "id": "ksei-custodians",
+      "title": "KSEI Bank Kustodian",
+      "url": "https://web.ksei.co.id/services/participants/custodian-banks",
+      "accessedAt": "2026-10-23",
+      "evidencePath": "/tmp/vibe-idx-composable/broker-research/ksei-web-evidence.json"
+    }
+  ],
+  "normalization": {
+    "case": "uppercase",
+    "punctuation": "replace every character outside A-Z and 0-9 with a space",
+    "corporateTokens": "remove whole tokens PT and TBK",
+    "whitespace": "collapse spaces and trim",
+    "matching": "exact normalized full company name; do not use substring, corporate affiliation, or bank-to-subsidiary matching"
+  },
+  "brokers": {
+    "AD": {
+      "name": "PT Sukadana Prima Sekuritas",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B100",
+        "nameCell": "C100"
+      },
+      "ojkMembership": "AB"
+    },
+    "AF": {
+      "name": "PT Harita Kencana Sekuritas",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B39",
+        "nameCell": "C39"
+      },
+      "ojkMembership": "AB"
+    },
+    "AG": {
+      "name": "PT Kiwoom Sekuritas Indonesia",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B54",
+        "nameCell": "C54"
+      },
+      "ojkMembership": "AB"
+    },
+    "AH": {
+      "name": "PT Shinhan Sekuritas Indonesia",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B95",
+        "nameCell": "C95"
+      },
+      "ojkMembership": "AB"
+    },
+    "AI": {
+      "name": "PT Kay Hian Sekuritas",
+      "sourceUrl": "https://web.ksei.co.id/services/participants/brokers",
+      "sourceDate": "2026-10-23",
+      "sourceLocator": {
+        "kseiParticipantCode": "AI001"
+      },
+      "ojkMembership": "AB",
+      "additionalEvidence": [
+        {
+          "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+          "sourceDate": "2026-08",
+          "sheet": "Perusahaan Efek",
+          "codeCell": "B51",
+          "nameCell": "C51",
+          "nameAsPublished": "PT Kay Hian"
+        }
+      ]
+    },
+    "AK": {
+      "name": "PT UBS Sekuritas Indonesia",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B106",
+        "nameCell": "C106"
+      },
+      "ojkMembership": "AB"
+    },
+    "AO": {
+      "name": "PT Erdikha Elit Sekuritas",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B32",
+        "nameCell": "C32"
+      },
+      "ojkMembership": "AB"
+    },
+    "AP": {
+      "name": "PT Pacific Sekuritas Indonesia",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B78",
+        "nameCell": "C78"
+      },
+      "ojkMembership": "AB"
+    },
+    "AR": {
+      "name": "PT Binaartha Sekuritas",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B10",
+        "nameCell": "C10"
+      },
+      "ojkMembership": "AB"
+    },
+    "AT": {
+      "name": "PT Phintraco Sekuritas",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B85",
+        "nameCell": "C85"
+      },
+      "ojkMembership": "AB"
+    },
+    "AZ": {
+      "name": "PT Sucor Sekuritas",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B99",
+        "nameCell": "C99"
+      },
+      "ojkMembership": "AB"
+    },
+    "BB": {
+      "name": "PT Verdhana Sekuritas Indonesia",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B107",
+        "nameCell": "C107"
+      },
+      "ojkMembership": "AB"
+    },
+    "BF": {
+      "name": "PT Inti Fikasa Sekuritas",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B46",
+        "nameCell": "C46"
+      },
+      "ojkMembership": "AB"
+    },
+    "BK": {
+      "name": "PT JP Morgan Sekuritas Indonesia",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B49",
+        "nameCell": "C49"
+      },
+      "ojkMembership": "AB"
+    },
+    "BQ": {
+      "name": "PT Korea Investment and Sekuritas Indonesia",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B56",
+        "nameCell": "C56"
+      },
+      "ojkMembership": "AB"
+    },
+    "BR": {
+      "name": "PT Trust Sekuritas",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B104",
+        "nameCell": "C104"
+      },
+      "ojkMembership": "AB"
+    },
+    "BS": {
+      "name": "PT Equity Sekuritas Indonesia",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B31",
+        "nameCell": "C31"
+      },
+      "ojkMembership": "AB"
+    },
+    "CC": {
+      "name": "PT Mandiri Sekuritas",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B63",
+        "nameCell": "C63"
+      },
+      "ojkMembership": "AB"
+    },
+    "CD": {
+      "name": "PT Mega Capital Sekuritas",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B68",
+        "nameCell": "C68"
+      },
+      "ojkMembership": "AB"
+    },
+    "CP": {
+      "name": "PT KB Valbury Sekuritas",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B52",
+        "nameCell": "C52"
+      },
+      "ojkMembership": "AB"
+    },
+    "DD": {
+      "name": "PT Makindo Sekuritas",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B62",
+        "nameCell": "C62"
+      },
+      "ojkMembership": "AB"
+    },
+    "DH": {
+      "name": "PT Sinarmas Sekuritas",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B96",
+        "nameCell": "C96"
+      },
+      "ojkMembership": "AB"
+    },
+    "DP": {
+      "name": "PT DBS Vickers Sekuritas Indonesia",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B25",
+        "nameCell": "C25"
+      },
+      "ojkMembership": "AB"
+    },
+    "DR": {
+      "name": "PT RHB Sekuritas Indonesia",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B91",
+        "nameCell": "C91"
+      },
+      "ojkMembership": "AB"
+    },
+    "DU": {
+      "name": "PT KAF Sekuritas Indonesia",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B50",
+        "nameCell": "C50"
+      },
+      "ojkMembership": "AB"
+    },
+    "DX": {
+      "name": "PT Bahana Sekuritas",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B8",
+        "nameCell": "C8"
+      },
+      "ojkMembership": "AB"
+    },
+    "EL": {
+      "name": "PT Evergreen Sekuritas Indonesia",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B33",
+        "nameCell": "C33"
+      },
+      "ojkMembership": "AB"
+    },
+    "EP": {
+      "name": "PT MNC Sekuritas",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B73",
+        "nameCell": "C73"
+      },
+      "ojkMembership": "AB"
+    },
+    "ES": {
+      "name": "PT Ekokapital Sekuritas",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B28",
+        "nameCell": "C28"
+      },
+      "ojkMembership": "AB"
+    },
+    "FO": {
+      "name": "PT Forte Global Sekuritas",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B35",
+        "nameCell": "C35"
+      },
+      "ojkMembership": "AB"
+    },
+    "FS": {
+      "name": "PT Yuanta Sekuritas Indonesia",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B113",
+        "nameCell": "C113"
+      },
+      "ojkMembership": "AB"
+    },
+    "FZ": {
+      "name": "PT Waterfront Sekuritas Indonesia",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B110",
+        "nameCell": "C110"
+      },
+      "ojkMembership": "AB"
+    },
+    "GA": {
+      "name": "PT BNC Sekuritas Indonesia",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B11",
+        "nameCell": "C11"
+      },
+      "ojkMembership": "AB"
+    },
+    "GI": {
+      "name": "PT Webull Sekuritas Indonesia",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B111",
+        "nameCell": "C111"
+      },
+      "ojkMembership": "AB"
+    },
+    "GR": {
+      "name": "PT Panin Sekuritas Tbk.",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B81",
+        "nameCell": "C81"
+      },
+      "ojkMembership": "AB"
+    },
+    "HD": {
+      "name": "PT KGI Sekuritas Indonesia",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B53",
+        "nameCell": "C53"
+      },
+      "ojkMembership": "AB"
+    },
+    "HP": {
+      "name": "PT Henan Putihrai Sekuritas",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B40",
+        "nameCell": "C40"
+      },
+      "ojkMembership": "AB"
+    },
+    "IC": {
+      "name": "PT Integrity Capital Sekuritas",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B45",
+        "nameCell": "C45"
+      },
+      "ojkMembership": "AB"
+    },
+    "ID": {
+      "name": "PT Anugerah Sekuritas Indonesia",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B6",
+        "nameCell": "C6"
+      },
+      "ojkMembership": "AB"
+    },
+    "IF": {
+      "name": "PT Samuel Sekuritas Indonesia",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B92",
+        "nameCell": "C92"
+      },
+      "ojkMembership": "AB"
+    },
+    "IH": {
+      "name": "PT Indo Harvest Sekuritas",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B43",
+        "nameCell": "C43"
+      },
+      "ojkMembership": "AB"
+    },
+    "II": {
+      "name": "PT Danatama Makmur Sekuritas",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B24",
+        "nameCell": "C24"
+      },
+      "ojkMembership": "AB"
+    },
+    "IN": {
+      "name": "PT Investindo Nusantara Sekuritas",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B48",
+        "nameCell": "C48"
+      },
+      "ojkMembership": "AB"
+    },
+    "IT": {
+      "name": "PT Inti Teladan Sekuritas",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B47",
+        "nameCell": "C47"
+      },
+      "ojkMembership": "AB"
+    },
+    "IU": {
+      "name": "PT Indo Capital Sekuritas",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B42",
+        "nameCell": "C42"
+      },
+      "ojkMembership": "AB"
+    },
+    "JB": {
+      "name": "PT BJB Sekuritas Jawa Barat",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek Daerah",
+        "codeCell": "B2",
+        "nameCell": "C2"
+      },
+      "ojkMembership": "Non AB",
+      "category": "Perusahaan Efek Daerah (PED)"
+    },
+    "KI": {
+      "name": "PT Ciptadana Sekuritas Asia",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B20",
+        "nameCell": "C20"
+      },
+      "ojkMembership": "AB"
+    },
+    "KK": {
+      "name": "PT Phillip Sekuritas Indonesia",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B84",
+        "nameCell": "C84"
+      },
+      "ojkMembership": "AB"
+    },
+    "KZ": {
+      "name": "PT CLSA Sekuritas Indonesia",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B22",
+        "nameCell": "C22"
+      },
+      "ojkMembership": "AB"
+    },
+    "LG": {
+      "name": "PT Trimegah Sekuritas Indonesia Tbk",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B103",
+        "nameCell": "C103"
+      },
+      "ojkMembership": "AB"
+    },
+    "LS": {
+      "name": "PT Reliance Sekuritas Indonesia Tbk",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B90",
+        "nameCell": "C90"
+      },
+      "ojkMembership": "AB"
+    },
+    "MG": {
+      "name": "PT Semesta Indovest Sekuritas",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B94",
+        "nameCell": "C94"
+      },
+      "ojkMembership": "AB"
+    },
+    "MI": {
+      "name": "PT Victoria Sekuritas Indonesia",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B108",
+        "nameCell": "C108"
+      },
+      "ojkMembership": "AB"
+    },
+    "MU": {
+      "name": "PT Minna Padi Investama Sekuritas Tbk",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B70",
+        "nameCell": "C70"
+      },
+      "ojkMembership": "AB"
+    },
+    "NI": {
+      "name": "PT BNI Sekuritas",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B12",
+        "nameCell": "C12"
+      },
+      "ojkMembership": "AB"
+    },
+    "OD": {
+      "name": "PT BRI Danareksa Sekuritas",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B14",
+        "nameCell": "C14"
+      },
+      "ojkMembership": "AB"
+    },
+    "OK": {
+      "name": "PT Net Sekuritas",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B75",
+        "nameCell": "C75"
+      },
+      "ojkMembership": "AB"
+    },
+    "PC": {
+      "name": "PT FAC Sekuritas Indonesia",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B34",
+        "nameCell": "C34"
+      },
+      "ojkMembership": "AB"
+    },
+    "PD": {
+      "name": "PT Indo Premier Sekuritas",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B44",
+        "nameCell": "C44"
+      },
+      "ojkMembership": "AB"
+    },
+    "PF": {
+      "name": "PT Danasakti Sekuritas Indonesia",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B23",
+        "nameCell": "C23"
+      },
+      "ojkMembership": "AB"
+    },
+    "PG": {
+      "name": "PT Panca Global Sekuritas",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B79",
+        "nameCell": "C79"
+      },
+      "ojkMembership": "AB"
+    },
+    "PI": {
+      "name": "PT Magenta Kapital Sekuritas Indonesia",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B61",
+        "nameCell": "C61"
+      },
+      "ojkMembership": "AB"
+    },
+    "PO": {
+      "name": "PT Pilarmas Investindo Sekuritas",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B86",
+        "nameCell": "C86"
+      },
+      "ojkMembership": "AB"
+    },
+    "PP": {
+      "name": "PT Aldiracita Sekuritas Indonesia",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B4",
+        "nameCell": "C4"
+      },
+      "ojkMembership": "AB"
+    },
+    "QA": {
+      "name": "PT Tuntun Sekuritas Indonesia",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B105",
+        "nameCell": "C105"
+      },
+      "ojkMembership": "AB"
+    },
+    "RB": {
+      "name": "PT Ina Sekuritas Indonesia",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B41",
+        "nameCell": "C41"
+      },
+      "ojkMembership": "AB"
+    },
+    "RF": {
+      "name": "PT Buana Capital Sekuritas",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B15",
+        "nameCell": "C15"
+      },
+      "ojkMembership": "AB"
+    },
+    "RG": {
+      "name": "PT Profindo Sekuritas Indonesia",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B88",
+        "nameCell": "C88"
+      },
+      "ojkMembership": "AB"
+    },
+    "RO": {
+      "name": "PT Pluang Maju Sekuritas",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B87",
+        "nameCell": "C87"
+      },
+      "ojkMembership": "AB"
+    },
+    "RS": {
+      "name": "PT Yulie Sekuritas Indonesia Tbk",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B114",
+        "nameCell": "C114"
+      },
+      "ojkMembership": "AB"
+    },
+    "RX": {
+      "name": "PT Macquarie Sekuritas Indonesia",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B60",
+        "nameCell": "C60"
+      },
+      "ojkMembership": "AB"
+    },
+    "SA": {
+      "name": "PT Elit Sukses Sekuritas",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B30",
+        "nameCell": "C30"
+      },
+      "ojkMembership": "AB"
+    },
+    "SF": {
+      "name": "PT Surya Fajar Sekuritas",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B102",
+        "nameCell": "C102"
+      },
+      "ojkMembership": "AB"
+    },
+    "SH": {
+      "name": "PT Artha Sekuritas Indonesia",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B7",
+        "nameCell": "C7"
+      },
+      "ojkMembership": "AB"
+    },
+    "SQ": {
+      "name": "PT BCA Sekuritas",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B9",
+        "nameCell": "C9"
+      },
+      "ojkMembership": "AB"
+    },
+    "SS": {
+      "name": "PT Supra Sekuritas Indonesia",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B101",
+        "nameCell": "C101"
+      },
+      "ojkMembership": "AB"
+    },
+    "TF": {
+      "name": "PT Laba Sekuritas Indonesia",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B58",
+        "nameCell": "C58"
+      },
+      "ojkMembership": "AB"
+    },
+    "TP": {
+      "name": "PT OCBC Sekuritas Indonesia",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B77",
+        "nameCell": "C77"
+      },
+      "ojkMembership": "AB"
+    },
+    "TS": {
+      "name": "PT Dwidana Sakti Sekuritas",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B27",
+        "nameCell": "C27"
+      },
+      "ojkMembership": "AB"
+    },
+    "TX": {
+      "name": "PT Dhanawibawa Sekuritas Indonesia",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B129",
+        "nameCell": "C129"
+      },
+      "ojkMembership": "Non AB",
+      "historicalOnly": true,
+      "status": "license_revoked",
+      "licenseRevokedOn": "2025-11-20",
+      "licenseRevocationDecision": "KEP-58/D.04/2025",
+      "sourceSection": "Cabut Izin Usaha Pada Tahun 2025"
+    },
+    "XA": {
+      "name": "PT NH Korindo Sekuritas Indonesia",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B76",
+        "nameCell": "C76"
+      },
+      "ojkMembership": "AB"
+    },
+    "XC": {
+      "name": "PT Ajaib Sekuritas Asia",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B3",
+        "nameCell": "C3"
+      },
+      "ojkMembership": "AB"
+    },
+    "XL": {
+      "name": "PT Stockbit Sekuritas Digital",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B98",
+        "nameCell": "C98"
+      },
+      "ojkMembership": "AB"
+    },
+    "YB": {
+      "name": "PT Yakin Bertumbuh Sekuritas",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B112",
+        "nameCell": "C112"
+      },
+      "ojkMembership": "AB"
+    },
+    "YJ": {
+      "name": "PT Lotus Andalan Sekuritas",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B59",
+        "nameCell": "C59"
+      },
+      "ojkMembership": "AB"
+    },
+    "YO": {
+      "name": "PT Amantara Sekuritas Indonesia",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B5",
+        "nameCell": "C5"
+      },
+      "ojkMembership": "AB"
+    },
+    "YP": {
+      "name": "PT Mirae Asset Sekuritas Indonesia",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B71",
+        "nameCell": "C71"
+      },
+      "ojkMembership": "AB"
+    },
+    "YU": {
+      "name": "PT CGS International Sekuritas Indonesia",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B18",
+        "nameCell": "C18"
+      },
+      "ojkMembership": "AB"
+    },
+    "ZP": {
+      "name": "PT Maybank Sekuritas Indonesia",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B67",
+        "nameCell": "C67"
+      },
+      "ojkMembership": "AB"
+    },
+    "ZR": {
+      "name": "PT Bumiputera Sekuritas",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx",
+      "sourceDate": "2026-08",
+      "sourceLocator": {
+        "sheet": "Perusahaan Efek",
+        "codeCell": "B16",
+        "nameCell": "C16"
+      },
+      "ojkMembership": "AB"
+    }
+  },
+  "aliases": {
+    "AJAIB SEKURITAS ASIA": "XC",
+    "ALDIRACITA SEKURITAS INDONESIA": "PP",
+    "AMANTARA SEKURITAS INDONESIA": "YO",
+    "ANUGERAH SEKURITAS INDONESIA": "ID",
+    "ARTHA SEKURITAS INDONESIA": "SH",
+    "BAHANA SEKURITAS": "DX",
+    "BCA SEKURITAS": "SQ",
+    "BINAARTHA SEKURITAS": "AR",
+    "BJB SEKURITAS JAWA BARAT": "JB",
+    "BNC SEKURITAS INDONESIA": "GA",
+    "BNI SEKURITAS": "NI",
+    "BRI DANAREKSA SEKURITAS": "OD",
+    "BUANA CAPITAL SEKURITAS": "RF",
+    "BUMIPUTERA SEKURITAS": "ZR",
+    "CGS INTERNATIONAL SEKURITAS INDONESIA": "YU",
+    "CIPTADANA SEKURITAS ASIA": "KI",
+    "CLSA SEKURITAS INDONESIA": "KZ",
+    "DANASAKTI SEKURITAS INDONESIA": "PF",
+    "DANATAMA MAKMUR SEKURITAS": "II",
+    "DBS VICKERS SEKURITAS INDONESIA": "DP",
+    "DHANAWIBAWA SEKURITAS INDONESIA": "TX",
+    "DWIDANA SAKTI SEKURITAS": "TS",
+    "EKOKAPITAL SEKURITAS": "ES",
+    "ELIT SUKSES SEKURITAS": "SA",
+    "EQUITY SEKURITAS INDONESIA": "BS",
+    "ERDIKHA ELIT SEKURITAS": "AO",
+    "EVERGREEN SEKURITAS INDONESIA": "EL",
+    "FAC SEKURITAS INDONESIA": "PC",
+    "FORTE GLOBAL SEKURITAS": "FO",
+    "HARITA KENCANA SEKURITAS": "AF",
+    "HENAN PUTIHRAI SEKURITAS": "HP",
+    "INA SEKURITAS INDONESIA": "RB",
+    "INDO CAPITAL SEKURITAS": "IU",
+    "INDO HARVEST SEKURITAS": "IH",
+    "INDO PREMIER SEKURITAS": "PD",
+    "INTEGRITY CAPITAL SEKURITAS": "IC",
+    "INTI FIKASA SEKURITAS": "BF",
+    "INTI TELADAN SEKURITAS": "IT",
+    "INVESTINDO NUSANTARA SEKURITAS": "IN",
+    "JP MORGAN SEKURITAS INDONESIA": "BK",
+    "KAF SEKURITAS INDONESIA": "DU",
+    "KAY HIAN": "AI",
+    "KAY HIAN SEKURITAS": "AI",
+    "KB VALBURY SEKURITAS": "CP",
+    "KGI SEKURITAS INDONESIA": "HD",
+    "KIWOOM SEKURITAS INDONESIA": "AG",
+    "KOREA INVESTMENT AND SEKURITAS INDONESIA": "BQ",
+    "LABA SEKURITAS INDONESIA": "TF",
+    "LOTUS ANDALAN SEKURITAS": "YJ",
+    "MACQUARIE SEKURITAS INDONESIA": "RX",
+    "MAGENTA KAPITAL SEKURITAS INDONESIA": "PI",
+    "MAKINDO SEKURITAS": "DD",
+    "MANDIRI SEKURITAS": "CC",
+    "MAYBANK SEKURITAS INDONESIA": "ZP",
+    "MEGA CAPITAL SEKURITAS": "CD",
+    "MINNA PADI INVESTAMA SEKURITAS": "MU",
+    "MIRAE ASSET SEKURITAS INDONESIA": "YP",
+    "MNC SEKURITAS": "EP",
+    "NET SEKURITAS": "OK",
+    "NH KORINDO SEKURITAS INDONESIA": "XA",
+    "OCBC SEKURITAS INDONESIA": "TP",
+    "PACIFIC SEKURITAS INDONESIA": "AP",
+    "PANCA GLOBAL SEKURITAS": "PG",
+    "PANIN SEKURITAS": "GR",
+    "PHILLIP SEKURITAS INDONESIA": "KK",
+    "PHINTRACO SEKURITAS": "AT",
+    "PILARMAS INVESTINDO SEKURITAS": "PO",
+    "PLUANG MAJU SEKURITAS": "RO",
+    "PROFINDO SEKURITAS INDONESIA": "RG",
+    "RELIANCE SEKURITAS INDONESIA": "LS",
+    "RHB SEKURITAS INDONESIA": "DR",
+    "SAMUEL SEKURITAS INDONESIA": "IF",
+    "SEMESTA INDOVEST SEKURITAS": "MG",
+    "SHINHAN SEKURITAS INDONESIA": "AH",
+    "SINARMAS SEKURITAS": "DH",
+    "STOCKBIT SEKURITAS DIGITAL": "XL",
+    "SUCOR SEKURITAS": "AZ",
+    "SUKADANA PRIMA SEKURITAS": "AD",
+    "SUPRA SEKURITAS INDONESIA": "SS",
+    "SURYA FAJAR SEKURITAS": "SF",
+    "TRIMEGAH SEKURITAS INDONESIA": "LG",
+    "TRUST SEKURITAS": "BR",
+    "TUNTUN SEKURITAS INDONESIA": "QA",
+    "UBS SEKURITAS INDONESIA": "AK",
+    "UOB KAY HIAN SEKURITAS": "AI",
+    "VERDHANA SEKURITAS INDONESIA": "BB",
+    "VICTORIA SEKURITAS INDONESIA": "MI",
+    "WATERFRONT SEKURITAS INDONESIA": "FZ",
+    "WEBULL SEKURITAS INDONESIA": "GI",
+    "YAKIN BERTUMBUH SEKURITAS": "YB",
+    "YUANTA SEKURITAS INDONESIA": "FS",
+    "YULIE SEKURITAS INDONESIA": "RS"
+  },
+  "accountHolders": [
+    {
+      "name": "BNI SEKURITAS, PT",
+      "normalizedName": "BNI SEKURITAS",
+      "code": "NI",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx"
+    },
+    {
+      "name": "PT BAHANA SEKURITAS",
+      "normalizedName": "BAHANA SEKURITAS",
+      "code": "DX",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx"
+    },
+    {
+      "name": "PT CGS International Sekuritas Indonesia",
+      "normalizedName": "CGS INTERNATIONAL SEKURITAS INDONESIA",
+      "code": "YU",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx"
+    },
+    {
+      "name": "PT CLSA Sekuritas Indonesia",
+      "normalizedName": "CLSA SEKURITAS INDONESIA",
+      "code": "KZ",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx"
+    },
+    {
+      "name": "PT HARITA KENCANA SEKURITAS",
+      "normalizedName": "HARITA KENCANA SEKURITAS",
+      "code": "AF",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx"
+    },
+    {
+      "name": "PT HENAN PUTIHRAI SEKURITAS",
+      "normalizedName": "HENAN PUTIHRAI SEKURITAS",
+      "code": "HP",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx"
+    },
+    {
+      "name": "PT KAY HIAN SEKURITAS",
+      "normalizedName": "KAY HIAN SEKURITAS",
+      "code": "AI",
+      "sourceUrl": "https://web.ksei.co.id/services/participants/brokers"
+    },
+    {
+      "name": "PT KIWOOM SEKURITAS INDONESIA",
+      "normalizedName": "KIWOOM SEKURITAS INDONESIA",
+      "code": "AG",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx"
+    },
+    {
+      "name": "PT PANCA GLOBAL SEKURITAS",
+      "normalizedName": "PANCA GLOBAL SEKURITAS",
+      "code": "PG",
+      "sourceUrl": "https://ojk.go.id/id/kanal/pasar-modal/data-dan-statistik/data-perusahaan-efek/Documents/Pages/Data-Perusahaan-Efek-Agustus-2026/Data%20Perusahaan%20Efek%20-%20Agustus%202026.xlsx"
+    }
+  ],
+  "custodians": [
+    {
+      "name": "BANK CENTRAL ASIA Tbk, PT",
+      "normalizedName": "BANK CENTRAL ASIA",
+      "code": null,
+      "type": "custodian_bank",
+      "kseiParticipantCode": "BCA01",
+      "sourceUrl": "https://web.ksei.co.id/services/participants/custodian-banks",
+      "accessedAt": "2026-10-23"
+    },
+    {
+      "name": "BUT DEUTSCHE BANK AG",
+      "normalizedName": "BUT DEUTSCHE BANK AG",
+      "code": null,
+      "type": "custodian_bank",
+      "kseiParticipantCode": "DBJK1",
+      "sourceUrl": "https://web.ksei.co.id/services/participants/custodian-banks",
+      "accessedAt": "2026-10-23"
+    },
+    {
+      "name": "BUT. STANDARD CHARTERED BANK",
+      "normalizedName": "BUT STANDARD CHARTERED BANK",
+      "code": null,
+      "type": "custodian_bank",
+      "kseiParticipantCode": "SCBJK",
+      "sourceUrl": "https://web.ksei.co.id/services/participants/custodian-banks",
+      "accessedAt": "2026-10-23"
+    },
+    {
+      "name": "CITIBANK, N. A",
+      "normalizedName": "CITIBANK N A",
+      "code": null,
+      "type": "custodian_bank",
+      "kseiParticipantCode": "CITI1",
+      "sourceUrl": "https://web.ksei.co.id/services/participants/custodian-banks",
+      "accessedAt": "2026-10-23"
+    },
+    {
+      "name": "PT BANK DBS INDONESIA",
+      "normalizedName": "BANK DBS INDONESIA",
+      "code": null,
+      "type": "custodian_bank",
+      "kseiParticipantCode": "DBSI1",
+      "sourceUrl": "https://web.ksei.co.id/services/participants/custodian-banks",
+      "accessedAt": "2026-10-23"
+    },
+    {
+      "name": "PT Bank HSBC Indonesia",
+      "normalizedName": "BANK HSBC INDONESIA",
+      "code": null,
+      "type": "custodian_bank",
+      "kseiParticipantCode": "HSBC1",
+      "sourceUrl": "https://web.ksei.co.id/services/participants/custodian-banks",
+      "accessedAt": "2026-10-23"
+    }
+  ],
+  "coverage": {
+    "inputBrokerCodes": 89,
+    "mappedInputBrokerCodes": 89,
+    "securitiesAccountHolderNames": 9,
+    "mappedSecuritiesAccountHolderNames": 9,
+    "custodianBankNamesExcluded": 6,
+    "extraHistoricalCodes": [
+      "TX"
+    ]
+  },
+  "gaps": [],
+  "notes": [
+    "OJK August 2026 shortens the current name to PT Kay Hian; KSEI publishes PT Kay Hian Sekuritas. The full KSEI name is used and both grounded forms are aliases."
+  ]
+}
