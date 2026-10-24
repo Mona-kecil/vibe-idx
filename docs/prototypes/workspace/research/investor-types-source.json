@@ -1,0 +1,1405 @@
+{
+  "source": "IDX monthly shareholder registration reports; KSEI scripless investor classification table",
+  "snapshots": [
+    {
+      "ticker": "SINI",
+      "asOf": "2026-05-31",
+      "sourceUrl": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202606/afb7f5198b_b93ce9d598.pdf",
+      "pages": [
+        3,
+        4,
+        5
+      ],
+      "grain": "KSEI scripless shares",
+      "categories": [
+        {
+          "label": "Bank",
+          "shares": 228000
+        },
+        {
+          "label": "Government",
+          "shares": null
+        },
+        {
+          "label": "Private Equity",
+          "shares": null
+        },
+        {
+          "label": "Trustee Bank",
+          "shares": null
+        },
+        {
+          "label": "Venture Capital",
+          "shares": null
+        },
+        {
+          "label": "Private Bank",
+          "shares": 120100
+        },
+        {
+          "label": "Exchange Traded Funds",
+          "shares": null
+        },
+        {
+          "label": "Investment Manager",
+          "shares": null
+        },
+        {
+          "label": "Investment Advisors",
+          "shares": 100
+        },
+        {
+          "label": "Brokerage Firms",
+          "shares": null
+        },
+        {
+          "label": "Hedge Fund",
+          "shares": null
+        },
+        {
+          "label": "Sovereign Wealth Fund",
+          "shares": null
+        },
+        {
+          "label": "Capital Market Supporting Institutions and Professions",
+          "shares": null
+        },
+        {
+          "label": "Commanditaire Vennootschap (CV) or Limited partnership",
+          "shares": 134400
+        },
+        {
+          "label": "Firm",
+          "shares": 6900
+        },
+        {
+          "label": "Invesment Fund Selling Agent",
+          "shares": null
+        },
+        {
+          "label": "Peer to peer lending",
+          "shares": null
+        },
+        {
+          "label": "Permanent establishment",
+          "shares": null
+        },
+        {
+          "label": "Sole proprietorship",
+          "shares": 200
+        },
+        {
+          "label": "Corporate",
+          "shares": 319439200
+        },
+        {
+          "label": "Association/social organization",
+          "shares": null
+        },
+        {
+          "label": "State-owned enterprises",
+          "shares": null
+        },
+        {
+          "label": "Central Bank",
+          "shares": null
+        },
+        {
+          "label": "State Owned Company",
+          "shares": null
+        },
+        {
+          "label": "Diocese",
+          "shares": null
+        },
+        {
+          "label": "Conference",
+          "shares": null
+        },
+        {
+          "label": "Congregation",
+          "shares": null
+        },
+        {
+          "label": "Cooperatives",
+          "shares": null
+        },
+        {
+          "label": "International organization",
+          "shares": null
+        },
+        {
+          "label": "Political parties",
+          "shares": null
+        },
+        {
+          "label": "Partnership",
+          "shares": null
+        },
+        {
+          "label": "Educational Institution",
+          "shares": null
+        },
+        {
+          "label": "Mutual Funds (MF)",
+          "shares": 320200
+        },
+        {
+          "label": "Securities Company (SC)",
+          "shares": 334200
+        },
+        {
+          "label": "Pension Funds (PF)",
+          "shares": null
+        },
+        {
+          "label": "Financial Institutional (IB)",
+          "shares": null
+        },
+        {
+          "label": "Insurance (IS)",
+          "shares": null
+        },
+        {
+          "label": "Foundation (FD)",
+          "shares": null
+        },
+        {
+          "label": "Individual (ID)",
+          "shares": 160416700
+        }
+      ],
+      "reportedScriplessShares": null,
+      "totalClassifiedShares": 481000000,
+      "unclassifiedShares": null,
+      "gaps": [
+        "The KSEI table prints no scripless grand total. Numeric category sum is 481,000,000; listed shares are 481,000,000, a difference of 0. The source does not label this difference as unclassified scripless shares."
+      ]
+    },
+    {
+      "ticker": "SINI",
+      "asOf": "2026-06-30",
+      "sourceUrl": "https://www.idx.co.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202607/85c897e5ea_b7208d1683.pdf",
+      "pages": [
+        3,
+        4,
+        5
+      ],
+      "grain": "KSEI scripless shares",
+      "categories": [
+        {
+          "label": "Bank",
+          "shares": 228000
+        },
+        {
+          "label": "Government",
+          "shares": null
+        },
+        {
+          "label": "Private Equity",
+          "shares": null
+        },
+        {
+          "label": "Trustee Bank",
+          "shares": null
+        },
+        {
+          "label": "Venture Capital",
+          "shares": null
+        },
+        {
+          "label": "Private Bank",
+          "shares": 120100
+        },
+        {
+          "label": "Exchange Traded Funds",
+          "shares": null
+        },
+        {
+          "label": "Investment Manager",
+          "shares": null
+        },
+        {
+          "label": "Investment Advisors",
+          "shares": null
+        },
+        {
+          "label": "Brokerage Firms",
+          "shares": null
+        },
+        {
+          "label": "Hedge Fund",
+          "shares": null
+        },
+        {
+          "label": "Sovereign Wealth Fund",
+          "shares": null
+        },
+        {
+          "label": "Capital Market Supporting Institutions and Professions",
+          "shares": null
+        },
+        {
+          "label": "Commanditaire Vennootschap (CV) or Limited partnership",
+          "shares": 134400
+        },
+        {
+          "label": "Firm",
+          "shares": 7100
+        },
+        {
+          "label": "Invesment Fund Selling Agent",
+          "shares": null
+        },
+        {
+          "label": "Peer to peer lending",
+          "shares": null
+        },
+        {
+          "label": "Permanent establishment",
+          "shares": null
+        },
+        {
+          "label": "Sole proprietorship",
+          "shares": 200
+        },
+        {
+          "label": "Corporate",
+          "shares": 317925400
+        },
+        {
+          "label": "Association/social organization",
+          "shares": null
+        },
+        {
+          "label": "State-owned enterprises",
+          "shares": null
+        },
+        {
+          "label": "Central Bank",
+          "shares": null
+        },
+        {
+          "label": "State Owned Company",
+          "shares": null
+        },
+        {
+          "label": "Diocese",
+          "shares": null
+        },
+        {
+          "label": "Conference",
+          "shares": null
+        },
+        {
+          "label": "Congregation",
+          "shares": null
+        },
+        {
+          "label": "Cooperatives",
+          "shares": null
+        },
+        {
+          "label": "International organization",
+          "shares": null
+        },
+        {
+          "label": "Political parties",
+          "shares": null
+        },
+        {
+          "label": "Partnership",
+          "shares": null
+        },
+        {
+          "label": "Educational Institution",
+          "shares": null
+        },
+        {
+          "label": "Mutual Funds (MF)",
+          "shares": 320200
+        },
+        {
+          "label": "Securities Company (SC)",
+          "shares": 2122700
+        },
+        {
+          "label": "Pension Funds (PF)",
+          "shares": null
+        },
+        {
+          "label": "Financial Institutional (IB)",
+          "shares": null
+        },
+        {
+          "label": "Insurance (IS)",
+          "shares": null
+        },
+        {
+          "label": "Foundation (FD)",
+          "shares": null
+        },
+        {
+          "label": "Individual (ID)",
+          "shares": 160141900
+        }
+      ],
+      "reportedScriplessShares": null,
+      "totalClassifiedShares": 481000000,
+      "unclassifiedShares": null,
+      "gaps": [
+        "The KSEI table prints no scripless grand total. Numeric category sum is 481,000,000; listed shares are 481,000,000, a difference of 0. The source does not label this difference as unclassified scripless shares."
+      ]
+    },
+    {
+      "ticker": "BRPT",
+      "asOf": "2026-05-31",
+      "sourceUrl": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202606/0edd0e524c_a4e5ae3ab7.pdf",
+      "pages": [
+        4,
+        5,
+        6
+      ],
+      "grain": "KSEI scripless shares",
+      "categories": [
+        {
+          "label": "Bank",
+          "shares": 6652138472
+        },
+        {
+          "label": "Government",
+          "shares": 106780211
+        },
+        {
+          "label": "Private Equity",
+          "shares": 27251698
+        },
+        {
+          "label": "Trustee Bank",
+          "shares": 567088195
+        },
+        {
+          "label": "Venture Capital",
+          "shares": null
+        },
+        {
+          "label": "Private Bank",
+          "shares": 6298555670
+        },
+        {
+          "label": "Exchange Traded Funds",
+          "shares": 1051524883
+        },
+        {
+          "label": "Investment Manager",
+          "shares": 864981959
+        },
+        {
+          "label": "Investment Advisors",
+          "shares": 102285811
+        },
+        {
+          "label": "Brokerage Firms",
+          "shares": 21926
+        },
+        {
+          "label": "Hedge Fund",
+          "shares": 645697
+        },
+        {
+          "label": "Sovereign Wealth Fund",
+          "shares": 91428617
+        },
+        {
+          "label": "Capital Market Supporting Institutions and Professions",
+          "shares": 11947319
+        },
+        {
+          "label": "Commanditaire Vennootschap (CV) or Limited partnership",
+          "shares": 368343
+        },
+        {
+          "label": "Firm",
+          "shares": 3363028
+        },
+        {
+          "label": "Invesment Fund Selling Agent",
+          "shares": 40
+        },
+        {
+          "label": "Peer to peer lending",
+          "shares": null
+        },
+        {
+          "label": "Permanent establishment",
+          "shares": null
+        },
+        {
+          "label": "Sole proprietorship",
+          "shares": 113294
+        },
+        {
+          "label": "Corporate",
+          "shares": 3394601303
+        },
+        {
+          "label": "Association/social organization",
+          "shares": 252400
+        },
+        {
+          "label": "State-owned enterprises",
+          "shares": 3294463
+        },
+        {
+          "label": "Central Bank",
+          "shares": 383333307
+        },
+        {
+          "label": "State Owned Company",
+          "shares": 14581450
+        },
+        {
+          "label": "Diocese",
+          "shares": null
+        },
+        {
+          "label": "Conference",
+          "shares": 1350000
+        },
+        {
+          "label": "Congregation",
+          "shares": 70000
+        },
+        {
+          "label": "Cooperatives",
+          "shares": 188428
+        },
+        {
+          "label": "International organization",
+          "shares": 493508
+        },
+        {
+          "label": "Political parties",
+          "shares": null
+        },
+        {
+          "label": "Partnership",
+          "shares": 1797374
+        },
+        {
+          "label": "Educational Institution",
+          "shares": null
+        },
+        {
+          "label": "Mutual Funds (MF)",
+          "shares": 1799694101
+        },
+        {
+          "label": "Securities Company (SC)",
+          "shares": 1580768577
+        },
+        {
+          "label": "Pension Funds (PF)",
+          "shares": 785675098
+        },
+        {
+          "label": "Financial Institutional (IB)",
+          "shares": 17389740
+        },
+        {
+          "label": "Insurance (IS)",
+          "shares": 243144320
+        },
+        {
+          "label": "Foundation (FD)",
+          "shares": 6559161
+        },
+        {
+          "label": "Individual (ID)",
+          "shares": 69355798272
+        }
+      ],
+      "reportedScriplessShares": null,
+      "totalClassifiedShares": 93367486665,
+      "unclassifiedShares": null,
+      "gaps": [
+        "The KSEI table prints no scripless grand total. Numeric category sum is 93,367,486,665; listed shares are 93,747,218,044, a difference of 379,731,379. The source does not label this difference as unclassified scripless shares."
+      ]
+    },
+    {
+      "ticker": "BRPT",
+      "asOf": "2026-06-30",
+      "sourceUrl": "https://www.idx.co.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202607/02b74c93ac_70ad396702.pdf",
+      "pages": [
+        4,
+        5,
+        6
+      ],
+      "grain": "KSEI scripless shares",
+      "categories": [
+        {
+          "label": "Bank",
+          "shares": 6661044690
+        },
+        {
+          "label": "Government",
+          "shares": 84553182
+        },
+        {
+          "label": "Private Equity",
+          "shares": 30977258
+        },
+        {
+          "label": "Trustee Bank",
+          "shares": 543040195
+        },
+        {
+          "label": "Venture Capital",
+          "shares": null
+        },
+        {
+          "label": "Private Bank",
+          "shares": 6287259970
+        },
+        {
+          "label": "Exchange Traded Funds",
+          "shares": 1018519176
+        },
+        {
+          "label": "Investment Manager",
+          "shares": 866523050
+        },
+        {
+          "label": "Investment Advisors",
+          "shares": 49373068
+        },
+        {
+          "label": "Brokerage Firms",
+          "shares": 22248
+        },
+        {
+          "label": "Hedge Fund",
+          "shares": 1263597
+        },
+        {
+          "label": "Sovereign Wealth Fund",
+          "shares": 113257691
+        },
+        {
+          "label": "Capital Market Supporting Institutions and Professions",
+          "shares": 53844619
+        },
+        {
+          "label": "Commanditaire Vennootschap (CV) or Limited partnership",
+          "shares": 2689543
+        },
+        {
+          "label": "Firm",
+          "shares": 6699128
+        },
+        {
+          "label": "Invesment Fund Selling Agent",
+          "shares": 40
+        },
+        {
+          "label": "Peer to peer lending",
+          "shares": null
+        },
+        {
+          "label": "Permanent establishment",
+          "shares": null
+        },
+        {
+          "label": "Sole proprietorship",
+          "shares": 113294
+        },
+        {
+          "label": "Corporate",
+          "shares": 3466793583
+        },
+        {
+          "label": "Association/social organization",
+          "shares": 189600
+        },
+        {
+          "label": "State-owned enterprises",
+          "shares": 1214063
+        },
+        {
+          "label": "Central Bank",
+          "shares": 316892312
+        },
+        {
+          "label": "State Owned Company",
+          "shares": 12282950
+        },
+        {
+          "label": "Diocese",
+          "shares": null
+        },
+        {
+          "label": "Conference",
+          "shares": 1000000
+        },
+        {
+          "label": "Congregation",
+          "shares": 70000
+        },
+        {
+          "label": "Cooperatives",
+          "shares": 188428
+        },
+        {
+          "label": "International organization",
+          "shares": 493508
+        },
+        {
+          "label": "Political parties",
+          "shares": null
+        },
+        {
+          "label": "Partnership",
+          "shares": 1520074
+        },
+        {
+          "label": "Educational Institution",
+          "shares": null
+        },
+        {
+          "label": "Mutual Funds (MF)",
+          "shares": 1848778794
+        },
+        {
+          "label": "Securities Company (SC)",
+          "shares": 1544784552
+        },
+        {
+          "label": "Pension Funds (PF)",
+          "shares": 713404873
+        },
+        {
+          "label": "Financial Institutional (IB)",
+          "shares": 14590900
+        },
+        {
+          "label": "Insurance (IS)",
+          "shares": 180363020
+        },
+        {
+          "label": "Foundation (FD)",
+          "shares": 4889616
+        },
+        {
+          "label": "Individual (ID)",
+          "shares": 69540849643
+        }
+      ],
+      "reportedScriplessShares": null,
+      "totalClassifiedShares": 93367486665,
+      "unclassifiedShares": null,
+      "gaps": [
+        "The KSEI table prints no scripless grand total. Numeric category sum is 93,367,486,665; listed shares are 93,747,218,044, a difference of 379,731,379. The source does not label this difference as unclassified scripless shares."
+      ]
+    },
+    {
+      "ticker": "TPIA",
+      "asOf": "2026-05-31",
+      "sourceUrl": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202606/4012dfc539_777330d22a.pdf",
+      "pages": [
+        6,
+        7,
+        8
+      ],
+      "grain": "KSEI scripless shares",
+      "categories": [
+        {
+          "label": "Bank",
+          "shares": 3439619481
+        },
+        {
+          "label": "Government",
+          "shares": 31025538
+        },
+        {
+          "label": "Private Equity",
+          "shares": 10956297
+        },
+        {
+          "label": "Trustee Bank",
+          "shares": 83533899
+        },
+        {
+          "label": "Venture Capital",
+          "shares": 740400
+        },
+        {
+          "label": "Private Bank",
+          "shares": 2953422714
+        },
+        {
+          "label": "Exchange Traded Funds",
+          "shares": 207418812
+        },
+        {
+          "label": "Investment Manager",
+          "shares": 173932342
+        },
+        {
+          "label": "Investment Advisors",
+          "shares": 74612410
+        },
+        {
+          "label": "Brokerage Firms",
+          "shares": 395978
+        },
+        {
+          "label": "Hedge Fund",
+          "shares": 715800
+        },
+        {
+          "label": "Sovereign Wealth Fund",
+          "shares": 25383862
+        },
+        {
+          "label": "Capital Market Supporting Institutions and Professions",
+          "shares": 11826737
+        },
+        {
+          "label": "Commanditaire Vennootschap (CV) or Limited partnership",
+          "shares": 3599000
+        },
+        {
+          "label": "Firm",
+          "shares": 312600
+        },
+        {
+          "label": "Invesment Fund Selling Agent",
+          "shares": null
+        },
+        {
+          "label": "Peer to peer lending",
+          "shares": null
+        },
+        {
+          "label": "Permanent establishment",
+          "shares": null
+        },
+        {
+          "label": "Sole proprietorship",
+          "shares": null
+        },
+        {
+          "label": "Corporate",
+          "shares": 16306811635
+        },
+        {
+          "label": "Association/social organization",
+          "shares": 30600
+        },
+        {
+          "label": "State-owned enterprises",
+          "shares": 2590204
+        },
+        {
+          "label": "Central Bank",
+          "shares": 104729675
+        },
+        {
+          "label": "State Owned Company",
+          "shares": 3809300
+        },
+        {
+          "label": "Diocese",
+          "shares": null
+        },
+        {
+          "label": "Conference",
+          "shares": null
+        },
+        {
+          "label": "Congregation",
+          "shares": 40000
+        },
+        {
+          "label": "Cooperatives",
+          "shares": null
+        },
+        {
+          "label": "International organization",
+          "shares": null
+        },
+        {
+          "label": "Political parties",
+          "shares": null
+        },
+        {
+          "label": "Partnership",
+          "shares": 376100
+        },
+        {
+          "label": "Educational Institution",
+          "shares": 2162300
+        },
+        {
+          "label": "Mutual Funds (MF)",
+          "shares": 233086176
+        },
+        {
+          "label": "Securities Company (SC)",
+          "shares": 35618597
+        },
+        {
+          "label": "Pension Funds (PF)",
+          "shares": 95832270
+        },
+        {
+          "label": "Financial Institutional (IB)",
+          "shares": 6337884
+        },
+        {
+          "label": "Insurance (IS)",
+          "shares": 41268123
+        },
+        {
+          "label": "Foundation (FD)",
+          "shares": 2613997
+        },
+        {
+          "label": "Individual (ID)",
+          "shares": 5101154777
+        }
+      ],
+      "reportedScriplessShares": null,
+      "totalClassifiedShares": 28953957508,
+      "unclassifiedShares": null,
+      "gaps": [
+        "The KSEI table prints no scripless grand total. Numeric category sum is 28,953,957,508; listed shares are 86,511,545,092, a difference of 57,557,587,584. The source does not label this difference as unclassified scripless shares."
+      ]
+    },
+    {
+      "ticker": "TPIA",
+      "asOf": "2026-06-30",
+      "sourceUrl": "https://www.idx.co.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202607/e2cac25d2d_6c67e315e8.pdf",
+      "pages": [
+        6,
+        7,
+        8
+      ],
+      "grain": "KSEI scripless shares",
+      "categories": [
+        {
+          "label": "Bank",
+          "shares": 7150387765
+        },
+        {
+          "label": "Government",
+          "shares": null
+        },
+        {
+          "label": "Private Equity",
+          "shares": 10583800
+        },
+        {
+          "label": "Trustee Bank",
+          "shares": 313100
+        },
+        {
+          "label": "Venture Capital",
+          "shares": 5420600
+        },
+        {
+          "label": "Private Bank",
+          "shares": 3990203811
+        },
+        {
+          "label": "Exchange Traded Funds",
+          "shares": 39305101
+        },
+        {
+          "label": "Investment Manager",
+          "shares": 924788092
+        },
+        {
+          "label": "Investment Advisors",
+          "shares": 230747910
+        },
+        {
+          "label": "Brokerage Firms",
+          "shares": 820396021
+        },
+        {
+          "label": "Hedge Fund",
+          "shares": 805950162
+        },
+        {
+          "label": "Sovereign Wealth Fund",
+          "shares": 243477
+        },
+        {
+          "label": "Capital Market Supporting Institutions and Professions",
+          "shares": 822321037
+        },
+        {
+          "label": "Commanditaire Vennootschap (CV) or Limited partnership",
+          "shares": 13944900
+        },
+        {
+          "label": "Firm",
+          "shares": 13432800
+        },
+        {
+          "label": "Invesment Fund Selling Agent",
+          "shares": null
+        },
+        {
+          "label": "Peer to peer lending",
+          "shares": null
+        },
+        {
+          "label": "Permanent establishment",
+          "shares": 1452600
+        },
+        {
+          "label": "Sole proprietorship",
+          "shares": null
+        },
+        {
+          "label": "Corporate",
+          "shares": 16578167279
+        },
+        {
+          "label": "Association/social organization",
+          "shares": null
+        },
+        {
+          "label": "State-owned enterprises",
+          "shares": null
+        },
+        {
+          "label": "Central Bank",
+          "shares": null
+        },
+        {
+          "label": "State Owned Company",
+          "shares": null
+        },
+        {
+          "label": "Diocese",
+          "shares": 200000
+        },
+        {
+          "label": "Conference",
+          "shares": 975000
+        },
+        {
+          "label": "Congregation",
+          "shares": 40000
+        },
+        {
+          "label": "Cooperatives",
+          "shares": 143900
+        },
+        {
+          "label": "International organization",
+          "shares": null
+        },
+        {
+          "label": "Political parties",
+          "shares": null
+        },
+        {
+          "label": "Partnership",
+          "shares": 8400
+        },
+        {
+          "label": "Educational Institution",
+          "shares": 10745200
+        },
+        {
+          "label": "Mutual Funds (MF)",
+          "shares": 1246141210
+        },
+        {
+          "label": "Securities Company (SC)",
+          "shares": 1743824283
+        },
+        {
+          "label": "Pension Funds (PF)",
+          "shares": 15729580
+        },
+        {
+          "label": "Financial Institutional (IB)",
+          "shares": 200
+        },
+        {
+          "label": "Insurance (IS)",
+          "shares": 144261068
+        },
+        {
+          "label": "Foundation (FD)",
+          "shares": 2832897
+        },
+        {
+          "label": "Individual (ID)",
+          "shares": 7238043677
+        }
+      ],
+      "reportedScriplessShares": null,
+      "totalClassifiedShares": 41810603870,
+      "unclassifiedShares": null,
+      "gaps": [
+        "The KSEI table prints no scripless grand total. Numeric category sum is 41,810,603,870; listed shares are 86,511,545,092, a difference of 44,700,941,222. The source does not label this difference as unclassified scripless shares."
+      ]
+    },
+    {
+      "ticker": "BREN",
+      "asOf": "2026-05-31",
+      "sourceUrl": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202606/1e08d0f9b5_23e82ef5bb.pdf",
+      "pages": [
+        4,
+        5,
+        6
+      ],
+      "grain": "KSEI scripless shares",
+      "categories": [
+        {
+          "label": "Bank",
+          "shares": 827216160
+        },
+        {
+          "label": "Government",
+          "shares": 30939300
+        },
+        {
+          "label": "Private Equity",
+          "shares": 7680767
+        },
+        {
+          "label": "Trustee Bank",
+          "shares": 4140325767
+        },
+        {
+          "label": "Venture Capital",
+          "shares": null
+        },
+        {
+          "label": "Private Bank",
+          "shares": 2454602600
+        },
+        {
+          "label": "Exchange Traded Funds",
+          "shares": 255373310
+        },
+        {
+          "label": "Investment Manager",
+          "shares": 519045863
+        },
+        {
+          "label": "Investment Advisors",
+          "shares": 338104490
+        },
+        {
+          "label": "Brokerage Firms",
+          "shares": 230
+        },
+        {
+          "label": "Hedge Fund",
+          "shares": 114068100
+        },
+        {
+          "label": "Sovereign Wealth Fund",
+          "shares": 22400968
+        },
+        {
+          "label": "Capital Market Supporting Institutions and Professions",
+          "shares": 6620600
+        },
+        {
+          "label": "Commanditaire Vennootschap (CV) or Limited partnership",
+          "shares": 43200
+        },
+        {
+          "label": "Firm",
+          "shares": null
+        },
+        {
+          "label": "Invesment Fund Selling Agent",
+          "shares": null
+        },
+        {
+          "label": "Peer to peer lending",
+          "shares": null
+        },
+        {
+          "label": "Permanent establishment",
+          "shares": null
+        },
+        {
+          "label": "Sole proprietorship",
+          "shares": null
+        },
+        {
+          "label": "Corporate",
+          "shares": 33248929011
+        },
+        {
+          "label": "Association/social organization",
+          "shares": 33700
+        },
+        {
+          "label": "State-owned enterprises",
+          "shares": 1128400
+        },
+        {
+          "label": "Central Bank",
+          "shares": 87221855
+        },
+        {
+          "label": "State Owned Company",
+          "shares": 2461400
+        },
+        {
+          "label": "Diocese",
+          "shares": null
+        },
+        {
+          "label": "Conference",
+          "shares": null
+        },
+        {
+          "label": "Congregation",
+          "shares": 45000
+        },
+        {
+          "label": "Cooperatives",
+          "shares": null
+        },
+        {
+          "label": "International organization",
+          "shares": null
+        },
+        {
+          "label": "Political parties",
+          "shares": null
+        },
+        {
+          "label": "Partnership",
+          "shares": 733900
+        },
+        {
+          "label": "Educational Institution",
+          "shares": null
+        },
+        {
+          "label": "Mutual Funds (MF)",
+          "shares": 4623950756
+        },
+        {
+          "label": "Securities Company (SC)",
+          "shares": 1808008482
+        },
+        {
+          "label": "Pension Funds (PF)",
+          "shares": 85631158
+        },
+        {
+          "label": "Financial Institutional (IB)",
+          "shares": 6322216
+        },
+        {
+          "label": "Insurance (IS)",
+          "shares": 41068291
+        },
+        {
+          "label": "Foundation (FD)",
+          "shares": 1565400
+        },
+        {
+          "label": "Individual (ID)",
+          "shares": 528552410
+        }
+      ],
+      "reportedScriplessShares": null,
+      "totalClassifiedShares": 49152073334,
+      "unclassifiedShares": null,
+      "gaps": [
+        "The KSEI table prints no scripless grand total. Numeric category sum is 49,152,073,334; listed shares are 133,786,220,000, a difference of 84,634,146,666. The source does not label this difference as unclassified scripless shares."
+      ]
+    },
+    {
+      "ticker": "BREN",
+      "asOf": "2026-06-30",
+      "sourceUrl": "https://www.idx.co.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202607/1f50eadefb_0b7588adac.pdf",
+      "pages": [
+        4,
+        5,
+        6
+      ],
+      "grain": "KSEI scripless shares",
+      "categories": [
+        {
+          "label": "Bank",
+          "shares": 850521236
+        },
+        {
+          "label": "Government",
+          "shares": null
+        },
+        {
+          "label": "Private Equity",
+          "shares": 121390
+        },
+        {
+          "label": "Trustee Bank",
+          "shares": 4008598867
+        },
+        {
+          "label": "Venture Capital",
+          "shares": null
+        },
+        {
+          "label": "Private Bank",
+          "shares": 2627832000
+        },
+        {
+          "label": "Exchange Traded Funds",
+          "shares": 147277754
+        },
+        {
+          "label": "Investment Manager",
+          "shares": 519113863
+        },
+        {
+          "label": "Investment Advisors",
+          "shares": 199710800
+        },
+        {
+          "label": "Brokerage Firms",
+          "shares": 60551158
+        },
+        {
+          "label": "Hedge Fund",
+          "shares": 184267200
+        },
+        {
+          "label": "Sovereign Wealth Fund",
+          "shares": 12750030
+        },
+        {
+          "label": "Capital Market Supporting Institutions and Professions",
+          "shares": 12410100
+        },
+        {
+          "label": "Commanditaire Vennootschap (CV) or Limited partnership",
+          "shares": 43200
+        },
+        {
+          "label": "Firm",
+          "shares": 151000
+        },
+        {
+          "label": "Invesment Fund Selling Agent",
+          "shares": null
+        },
+        {
+          "label": "Peer to peer lending",
+          "shares": null
+        },
+        {
+          "label": "Permanent establishment",
+          "shares": null
+        },
+        {
+          "label": "Sole proprietorship",
+          "shares": 30000
+        },
+        {
+          "label": "Corporate",
+          "shares": 33632310035
+        },
+        {
+          "label": "Association/social organization",
+          "shares": null
+        },
+        {
+          "label": "State-owned enterprises",
+          "shares": null
+        },
+        {
+          "label": "Central Bank",
+          "shares": 122200
+        },
+        {
+          "label": "State Owned Company",
+          "shares": null
+        },
+        {
+          "label": "Diocese",
+          "shares": null
+        },
+        {
+          "label": "Conference",
+          "shares": 100000
+        },
+        {
+          "label": "Congregation",
+          "shares": 45000
+        },
+        {
+          "label": "Cooperatives",
+          "shares": null
+        },
+        {
+          "label": "International organization",
+          "shares": null
+        },
+        {
+          "label": "Political parties",
+          "shares": null
+        },
+        {
+          "label": "Partnership",
+          "shares": 72700
+        },
+        {
+          "label": "Educational Institution",
+          "shares": null
+        },
+        {
+          "label": "Mutual Funds (MF)",
+          "shares": 4493304141
+        },
+        {
+          "label": "Securities Company (SC)",
+          "shares": 1841591059
+        },
+        {
+          "label": "Pension Funds (PF)",
+          "shares": 3605600
+        },
+        {
+          "label": "Financial Institutional (IB)",
+          "shares": 447800
+        },
+        {
+          "label": "Insurance (IS)",
+          "shares": 33374391
+        },
+        {
+          "label": "Foundation (FD)",
+          "shares": 153100
+        },
+        {
+          "label": "Individual (ID)",
+          "shares": 523568710
+        }
+      ],
+      "reportedScriplessShares": null,
+      "totalClassifiedShares": 49152073334,
+      "unclassifiedShares": null,
+      "gaps": [
+        "The KSEI table prints no scripless grand total. Numeric category sum is 49,152,073,334; listed shares are 133,786,220,000, a difference of 84,634,146,666. The source does not label this difference as unclassified scripless shares."
+      ]
+    }
+  ]
+}

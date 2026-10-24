@@ -1,0 +1,448 @@
+{
+  "SINI": [
+    {
+      "investor": "Batubara Development",
+      "asOf": "2026-05-31",
+      "controller": true,
+      "controllerAffiliate": null,
+      "sourceUrl": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202606/afb7f5198b_b93ce9d598.pdf",
+      "page": 2,
+      "reason": "X is in Pengendali. Afiliasi Pengendali is blank."
+    },
+    {
+      "investor": "PT Autum Prima",
+      "asOf": "2026-05-31",
+      "controller": true,
+      "controllerAffiliate": null,
+      "sourceUrl": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202606/afb7f5198b_b93ce9d598.pdf",
+      "page": 2,
+      "reason": "X is in Pengendali. Afiliasi Pengendali is blank."
+    },
+    {
+      "investor": "Hapsoro",
+      "asOf": "2026-05-31",
+      "controller": true,
+      "controllerAffiliate": null,
+      "sourceUrl": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202606/afb7f5198b_b93ce9d598.pdf",
+      "page": 2,
+      "reason": "X is in Pengendali. Afiliasi Pengendali is blank."
+    },
+    {
+      "investor": "PT Kreasi Jasa Persada",
+      "asOf": "2026-05-31",
+      "controller": null,
+      "controllerAffiliate": null,
+      "sourceUrl": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202606/afb7f5198b_b93ce9d598.pdf",
+      "page": 2,
+      "reason": "Both labeled columns are blank. Blank cells contain no explicit No or unchecked-checkbox legend. Leave them null rather than assert non-affiliation."
+    },
+    {
+      "investor": "Batubara Development",
+      "asOf": "2026-06-30",
+      "controller": true,
+      "controllerAffiliate": null,
+      "sourceUrl": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202607/85c897e5ea_b7208d1683.pdf",
+      "page": 2,
+      "reason": "X is in Pengendali. Afiliasi Pengendali is blank.",
+      "aliases": [
+        "Batubara Development Pte. Ltd."
+      ],
+      "aliasSource": {
+        "sourceUrl": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202607/c30e37ff11_6b91272710.pdf",
+        "page": 3,
+        "basis": "Controller attachment names the full legal entity."
+      }
+    },
+    {
+      "investor": "PT Autum Prima",
+      "asOf": "2026-06-30",
+      "controller": true,
+      "controllerAffiliate": null,
+      "sourceUrl": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202607/85c897e5ea_b7208d1683.pdf",
+      "page": 2,
+      "reason": "X is in Pengendali. Afiliasi Pengendali is blank.",
+      "aliases": [
+        "PT Autum Prima Indonesia"
+      ],
+      "aliasSource": {
+        "sourceUrl": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202607/c30e37ff11_6b91272710.pdf",
+        "page": 3,
+        "basis": "Controller attachment names the full legal entity."
+      }
+    },
+    {
+      "investor": "Hapsoro",
+      "asOf": "2026-06-30",
+      "controller": true,
+      "controllerAffiliate": null,
+      "sourceUrl": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202607/85c897e5ea_b7208d1683.pdf",
+      "page": 2,
+      "reason": "X is in Pengendali. Afiliasi Pengendali is blank."
+    },
+    {
+      "investor": "PT Kreasi Jasa Persada",
+      "asOf": "2026-06-30",
+      "controller": null,
+      "controllerAffiliate": null,
+      "sourceUrl": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202607/85c897e5ea_b7208d1683.pdf",
+      "page": 2,
+      "reason": "Both labeled columns are blank. Blank cells contain no explicit No or unchecked-checkbox legend. Leave them null rather than assert non-affiliation."
+    }
+  ],
+  "BRPT": [
+    {
+      "investor": "PRAJOGO PANGESTU",
+      "asOf": "2026-05-31",
+      "controller": true,
+      "controllerAffiliate": null,
+      "sourceUrl": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202606/0edd0e524c_a4e5ae3ab7.pdf",
+      "page": 2,
+      "reason": "X is in Pengendali. Afiliasi Pengendali is blank. Jabatan is Komisaris. Beneficial-owner status is reported separately on page 8."
+    },
+    {
+      "investor": "LIM CHONG THIAN",
+      "asOf": "2026-05-31",
+      "controller": null,
+      "controllerAffiliate": null,
+      "sourceUrl": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202606/0edd0e524c_a4e5ae3ab7.pdf",
+      "page": 2,
+      "reason": "Jabatan is Komisaris. Both relationship columns are blank. Blank cells contain no explicit No or unchecked-checkbox legend. Leave them null rather than assert non-affiliation."
+    },
+    {
+      "investor": "AGUS SALIM PANGESTU",
+      "asOf": "2026-05-31",
+      "controller": null,
+      "controllerAffiliate": true,
+      "sourceUrl": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202606/0edd0e524c_a4e5ae3ab7.pdf",
+      "page": 2,
+      "reason": "X is in Afiliasi Pengendali, not Pengendali. Jabatan is Direksi. Pengendali is blank."
+    },
+    {
+      "investor": "DIANA ARSIYANTI",
+      "asOf": "2026-05-31",
+      "controller": null,
+      "controllerAffiliate": null,
+      "sourceUrl": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202606/0edd0e524c_a4e5ae3ab7.pdf",
+      "page": 2,
+      "reason": "Jabatan is Direksi. Both relationship columns are blank. Blank cells contain no explicit No or unchecked-checkbox legend. Leave them null rather than assert non-affiliation."
+    },
+    {
+      "investor": "RUDY SUPARMAN",
+      "asOf": "2026-05-31",
+      "controller": null,
+      "controllerAffiliate": null,
+      "sourceUrl": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202606/0edd0e524c_a4e5ae3ab7.pdf",
+      "page": 2,
+      "reason": "Jabatan is Direksi. Both relationship columns are blank. Blank cells contain no explicit No or unchecked-checkbox legend. Leave them null rather than assert non-affiliation."
+    },
+    {
+      "investor": "DAVID KOSASIH",
+      "asOf": "2026-05-31",
+      "controller": null,
+      "controllerAffiliate": null,
+      "sourceUrl": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202606/0edd0e524c_a4e5ae3ab7.pdf",
+      "page": 2,
+      "reason": "Jabatan is Direksi. Both relationship columns are blank. Blank cells contain no explicit No or unchecked-checkbox legend. Leave them null rather than assert non-affiliation."
+    },
+    {
+      "investor": "PRAJOGO PANGESTU",
+      "asOf": "2026-06-30",
+      "controller": true,
+      "controllerAffiliate": null,
+      "sourceUrl": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202607/02b74c93ac_70ad396702.pdf",
+      "page": 2,
+      "reason": "X is in Pengendali. Afiliasi Pengendali is blank. Jabatan is Komisaris. Beneficial-owner status is reported separately on page 8."
+    },
+    {
+      "investor": "LIM CHONG THIAN",
+      "asOf": "2026-06-30",
+      "controller": null,
+      "controllerAffiliate": null,
+      "sourceUrl": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202607/02b74c93ac_70ad396702.pdf",
+      "page": 2,
+      "reason": "Jabatan is Komisaris. Both relationship columns are blank. Blank cells contain no explicit No or unchecked-checkbox legend. Leave them null rather than assert non-affiliation."
+    },
+    {
+      "investor": "AGUS SALIM PANGESTU",
+      "asOf": "2026-06-30",
+      "controller": null,
+      "controllerAffiliate": true,
+      "sourceUrl": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202607/02b74c93ac_70ad396702.pdf",
+      "page": 2,
+      "reason": "X is in Afiliasi Pengendali, not Pengendali. Jabatan is Direksi. Pengendali is blank."
+    },
+    {
+      "investor": "DIANA ARSIYANTI",
+      "asOf": "2026-06-30",
+      "controller": null,
+      "controllerAffiliate": null,
+      "sourceUrl": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202607/02b74c93ac_70ad396702.pdf",
+      "page": 2,
+      "reason": "Jabatan is Direksi. Both relationship columns are blank. Blank cells contain no explicit No or unchecked-checkbox legend. Leave them null rather than assert non-affiliation."
+    },
+    {
+      "investor": "RUDY SUPARMAN",
+      "asOf": "2026-06-30",
+      "controller": null,
+      "controllerAffiliate": null,
+      "sourceUrl": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202607/02b74c93ac_70ad396702.pdf",
+      "page": 2,
+      "reason": "Jabatan is Direksi. Both relationship columns are blank. Blank cells contain no explicit No or unchecked-checkbox legend. Leave them null rather than assert non-affiliation."
+    },
+    {
+      "investor": "DAVID KOSASIH",
+      "asOf": "2026-06-30",
+      "controller": null,
+      "controllerAffiliate": null,
+      "sourceUrl": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202607/02b74c93ac_70ad396702.pdf",
+      "page": 2,
+      "reason": "Jabatan is Direksi. Both relationship columns are blank. Blank cells contain no explicit No or unchecked-checkbox legend. Leave them null rather than assert non-affiliation."
+    }
+  ],
+  "TPIA": [
+    {
+      "investor": "Raymond",
+      "asOf": "2026-05-31",
+      "controller": null,
+      "controllerAffiliate": null,
+      "sourceUrl": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202606/4012dfc539_777330d22a.pdf",
+      "page": 2,
+      "reason": "Jabatan is Direksi. Both relationship columns are blank. Blank cells contain no explicit No or unchecked-checkbox legend. Leave them null rather than assert non-affiliation."
+    },
+    {
+      "investor": "Andre Khor Kah Hin",
+      "asOf": "2026-05-31",
+      "controller": null,
+      "controllerAffiliate": null,
+      "sourceUrl": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202606/4012dfc539_777330d22a.pdf",
+      "page": 2,
+      "reason": "Jabatan is Direksi. Both relationship columns are blank. Blank cells contain no explicit No or unchecked-checkbox legend. Leave them null rather than assert non-affiliation."
+    },
+    {
+      "investor": "Erwin Ciputra",
+      "asOf": "2026-05-31",
+      "controller": null,
+      "controllerAffiliate": null,
+      "sourceUrl": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202606/4012dfc539_777330d22a.pdf",
+      "page": 2,
+      "reason": "Jabatan is Direksi. Both relationship columns are blank. Blank cells contain no explicit No or unchecked-checkbox legend. Leave them null rather than assert non-affiliation."
+    },
+    {
+      "investor": "Fransiskus Ruly Aryawan",
+      "asOf": "2026-05-31",
+      "controller": null,
+      "controllerAffiliate": null,
+      "sourceUrl": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202606/4012dfc539_777330d22a.pdf",
+      "page": 3,
+      "reason": "Jabatan is Direksi. Both relationship columns are blank. Blank cells contain no explicit No or unchecked-checkbox legend. Leave them null rather than assert non-affiliation."
+    },
+    {
+      "investor": "Lim Chong Thian",
+      "asOf": "2026-05-31",
+      "controller": null,
+      "controllerAffiliate": true,
+      "sourceUrl": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202606/4012dfc539_777330d22a.pdf",
+      "page": 3,
+      "reason": "X is in Afiliasi Pengendali, not Pengendali. Jabatan is Komisaris. Pengendali is blank."
+    },
+    {
+      "investor": "Baritono Prajogo",
+      "asOf": "2026-05-31",
+      "controller": null,
+      "controllerAffiliate": true,
+      "sourceUrl": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202606/4012dfc539_777330d22a.pdf",
+      "page": 3,
+      "reason": "X is in Afiliasi Pengendali, not Pengendali. Jabatan is Direksi. Pengendali is blank."
+    },
+    {
+      "investor": "Edi Riva'i",
+      "asOf": "2026-05-31",
+      "controller": null,
+      "controllerAffiliate": null,
+      "sourceUrl": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202606/4012dfc539_777330d22a.pdf",
+      "page": 4,
+      "reason": "Jabatan is Direksi. Both relationship columns are blank. Blank cells contain no explicit No or unchecked-checkbox legend. Leave them null rather than assert non-affiliation."
+    },
+    {
+      "investor": "PT Top Investment",
+      "asOf": "2026-05-31",
+      "controller": null,
+      "controllerAffiliate": null,
+      "sourceUrl": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202606/4012dfc539_777330d22a.pdf",
+      "page": 4,
+      "reason": "Named in the 5%-or-more table. Both relationship columns are blank. Blank cells contain no explicit No or unchecked-checkbox legend. Leave them null rather than assert non-affiliation."
+    },
+    {
+      "investor": "PT Barito Pacific Tbk",
+      "asOf": "2026-05-31",
+      "controller": true,
+      "controllerAffiliate": null,
+      "sourceUrl": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202606/4012dfc539_777330d22a.pdf",
+      "page": 4,
+      "reason": "X is in Pengendali. Afiliasi Pengendali is blank."
+    },
+    {
+      "investor": "SCG Chemicals",
+      "asOf": "2026-05-31",
+      "controller": null,
+      "controllerAffiliate": null,
+      "sourceUrl": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202606/4012dfc539_777330d22a.pdf",
+      "page": 4,
+      "reason": "Named in the 5%-or-more table. Both relationship columns are blank. Blank cells contain no explicit No or unchecked-checkbox legend. Leave them null rather than assert non-affiliation."
+    },
+    {
+      "investor": "Prajogo Pangestu",
+      "asOf": "2026-05-31",
+      "controller": true,
+      "controllerAffiliate": null,
+      "sourceUrl": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202606/4012dfc539_777330d22a.pdf",
+      "page": 4,
+      "reason": "X is in Pengendali. Afiliasi Pengendali is blank. Beneficial-owner status is reported separately on page 10."
+    },
+    {
+      "investor": "Raymond",
+      "asOf": "2026-06-30",
+      "controller": null,
+      "controllerAffiliate": null,
+      "sourceUrl": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202607/e2cac25d2d_6c67e315e8.pdf",
+      "page": 2,
+      "reason": "Jabatan is Direksi. Both relationship columns are blank. Blank cells contain no explicit No or unchecked-checkbox legend. Leave them null rather than assert non-affiliation."
+    },
+    {
+      "investor": "Andre Khor Kah Hin",
+      "asOf": "2026-06-30",
+      "controller": null,
+      "controllerAffiliate": null,
+      "sourceUrl": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202607/e2cac25d2d_6c67e315e8.pdf",
+      "page": 2,
+      "reason": "Jabatan is Direksi. Both relationship columns are blank. Blank cells contain no explicit No or unchecked-checkbox legend. Leave them null rather than assert non-affiliation."
+    },
+    {
+      "investor": "Erwin Ciputra",
+      "asOf": "2026-06-30",
+      "controller": null,
+      "controllerAffiliate": null,
+      "sourceUrl": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202607/e2cac25d2d_6c67e315e8.pdf",
+      "page": 2,
+      "reason": "Jabatan is Direksi. Both relationship columns are blank. Blank cells contain no explicit No or unchecked-checkbox legend. Leave them null rather than assert non-affiliation."
+    },
+    {
+      "investor": "Fransiskus Ruly Aryawan",
+      "asOf": "2026-06-30",
+      "controller": null,
+      "controllerAffiliate": null,
+      "sourceUrl": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202607/e2cac25d2d_6c67e315e8.pdf",
+      "page": 3,
+      "reason": "Jabatan is Direksi. Both relationship columns are blank. Blank cells contain no explicit No or unchecked-checkbox legend. Leave them null rather than assert non-affiliation."
+    },
+    {
+      "investor": "Lim Chong Thian",
+      "asOf": "2026-06-30",
+      "controller": null,
+      "controllerAffiliate": true,
+      "sourceUrl": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202607/e2cac25d2d_6c67e315e8.pdf",
+      "page": 3,
+      "reason": "X is in Afiliasi Pengendali, not Pengendali. Jabatan is Komisaris. Pengendali is blank."
+    },
+    {
+      "investor": "Baritono Prajogo",
+      "asOf": "2026-06-30",
+      "controller": null,
+      "controllerAffiliate": true,
+      "sourceUrl": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202607/e2cac25d2d_6c67e315e8.pdf",
+      "page": 3,
+      "reason": "X is in Afiliasi Pengendali, not Pengendali. Jabatan is Direksi. Pengendali is blank."
+    },
+    {
+      "investor": "Edi Riva'i",
+      "asOf": "2026-06-30",
+      "controller": null,
+      "controllerAffiliate": null,
+      "sourceUrl": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202607/e2cac25d2d_6c67e315e8.pdf",
+      "page": 4,
+      "reason": "Jabatan is Direksi. Both relationship columns are blank. Blank cells contain no explicit No or unchecked-checkbox legend. Leave them null rather than assert non-affiliation."
+    },
+    {
+      "investor": "PT Top Investment",
+      "asOf": "2026-06-30",
+      "controller": null,
+      "controllerAffiliate": null,
+      "sourceUrl": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202607/e2cac25d2d_6c67e315e8.pdf",
+      "page": 4,
+      "reason": "Named in the 5%-or-more table. Both relationship columns are blank. Blank cells contain no explicit No or unchecked-checkbox legend. Leave them null rather than assert non-affiliation."
+    },
+    {
+      "investor": "PT Barito Pacific Tbk",
+      "asOf": "2026-06-30",
+      "controller": true,
+      "controllerAffiliate": null,
+      "sourceUrl": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202607/e2cac25d2d_6c67e315e8.pdf",
+      "page": 4,
+      "reason": "X is in Pengendali. Afiliasi Pengendali is blank."
+    },
+    {
+      "investor": "SCG Chemicals",
+      "asOf": "2026-06-30",
+      "controller": null,
+      "controllerAffiliate": null,
+      "sourceUrl": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202607/e2cac25d2d_6c67e315e8.pdf",
+      "page": 4,
+      "reason": "Named in the 5%-or-more table. Both relationship columns are blank. Blank cells contain no explicit No or unchecked-checkbox legend. Leave them null rather than assert non-affiliation."
+    },
+    {
+      "investor": "Prajogo Pangestu",
+      "asOf": "2026-06-30",
+      "controller": true,
+      "controllerAffiliate": null,
+      "sourceUrl": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202607/e2cac25d2d_6c67e315e8.pdf",
+      "page": 4,
+      "reason": "X is in Pengendali. Afiliasi Pengendali is blank. Beneficial-owner status is reported separately on page 10."
+    }
+  ],
+  "BREN": [
+    {
+      "investor": "Green Era Energy Pte.",
+      "asOf": "2026-05-31",
+      "controller": null,
+      "controllerAffiliate": true,
+      "sourceUrl": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202606/1e08d0f9b5_23e82ef5bb.pdf",
+      "page": 2,
+      "reason": "X is in Afiliasi Pengendali, not Pengendali. Pengendali is blank. Name retained as printed in the primary table."
+    },
+    {
+      "investor": "PT Barito Pacific Tbk",
+      "asOf": "2026-05-31",
+      "controller": true,
+      "controllerAffiliate": null,
+      "sourceUrl": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202606/1e08d0f9b5_23e82ef5bb.pdf",
+      "page": 3,
+      "reason": "X is in Pengendali. Afiliasi Pengendali is blank."
+    },
+    {
+      "investor": "Green Era Energy Pte.",
+      "asOf": "2026-06-30",
+      "controller": null,
+      "controllerAffiliate": true,
+      "sourceUrl": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202607/1f50eadefb_0b7588adac.pdf",
+      "page": 2,
+      "reason": "X is in Afiliasi Pengendali, not Pengendali. Pengendali is blank. Name retained as printed in the primary table.",
+      "aliases": [
+        "Green Era Energy Pte. Ltd."
+      ],
+      "aliasSource": {
+        "sourceUrl": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202607/4ecc040ba2_f2611ab6ae.pdf",
+        "page": 1,
+        "basis": "Same-month holder row matches the abbreviated report name, 30,323,313,100 shares, 22.665%, and 1 Kim Seng Promenade address. The nominee prefix is not an alias."
+      }
+    },
+    {
+      "investor": "PT Barito Pacific Tbk",
+      "asOf": "2026-06-30",
+      "controller": true,
+      "controllerAffiliate": null,
+      "sourceUrl": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202607/1f50eadefb_0b7588adac.pdf",
+      "page": 3,
+      "reason": "X is in Pengendali. Afiliasi Pengendali is blank."
+    }
+  ]
+}
