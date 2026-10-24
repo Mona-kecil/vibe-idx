@@ -1,7 +1,7 @@
 import { getDocumentProxy, getResolvedPDFJS } from 'unpdf';
 import { z } from 'zod';
 
-export const registryParserVersion = 1;
+export const registryParserVersion = 2;
 
 const categories = [
   'Bank',
