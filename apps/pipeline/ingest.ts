@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { z } from 'zod';
 import { parseArgs } from 'node:util';
 import { dateValue, DuckDBInstance } from '@duckdb/node-api';
 import type { DuckDBValue } from '@duckdb/node-api';
@@ -14,8 +15,19 @@ import { parseOnePct } from './lib/onePct';
 import { idxUrl, parseOwnershipList } from './lib/ownershipList';
 import { date } from './lib/rows';
 import { parseAnnouncements, parseReport } from './reports';
+import { registryParserVersion } from './registry';
 import { analytics, health, market, schema, stockTable, tickers } from './sql';
 
+const archivedDisclosure = z.object({
+  id: z.string(),
+  ticker: z.string().nullable(),
+  title: z.string(),
+  published_at: z.string(),
+  url: z.url(),
+  kind: z.literal('registry'),
+  attachments: z.array(z.object({ name: z.string(), url: z.url() })),
+  reports: z.array(z.object({ name: z.string(), url: z.url(), isAttachment: z.boolean() })),
+});
 const tables = [
   'prices',
   'indices',
@@ -25,6 +37,8 @@ const tables = [
   'disclosures',
   'insiders',
   'registry',
+  'registry_investors',
+  'registry_holders',
   'issuers',
 ] as const;
 type Table = (typeof tables)[number];
@@ -38,17 +52,34 @@ export async function ingest({
   data,
   out,
   since,
+  until,
+  registryOnly = false,
+  reparseRegistry = false,
+  limit = 100,
   today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' }),
   fetcher = fetch,
 }: {
   data: string;
   out: string;
   since?: string;
+  until?: string;
+  registryOnly?: boolean;
+  reparseRegistry?: boolean;
+  limit?: number;
   today?: string;
   fetcher?: typeof fetch;
 }) {
   date(today);
   if (since) date(since);
+  if (until) date(until);
+  if (until && (!registryOnly || until > today || (since && since > until)))
+    throw new Error('Registry date range must end on or before today and after since');
+  if (!Number.isSafeInteger(limit) || limit < 1)
+    throw new Error('limit must be a positive integer');
+  if (reparseRegistry && !registryOnly) throw new Error('Reparse requires --registry-only');
+  let processed = 0;
+  let remaining = 0;
+  let lastRequest = 0;
   const instance = await DuckDBInstance.create(':memory:');
   const db = await instance.connect();
   let fetched = 0;
@@ -62,6 +93,12 @@ export async function ingest({
       }),
     );
   async function download(url: string) {
+    if (registryOnly) {
+      await new Promise((resolve) =>
+        setTimeout(resolve, Math.max(0, lastRequest + 1000 - Date.now())),
+      );
+      lastRequest = Date.now();
+    }
     const response = await fetcher(idxUrl(url), {
       redirect: 'error',
       signal: AbortSignal.timeout(60000),
@@ -126,12 +163,20 @@ export async function ingest({
     await db.run(schema);
     for (const table of tables) {
       const path = join(data, 'parquet', table === 'issuers' ? 'issuers.parquet' : table);
-      if (existsSync(path))
-        await db.run(
-          `INSERT INTO ${table} SELECT * FROM read_parquet(${literal(table === 'issuers' ? path : join(path, '*.parquet'))})`,
-        );
+      if (existsSync(path)) {
+        const source = `read_parquet(${literal(table === 'issuers' ? path : join(path, '*.parquet'))}, union_by_name=true)`;
+        if (table === 'registry') {
+          const columns = await query(`DESCRIBE SELECT * FROM ${source}`);
+          const hasFloatShares = columns.some((c) => c.column_name === 'free_float_shares');
+          await db.run(`INSERT INTO registry SELECT r.date, r.id, r.ticker, r.free_float_pct,
+            r.total_shares, r.sid_count, r.url, ${hasFloatShares ? 'r.free_float_shares' : 'NULL'}
+            FROM ${source} r LEFT JOIN disclosures d USING(id)
+            QUALIFY row_number() OVER (PARTITION BY r.date, r.ticker
+              ORDER BY d.published_at DESC NULLS LAST, r.id DESC, r.url DESC) = 1`);
+        } else await db.run(`INSERT INTO ${table} BY NAME SELECT * FROM ${source}`);
+      }
     }
-    if (!(await present('issuers')).has(today)) {
+    if (!registryOnly && !(await present('issuers')).has(today)) {
       const issuerBytes = await raw(
         `issuers/${today}.json`,
         '/primary/ListedCompany/GetCompanyProfiles?emitenType=s&start=0&length=9999',
@@ -161,6 +206,7 @@ export async function ingest({
       }),
     );
     for (const table of ['prices', 'indices'] as const) {
+      if (registryOnly) continue;
       const dates = await present(table);
       const years = new Set<string>();
       const first = since ?? [...dates].sort((a, b) => b.localeCompare(a))[0] ?? '2026-01-01';
@@ -225,7 +271,7 @@ export async function ingest({
       }
       await save(table, years);
     }
-    {
+    if (!registryOnly) {
       const dates = await present('five_pct');
       const years = new Set<string>();
       const first = since ?? [...dates].sort((a, b) => b.localeCompare(a))[0] ?? '2026-05-29';
@@ -315,10 +361,10 @@ export async function ingest({
           await db.run('DELETE FROM incoming_five');
           await append('incoming_five', rows);
           await db.run(`INSERT INTO five_pct
-            SELECT date, ticker, investor, account, any_value(holder_name),
-              sum(shares), sum(previous_shares), max(combined_shares), max(previous_combined),
-              max(pct_before), max(pct_after), max(previous_date)
-            FROM incoming_five GROUP BY date, ticker, investor, account`);
+          SELECT date, ticker, investor, account, any_value(holder_name),
+            sum(shares), sum(previous_shares), max(combined_shares), max(previous_combined),
+            max(pct_before), max(pct_after), max(previous_date)
+          FROM incoming_five GROUP BY date, ticker, investor, account`);
           dates.add(parsed.asOf);
           years.add(parsed.asOf.slice(0, 4));
         }
@@ -329,14 +375,26 @@ export async function ingest({
     }
     {
       const known = new Map(
-        (await query('SELECT id, date::VARCHAR date, source_json FROM disclosures')).map((r) => {
+        (
+          await query(
+            'SELECT id, date::VARCHAR date, source_json, kind, registry_parser_version FROM disclosures',
+          )
+        ).map((r) => {
           if (
             typeof r.id !== 'string' ||
             typeof r.date !== 'string' ||
             typeof r.source_json !== 'string'
           )
             throw new Error('Expected disclosure ledger identity');
-          return [r.id, { date: r.date, source: r.source_json }];
+          return [
+            r.id,
+            {
+              date: r.date,
+              source: r.source_json,
+              kind: r.kind,
+              version: r.registry_parser_version,
+            },
+          ];
         }),
       );
       const latest = [...known.values()]
@@ -344,24 +402,36 @@ export async function ingest({
         .sort()
         .at(-1);
       const first = since ?? (latest ? shiftDay(latest, -2) : shiftDay(today, -89));
+      const through = until ?? today;
       const disclosures: ReturnType<typeof parseAnnouncements>['disclosures'] = [];
       const ids = new Set<string>();
       let offset = 0;
       let pageNumber = 0;
       let total: number | undefined;
-      while (total === undefined || offset < total) {
+      if (reparseRegistry) {
+        for (const record of known.values()) {
+          if (record.kind !== 'registry' || record.date < first || record.date > through) continue;
+          // Revalidate stored announcement metadata through the same boundary as live discovery.
+          const source: unknown = JSON.parse(record.source);
+          const archived = archivedDisclosure.parse(source);
+          disclosures.push(archived);
+        }
+      }
+      while (!reparseRegistry && (total === undefined || offset < total)) {
         const params = new URLSearchParams({
           kodeEmiten: '',
           emitenType: '*',
           indexFrom: String(pageNumber),
           pageSize: '100',
           dateFrom: first.replaceAll('-', ''),
-          dateTo: today.replaceAll('-', ''),
+          dateTo: through.replaceAll('-', ''),
           lang: 'id',
-          keyword: '',
+          keyword: registryOnly ? 'Laporan Bulanan Registrasi Pemegang Efek' : '',
         });
         const url = `/primary/ListedCompany/GetAnnouncement?${params}`;
-        const bytes = await download(url);
+        const bytes = registryOnly
+          ? await raw(`registry-pages/${first}-${through}/${pageNumber}.json`, url)
+          : await download(url);
         await archive(`disclosures/${first}-${today}/${offset}-${hash(bytes)}.json`, bytes);
         const page = parseAnnouncements(json(bytes));
         if (total !== undefined && total !== page.total)
@@ -384,88 +454,151 @@ export async function ingest({
         disclosures: new Set<string>(),
         insiders: new Set<string>(),
         registry: new Set<string>(),
+        registry_investors: new Set<string>(),
+        registry_holders: new Set<string>(),
       };
-      for (const d of disclosures) {
-        const source = JSON.stringify(d);
-        if (known.get(d.id)?.source === source) continue;
-        const gaps: { url: string; reason: string }[] = [];
-        const reports: {
-          url: string;
-          report: Extract<Awaited<ReturnType<typeof parseReport>>, { kind: 'parsed' }>['report'];
-        }[] = [];
-        if (d.kind !== 'other' && d.ticker) {
-          if (!d.reports.length)
-            gaps.push({ url: d.url, reason: 'No supported report PDF attachment' });
-          for (const attachment of d.reports) {
-            const result = await parseReport({
-              bytes: await raw(`reports/${hash(attachment.url)}.pdf`, attachment.url),
-              ticker: d.ticker,
-              kind: d.kind,
-            });
-            if (result.kind === 'unsupported')
-              gaps.push({ url: attachment.url, reason: result.reason });
-            else {
-              reports.push({ url: attachment.url, report: result.report });
-              gaps.push(...result.gaps.map((reason) => ({ url: attachment.url, reason })));
+      try {
+        for (const d of disclosures.sort(
+          (a, b) => a.published_at.localeCompare(b.published_at) || a.id.localeCompare(b.id),
+        )) {
+          const source = JSON.stringify(d);
+          if (registryOnly && d.kind !== 'registry') continue;
+          if (
+            known.get(d.id)?.source === source &&
+            (d.kind !== 'registry' || known.get(d.id)?.version === registryParserVersion)
+          )
+            continue;
+          if (registryOnly && processed >= limit) {
+            remaining++;
+            continue;
+          }
+          processed++;
+          const gaps: { url: string; reason: string }[] = [];
+          const reports: {
+            url: string;
+            report: Extract<Awaited<ReturnType<typeof parseReport>>, { kind: 'parsed' }>['report'];
+          }[] = [];
+          if (d.kind !== 'other' && d.ticker) {
+            if (!d.reports.length)
+              gaps.push({ url: d.url, reason: 'No supported report PDF attachment' });
+            for (const attachment of d.reports) {
+              const result = await parseReport({
+                bytes: await raw(`reports/${hash(attachment.url)}.pdf`, attachment.url),
+                ticker: d.ticker,
+                kind: d.kind,
+              });
+              if (result.kind === 'unsupported')
+                gaps.push({ url: attachment.url, reason: result.reason });
+              else {
+                reports.push({ url: attachment.url, report: result.report });
+                gaps.push(...result.gaps.map((reason) => ({ url: attachment.url, reason })));
+              }
             }
           }
-        }
-        for (const table of ['disclosures', 'insiders', 'registry'] as const) {
-          for (const r of await query(
-            `SELECT DISTINCT year(date)::VARCHAR AS partition_year FROM ${table} WHERE id = ${literal(d.id)}`,
-          )) {
-            if (typeof r.partition_year !== 'string')
-              throw new Error('Expected report ledger year');
-            years[table].add(r.partition_year);
+          for (const table of ['disclosures', 'insiders', 'registry'] as const) {
+            for (const r of await query(
+              `SELECT DISTINCT year(date)::VARCHAR AS partition_year FROM ${table} WHERE id = ${literal(d.id)}`,
+            )) {
+              if (typeof r.partition_year !== 'string')
+                throw new Error('Expected report ledger year');
+              years[table].add(r.partition_year);
+            }
+            if (table === 'registry') {
+              for (const child of ['registry_investors', 'registry_holders'] as const) {
+                for (const year of years.registry) years[child].add(year);
+                await db.run(`DELETE FROM ${child} WHERE (date, ticker) IN
+                (SELECT date, ticker FROM registry WHERE id = ${literal(d.id)})`);
+              }
+            }
+            await db.run(`DELETE FROM ${table} WHERE id = ${literal(d.id)}`);
           }
-          await db.run(`DELETE FROM ${table} WHERE id = ${literal(d.id)}`);
+          await append('disclosures', [
+            [
+              dayValue(date(d.published_at)),
+              d.id,
+              d.ticker,
+              d.title,
+              d.published_at,
+              d.url,
+              d.kind,
+              JSON.stringify(d.attachments),
+              source,
+              JSON.stringify(gaps),
+              d.kind === 'registry' ? registryParserVersion : null,
+            ],
+          ]);
+          years.disclosures.add(d.published_at.slice(0, 4));
+          for (const { report: r, url } of reports) {
+            if (r.kind === 'insider')
+              await append('insiders', [
+                [
+                  dayValue(r.date),
+                  d.id,
+                  d.ticker,
+                  r.reporter,
+                  r.shares_before,
+                  r.shares_after,
+                  r.net_shares,
+                  url,
+                ],
+              ]);
+            else {
+              const identity = `ticker = ${literal(d.ticker ?? '')} AND date = DATE ${literal(r.date)}`;
+              const newer = await query(`SELECT r.id FROM registry r JOIN disclosures d USING(id)
+              WHERE r.ticker = ${literal(d.ticker ?? '')} AND r.date = DATE ${literal(r.date)} AND (d.published_at, r.id) > (${literal(d.published_at)}, ${literal(d.id)})`);
+              if (newer.length) continue;
+              for (const table of ['registry', 'registry_investors', 'registry_holders'] as const) {
+                await db.run(`DELETE FROM ${table} WHERE ${identity}`);
+                years[table].add(r.date.slice(0, 4));
+              }
+              await append('registry', [
+                [
+                  dayValue(r.date),
+                  d.id,
+                  d.ticker,
+                  r.free_float_pct,
+                  r.total_shares,
+                  r.sid_count,
+                  url,
+                  r.free_float_shares,
+                ],
+              ]);
+              await append(
+                'registry_investors',
+                r.investor_types.map((v) => [
+                  dayValue(r.date),
+                  d.ticker,
+                  v.label,
+                  v.shares,
+                  v.page,
+                ]),
+              );
+              await append(
+                'registry_holders',
+                r.holders.map((v) => [
+                  dayValue(r.date),
+                  d.ticker,
+                  v.investor,
+                  v.pct,
+                  v.controller,
+                  v.controller_affiliate,
+                  v.page,
+                ]),
+              );
+            }
+            years[r.kind === 'insider' ? 'insiders' : 'registry'].add(r.date.slice(0, 4));
+          }
         }
-        await append('disclosures', [
-          [
-            dayValue(date(d.published_at)),
-            d.id,
-            d.ticker,
-            d.title,
-            d.published_at,
-            d.url,
-            d.kind,
-            JSON.stringify(d.attachments),
-            source,
-            JSON.stringify(gaps),
-          ],
-        ]);
-        years.disclosures.add(d.published_at.slice(0, 4));
-        for (const { report: r, url } of reports) {
-          if (r.kind === 'insider')
-            await append('insiders', [
-              [
-                dayValue(r.date),
-                d.id,
-                d.ticker,
-                r.reporter,
-                r.shares_before,
-                r.shares_after,
-                r.net_shares,
-                url,
-              ],
-            ]);
-          else
-            await append('registry', [
-              [
-                dayValue(r.date),
-                d.id,
-                d.ticker,
-                r.free_float_pct,
-                r.total_shares,
-                r.sid_count,
-                url,
-              ],
-            ]);
-          years[r.kind === 'insider' ? 'insiders' : 'registry'].add(r.date.slice(0, 4));
-        }
+      } finally {
+        for (const table of [
+          'insiders',
+          'registry',
+          'registry_investors',
+          'registry_holders',
+          'disclosures',
+        ] as const)
+          await save(table, years[table]);
       }
-      for (const table of ['insiders', 'registry', 'disclosures'] as const)
-        await save(table, years[table]);
     }
     await db.run(analytics);
     await mkdir(join(out, 'ticker'), { recursive: true });
@@ -498,7 +631,7 @@ export async function ingest({
     );
     const report_gaps = await query(`SELECT d.id, g.value->>'url' url, g.value->>'reason' reason
       FROM disclosures d, json_each(d.report_gaps) g ORDER BY d.id, url, reason`);
-    return { fetched, requests, counts, report_gaps };
+    return { fetched, requests, counts, report_gaps, processed, remaining };
   } finally {
     db.closeSync();
     instance.closeSync();
@@ -508,11 +641,31 @@ export async function ingest({
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   const { values } = parseArgs({
     args: process.argv.slice(2).filter((s) => s !== '--'),
-    options: { data: { type: 'string' }, out: { type: 'string' }, since: { type: 'string' } },
+    options: {
+      data: { type: 'string' },
+      out: { type: 'string' },
+      since: { type: 'string' },
+      until: { type: 'string' },
+      'registry-only': { type: 'boolean' },
+      'reparse-registry': { type: 'boolean' },
+      limit: { type: 'string' },
+    },
   });
   if (!values.data || !values.out)
-    throw new Error('Usage: ingest -- --data <dir> --out <dir> [--since YYYY-MM-DD]');
+    throw new Error(
+      'Usage: ingest -- --data <dir> --out <dir> [--since YYYY-MM-DD] [--registry-only --until YYYY-MM-DD --limit 100 --reparse-registry]',
+    );
   process.stdout.write(
-    `${JSON.stringify(await ingest({ data: resolve(values.data), out: resolve(values.out), since: values.since }))}\n`,
+    `${JSON.stringify(
+      await ingest({
+        data: resolve(values.data),
+        out: resolve(values.out),
+        since: values.since,
+        until: values.until,
+        registryOnly: values['registry-only'],
+        reparseRegistry: values['reparse-registry'],
+        limit: values.limit ? Number(values.limit) : undefined,
+      }),
+    )}\n`,
   );
 }

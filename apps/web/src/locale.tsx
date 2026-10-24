@@ -80,6 +80,20 @@ const indonesian: Record<string, string> = {
   'Reported free float': 'Free float yang dilaporkan',
   'Total shares': 'Jumlah saham',
   'SID count': 'Jumlah SID',
+  'Monthly IDX registry reports. Blank relationship cells remain unknown. KSEI types cover scripless shares.':
+    'Laporan registrasi bulanan IDX. Sel hubungan kosong tetap tidak diketahui. Tipe KSEI mencakup saham tanpa warkat.',
+  'Monthly registry': 'Registrasi bulanan',
+  'Monthly registry report not sourced.': 'Laporan registrasi bulanan belum tersedia.',
+  'Investor types': 'Tipe investor',
+  'Investor types not sourced.': 'Tipe investor belum tersedia.',
+  'KSEI scripless shares': 'Saham tanpa warkat KSEI',
+  'Free float shares': 'Saham free float',
+  'Monthly records': 'Catatan bulanan',
+  'Month Δ': 'Δ bulan',
+  'Reported holders': 'Pemegang saham yang dilaporkan',
+  Controller: 'Pengendali',
+  'Controller affiliate': 'Afiliasi pengendali',
+  Page: 'Halaman',
   'Not reported': 'Tidak dilaporkan',
   News: 'Berita',
   'No recent news.': 'Belum ada berita terbaru.',
@@ -190,7 +204,7 @@ const indonesian: Record<string, string> = {
   'Production index history and market breadth.': 'Riwayat indeks produksi dan cakupan pasar.',
   'Use each source’s reporting date. This is not the full shareholder base.':
     'Gunakan tanggal laporan setiap sumber. Ini bukan seluruh pemegang saham.',
-  'Latest registry snapshot only.': 'Hanya laporan registrasi terakhir.',
+  'Monthly IDX registry reports.': 'Laporan registrasi bulanan IDX.',
 };
 
 const LocaleContext = createContext<{ locale: Locale; setLocale: (locale: Locale) => void }>({

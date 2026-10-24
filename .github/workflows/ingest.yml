@@ -5,6 +5,23 @@ on:
     - cron: '17 10 * * *'
     - cron: '17 0,2,4,6,8,12,14,16,18,20,22 * * *'
   workflow_dispatch:
+    inputs:
+      registry_since:
+        description: 'Registry publication window start (YYYY-MM-DD); blank runs normal ingestion'
+        type: string
+        default: ''
+      registry_until:
+        description: 'Registry publication window end (YYYY-MM-DD)'
+        type: string
+        default: ''
+      registry_reparse:
+        description: 'Reparse archived disclosures after a registry parser version change'
+        type: boolean
+        default: false
+      registry_limit:
+        description: 'Maximum registry disclosures per run'
+        type: number
+        default: 100
 
 concurrency:
   group: idx-batch-ingest
@@ -26,6 +43,11 @@ jobs:
       DATA: /tmp/idx-data
       OUT: /tmp/idx-public
       PRIVATE_OUT: /tmp/idx-private
+      REGISTRY_ONLY: ${{ github.event_name == 'workflow_dispatch' && inputs.registry_since != '' }}
+      REGISTRY_SINCE: ${{ inputs.registry_since }}
+      REGISTRY_UNTIL: ${{ inputs.registry_until }}
+      REGISTRY_REPARSE: ${{ inputs.registry_reparse }}
+      REGISTRY_LIMIT: ${{ inputs.registry_limit }}
       BROKER_RUN_KIND: ${{ github.event_name == 'schedule' && github.event.schedule != '17 10 * * *' && 'backfill' || 'daily' }}
     steps:
       - uses: actions/checkout@v4
@@ -38,33 +60,40 @@ jobs:
       - name: Restore Parquet ledger
         run: mkdir -p "$DATA/raw" && aws s3 sync s3://vibe-idx-private/parquet "$DATA/parquet" --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
       - name: Restore IDX raw responses
-        if: env.BROKER_RUN_KIND == 'daily'
+        if: env.BROKER_RUN_KIND == 'daily' || env.REGISTRY_ONLY == 'true'
         run: aws s3 sync s3://vibe-idx-private/raw "$DATA/raw" --exclude "broker/*" --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
       - name: Ingest IDX and emit website JSON
-        if: env.BROKER_RUN_KIND == 'daily'
+        if: env.BROKER_RUN_KIND == 'daily' || env.REGISTRY_ONLY == 'true'
         run: |
+          if [ "$REGISTRY_ONLY" = true ]; then
+            args=(--registry-only --since "$REGISTRY_SINCE" --limit "$REGISTRY_LIMIT")
+            if [ -n "$REGISTRY_UNTIL" ]; then args+=(--until "$REGISTRY_UNTIL"); fi
+            if [ "$REGISTRY_REPARSE" = true ]; then args+=(--reparse-registry); fi
+            pnpm --filter @vibe-idx/pipeline ingest -- --data "$DATA" --out "$OUT" "${args[@]}"
+            exit
+          fi
           if [ "$(TZ=Asia/Jakarta date +%H%M)" -lt 1717 ]; then
             echo 'IDX source ingestion requires 17:17 Jakarta or later'
             exit 1
           fi
           pnpm --filter @vibe-idx/pipeline ingest -- --data "$DATA" --out "$OUT"
       - name: Archive raw responses
-        if: ${{ always() && env.BROKER_RUN_KIND == 'daily' }}
+        if: ${{ always() && (env.BROKER_RUN_KIND == 'daily' || env.REGISTRY_ONLY == 'true') }}
         run: |
           if [ -d "$DATA/raw" ]; then
             aws s3 sync "$DATA/raw" s3://vibe-idx-private/raw --exclude "broker/*" --no-overwrite --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
           fi
       - name: Upload Parquet ledger
-        if: ${{ always() && env.BROKER_RUN_KIND == 'daily' }}
+        if: ${{ always() && (env.BROKER_RUN_KIND == 'daily' || env.REGISTRY_ONLY == 'true') }}
         run: |
           if [ -d "$DATA/parquet" ]; then
             aws s3 sync "$DATA/parquet" s3://vibe-idx-private/parquet --exclude "*.tmp" --exclude "brokers/*" --exclude "broker-coverage.parquet" --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
           fi
       - name: Publish website JSON
-        if: env.BROKER_RUN_KIND == 'daily'
+        if: env.BROKER_RUN_KIND == 'daily' || env.REGISTRY_ONLY == 'true'
         run: aws s3 sync "$OUT" s3://vibe-idx-public --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
       - name: Verify R2 conditional writes
-        if: github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch' && env.REGISTRY_ONLY != 'true'
         run: |
           node --input-type=module <<'NODE'
           import assert from 'node:assert/strict';
@@ -121,4 +150,5 @@ jobs:
           }
           NODE
       - name: Ingest private broker summaries
+        if: env.REGISTRY_ONLY != 'true'
         run: pnpm --filter @vibe-idx/pipeline brokers -- --data "$DATA" --token "$DATA/stockbit.json" --out "$PRIVATE_OUT"

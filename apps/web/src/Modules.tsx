@@ -568,6 +568,241 @@ function Report({
     </section>
   );
 }
+function HolderName({
+  name,
+  data,
+  through,
+}: {
+  name: string;
+  data: Ticker;
+  through?: string | null;
+}) {
+  const { t } = useLocale();
+  const normalize = (text: string) => text.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const snapshot = data.registry_history.filter((row) => !through || row.date <= through).at(-1);
+  const holder = snapshot?.holders.find((row) => normalize(row.investor) === normalize(name));
+  return (
+    <>
+      <Account name={name} />
+      {holder && snapshot && (
+        <>
+          {holder.controller === true && (
+            <a
+              className="relationship-badge"
+              href={snapshot.url}
+              target="_blank"
+              rel="noreferrer"
+              data-tip={`${t('Controller')} · ${snapshot.date} · Pengendali · ${t('Page')} ${holder.page}`}
+            >
+              {t('Controller')}
+            </a>
+          )}
+          {holder.controller_affiliate === true && (
+            <a
+              className="relationship-badge controllerAffiliate"
+              href={snapshot.url}
+              target="_blank"
+              rel="noreferrer"
+              data-tip={`${t('Controller affiliate')} · ${snapshot.date} · Afiliasi Pengendali · ${t('Page')} ${holder.page}`}
+            >
+              {t('Controller affiliate')}
+            </a>
+          )}
+        </>
+      )}
+    </>
+  );
+}
+function registrySeries(
+  history: Ticker['registry_history'],
+  field: 'sid_count' | 'free_float_pct',
+): ChartSeries[] {
+  const first = history[0],
+    last = history.at(-1);
+  const points: ChartSeries['points'] = [];
+  if (first && last) {
+    for (let month = first.date.slice(0, 7); month <= last.date.slice(0, 7); ) {
+      const date = new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0))
+        .toISOString()
+        .slice(0, 10);
+      const value = history.find((row) => row.date === date)?.[field] ?? null;
+      const previous = points.at(-1)?.value;
+      points.push({
+        date,
+        value,
+        delta: value !== null && previous != null ? value - previous : null,
+      });
+      month = new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 1))
+        .toISOString()
+        .slice(0, 7);
+    }
+  }
+  return [
+    { label: field === 'sid_count' ? 'SID' : 'Reported free float', color: '#3d755a', points },
+  ];
+}
+function MonthlyRegistry({ data }: { data: Ticker }) {
+  const { t, n, p } = useLocale();
+  const history = data.registry_history;
+  const latest = history.at(-1);
+  const chart = useRef<SVGSVGElement>(null);
+  const [width, setWidth] = useState(700);
+  useEffect(() => {
+    if (!chart.current) return;
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (entry) setWidth(Math.max(300, Math.min(1000, entry.contentRect.width)));
+    });
+    observer.observe(chart.current);
+    return () => observer.disconnect();
+  }, [latest]);
+  const left = Math.min(140, width * 0.34),
+    plotWidth = width - left - 55;
+  const compact = (value: number) =>
+    value >= 1e9
+      ? `${n(Math.round(value / 1e7) / 100)}B`
+      : value >= 1e6
+        ? `${n(Math.round(value / 1e4) / 100)}M`
+        : value >= 1e3
+          ? `${n(Math.round(value / 100) / 10)}K`
+          : n(value);
+  if (!latest) return <p className="monthly-empty">{t('Monthly registry report not sourced.')}</p>;
+  const types = latest.investor_types
+    .filter((row) => row.shares !== null && row.shares > 0)
+    .sort((a, b) => (b.shares ?? 0) - (a.shares ?? 0));
+  const maximum = Math.max(...types.map((row) => row.shares ?? 0), 1);
+  const maxLabel = Math.floor((left - 16) / 5.4);
+  return (
+    <>
+      <div className="compact-source">
+        <span>{latest.date}</span>
+        <a className="qol-source-link" href={latest.url} target="_blank" rel="noreferrer">
+          {t('Source')}
+        </a>
+      </div>
+      <div className="registry-metrics">
+        {(['sid_count', 'free_float_pct'] as const).map((field) => (
+          <div className="registry-metric" key={field}>
+            <h3>{t(field === 'sid_count' ? 'SID' : 'Reported free float')}</h3>
+            <strong>{field === 'sid_count' ? n(latest[field]) : p(latest[field])}</strong>
+            <Chart
+              series={registrySeries(history, field)}
+              label={t(field === 'sid_count' ? 'SID' : 'Reported free float')}
+              unit={field === 'sid_count' ? 'SID' : '%'}
+              height={125}
+              deltaLabel="Month Δ"
+            />
+          </div>
+        ))}
+      </div>
+      <div className="registry-chart-head">
+        <h3>{t('Investor types')}</h3>
+        <span className="meta">{t('KSEI scripless shares')}</span>
+      </div>
+      {types.length ? (
+        <svg
+          className="composition-chart investor-types-chart"
+          ref={chart}
+          viewBox={`0 0 ${width} ${types.length * 29 + 36}`}
+          style={{ height: types.length * 29 + 36 }}
+          role="img"
+          aria-label={`${data.ticker} ${t('KSEI scripless shares')} ${latest.date}`}
+        >
+          {[0, 0.5, 1].map((fraction) => (
+            <g key={fraction}>
+              <line
+                x1={left + fraction * plotWidth}
+                x2={left + fraction * plotWidth}
+                y1={0}
+                y2={types.length * 29 + 9}
+                stroke="#e0e8de"
+                strokeDasharray="2 4"
+              />
+              <text x={left + fraction * plotWidth} y={types.length * 29 + 31} textAnchor="middle">
+                {compact(fraction * maximum)}
+              </text>
+            </g>
+          ))}
+          {types.map((row, index) => (
+            <g
+              key={row.label}
+              tabIndex={0}
+              data-tip={`${row.label} · ${n(row.shares)} ${t('KSEI scripless shares')} · ${latest.date}`}
+            >
+              <title>
+                {row.label}: {n(row.shares)} {t('shares')}
+              </title>
+              <text x={left - 8} y={index * 29 + 21} textAnchor="end">
+                {row.label.length > maxLabel ? row.label.slice(0, maxLabel - 1) + '…' : row.label}
+              </text>
+              <rect
+                x={left}
+                y={index * 29 + 9}
+                width={((row.shares ?? 0) / maximum) * plotWidth}
+                height={17}
+                rx={2}
+                fill="#4b7e62"
+              />
+              <text x={left + ((row.shares ?? 0) / maximum) * plotWidth + 5} y={index * 29 + 21}>
+                {compact(row.shares ?? 0)}
+              </text>
+            </g>
+          ))}
+        </svg>
+      ) : (
+        <p className="monthly-empty">{t('Investor types not sourced.')}</p>
+      )}
+      <details className="history-details">
+        <summary>{t('Monthly records')}</summary>
+        <Table
+          headers={[
+            t('Date'),
+            'SID',
+            t('Reported free float'),
+            t('Total shares'),
+            t('Free float shares'),
+          ]}
+        >
+          {history.map((row) => (
+            <tr key={row.date}>
+              <td>
+                <a href={row.url} target="_blank" rel="noreferrer">
+                  {row.date}
+                </a>
+              </td>
+              <td className="numeric">{n(row.sid_count)}</td>
+              <td className="numeric">{p(row.free_float_pct)}</td>
+              <td className="numeric">{n(row.total_shares)}</td>
+              <td className="numeric">{n(row.free_float_shares)}</td>
+            </tr>
+          ))}
+        </Table>
+        <Table headers={[t('Investor types'), t('KSEI scripless shares')]}>
+          {latest.investor_types.map((row) => (
+            <tr key={row.label}>
+              <td>{row.label}</td>
+              <td className="numeric">{n(row.shares)}</td>
+            </tr>
+          ))}
+        </Table>
+      </details>
+      <div className="registry-chart-head">
+        <h3>{t('Reported holders')}</h3>
+        <span className="meta">{latest.date}</span>
+      </div>
+      <Table headers={[t('Investor'), t('Holding')]}>
+        {latest.holders.map((row) => (
+          <tr key={row.investor}>
+            <td>
+              <HolderName name={row.investor} data={data} />
+            </td>
+            <td className="numeric">{p(row.pct)}</td>
+          </tr>
+        ))}
+      </Table>
+    </>
+  );
+}
 function Ownership({
   data,
   health,
@@ -591,13 +826,21 @@ function Ownership({
             {t('5% ownership')} · {health?.five_pct ?? t('Not reported')}
           </button>
           <button
+            className={`small-button ${controls.ownershipView === 'registry' ? 'selected' : ''}`}
+            onClick={() => update({ ownershipView: 'registry' })}
+          >
+            {t('Monthly registry')}
+          </button>
+          <button
             className={`small-button ${controls.ownershipView === 'one' ? 'selected' : ''}`}
             onClick={() => update({ ownershipView: 'one' })}
           >
             {t('1% ownership')} · {data.one_pct.date ?? t('Not reported')}
           </button>
         </div>
-        {controls.ownershipView === 'five' ? (
+        {controls.ownershipView === 'registry' ? (
+          <MonthlyRegistry data={data} />
+        ) : controls.ownershipView === 'five' ? (
           <Holders data={data} />
         ) : (
           <Table
@@ -612,7 +855,7 @@ function Ownership({
             {data.one_pct.holders.map((row, i) => (
               <tr key={i}>
                 <td>
-                  <Account name={row.investor} />
+                  <HolderName name={row.investor} data={data} through={data.one_pct.date} />
                 </td>
                 <td>{row.classification ?? t('Not reported')}</td>
                 <td>{row.local_foreign ?? t('Not reported')}</td>
@@ -624,8 +867,18 @@ function Ownership({
         )}
         <Source
           path={`/data/ticker/${data.ticker}.json`}
-          details="Disclosed holdings. The public export has no account-level breakdown."
-          data={controls.ownershipView === 'five' ? data.holders : data.one_pct}
+          details={
+            controls.ownershipView === 'registry'
+              ? 'Monthly IDX registry reports. Blank relationship cells remain unknown. KSEI types cover scripless shares.'
+              : 'Disclosed holdings. The public export has no account-level breakdown.'
+          }
+          data={
+            controls.ownershipView === 'registry'
+              ? data.registry_history
+              : controls.ownershipView === 'five'
+                ? data.holders
+                : data.one_pct
+          }
         />
       </section>
       <section className="card">
@@ -714,7 +967,7 @@ function Holders({ data }: { data: Ticker }) {
       {data.holders.map((row, i) => (
         <tr key={i}>
           <td>
-            <Account name={row.investor} />
+            <HolderName name={row.investor} data={data} />
           </td>
           <td className="numeric">{n(row.shares)}</td>
           <td className="numeric">{p(row.pct)}</td>
@@ -724,6 +977,7 @@ function Holders({ data }: { data: Ticker }) {
   );
 }
 function Profile({ data, health }: { data: Ticker; health: Health | null }) {
+  const latestRegistry = data.registry_history.at(-1);
   const { t, n, p } = useLocale();
   return (
     <div className="stack">
@@ -735,24 +989,25 @@ function Profile({ data, health }: { data: Ticker; health: Health | null }) {
         </div>
         <Holders data={data} />
       </section>
-      {data.registry && (
+      {latestRegistry && (
         <section className="card">
           <div className="registry-chart-head">
             <h3>{t('Registry report')}</h3>
             <a
               className="qol-source-link"
-              href={data.registry.url}
+              href={latestRegistry.url}
               target="_blank"
               rel="noreferrer"
             >
               {t('Source')}
             </a>
           </div>
-          <p className="meta">{data.registry.date}</p>
+          <p className="meta">{latestRegistry.date}</p>
           {[
-            [t('Reported free float'), p(data.registry.free_float_pct)],
-            [t('Total shares'), n(data.registry.total_shares)],
-            [t('SID count'), n(data.registry.sid_count)],
+            [t('Reported free float'), p(latestRegistry.free_float_pct)],
+            [t('Total shares'), n(latestRegistry.total_shares)],
+            [t('SID count'), n(latestRegistry.sid_count)],
+            [t('Free float shares'), n(latestRegistry.free_float_shares)],
           ].map(([label, value]) => (
             <div className="row-detail" key={label}>
               <span>{label}</span>
@@ -1113,10 +1368,10 @@ function Sources({ data, health }: { data: Ticker; health: Health | null }) {
     },
     {
       title: 'Registry report',
-      date: data.registry?.date,
-      count: data.registry ? 1 : 0,
-      path: data.registry?.url ?? `/data/ticker/${data.ticker}.json`,
-      details: 'Latest registry snapshot only.',
+      date: data.registry_history.at(-1)?.date,
+      count: data.registry_history.length,
+      path: data.registry_history.at(-1)?.url ?? `/data/ticker/${data.ticker}.json`,
+      details: 'Monthly IDX registry reports.',
     },
   ];
   return (

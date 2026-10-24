@@ -1728,3 +1728,90 @@ th.numeric {
 .source-dialog::backdrop {
   background: #173e3250;
 }
+
+.registry-metrics {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+  margin: 16px 0 22px;
+}
+.registry-metric {
+  min-width: 0;
+}
+.registry-metric h3 {
+  margin: 0;
+  font-size: 11px;
+  color: #647c6b;
+  font-weight: 500;
+}
+.registry-metric strong {
+  font-size: 22px;
+  font-weight: 750;
+  display: block;
+  margin: 7px 0 2px;
+}
+.composition-chart {
+  display: block;
+  width: 100%;
+  overflow: visible;
+  margin-top: 14px;
+}
+.composition-chart text {
+  fill: #6d8072;
+  font:
+    9px ui-monospace,
+    monospace;
+}
+.compact-source {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 8px 0 14px;
+  font-size: 10px;
+  color: #6c8272;
+}
+.history-details {
+  margin-top: 12px;
+  font-size: 10px;
+  color: #627e6a;
+}
+.history-details > summary {
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.history-details .data-table {
+  margin-top: 12px;
+}
+.relationship-badge {
+  display: inline-block;
+  vertical-align: middle;
+  margin: 2px 0 2px 6px;
+  padding: 2px 5px;
+  border: 1px solid #b5cdbd;
+  border-radius: 4px;
+  background: #e9f2e9;
+  color: #305b42;
+  font:
+    500 9px/1.4 ui-sans-serif,
+    system-ui,
+    sans-serif;
+  white-space: nowrap;
+  cursor: pointer;
+  text-decoration: none;
+}
+.relationship-badge.controllerAffiliate {
+  border-color: #c9bfd6;
+  background: #f0ebf5;
+  color: #6c5483;
+}
+@media (max-width: 620px) {
+  .registry-metrics {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 14px;
+  }
+  .registry-metric strong {
+    font-size: 20px;
+  }
+}

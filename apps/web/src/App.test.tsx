@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { App } from './App';
+import { ModuleView } from './Modules';
 import { BrokerView } from './BrokerPanel';
 import { LocaleProvider } from './locale';
 import { brokerHistorySchema } from './brokers';
@@ -45,7 +46,7 @@ function ticker(symbol: string): Ticker {
     one_pct: { date: '2026-09-30', holders: [] },
     insiders: [],
     disclosures: [],
-    registry: null,
+    registry_history: [],
   };
 }
 let root: Root;
@@ -132,6 +133,93 @@ afterEach(async () => {
 });
 
 describe('research workspace', () => {
+  it('shows public monthly registry gaps, exact records and relationship badges in Ownership and Profile', async () => {
+    const data = ticker('REGX');
+    const snapshot = {
+      date: '2026-05-31',
+      sid_count: 5742,
+      free_float_pct: 25.07,
+      total_shares: 481000000,
+      free_float_shares: 120591000,
+      url: 'https://www.idx.id/registry.pdf',
+      investor_types: [
+        { label: 'Bank', shares: 228000, page: 3 },
+        { label: 'Government', shares: null, page: 3 },
+      ],
+      holders: [
+        { investor: 'Hapsoro', pct: 9, controller: true, controller_affiliate: null, page: 2 },
+        { investor: 'Affiliate', pct: 5, controller: null, controller_affiliate: true, page: 2 },
+        {
+          investor: 'Blank holder',
+          pct: 10,
+          controller: null,
+          controller_affiliate: null,
+          page: 2,
+        },
+      ],
+    };
+    data.registry_history = [
+      snapshot,
+      { ...snapshot, date: '2026-07-31', sid_count: 6944, free_float_pct: null },
+      { ...snapshot, date: '2026-08-31', sid_count: null },
+      { ...snapshot, date: '2026-09-30', sid_count: 7000 },
+    ];
+    vi.stubGlobal('fetch', async () => Response.json(data));
+    const panel = makePanel('registry', 'ownership', 'REGX');
+    panel.state.ownershipView = 'registry';
+    await act(async () =>
+      root.render(
+        <LocaleProvider>
+          <ModuleView
+            panel={panel}
+            stocks={[]}
+            health={null}
+            update={() => {}}
+            selectTicker={() => {}}
+          />
+        </LocaleProvider>,
+      ),
+    );
+    expect(host.textContent).toContain('KSEI scripless shares');
+    expect(host.querySelectorAll('[data-series="SID"] polyline')).toHaveLength(0);
+    expect(host.querySelectorAll('[data-series="SID"] circle')).toHaveLength(3);
+    expect(host.querySelector('[data-plot-date="2026-06-30"]')).not.toBeNull();
+    const chart = element('svg[aria-label^="SID "]', SVGSVGElement);
+    await act(async () => {
+      chart.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
+      chart.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true }));
+      chart.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    });
+    expect(host.querySelector('.chart-readout')?.textContent).toContain('Not reported');
+    expect(host.querySelectorAll('.relationship-badge')).toHaveLength(2);
+    expect(
+      [...host.querySelectorAll('tr')]
+        .find((row) => row.textContent?.includes('Blank holder'))
+        ?.querySelector('.relationship-badge'),
+    ).toBeNull();
+    expect(host.querySelector('details')?.textContent).toContain('228,000');
+    expect(host.querySelector('.relationship-badge')?.getAttribute('data-tip')).toContain(
+      '2026-09-30',
+    );
+    await act(async () =>
+      root.render(
+        <LocaleProvider>
+          <ModuleView
+            panel={{ ...panel, type: 'profile' }}
+            stocks={[]}
+            health={null}
+            update={() => {}}
+            selectTicker={() => {}}
+          />
+        </LocaleProvider>,
+      ),
+    );
+    expect(host.textContent).toContain('481,000,000');
+    expect(host.textContent).toContain('120,591,000');
+    expect(host.textContent).toContain('7,000');
+    expect(auth.signIn).not.toHaveBeenCalled();
+  });
+
   it('keeps unlinked Broksum tickers and controls independent, relinks from the active panel, and restores the layout', async () => {
     auth.user = { id: 'fixture-user', email: 'fixture@example.test' };
     window.history.replaceState(null, '', '/t/BBCA');
