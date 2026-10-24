@@ -235,7 +235,7 @@ export async function brokers({
       await db.run(`CREATE TEMP VIEW traded AS
       SELECT DISTINCT date, ticker
       FROM read_parquet(${literal(join(data, 'parquet', 'prices', '*.parquet'))})
-      WHERE volume > 0 AND date >= DATE '2026-06-01'
+      WHERE volume > 0 AND date >= DATE '2026-01-01'
         AND date <= DATE ${literal(completedThrough)};
       INSERT INTO broker_pairs
       SELECT date, ticker, false FROM traded
@@ -387,7 +387,7 @@ export async function brokers({
           UNION SELECT date, ticker FROM broker_pairs WHERE complete) days
         LEFT JOIN brokers USING(date, ticker)
         WHERE ticker = ${literal(ticker)}
-          AND date >= current_date - INTERVAL '90 days'
+          AND date >= DATE '2026-01-01'
         GROUP BY date ORDER BY date DESC`);
         await mkdir(join(out, 'broker'), { recursive: true });
         const file = join(out, 'broker', `${ticker}.json`);
