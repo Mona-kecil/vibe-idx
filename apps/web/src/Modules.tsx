@@ -977,6 +977,7 @@ function Holders({ data }: { data: Ticker }) {
   );
 }
 function Profile({ data, health }: { data: Ticker; health: Health | null }) {
+  const latestRegistry = data.registry_history.at(-1);
   const { t, n, p } = useLocale();
   return (
     <div className="stack">
@@ -988,25 +989,25 @@ function Profile({ data, health }: { data: Ticker; health: Health | null }) {
         </div>
         <Holders data={data} />
       </section>
-      {data.registry && (
+      {latestRegistry && (
         <section className="card">
           <div className="registry-chart-head">
             <h3>{t('Registry report')}</h3>
             <a
               className="qol-source-link"
-              href={data.registry.url}
+              href={latestRegistry.url}
               target="_blank"
               rel="noreferrer"
             >
               {t('Source')}
             </a>
           </div>
-          <p className="meta">{data.registry.date}</p>
+          <p className="meta">{latestRegistry.date}</p>
           {[
-            [t('Reported free float'), p(data.registry.free_float_pct)],
-            [t('Total shares'), n(data.registry.total_shares)],
-            [t('SID count'), n(data.registry.sid_count)],
-            [t('Free float shares'), n(data.registry.free_float_shares)],
+            [t('Reported free float'), p(latestRegistry.free_float_pct)],
+            [t('Total shares'), n(latestRegistry.total_shares)],
+            [t('SID count'), n(latestRegistry.sid_count)],
+            [t('Free float shares'), n(latestRegistry.free_float_shares)],
           ].map(([label, value]) => (
             <div className="row-detail" key={label}>
               <span>{label}</span>
@@ -1367,10 +1368,10 @@ function Sources({ data, health }: { data: Ticker; health: Health | null }) {
     },
     {
       title: 'Registry report',
-      date: data.registry?.date,
-      count: data.registry ? 1 : 0,
-      path: data.registry?.url ?? `/data/ticker/${data.ticker}.json`,
-      details: 'Latest registry snapshot only.',
+      date: data.registry_history.at(-1)?.date,
+      count: data.registry_history.length,
+      path: data.registry_history.at(-1)?.url ?? `/data/ticker/${data.ticker}.json`,
+      details: 'Monthly IDX registry reports.',
     },
   ];
   return (

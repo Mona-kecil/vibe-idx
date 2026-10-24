@@ -161,7 +161,6 @@ export const tickerSchema = z.object({
       }),
     )
     .default([]),
-  registry: registrySchema.nullable().default(null),
   registry_history: z.array(registrySchema).default([]),
 });
 

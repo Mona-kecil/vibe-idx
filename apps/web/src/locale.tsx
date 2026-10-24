@@ -204,7 +204,7 @@ const indonesian: Record<string, string> = {
   'Production index history and market breadth.': 'Riwayat indeks produksi dan cakupan pasar.',
   'Use each source’s reporting date. This is not the full shareholder base.':
     'Gunakan tanggal laporan setiap sumber. Ini bukan seluruh pemegang saham.',
-  'Latest registry snapshot only.': 'Hanya laporan registrasi terakhir.',
+  'Monthly IDX registry reports.': 'Laporan registrasi bulanan IDX.',
 };
 
 const LocaleContext = createContext<{ locale: Locale; setLocale: (locale: Locale) => void }>({

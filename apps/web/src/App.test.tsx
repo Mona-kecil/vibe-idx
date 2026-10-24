@@ -46,7 +46,6 @@ function ticker(symbol: string): Ticker {
     one_pct: { date: '2026-09-30', holders: [] },
     insiders: [],
     disclosures: [],
-    registry: null,
     registry_history: [],
   };
 }
@@ -165,7 +164,6 @@ describe('research workspace', () => {
       { ...snapshot, date: '2026-08-31', sid_count: null },
       { ...snapshot, date: '2026-09-30', sid_count: 7000 },
     ];
-    data.registry = data.registry_history.at(-1) ?? null;
     vi.stubGlobal('fetch', async () => Response.json(data));
     const panel = makePanel('registry', 'ownership', 'REGX');
     panel.state.ownershipView = 'registry';

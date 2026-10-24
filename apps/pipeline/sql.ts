@@ -195,14 +195,14 @@ history AS (
   FROM registry r LEFT JOIN registry_types t USING(date, ticker)
   LEFT JOIN registry_flags f USING(date, ticker)
 ), registry_history AS (
-  SELECT ticker, list(record ORDER BY date) snapshots, arg_max(record, date) latest
+  SELECT ticker, list(record ORDER BY date) snapshots
   FROM registers GROUP BY ticker
 )
 SELECT u.ticker, coalesce(i.name, p.name, u.ticker) AS name,
   coalesce(h.prices, []) prices, coalesce(o.holders, []) holders, coalesce(c.changes, []) changes,
   struct_pack(date := (SELECT max(date) FROM one_pct), holders := coalesce(m.holders, [])) one_pct,
   coalesce(a.disclosures, []) disclosures, coalesce(t.insiders, []) insiders,
-  r.latest registry, coalesce(r.snapshots, []) registry_history
+  coalesce(r.snapshots, []) registry_history
 FROM universe u LEFT JOIN issuers i USING(ticker)
 LEFT JOIN (SELECT ticker, arg_max(name, date) AS name FROM prices GROUP BY ticker) p USING(ticker)
 LEFT JOIN history h USING(ticker) LEFT JOIN holders o USING(ticker) LEFT JOIN changes c USING(ticker)

@@ -174,7 +174,6 @@ it('keeps corrected monthly snapshots, KSEI cells and blank relationships throug
           }))
           .map((r) => tickerSchema.shape.registry_history.parse([r])[0]),
       );
-      expect(actual.registry).toEqual(actual.registry_history.at(-1));
     }
     // Simulate a parser upgrade and a legacy report-per-file registry ledger.
     const instance = await DuckDBInstance.create(':memory:');

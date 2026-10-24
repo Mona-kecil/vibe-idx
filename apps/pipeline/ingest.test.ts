@@ -374,7 +374,7 @@ BT /F1 10 Tf 1 0 0 1 529 530 Tm (-100) Tj ET`;
         registry: 5,
       });
       const negativeSid = JSON.parse(await readFile(join(root, 'out/ticker/TEST.json'), 'utf8'));
-      expect(negativeSid.registry).toMatchObject({
+      expect(negativeSid.registry_history.at(-1)).toMatchObject({
         date: '2026-09-30',
         free_float_pct: null,
         total_shares: null,
@@ -390,7 +390,7 @@ BT /F1 10 Tf 1 0 0 1 529 530 Tm (-100) Tj ET`;
       ]) {
         expect(result.report_gaps).toContainEqual({
           id: 'registry/negative-sid',
-          url: negativeSid.registry.url,
+          url: negativeSid.registry_history.at(-1).url,
           reason: `Registry ${field}: unsupported or missing labeled cells`,
         });
       }
@@ -436,7 +436,7 @@ BT /F1 10 Tf 1 0 0 1 529 530 Tm (-100) Tj ET`;
           },
         ]),
       });
-      expect(aadi.registry).toBeNull();
+      expect(aadi.registry_history).toEqual([]);
       expect(aadi.insiders).toEqual([]);
       expect(aadi.disclosures).toContainEqual({
         id: 'registry/unsupported',
@@ -472,7 +472,7 @@ BT /F1 10 Tf 1 0 0 1 529 530 Tm (-100) Tj ET`;
         const ticker = JSON.parse(
           await readFile(join(root, `out/ticker/${r.ticker}.json`), 'utf8'),
         );
-        expect(ticker.registry).toMatchObject({
+        expect(ticker.registry_history.at(-1)).toMatchObject({
           date: '2026-05-31',
           free_float_pct: r.pct,
           total_shares: r.total,
@@ -677,7 +677,7 @@ BT /F1 10 Tf 1 0 0 1 529 530 Tm (-100) Tj ET`;
       expect(published.disclosures).toContainEqual(
         expect.objectContaining({ id: 'registry/unsupported' }),
       );
-      expect(published.registry).toBeNull();
+      expect(published.registry_history).toEqual([]);
       const recovered = await ingest({ ...restored, fetcher: net.fetcher });
       expect(recovered.counts).toMatchObject({
         disclosures: 10,
