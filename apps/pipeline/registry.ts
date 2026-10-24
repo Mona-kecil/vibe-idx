@@ -191,13 +191,16 @@ export async function parseRegistryLayout(bytes: Uint8Array) {
     if (!value || (shares === null && value.text !== '-')) gap(`investor type ${label}`);
     investor_types.push({ label, shares, page: match.page });
   }
-  const holders: {
-    investor: string;
-    pct: number;
-    controller: boolean | null;
-    controller_affiliate: boolean | null;
-    page: number;
-  }[] = [];
+  const holders = new Map<
+    string,
+    {
+      investor: string;
+      pct: number;
+      controller: boolean | null;
+      controller_affiliate: boolean | null;
+      page: number;
+    }
+  >();
   for (const [index, cells] of pages.entries()) {
     for (const name of cells.filter((c) => c.text === 'Nama')) {
       const address = cells.find((c) => c.text === 'Alamat' && Math.abs(c.y - name.y) < 2);
@@ -241,24 +244,33 @@ export async function parseRegistryLayout(bytes: Uint8Array) {
           gap(`holder ${investor} ${field}`);
           return null;
         };
-        holders.push({
+        const existing = holders.get(investor);
+        const isController = flag(controller, 'controller');
+        const isAffiliate = flag(affiliate, 'controller affiliate');
+        holders.set(investor, {
           investor,
-          pct,
-          controller: flag(controller, 'controller'),
-          controller_affiliate: flag(affiliate, 'controller affiliate'),
-          page: index + 1,
+          pct: Math.max(existing?.pct ?? pct, pct),
+          controller:
+            existing?.controller === true || isController === true
+              ? true
+              : (existing?.controller ?? isController),
+          controller_affiliate:
+            existing?.controller_affiliate === true || isAffiliate === true
+              ? true
+              : (existing?.controller_affiliate ?? isAffiliate),
+          page: Math.min(existing?.page ?? index + 1, index + 1),
         });
       }
     }
   }
-  if (!holders.length) gap('holder flags');
+  if (!holders.size) gap('holder flags');
   return {
     free_float_pct,
     total_shares,
     free_float_shares,
     sid_count,
     investor_types,
-    holders,
+    holders: [...holders.values()],
     gaps,
   };
 }
