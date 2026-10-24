@@ -263,7 +263,7 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe('private broker pipeline', () => {
-  it('backfills June pairs without dropping history or refetching cached and completed empty pairs', async () => {
+  it('backfills and publishes January-onward pairs without dropping history or refetching completed pairs', async () => {
     const f = await fixture();
     const net = network(f.token, (ticker, date) =>
       Response.json(summary(ticker, date, ticker === 'EMPTY')),
@@ -275,6 +275,7 @@ describe('private broker pipeline', () => {
       await writeFile(join(f.root, 'public', 'feed.json'), feed);
       await prices(f.data, [
         { ticker: 'TEST', date: old, volume: 100 },
+        { ticker: 'TEST', date: '2025-12-31', volume: 100 },
         { ticker: 'TEST', date: '2026-05-29', volume: 100 },
         ...['TEST', 'EMPTY', 'NORADAR', 'LOCAL', 'KEPT', 'TEST'].map((ticker) => ({
           ticker,
@@ -283,7 +284,8 @@ describe('private broker pipeline', () => {
         })),
         ...['TEST', 'CACHED', 'EMPTY'].map((ticker) => ({ ticker, date: previous, volume: 100 })),
         { ticker: 'JUNE', date: '2026-06-02', volume: 100 },
-        { ticker: 'FLOOR', date: '2026-06-01', volume: 100 },
+        { ticker: 'JANUARY', date: '2026-01-02', volume: 100 },
+        { ticker: 'FLOOR', date: '2026-01-01', volume: 100 },
         { ticker: 'ZERO', date: day, volume: 0 },
         {
           ticker: 'FUTURE',
@@ -301,7 +303,7 @@ describe('private broker pipeline', () => {
           'Asing' investor_type, 1250::DOUBLE shares, 625000::DOUBLE AS value, 500::DOUBLE avg_price, 3::DOUBLE freq)
           TO '${join(ledger, date.slice(0, 4) + '.parquet')}' (FORMAT PARQUET)`);
       const before = await readFile(join(ledger, '2024.parquet'));
-      await query(`COPY (SELECT * FROM (VALUES (DATE '${previous}', 'EMPTY', true), (DATE '2026-05-29', 'OUTSIDE', false), (DATE '2026-05-28', 'OLD-EMPTY', true)) p(date, ticker, complete))
+      await query(`COPY (SELECT * FROM (VALUES (DATE '${previous}', 'EMPTY', true), (DATE '2025-12-31', 'OUTSIDE', false), (DATE '2025-12-30', 'OLD-EMPTY', true)) p(date, ticker, complete))
         TO '${join(f.data, 'parquet', 'broker-coverage.parquet')}' (FORMAT PARQUET)`);
       const cached = JSON.stringify(summary('CACHED', previous));
       await f.save(`raw/broker/${previous}/CACHED.json`, cached);
@@ -310,15 +312,20 @@ describe('private broker pipeline', () => {
         JSON.stringify(summary('JUNE', '2026-06-02')),
       );
       await f.save(
-        'raw/broker/2026-06-01/FLOOR.json',
-        JSON.stringify(summary('FLOOR', '2026-06-01', true)),
+        'raw/broker/2026-01-01/FLOOR.json',
+        JSON.stringify(summary('FLOOR', '2026-01-01', true)),
       );
       const local = join(f.data, 'raw', 'broker', day, 'LOCAL.json');
       await mkdir(dirname(local), { recursive: true });
       await writeFile(local, JSON.stringify(summary('LOCAL', day)));
       vi.setSystemTime(new Date(`${day}T10:16:00Z`));
-      expect(await brokers(options)).toEqual({ fetched: 1, replayed: 3, completed: 4, pending: 0 });
-      expect(net.calls).toEqual(['/login/refresh', `TEST/${previous}`]);
+      expect(await brokers(options)).toEqual({ fetched: 3, replayed: 3, completed: 6, pending: 0 });
+      expect(net.calls).toEqual([
+        '/login/refresh',
+        `TEST/${previous}`,
+        'TEST/2026-05-29',
+        'JANUARY/2026-01-02',
+      ]);
       vi.setSystemTime(new Date(`${day}T10:17:00Z`));
       net.calls.length = 0;
       expect(await brokers(options)).toEqual({ fetched: 3, replayed: 1, completed: 4, pending: 0 });
@@ -329,7 +336,7 @@ describe('private broker pipeline', () => {
         `TEST/${day}`,
       ]);
       for (const ticker of ['LOCAL', 'NORADAR', 'TEST']) {
-        const days = ticker === 'TEST' ? [day, previous] : [day];
+        const days = ticker === 'TEST' ? [day, previous, '2026-05-29'] : [day];
         expect(JSON.parse(await readFile(join(f.out, 'broker', ticker + '.json'), 'utf8'))).toEqual(
           days.map((date) => ({ date, buy: [buy], sell: [sell] })),
         );
@@ -338,20 +345,29 @@ describe('private broker pipeline', () => {
         { date: day, buy: [], sell: [] },
         { date: previous, buy: [], sell: [] },
       ]);
-      expect(JSON.parse((await f.load('site/broker/JUNE.json')).toString())).toEqual([]);
+      for (const [ticker, date] of [
+        ['JUNE', '2026-06-02'],
+        ['JANUARY', '2026-01-02'],
+      ])
+        expect(JSON.parse((await f.load(`site/broker/${ticker}.json`)).toString())).toEqual([
+          { date, buy: [buy], sell: [sell] },
+        ]);
+      expect(JSON.parse((await f.load('site/broker/FLOOR.json')).toString())).toEqual([
+        { date: '2026-01-01', buy: [], sell: [] },
+      ]);
       expect(await readFile(join(f.root, 'public', 'feed.json'), 'utf8')).toBe(feed);
       expect(await readFile(join(ledger, '2024.parquet'))).toEqual(before);
       expect((await f.load(`raw/broker/${previous}/CACHED.json`)).toString()).toBe(cached);
       expect(
         await query(`SELECT count(*)::INTEGER n FROM read_parquet('${ledger}/*.parquet')`),
-      ).toEqual([{ n: 14 }]);
+      ).toEqual([{ n: 18 }]);
       expect(
         await query(
-          `SELECT date::VARCHAR date, ticker, complete FROM read_parquet('${join(f.remote, 'parquet/broker-coverage.parquet')}') WHERE date < DATE '2026-06-01' ORDER BY date`,
+          `SELECT date::VARCHAR date, ticker, complete FROM read_parquet('${join(f.remote, 'parquet/broker-coverage.parquet')}') WHERE date < DATE '2026-01-01' ORDER BY date`,
         ),
       ).toEqual([
-        { date: '2026-05-28', ticker: 'OLD-EMPTY', complete: true },
-        { date: '2026-05-29', ticker: 'OUTSIDE', complete: false },
+        { date: '2025-12-30', ticker: 'OLD-EMPTY', complete: true },
+        { date: '2025-12-31', ticker: 'OUTSIDE', complete: false },
       ]);
       const yearBytes = await f.load(`parquet/brokers/${year}.parquet`);
       await f.restart();
