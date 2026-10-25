@@ -45,6 +45,44 @@ const flags = z.record(
   ),
 );
 
+it('reads the older monthly header without joining holder names to treasury and total rows', async () => {
+  const bytes = await readFile(new URL('./fixtures/SINI-2026-01-main.pdf', import.meta.url));
+  const result = await parseReport({ bytes, ticker: 'SINI', kind: 'registry' });
+  expect(result.kind).toBe('parsed');
+  if (result.kind !== 'parsed' || result.report.kind !== 'registry')
+    throw new Error('Expected registry');
+  expect(result.report).toMatchObject({
+    date: '2026-01-31',
+    total_shares: 481000000,
+    free_float_shares: 115430000,
+    free_float_pct: 24,
+    sid_count: null,
+    investor_types: [],
+  });
+  expect(result.report.holders).toEqual([
+    {
+      investor: 'Batubara Development',
+      pct: 15.49,
+      controller: true,
+      controller_affiliate: null,
+      page: 1,
+    },
+    { investor: 'PT Autum Prima', pct: 30, controller: true, controller_affiliate: null, page: 1 },
+    { investor: 'Hapsoro', pct: 9, controller: true, controller_affiliate: null, page: 1 },
+    {
+      investor: 'PT Kreasi Jasa Persada',
+      pct: 19.74,
+      controller: null,
+      controller_affiliate: null,
+      page: 2,
+    },
+  ]);
+  expect(result.gaps).toEqual([
+    'Registry SID count: unsupported or missing labeled cells',
+    'Registry investor types: unsupported or missing labeled cells',
+  ]);
+});
+
 it('repairs AIMS holder rows checkpointed before a duplicate-key failure', async () => {
   const bytes = await readFile(new URL('./fixtures/AIMS-2026-04-main.pdf', import.meta.url));
   const root = await mkdtemp(join(tmpdir(), 'registry-checkpoint-'));
