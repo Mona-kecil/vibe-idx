@@ -221,19 +221,25 @@ describe('public ticker news', () => {
   });
 
   it('falls back to the ticker query when the company lookup fails', async () => {
-    const queries: string[] = [];
-    const fetcher: typeof fetch = async (input) => {
-      const url = new URL(input instanceof Request ? input.url : input.toString());
-      if (url.pathname === '/ticker/BBCA.json')
-        return Response.json({ ticker: 'BBCA', name: 'Stale Company' }, { status: 503 });
-      queries.push(url.searchParams.get('q') ?? '');
-      return feed([
-        { title: 'Headline', link: 'https://news.google.com/item', pubDate: '2026-08-12' },
-      ]);
-    };
-    const response = await news(new Request('https://vibe.test/api/news?ticker=BBCA'), fetcher);
-    expect(response.status).toBe(200);
-    expect(queries).toEqual(['BBCA saham when:30d']);
+    for (const lookup of [
+      () => Response.json({ ticker: 'BBCA', name: 'Stale Company' }, { status: 503 }),
+      () => Promise.reject(new Error('Network failure')),
+      () => new Response('{not json'),
+      () => Response.json({ ticker: 'BBRI', name: 'Bank Rakyat Indonesia' }),
+    ]) {
+      const queries: string[] = [];
+      const fetcher: typeof fetch = async (input) => {
+        const url = new URL(input instanceof Request ? input.url : input.toString());
+        if (url.pathname === '/ticker/BBCA.json') return lookup();
+        queries.push(url.searchParams.get('q') ?? '');
+        return feed([
+          { title: 'Headline', link: 'https://news.google.com/item', pubDate: '2026-08-12' },
+        ]);
+      };
+      const response = await news(new Request('https://vibe.test/api/news?ticker=BBCA'), fetcher);
+      expect(response.status).toBe(200);
+      expect(queries).toEqual(['BBCA saham when:30d']);
+    }
   });
 
   it('returns 502 for RSS failures, unsafe links, and invalid publication dates', async () => {
