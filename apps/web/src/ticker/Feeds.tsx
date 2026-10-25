@@ -216,28 +216,33 @@ export function FilingsNews({
   events: HoldingEvent[];
   selection: Selection;
 }) {
-  const [news, setNews] = useState<Awaited<ReturnType<typeof loadNews>>>([]);
+  const [news, setNews] = useState<{ key: string; rows: Awaited<ReturnType<typeof loadNews>> }>({
+    key: '',
+    rows: [],
+  });
   const [allFilings, setAllFilings] = useState(false),
     [allNews, setAllNews] = useState(false);
   const b = bounds(selection),
     start = b?.start,
-    end = b?.end;
+    end = b?.end,
+    newsKey = `${data.ticker} ${start} ${end}`;
   useEffect(() => {
     let active = true;
-    setNews([]);
     const timer = setTimeout(() => {
       void loadNews(data.ticker, start && end ? { start, end } : undefined).then(
         (rows) => {
-          if (active) setNews(rows);
+          if (active) setNews({ key: newsKey, rows });
         },
-        () => {},
+        () => {
+          if (active) setNews({ key: newsKey, rows: [] });
+        },
       );
     }, 300);
     return () => {
       active = false;
       clearTimeout(timer);
     };
-  }, [data.ticker, start, end]);
+  }, [data.ticker, start, end, newsKey]);
   const filings = data.disclosures
     .filter(
       (f) =>
@@ -245,7 +250,7 @@ export function FilingsNews({
         (!selection || !isOwnershipFiling(f, events)),
     )
     .sort((a, b) => b.published_at.localeCompare(a.published_at));
-  const articles = news
+  const articles = news.rows
     .filter((n) => inRange(itemDate(n.published_at), selection))
     .sort((a, b) => Date.parse(b.published_at) - Date.parse(a.published_at));
   const range = b ? rangeText(b.start, b.end) : '';
@@ -304,7 +309,9 @@ export function FilingsNews({
                 </a>
               </li>
             ))}
-            {!articles.length && <li className="empty-state">No news {range}</li>}
+            {!articles.length && news.key === newsKey && (
+              <li className="empty-state">No news {range}</li>
+            )}
           </ul>
           {articles.length > 8 && (
             <button

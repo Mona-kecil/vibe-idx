@@ -336,6 +336,11 @@ describe('research workspace', () => {
     expect(rows).toHaveLength(4);
     expect(rows[0]?.textContent).toContain('AK');
     expect(rows[0]?.textContent).toContain('+200.0K');
+    expect(host.querySelector('#news')?.textContent).not.toContain('No news');
+    await act(() => new Promise((resolve) => setTimeout(resolve, 350)));
+    expect(fetcher.mock.calls.some(([url]) => String(url).includes('/api/news?ticker=BBCA'))).toBe(
+      true,
+    );
     expect(host.querySelector('#news')?.textContent).toContain('No news');
     expect(host.querySelector('[role="alert"]')).toBeNull();
     fetcher.mockImplementation(baseFetch ?? (async () => Response.json([])));
