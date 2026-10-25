@@ -41,7 +41,8 @@ CREATE TABLE ownership_files (date DATE, source VARCHAR, url VARCHAR PRIMARY KEY
 CREATE TABLE disclosures (
   date DATE, id VARCHAR PRIMARY KEY, ticker VARCHAR, title VARCHAR,
   published_at VARCHAR, url VARCHAR, kind VARCHAR, attachments JSON,
-  source_json VARCHAR, report_gaps JSON, registry_parser_version INTEGER
+  source_json VARCHAR, report_gaps JSON, registry_parser_version INTEGER,
+  attachment_labels_version INTEGER
 );
 CREATE TABLE insiders (
   date DATE, id VARCHAR, ticker VARCHAR, reporter VARCHAR,

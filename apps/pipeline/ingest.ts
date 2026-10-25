@@ -14,7 +14,7 @@ import { parseFivePct } from './lib/fivePct';
 import { parseOnePct } from './lib/onePct';
 import { idxUrl, parseOwnershipList } from './lib/ownershipList';
 import { date } from './lib/rows';
-import { parseAnnouncements, parseReport } from './reports';
+import { labelAttachments, orderAttachments, parseAnnouncements, parseReport } from './reports';
 import { registryParserVersion } from './registry';
 import { analytics, health, market, schema, stockTable, tickers } from './sql';
 
@@ -24,8 +24,10 @@ const archivedDisclosure = z.object({
   title: z.string(),
   published_at: z.string(),
   url: z.url(),
-  kind: z.literal('registry'),
-  attachments: z.array(z.object({ name: z.string(), url: z.url() })),
+  kind: z.enum(['registry', 'insider', 'other']),
+  attachments: z.array(
+    z.object({ name: z.string(), url: z.url(), label: z.string().nullable().default(null) }),
+  ),
   reports: z.array(z.object({ name: z.string(), url: z.url(), isAttachment: z.boolean() })),
 });
 const tables = [
@@ -56,6 +58,7 @@ export async function ingest({
   registryOnly = false,
   reparseRegistry = false,
   limit = 100,
+  attachmentLabelLimit = 200,
   today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' }),
   fetcher = fetch,
 }: {
@@ -66,6 +69,7 @@ export async function ingest({
   registryOnly?: boolean;
   reparseRegistry?: boolean;
   limit?: number;
+  attachmentLabelLimit?: number;
   today?: string;
   fetcher?: typeof fetch;
 }) {
@@ -76,9 +80,13 @@ export async function ingest({
     throw new Error('Registry date range must end on or before today and after since');
   if (!Number.isSafeInteger(limit) || limit < 1)
     throw new Error('limit must be a positive integer');
+  if (!Number.isSafeInteger(attachmentLabelLimit) || attachmentLabelLimit < 0)
+    throw new Error('attachment-label-limit must be a nonnegative integer');
   if (reparseRegistry && !registryOnly) throw new Error('Reparse requires --registry-only');
   let processed = 0;
   let remaining = 0;
+  let labelsBackfilled = 0;
+  let labelsRemaining = 0;
   let lastRequest = 0;
   const instance = await DuckDBInstance.create(':memory:');
   const db = await instance.connect();
@@ -92,7 +100,7 @@ export async function ingest({
         return r.date;
       }),
     );
-  async function download(url: string) {
+  async function download(url: string, timeout = 60000) {
     if (registryOnly) {
       await new Promise((resolve) =>
         setTimeout(resolve, Math.max(0, lastRequest + 1000 - Date.now())),
@@ -101,7 +109,7 @@ export async function ingest({
     }
     const response = await fetcher(idxUrl(url), {
       redirect: 'error',
-      signal: AbortSignal.timeout(60000),
+      signal: AbortSignal.timeout(timeout),
     });
     if (!response.ok) throw new Error(`IDX HTTP ${response.status}: ${url}`);
     requests++;
@@ -114,7 +122,7 @@ export async function ingest({
     await mkdir(dirname(file), { recursive: true });
     await writeFile(file, bytes, { flag: 'wx' });
   }
-  async function raw(path: string, url: string) {
+  async function raw(path: string, url: string, timeout = 60000) {
     const file = join(data, 'raw', path);
     if (existsSync(file)) {
       const bytes = await readFile(file);
@@ -123,9 +131,37 @@ export async function ingest({
         (path.startsWith('indices/') && !parseIndices(json(bytes)).length);
       if (!emptySummary) return bytes;
     }
-    const bytes = await download(url);
+    const bytes = await download(url, timeout);
     await archive(path, bytes);
     return bytes;
+  }
+  async function attachmentLabels(
+    d: Pick<z.infer<typeof archivedDisclosure>, 'attachments' | 'url' | 'ticker'>,
+  ) {
+    const attachments = orderAttachments(d.attachments, d.url);
+    if (!attachments.some((a) => a.url !== d.url && /_lamp\d+\.[^.]+$/i.test(a.name)))
+      return { attachments, gaps: [] };
+    try {
+      return {
+        attachments: await labelAttachments({
+          bytes: await raw(`reports/${hash(d.url)}.pdf`, d.url, 10000),
+          attachments,
+          cover: d.url,
+          ticker: d.ticker,
+        }),
+        gaps: [],
+      };
+    } catch (error) {
+      return {
+        attachments,
+        gaps: [
+          {
+            url: d.url,
+            reason: `Attachment labels: ${error instanceof Error ? error.message : String(error)}`,
+          },
+        ],
+      };
+    }
   }
   async function append(table: Table | 'incoming_five', rows: DuckDBValue[][]) {
     const appender = await db.createAppender(table);
@@ -386,11 +422,12 @@ export async function ingest({
             typeof r.source_json !== 'string'
           )
             throw new Error('Expected disclosure ledger identity');
+          const d = archivedDisclosure.parse(JSON.parse(r.source_json));
           return [
             r.id,
             {
               date: r.date,
-              source: r.source_json,
+              source: JSON.stringify({ ...d, attachments: orderAttachments(d.attachments, d.url) }),
               kind: r.kind,
               version: r.registry_parser_version,
             },
@@ -473,7 +510,8 @@ export async function ingest({
             continue;
           }
           processed++;
-          const gaps: { url: string; reason: string }[] = [];
+          const labeled = await attachmentLabels(d);
+          const gaps: { url: string; reason: string }[] = labeled.gaps;
           const reports: {
             url: string;
             report: Extract<Awaited<ReturnType<typeof parseReport>>, { kind: 'parsed' }>['report'];
@@ -521,10 +559,11 @@ export async function ingest({
               d.published_at,
               d.url,
               d.kind,
-              JSON.stringify(d.attachments),
+              JSON.stringify(labeled.attachments),
               source,
               JSON.stringify(gaps),
               d.kind === 'registry' ? registryParserVersion : null,
+              1,
             ],
           ]);
           years.disclosures.add(d.published_at.slice(0, 4));
@@ -589,6 +628,50 @@ export async function ingest({
             years[r.kind === 'insider' ? 'insiders' : 'registry'].add(r.date.slice(0, 4));
           }
         }
+        if (!registryOnly) {
+          const pending = await query(`SELECT id, year(date)::VARCHAR partition_year, ticker, url,
+            attachments::VARCHAR attachments, report_gaps::VARCHAR gaps FROM disclosures
+            WHERE attachment_labels_version IS NULL ORDER BY published_at DESC, id DESC`);
+          for (const row of pending) {
+            const d = z
+              .object({
+                id: z.string(),
+                partition_year: z.string(),
+                ticker: z.string().nullable(),
+                url: z.url(),
+                attachments: z
+                  .string()
+                  .transform((value) =>
+                    archivedDisclosure.shape.attachments.parse(JSON.parse(value)),
+                  ),
+                gaps: z
+                  .string()
+                  .transform((value) =>
+                    z
+                      .array(z.object({ url: z.string(), reason: z.string() }))
+                      .parse(JSON.parse(value)),
+                  ),
+              })
+              .parse(row);
+            const attachments = orderAttachments(d.attachments, d.url);
+            const needsCover = attachments.some(
+              (a) => a.url !== d.url && /_lamp\d+\.[^.]+$/i.test(a.name),
+            );
+            const attempt = !needsCover || labelsBackfilled < attachmentLabelLimit;
+            const labeled = attempt
+              ? await attachmentLabels({ ...d, attachments })
+              : { attachments, gaps: [] };
+            await db.run(`UPDATE disclosures SET attachments = ${literal(JSON.stringify(labeled.attachments))},
+              attachment_labels_version = ${attempt ? '1' : 'NULL'},
+              report_gaps = ${literal(JSON.stringify([...d.gaps, ...labeled.gaps]))}
+              WHERE id = ${literal(d.id)}`);
+            years.disclosures.add(d.partition_year);
+            if (needsCover) {
+              if (attempt) labelsBackfilled++;
+              else labelsRemaining++;
+            }
+          }
+        }
       } finally {
         for (const table of [
           'insiders',
@@ -631,7 +714,15 @@ export async function ingest({
     );
     const report_gaps = await query(`SELECT d.id, g.value->>'url' url, g.value->>'reason' reason
       FROM disclosures d, json_each(d.report_gaps) g ORDER BY d.id, url, reason`);
-    return { fetched, requests, counts, report_gaps, processed, remaining };
+    return {
+      fetched,
+      requests,
+      counts,
+      report_gaps,
+      processed,
+      remaining,
+      attachment_labels: { backfilled: labelsBackfilled, remaining: labelsRemaining },
+    };
   } finally {
     db.closeSync();
     instance.closeSync();
@@ -649,11 +740,12 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
       'registry-only': { type: 'boolean' },
       'reparse-registry': { type: 'boolean' },
       limit: { type: 'string' },
+      'attachment-label-limit': { type: 'string' },
     },
   });
   if (!values.data || !values.out)
     throw new Error(
-      'Usage: ingest -- --data <dir> --out <dir> [--since YYYY-MM-DD] [--registry-only --until YYYY-MM-DD --limit 100 --reparse-registry]',
+      'Usage: ingest -- --data <dir> --out <dir> [--since YYYY-MM-DD] [--attachment-label-limit 200] [--registry-only --until YYYY-MM-DD --limit 100 --reparse-registry]',
     );
   process.stdout.write(
     `${JSON.stringify(
@@ -665,6 +757,10 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
         registryOnly: values['registry-only'],
         reparseRegistry: values['reparse-registry'],
         limit: values.limit ? Number(values.limit) : undefined,
+        attachmentLabelLimit:
+          values['attachment-label-limit'] !== undefined
+            ? Number(values['attachment-label-limit'])
+            : undefined,
       }),
     )}\n`,
   );
