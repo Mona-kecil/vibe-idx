@@ -1,7 +1,7 @@
 import { getDocumentProxy, getResolvedPDFJS } from 'unpdf';
 import { z } from 'zod';
 
-export const registryParserVersion = 2;
+export const registryParserVersion = 3;
 
 const categories = [
   'Bank',
@@ -210,7 +210,12 @@ export async function parseRegistryLayout(bytes: Uint8Array) {
       const end = Math.min(
         ...cells.filter((c) => c.text === 'Nama' && c.y > name.y).map((c) => c.y - 22),
         ...cells
-          .filter((c) => /^Pemegang Saham < 5%$/.test(c.text) && c.y > name.y)
+          .filter(
+            (c) =>
+              /^(?:Pemegang Saham < 5%|Masyarakat - Warkat - Scrip|Saham Treasury|Total)$/.test(
+                c.text,
+              ) && c.y > name.y,
+          )
           .map((c) => c.y - 5),
         590,
       );

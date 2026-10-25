@@ -147,7 +147,9 @@ export async function parseReport({
   const code = /Perihal \S+ .*? ([A-Z0-9-]+) \d+ Laporan Bulanan Registrasi Pemegang Efek/.exec(
     first,
   )?.[1];
-  const period = /akhir bulan ([A-Za-z]+)\s*-\s*(\d{4})/i.exec(first);
+  const period =
+    /akhir bulan ([A-Za-z]+)\s*-\s*(\d{4})/i.exec(first) ??
+    /yang berakhir pada \d{1,2} ([A-Za-z]+) (\d{4})/i.exec(first);
   const month = months.indexOf(period?.[1]?.toLowerCase() ?? '') + 1;
   if (code !== ticker || !period || !month)
     return {
