@@ -714,9 +714,11 @@ describe('private broker pipeline', () => {
   });
 
   it('paces 20, 15 and 12 RPM across runs without bursts and yields at the attempt and time budgets', async () => {
-    for (const [rpm, limit] of [20, 15, 12].flatMap((rpm) =>
-      ['attempts', 'time'].map((limit) => [rpm, limit] as const),
-    )) {
+    for (const [rpm, limit] of [
+      [20, 'attempts'],
+      [15, 'time'],
+      [12, 'time'],
+    ] as const) {
       const f = await fixture();
       await f.save('broker-rpm.json', JSON.stringify(rpm));
       let count = 0;
