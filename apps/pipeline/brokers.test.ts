@@ -419,6 +419,7 @@ describe('private broker pipeline', () => {
         );
         await expect(brokers(options)).rejects.toThrow();
         expect(net.calls).toEqual(['/login/refresh', `AAA/${day}`, `FAIL/${day}`]);
+        expect(JSON.parse((await f.load('broker-rpm.json')).toString())).toBe(15);
         expect(
           await query(
             `SELECT ticker, complete FROM read_parquet('${join(f.remote, 'parquet/broker-coverage.parquet')}') ORDER BY ticker`,
@@ -440,7 +441,10 @@ describe('private broker pipeline', () => {
         if (failure === 'json') {
           await expect(brokers(options)).rejects.toThrow();
           expect(net.calls).toEqual([]);
+          expect(JSON.parse((await f.load('broker-rpm.json')).toString())).toBe(12);
         } else {
+          const resumed = Date.now();
+          const before = net.starts.length;
           expect(await brokers(options)).toEqual({
             fetched: 2,
             replayed: 0,
@@ -448,6 +452,7 @@ describe('private broker pipeline', () => {
             pending: 0,
           });
           expect(net.calls).toEqual(['/login/refresh', `FAIL/${day}`, `ZZZ/${day}`]);
+          expect(net.starts[before] - resumed).toBe(4000);
         }
       } finally {
         await rm(f.root, { recursive: true, force: true });
@@ -571,6 +576,7 @@ describe('private broker pipeline', () => {
         await expect(brokers(options)).rejects.toThrow(
           cut === 'raw-cas' ? 'PreconditionFailed' : 'synthetic storage failure',
         );
+        expect(JSON.parse((await f.load('broker-rpm.json')).toString())).toBe(15);
         expect(net.calls).toEqual(['/login/refresh', `AAA/${day}`]);
         expect(JSON.parse((await f.load('auth/stockbit.json')).toString()).refresh).toBe(
           'synthetic-refresh-1',
@@ -707,9 +713,12 @@ describe('private broker pipeline', () => {
     }
   });
 
-  it('paces every request across runs without bursts and yields at the attempt and time budgets', async () => {
-    for (const limit of ['attempts', 'time']) {
+  it('paces 20, 15 and 12 RPM across runs without bursts and yields at the attempt and time budgets', async () => {
+    for (const [rpm, limit] of [20, 15, 12].flatMap((rpm) =>
+      ['attempts', 'time'].map((limit) => [rpm, limit] as const),
+    )) {
       const f = await fixture();
+      await f.save('broker-rpm.json', JSON.stringify(rpm));
       let count = 0;
       const net = network(f.token, async (ticker, date) => {
         count++;
@@ -728,13 +737,13 @@ describe('private broker pipeline', () => {
         const start = Date.now();
         const options = { ...f.options, fetcher: net.fetcher };
         const result = await brokers(options);
-        expect(result.fetched).toBe(limit === 'attempts' ? 498 : 2);
-        expect(result.pending).toBe(limit === 'attempts' ? 3 : 1);
-        expect(net.starts[0] - start).toBe(6000);
+        expect(result.fetched).toBe(limit === 'attempts' ? 499 : 2);
+        expect(result.pending).toBe(limit === 'attempts' ? 2 : 1);
+        expect(net.starts[0] - start).toBe(60000 / rpm);
         expect(net.starts.length).toBeLessThanOrEqual(500);
         expect(net.starts.every((time) => time - start < 50 * 60000)).toBe(true);
         for (let i = 1; i < net.starts.length; i++)
-          expect(net.starts[i] - net.starts[i - 1]).toBeGreaterThanOrEqual(6000);
+          expect(net.starts[i] - net.starts[i - 1]).toBeGreaterThanOrEqual(60000 / rpm);
         expect(existsSync(join(f.remote, 'broker-run.json'))).toBe(false);
         if (limit === 'time') expect(net.starts[2] - net.starts[1]).toBe(20000);
         const lastStart = net.starts[net.starts.length - 1];
@@ -743,7 +752,7 @@ describe('private broker pipeline', () => {
         const before = net.starts.length;
         await f.restart();
         await brokers(options);
-        expect(net.starts[before] - invoked).toBe(6000);
+        expect(net.starts[before] - invoked).toBe(60000 / rpm);
       } finally {
         await rm(f.root, { recursive: true, force: true });
       }

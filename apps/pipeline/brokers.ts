@@ -9,6 +9,7 @@ import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 import { dateValue, DuckDBInstance } from '@duckdb/node-api';
 import type { DuckDBValue } from '@duckdb/node-api';
+import { z } from 'zod';
 import { date } from './lib/rows';
 
 const literal = (s: string) => `'${s.replaceAll("'", "''")}'`;
@@ -67,6 +68,7 @@ export async function brokers({
 }) {
   if (!/^[a-zA-Z0-9]+$/.test(accountId)) throw new Error('Invalid R2 account ID');
   const started = Date.now();
+  let rpm = 20;
   const completedThrough = new Date(started - (10 * 60 + 17) * 60000).toISOString().slice(0, 10);
   const scratch = await mkdtemp(join(tmpdir(), 'broker-run-'));
   async function aws(operation: string, args: string[]) {
@@ -114,13 +116,37 @@ export async function brokers({
     await put(key, file, condition);
     const saved = await get(key);
     if (!saved || !saved.bytes.equals(bytes)) throw new Error(`R2 readback mismatch: ${key}`);
+    return saved;
   }
   try {
     if (await get('broker-run.json')) throw new Error('Broker run marker requires operator review');
     const marker = join(scratch, 'marker');
     await writeFile(marker, JSON.stringify({ id: randomUUID(), started }));
     await verifiedPut('broker-run.json', marker, ['--if-none-match', '*']);
-    return await collect();
+    const rateFile = join(scratch, 'rpm');
+    let rate = await get('broker-rpm.json');
+    if (rate)
+      rpm = z
+        .union([z.literal(20), z.literal(15), z.literal(12)])
+        .parse(JSON.parse(rate.bytes.toString('utf8')));
+    else {
+      await writeFile(rateFile, JSON.stringify(rpm));
+      rate = await verifiedPut('broker-rpm.json', rateFile, ['--if-none-match', '*']);
+    }
+    console.error(JSON.stringify({ stockbit_rpm: rpm }));
+    try {
+      return await collect();
+    } catch (error) {
+      const nextRpm = rpm === 20 ? 15 : 12;
+      if (nextRpm !== rpm) {
+        console.error(
+          JSON.stringify({ stockbit_rpm: rpm, next_stockbit_rpm: nextRpm, status: 'failed' }),
+        );
+        await writeFile(rateFile, JSON.stringify(nextRpm));
+        await verifiedPut('broker-rpm.json', rateFile, ['--if-match', rate.etag]);
+      }
+      throw error;
+    }
   } finally {
     await rm(scratch, { recursive: true, force: true });
   }
@@ -131,7 +157,10 @@ export async function brokers({
     const bounded = () => attempts >= 500 || Date.now() - started >= 50 * 60000;
     async function stockbit(url: string, init: RequestInit) {
       if (bounded()) return;
-      await setTimeout(lastStart === undefined ? 6000 : Math.max(0, lastStart + 6000 - Date.now()));
+      const interval = 60000 / rpm;
+      await setTimeout(
+        lastStart === undefined ? interval : Math.max(0, lastStart + interval - Date.now()),
+      );
       if (bounded()) return;
       lastStart = Date.now();
       attempts++;
