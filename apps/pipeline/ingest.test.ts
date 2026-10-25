@@ -4,6 +4,7 @@ import { dirname, join, relative } from 'node:path';
 import { DuckDBInstance } from '@duckdb/node-api';
 import { describe, expect, it } from 'vite-plus/test';
 import { ingest } from './ingest';
+import { analytics, schema, tickers } from './sql';
 
 const fixture = (name: string) => readFile(new URL(`./fixtures/${name}`, import.meta.url));
 
@@ -206,6 +207,124 @@ function network({ monthly = false, reports = false } = {}) {
 }
 
 describe('batch pipeline', () => {
+  it('does not publish spelling-only shareholder exits and keeps the latest holder names', async () => {
+    const instance = await DuckDBInstance.create(':memory:');
+    const db = await instance.connect();
+    try {
+      await db.run(schema);
+      await db.run(`INSERT INTO prices (date, ticker) VALUES ('2026-10-23', 'SINI');
+        INSERT INTO five_pct (date, ticker, investor, account, combined_shares,
+          previous_combined, pct_before, pct_after, previous_date) VALUES
+        ('2026-10-21', 'SINI', 'PT. KREASI JASA PERSADA', 'a', 94940000, 94940000, 7.9, 7.9, '2026-10-20'),
+        ('2026-10-21', 'SINI', 'PT. PETROSEA TBK', 'a', 239105000, 239105000, 19.88, 19.88, '2026-10-20'),
+        ('2026-10-21', 'SINI', 'BATUBARA DEVELOPMENT PTE. LTD.', 'a', 74530000, 74530000, 6.2, 6.2, '2026-10-20'),
+        ('2026-10-21', 'SINI', 'PT. PERSADA JASA KREASI', 'a', 70000000, 70000000, 5.82, 5.82, '2026-10-20'),
+        ('2026-10-23', 'SINI', 'KREASI  JASA PERSADA PT', 'a', 94940000, NULL, NULL, 7.9, '2026-10-21'),
+        ('2026-10-23', 'SINI', 'PT PETROSEA TBK', 'a', 239105000, NULL, NULL, 19.88, '2026-10-21'),
+        ('2026-10-23', 'SINI', 'Batubara Development Limited', 'a', 74530000, NULL, NULL, 6.2, '2026-10-21'),
+        ('2026-10-23', 'SINI', 'PERSADA JASA KREASI PT', 'a', 70000000, NULL, NULL, 5.82, '2026-10-21');`);
+      await db.run(analytics);
+      const published = (await db.runAndReadAll(tickers)).getRowObjectsJson();
+      expect(published).toMatchObject([
+        {
+          ticker: 'SINI',
+          changes: [],
+          holders: expect.arrayContaining([
+            { investor: 'KREASI  JASA PERSADA PT', shares: 94940000, pct: 7.9 },
+            { investor: 'PT PETROSEA TBK', shares: 239105000, pct: 19.88 },
+            { investor: 'Batubara Development Limited', shares: 74530000, pct: 6.2 },
+            { investor: 'PERSADA JASA KREASI PT', shares: 70000000, pct: 5.82 },
+          ]),
+        },
+      ]);
+      expect((await db.runAndReadAll('SELECT * FROM feed')).getRowObjectsJson()).toEqual([]);
+    } finally {
+      db.closeSync();
+      instance.closeSync();
+    }
+  });
+
+  it('keeps older keyed share changes, marks unknown exits, and publishes entrants from zero', async () => {
+    const instance = await DuckDBInstance.create(':memory:');
+    const db = await instance.connect();
+    try {
+      await db.run(schema);
+      await db.run(`INSERT INTO prices (date, ticker) VALUES
+        ('2026-01-02', 'SINI'), ('2026-10-23', 'SINI');
+        INSERT INTO five_pct (date, ticker, investor, account, combined_shares,
+          previous_combined, pct_before, pct_after, previous_date) VALUES
+        ('2026-01-02', 'SINI', 'PT. KREASI JASA PERSADA', 'a', 94940000, 94940000, 7.9, 7.9, '2026-01-01'),
+        ('2026-01-02', 'SINI', 'EVER GRACE INTERNATIONAL TRADING LIMITED', 'a', 90000000, 90000000, 7.48, 7.48, '2026-01-01'),
+        ('2026-01-05', 'SINI', 'KREASI JASA PERSADA PT', 'a', 100000000, 0, 0, 8.32, '2026-01-02'),
+        ('2026-01-05', 'SINI', 'KREASI JASA PERSADA PT', 'b', 100000000, 0, 0, 8.32, '2026-01-02'),
+        ('2026-10-23', 'SINI', 'PT KREASI JASA PERSADA', 'a', 100000000, 100000000, 8.32, 8.32, '2026-01-05'),
+        ('2026-10-23', 'SINI', 'PT DELI INDONESIA RAYA', 'a', 90000000, 30000000, 2.49, 7.48, '2026-01-05');`);
+      await db.run(analytics);
+      const published = (await db.runAndReadAll(tickers)).getRowObjectsJson();
+      expect(published).toMatchObject([
+        {
+          ticker: 'SINI',
+          changes: [
+            {
+              date: '2026-10-23',
+              investor: 'PT DELI INDONESIA RAYA',
+              shares_before: 0,
+              pct_before: 0,
+              shares_after: 90000000,
+              pct_after: 7.48,
+              net_shares: 90000000,
+              exited: false,
+            },
+            {
+              date: '2026-01-05',
+              investor: 'EVER GRACE INTERNATIONAL TRADING LIMITED',
+              shares_before: 90000000,
+              pct_before: 7.48,
+              shares_after: null,
+              pct_after: null,
+              net_shares: null,
+              exited: true,
+            },
+            {
+              date: '2026-01-05',
+              investor: 'PT KREASI JASA PERSADA',
+              shares_before: 94940000,
+              pct_before: 7.9,
+              shares_after: 100000000,
+              pct_after: 8.32,
+              net_shares: 5060000,
+              exited: false,
+            },
+          ],
+        },
+      ]);
+      const feed = (await db.runAndReadAll('SELECT * FROM feed'))
+        .getRowObjectsJson()
+        .map(({ numbers, ...row }) => {
+          if (typeof numbers !== 'string') throw new Error('Expected JSON from DuckDB');
+          return { ...row, numbers: JSON.parse(numbers) };
+        });
+      expect(feed).toMatchObject([
+        {
+          ticker: 'SINI',
+          date: '2026-10-23',
+          kind: 'five_pct_change',
+          numbers: {
+            investor: 'PT DELI INDONESIA RAYA',
+            shares_before: 0,
+            pct_before: 0,
+            shares_after: 90000000,
+            net_shares: 90000000,
+            exited: false,
+          },
+        },
+      ]);
+    } finally {
+      db.closeSync();
+      instance.closeSync();
+    }
+  });
+
   it('recovers stock and index rows after empty summaries were cached in persistent data', async () => {
     const root = await mkdtemp(join(tmpdir(), 'idx-empty-summary-'));
     const net = network();

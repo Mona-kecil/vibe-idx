@@ -12,7 +12,6 @@ export const thresholds = {
   greenMinValue: 1e9,
   marketDays: 60,
   tickerDays: 250,
-  ownershipDays: 90,
 };
 
 export const schema = `
@@ -82,19 +81,40 @@ FROM prices WINDOW w AS (
   ROWS BETWEEN ${thresholds.volumeDays} PRECEDING AND 1 PRECEDING
 );
 CREATE VIEW investor_snapshots AS
-SELECT date, ticker, investor, max(combined_shares) shares, max(previous_combined) previous_shares,
-  max(pct_before) pct_before, max(pct_after) pct_after, max(previous_date) previous_date
-FROM five_pct GROUP BY date, ticker, investor;
+WITH keyed AS (
+  SELECT *, array_to_string(list_filter(regexp_split_to_array(
+    regexp_replace(upper(investor), '[[:punct:]]', '', 'g'), '[[:space:]]+'),
+    token -> token NOT IN ('', 'PT', 'TBK', 'PTE', 'LTD', 'LIMITED')), ' ') investor_key
+  FROM five_pct
+), snapshots AS (
+  SELECT date, ticker, investor_key, max(investor) investor,
+    max(combined_shares) shares, max(previous_combined) previous_shares,
+    max(pct_before) pct_before, max(pct_after) pct_after, max(previous_date) previous_date
+  FROM keyed GROUP BY date, ticker, investor_key
+)
+SELECT * EXCLUDE(investor), first_value(investor) OVER (
+  PARTITION BY ticker, investor_key ORDER BY date DESC, investor) investor
+FROM snapshots;
 CREATE VIEW investor_changes AS
-SELECT *, shares - previous_shares net_shares
-FROM investor_snapshots WHERE shares - previous_shares <> 0
+WITH compared AS (
+  SELECT c.date, c.ticker, c.investor, c.shares,
+    coalesce(p.shares, CASE WHEN d.date IS NOT NULL THEN 0 ELSE c.previous_shares END, 0) previous_shares,
+    coalesce(p.pct_after, CASE WHEN d.date IS NOT NULL THEN 0 ELSE c.pct_before END, 0) pct_before,
+    c.pct_after, c.previous_date
+  FROM investor_snapshots c
+  LEFT JOIN investor_snapshots p ON p.date = c.previous_date
+    AND p.ticker = c.ticker AND p.investor_key = c.investor_key
+  LEFT JOIN (SELECT DISTINCT date FROM five_pct) d ON d.date = c.previous_date
+)
+SELECT *, shares - previous_shares net_shares, false exited
+FROM compared WHERE shares - previous_shares <> 0
 UNION ALL
 -- IDX drops an investor from the file once they fall below 5%, so an exit is a prior-day holder missing today.
-SELECT d.date, p.ticker, p.investor, NULL, p.shares, p.pct_after, NULL, d.previous_date, NULL
+SELECT d.date, p.ticker, p.investor, NULL, p.shares, p.pct_after, NULL, d.previous_date, NULL, true
 FROM (SELECT DISTINCT date, previous_date FROM five_pct) d
 JOIN investor_snapshots p ON p.date = d.previous_date
 WHERE NOT EXISTS (SELECT 1 FROM investor_snapshots c
-  WHERE c.date = d.date AND c.ticker = p.ticker AND c.investor = p.investor);
+  WHERE c.date = d.date AND c.ticker = p.ticker AND c.investor_key = p.investor_key);
 CREATE VIEW foreign_runs AS
 WITH calendar AS (SELECT date, dense_rank() OVER (ORDER BY date) trading_day FROM prices GROUP BY date),
 buys AS (
@@ -130,7 +150,7 @@ UNION ALL
 SELECT ticker, 'five_pct_change', date,
   to_json(struct_pack(investor := investor, previous_date := previous_date,
     shares_before := previous_shares, shares_after := shares, net_shares := net_shares,
-    pct_before := pct_before, pct_after := pct_after))
+    pct_before := pct_before, pct_after := pct_after, exited := exited))
 FROM investor_changes WHERE date = (SELECT max(date) FROM five_pct);
 `;
 
@@ -155,7 +175,7 @@ WITH universe AS (
   UNION SELECT ticker FROM one_pct UNION SELECT ticker FROM disclosures WHERE ticker IS NOT NULL
 ),
 history AS (
-  SELECT ticker, list(struct_pack(date := date, close := close, volume := volume,
+  SELECT ticker, min(date) first_date, list(struct_pack(date := date, close := close, volume := volume,
     value := value, net_foreign := net_foreign) ORDER BY date) prices
   FROM (SELECT *, row_number() OVER (PARTITION BY ticker ORDER BY date DESC) n FROM features)
   WHERE n <= ${thresholds.tickerDays} GROUP BY ticker
@@ -163,11 +183,12 @@ history AS (
   SELECT ticker, list(struct_pack(investor := investor, shares := shares, pct := pct_after) ORDER BY investor) holders
   FROM investor_snapshots WHERE date = (SELECT max(date) FROM five_pct) AND shares > 0 GROUP BY ticker
 ), changes AS (
-  SELECT ticker, list(struct_pack(date := date, investor := investor, net_shares := net_shares,
+  SELECT c.ticker, list(struct_pack(date := date, investor := investor, net_shares := net_shares,
     shares_before := previous_shares, shares_after := shares,
-    pct_before := pct_before, pct_after := pct_after) ORDER BY date DESC, investor) changes
-  FROM investor_changes WHERE date >= (SELECT date FROM latest) - INTERVAL '${thresholds.ownershipDays} days'
-  GROUP BY ticker
+    pct_before := pct_before, pct_after := pct_after, exited := exited) ORDER BY date DESC, investor) changes
+  FROM investor_changes c LEFT JOIN history h USING(ticker)
+  WHERE h.first_date IS NULL OR date >= h.first_date
+  GROUP BY c.ticker
 ), monthly AS (
   SELECT ticker, list(struct_pack(investor := investor, shares := shares, pct := pct,
     classification := classification, local_foreign := local_foreign) ORDER BY investor, seq) holders
