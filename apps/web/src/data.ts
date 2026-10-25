@@ -145,7 +145,9 @@ export const tickerSchema = z.object({
         published_at: z.string(),
         url: z.url(),
         kind: z.enum(['insider', 'registry', 'other']),
-        attachments: z.array(z.object({ name: z.string(), url: z.url() })),
+        attachments: z.array(
+          z.object({ name: z.string(), url: z.url(), label: z.string().nullable().optional() }),
+        ),
       }),
     )
     .default([]),
@@ -168,13 +170,18 @@ const newsSchema = z.array(
   z.object({
     title: z.string(),
     url: z.url(),
-    published_at: z.string(),
+    published_at: z.string().refine((value) => Number.isFinite(Date.parse(value))),
     source: z.string(),
   }),
 );
 
-export async function loadNews(ticker: string) {
-  const response = await fetch(`/api/news?ticker=${encodeURIComponent(ticker)}`);
+export async function loadNews(ticker: string, range?: { start: string; end: string }) {
+  const params = new URLSearchParams({ ticker });
+  if (range) {
+    params.set('from', range.start);
+    params.set('to', range.end);
+  }
+  const response = await fetch(`/api/news?${params}`);
   if (!response.ok) throw new Error('Could not load news');
   return newsSchema.parse(await response.json());
 }

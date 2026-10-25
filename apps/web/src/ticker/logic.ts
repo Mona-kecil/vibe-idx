@@ -1,0 +1,306 @@
+import type { Ticker } from '../data';
+
+export type Price = Ticker['prices'][number];
+export type Filing = Ticker['disclosures'][number];
+export type Selection = { anchor: string; end: string } | null;
+export type Edge = 'start' | 'end';
+export function bounds(selection: Selection) {
+  if (!selection) return null;
+  return selection.anchor <= selection.end
+    ? { start: selection.anchor, end: selection.end }
+    : { start: selection.end, end: selection.anchor };
+}
+export function inRange(date: string, selection: Selection) {
+  const range = bounds(selection);
+  return !range || (date >= range.start && date <= range.end);
+}
+export function moveEdge(selection: NonNullable<Selection>, edge: Edge, date: string) {
+  const range = bounds(selection);
+  if (!range) return selection;
+  const day =
+    edge === 'start'
+      ? date > range.end
+        ? range.end
+        : date
+      : date < range.start
+        ? range.start
+        : date;
+  return (edge === 'start') === selection.anchor <= selection.end
+    ? { ...selection, anchor: day }
+    : { ...selection, end: day };
+}
+export function selectionKey(
+  selection: Selection,
+  dates: string[],
+  key: string,
+  shift = false,
+  edge?: Edge,
+): Selection {
+  if (key === 'Escape') return null;
+  if (!selection || !dates.length || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(key))
+    return selection;
+  if (!edge && (key === 'Home' || key === 'End')) return selection;
+  const range = bounds(selection);
+  if (!range) return selection;
+  const current = edge ? range[edge] : selection.end;
+  const index = dates.indexOf(current);
+  const next =
+    dates[Math.max(0, Math.min(dates.length - 1, index + (key === 'ArrowRight' ? 1 : -1)))];
+  const day =
+    key === 'Home'
+      ? edge === 'start'
+        ? dates[0]
+        : range.start
+      : key === 'End'
+        ? edge === 'end'
+          ? dates.at(-1)
+          : range.end
+        : next;
+  if (!day) return selection;
+  if (edge) return moveEdge(selection, edge, day);
+  return shift ? { ...selection, end: day } : { anchor: day, end: day };
+}
+export function aggregateRange(prices: Price[], selection: Selection) {
+  const rows = prices.filter((p) => inRange(p.date, selection));
+  const first = rows[0],
+    last = rows.at(-1);
+  if (!first || !last) return null;
+  const prior = prices[prices.indexOf(first) - 1];
+  const change = prior ? last.close - prior.close : null;
+  return {
+    rows,
+    prior,
+    close: last.close,
+    change,
+    changePct: prior && prior.close ? (last.close / prior.close - 1) * 100 : null,
+    high: Math.max(...rows.map((p) => p.close)),
+    low: Math.min(...rows.map((p) => p.close)),
+    volume: rows.reduce((sum, p) => sum + p.volume, 0),
+    value: rows.reduce((sum, p) => sum + p.value, 0),
+    netForeign: rows.reduce((sum, p) => sum + p.net_foreign, 0),
+    suspended: rows.filter((p) => p.volume === 0).length,
+  };
+}
+export function attachments(filing: Filing) {
+  const lamp = (name: string) => Number(name.match(/_lamp(\d+)/i)?.[1] ?? Infinity);
+  return filing.attachments
+    .filter((a) => a.url !== filing.url)
+    .sort((a, b) => lamp(a.name) - lamp(b.name))
+    .map((a, i) => ({
+      ...a,
+      label: a.label ?? `Lampiran ${Number.isFinite(lamp(a.name)) ? lamp(a.name) : i + 1}`,
+    }));
+}
+export function holderLabel(name: string) {
+  return name
+    .replace(/^PT[. ]*/i, '')
+    .replace(/\b(PTE[.]?|LTD[.]?|TBK|LIMITED)\b/gi, '')
+    .replace(/\s+/g, ' ')
+    .replace(/[. ]+$/, '');
+}
+function holderTokens(name: string) {
+  return name
+    .toUpperCase()
+    .replace(/[^A-Z0-9 ]/g, ' ')
+    .split(/\s+/)
+    .filter((t) => t && !['PT', 'TBK', 'PTE', 'LTD', 'LIMITED'].includes(t));
+}
+export function sameHolder(a: string, b: string) {
+  const left = holderTokens(a),
+    right = holderTokens(b);
+  return (
+    left.length > 0 &&
+    right.length > 0 &&
+    (left.every((t) => right.includes(t)) || right.every((t) => left.includes(t)))
+  );
+}
+export type HoldingEvent = {
+  date: string;
+  name: string;
+  shares_before: number | null;
+  shares_after: number | null;
+  sources: string[];
+};
+export function ownershipEvents(data: Ticker): HoldingEvent[] {
+  const events: HoldingEvent[] = [];
+  const changes = data.changes.filter(
+    (e) =>
+      !(
+        e.shares_after === null &&
+        data.holders.some((h) => sameHolder(h.investor, e.investor) && h.shares === e.shares_before)
+      ),
+  );
+  for (const e of [
+    ...changes.map((e) => ({ ...e, name: e.investor, url: null })),
+    ...data.insiders.filter((e) => e.reporter).map((e) => ({ ...e, name: e.reporter ?? '' })),
+  ]) {
+    const url =
+      e.url ??
+      data.insiders.find((i) => i.date === e.date && i.reporter && sameHolder(i.reporter, e.name))
+        ?.url;
+    const old = events.find((v) => v.date === e.date && sameHolder(v.name, e.name));
+    if (old) {
+      old.shares_before = e.shares_before;
+      old.shares_after = e.shares_after;
+      if (url && !old.sources.includes(url)) old.sources.push(url);
+    } else
+      events.push({
+        date: e.date,
+        name: e.name,
+        shares_before: e.shares_before,
+        shares_after: e.shares_after,
+        sources: url ? [url] : [],
+      });
+  }
+  return events.sort((a, b) => b.date.localeCompare(a.date));
+}
+export function registryAt(data: Ticker, date: string) {
+  return [...data.registry_history]
+    .filter((s) => s.date <= date)
+    .sort((a, b) => b.date.localeCompare(a.date))[0];
+}
+export function totalAt(data: Ticker, date: string) {
+  return registryAt(data, date)?.total_shares ?? null;
+}
+export type HoldingPoint = {
+  date: string;
+  shares: number | null;
+  rounded?: boolean;
+  pct?: number;
+  priority: number;
+  event?: boolean;
+};
+export type HoldingSeries = { name: string; points: HoldingPoint[]; events: HoldingEvent[] };
+export function holdingSeries(
+  data: Ticker,
+  dailyDate: string | null,
+  events = ownershipEvents(data),
+) {
+  const series: HoldingSeries[] = [];
+  const snapshots = [...data.registry_history].sort((a, b) => a.date.localeCompare(b.date));
+  function get(name: string) {
+    let s = series.find((s) => sameHolder(s.name, name));
+    if (!s) {
+      s = { name, points: [], events: [] };
+      series.push(s);
+    }
+    return s;
+  }
+  for (const snap of snapshots)
+    for (const h of snap.holders) {
+      if (snap.total_shares)
+        get(h.investor).points.push({
+          date: snap.date,
+          shares: (h.pct / 100) * snap.total_shares,
+          rounded: true,
+          priority: 0,
+        });
+    }
+  for (const e of events) {
+    const s = get(e.name);
+    s.events.push(e);
+    s.points.push({ date: e.date, shares: e.shares_after, priority: 3, event: true });
+    const previous = snapshots.filter((p) => p.date < e.date).at(-1);
+    if (previous && !s.points.some((p) => p.date === previous.date) && e.shares_before !== null)
+      s.points.push({ date: previous.date, shares: e.shares_before, priority: 1 });
+  }
+  if (data.one_pct.date)
+    for (const h of data.one_pct.holders)
+      get(h.investor).points.push({
+        date: data.one_pct.date,
+        shares: h.shares,
+        pct: h.pct,
+        priority: 4,
+      });
+  if (dailyDate)
+    for (const h of data.holders)
+      get(h.investor).points.push({ date: dailyDate, shares: h.shares, pct: h.pct, priority: 5 });
+  for (const s of series) {
+    const exacts = [
+      ...s.events.flatMap((e) => [e.shares_before, e.shares_after]),
+      ...s.points.filter((p) => !p.rounded).map((p) => p.shares),
+    ].filter((v): v is number => v !== null);
+    for (const p of s.points.filter((p) => p.rounded)) {
+      const shares = p.shares;
+      if (shares === null) continue;
+      const total = totalAt(data, p.date);
+      const nearest = exacts
+        .filter((v) => total && Math.abs(v - shares) <= total * 0.00005 + 1)
+        .sort((a, b) => Math.abs(a - shares) - Math.abs(b - shares))[0];
+      if (nearest !== undefined) p.shares = nearest;
+    }
+    s.points.sort((a, b) => a.date.localeCompare(b.date) || a.priority - b.priority);
+    s.points = s.points.filter((p, i, all) => all[i + 1]?.date !== p.date);
+    const first = s.points[0];
+    if (!first) continue;
+    for (const snap of snapshots.filter((p) => p.date > first.date)) {
+      if (!s.points.some((p) => p.date === snap.date)) {
+        const prior = s.points.filter((p) => p.date < snap.date).at(-1);
+        if (prior) {
+          s.points.push({ date: snap.date, shares: prior.shares, priority: 0 });
+          s.points.sort((a, b) => a.date.localeCompare(b.date));
+        }
+      }
+    }
+    const previous = snapshots.filter((p) => p.date < first.date).at(-1);
+    if (previous) s.points.unshift({ date: previous.date, shares: 0, priority: 0 });
+    const latest = [...data.holders, ...data.one_pct.holders].find((h) =>
+      sameHolder(h.investor, s.name),
+    );
+    if (latest) s.name = latest.investor;
+  }
+  return series
+    .filter((s) => s.points.some((p) => p.shares !== null && p.shares > 0))
+    .sort((a, b) => (b.points.at(-1)?.shares ?? 0) - (a.points.at(-1)?.shares ?? 0));
+}
+export function sharesAt(series: HoldingSeries, date: string) {
+  return series.points.filter((p) => p.date <= date).at(-1)?.shares;
+}
+export function pctAt(data: Ticker, series: HoldingSeries, date: string) {
+  const point = series.points.filter((p) => p.date <= date).at(-1);
+  const total = totalAt(data, date);
+  return point?.shares == null ? null : total ? (point.shares / total) * 100 : (point.pct ?? null);
+}
+export function composition(data: Ticker, series: HoldingSeries[], date: string) {
+  if (!totalAt(data, date) && !series.some((s) => pctAt(data, s, date) !== null)) return [];
+  const parts = series
+    .map((s) => ({ name: s.name, pct: pctAt(data, s, date) ?? 0, note: '' }))
+    .filter((h) => h.pct >= 5)
+    .sort((a, b) => b.pct - a.pct);
+  const rest = Math.max(0, 100 - parts.reduce((sum, h) => sum + h.pct, 0));
+  const snapshot = registryAt(data, date);
+  const free = Math.min(snapshot?.free_float_pct ?? 0, rest);
+  if (snapshot?.free_float_pct !== null && snapshot?.free_float_pct !== undefined)
+    parts.push({ name: 'Free float', pct: free, note: `${snapshot.date} registry` });
+  parts.push({ name: 'Other', pct: rest - free, note: '' });
+  return parts;
+}
+export function isOwnershipFiling(filing: Filing, events: HoldingEvent[]) {
+  return (
+    /^LAPORAN KEPEMILIKAN/i.test(filing.title) &&
+    events.some((e) => e.date === filing.published_at.slice(0, 10))
+  );
+}
+export function summaryEvents(events: HoldingEvent[], filings: Filing[], selection: Selection) {
+  const rows = [
+    ...events
+      .filter((e) => inRange(e.date, selection))
+      .map((event) => ({ kind: 'ownership' as const, date: event.date, time: event.date, event })),
+    ...filings
+      .filter(
+        (e) => inRange(e.published_at.slice(0, 10), selection) && !isOwnershipFiling(e, events),
+      )
+      .map((filing) => ({
+        kind: 'filing' as const,
+        date: filing.published_at.slice(0, 10),
+        time: filing.published_at,
+        filing,
+      })),
+  ];
+  return rows.sort(
+    (a, b) =>
+      b.date.localeCompare(a.date) ||
+      Number(b.kind === 'ownership') - Number(a.kind === 'ownership') ||
+      b.time.localeCompare(a.time),
+  );
+}

@@ -222,7 +222,6 @@ describe('research workspace', () => {
 
   it('keeps unlinked Broksum tickers and controls independent, relinks from the active panel, and restores the layout', async () => {
     auth.user = { id: 'fixture-user', email: 'fixture@example.test' };
-    window.history.replaceState(null, '', '/t/BBCA');
     await render();
     await click('[aria-label="Broksum panel actions"] + .panel-menu-list button');
     expect(host.querySelectorAll('[aria-label="Broksum panel"]')).toHaveLength(2);
@@ -265,7 +264,7 @@ describe('research workspace', () => {
     );
     const before = saved();
     const navigation = {
-      name: '/t/BBCA',
+      name: '/',
       entryType: 'navigation',
       duration: 0,
       startTime: 0,
@@ -285,20 +284,66 @@ describe('research workspace', () => {
     await click('[data-panel-id="p5"] [aria-label="Remove Broksum panel"]');
     expect(host.querySelectorAll('.module-panel')).toHaveLength(4);
   });
-  it('opens /t/BBCA on public data without requesting broker tokens or private data and translates the workspace', async () => {
+  it('opens the public ticker page without broker tokens and keeps the workspace on /', async () => {
     window.history.replaceState(null, '', '/t/BBCA');
     await render();
-    for (const el of host.querySelectorAll<HTMLSelectElement>('.panel-ticker'))
-      expect(el.value).toBe('BBCA');
-    expect(host.textContent).toContain('Sign in to view broker summary');
+    expect(host.querySelector('h1')?.textContent).toBe('BBCA');
     expect(host.textContent).toContain('Company BBCA');
+    expect(host.querySelectorAll('.module-panel')).toHaveLength(0);
+    expect(host.querySelector('#broker-section button')?.textContent).toBe('Sign in');
     expect(auth.getAccessToken).not.toHaveBeenCalled();
     expect(fetcher.mock.calls.some(([url]) => String(url).includes('/api/brokers'))).toBe(false);
+    expect(window.localStorage.getItem(layoutKey)).toBeNull();
+    await act(async () => {
+      window.history.pushState(null, '', '/');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    });
+    expect(host.querySelectorAll('.module-panel')).toHaveLength(4);
     await select('.workspace-tools select', 'id');
     expect(host.textContent).toContain('Ruang kerja Anda.');
     expect(host.textContent).toContain('Masuk untuk melihat ringkasan broker');
     expect(host.textContent).toContain('Ringkasan pasar');
     expect(window.localStorage.getItem('vibe-idx-language')).toBe('id');
+    await act(async () => {
+      window.history.pushState(null, '', '/callback');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    });
+    expect(host.querySelector('[role="status"]')?.textContent).toBe('Memproses masuk…');
+    await act(async () => {
+      window.history.pushState(null, '', '/login');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    });
+    expect(auth.signIn).toHaveBeenCalled();
+    auth.signIn.mockClear();
+  });
+  it('loads signed-in ticker brokers through the bearer API and tolerates unavailable news', async () => {
+    auth.user = { id: 'fixture-user', email: 'fixture@example.test' };
+    window.history.replaceState(null, '', '/t/BBCA');
+    const baseFetch = fetcher.getMockImplementation();
+    fetcher.mockImplementation(async (input) =>
+      String(input).includes('/api/news')
+        ? new Response('', { status: 400 })
+        : baseFetch
+          ? baseFetch(input)
+          : Response.json([]),
+    );
+    await render();
+    expect(auth.getAccessToken).toHaveBeenCalled();
+    expect(
+      fetcher.mock.calls.some(([url]) => String(url).includes('/api/brokers?ticker=BBCA')),
+    ).toBe(true);
+    const rows = host.querySelectorAll('#broker-section tbody tr');
+    expect(rows).toHaveLength(4);
+    expect(rows[0]?.textContent).toContain('AK');
+    expect(rows[0]?.textContent).toContain('+200.0K');
+    expect(host.querySelector('#news')?.textContent).not.toContain('No news');
+    await act(() => new Promise((resolve) => setTimeout(resolve, 350)));
+    expect(fetcher.mock.calls.some(([url]) => String(url).includes('/api/news?ticker=BBCA'))).toBe(
+      true,
+    );
+    expect(host.querySelector('#news')?.textContent).toContain('No news');
+    expect(host.querySelector('[role="alert"]')).toBeNull();
+    fetcher.mockImplementation(baseFetch ?? (async () => Response.json([])));
   });
   it('does not send an empty bearer token even when a user object exists', async () => {
     auth.user = { id: 'fixture-user', email: 'fixture@example.test' };
