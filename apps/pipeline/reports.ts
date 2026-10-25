@@ -25,6 +25,77 @@ const announcementPage = z.object({
   ),
 });
 
+const lampNumber = (name: string) => Number(/_lamp(\d+)\.[^.]+$/i.exec(name)?.[1]) || null;
+
+export function orderAttachments(
+  attachments: { name: string; url: string; label?: string | null }[],
+  cover: string,
+) {
+  return attachments
+    .map(({ name, url, label }) => ({ name, url, label: url === cover ? null : (label ?? null) }))
+    .sort((a, b) => {
+      if (a.url === cover) return b.url === cover ? 0 : -1;
+      if (b.url === cover) return 1;
+      return (lampNumber(a.name) ?? Infinity) - (lampNumber(b.name) ?? Infinity) || 0;
+    });
+}
+
+export function cleanAttachmentLabel(name: string, ticker: string | null) {
+  let label = name
+    .trim()
+    .replace(/\.[a-z0-9]+$/i, '')
+    .replaceAll('_', ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/^E\d+\s+/i, '');
+  if (ticker && label.toUpperCase().startsWith(ticker.toUpperCase())) {
+    const rest = label.slice(ticker.length);
+    if (/^[ -]/.test(rest)) label = rest.replace(/^[ -]+/, '');
+  }
+  return label
+    .replace(/^E\d+\s+/i, '')
+    .replace(/[ -]+E\d+$/i, '')
+    .trim();
+}
+
+export async function labelAttachments({
+  bytes,
+  attachments,
+  cover,
+  ticker,
+}: {
+  bytes: Uint8Array;
+  attachments: ReturnType<typeof orderAttachments>;
+  cover: string;
+  ticker: string | null;
+}) {
+  const { text } = await extractText(new Uint8Array(bytes), { mergePages: true });
+  const footer = text.search(/\n\s*Dokumen ini\b/);
+  if (footer < 0) return attachments;
+  const section = text.slice(0, footer).trimEnd();
+  const start = [...section.matchAll(/(?:^|\n)\s*1\.\s+/g)].at(-1)?.index;
+  if (start === undefined) return attachments;
+  let list = section.slice(start);
+  // PDF text order can place the heading after the numbered filenames.
+  if (!/(?:^|\n)Lampiran$/.test(section.slice(0, start).trimEnd()) && !/Lampiran$/.test(list))
+    return attachments;
+  list = list.replace(/\s*Lampiran$/, '');
+  const items = [...list.matchAll(/(?:^|\n)\s*(\d+)\.\s+(.*?)(?=\n\s*\d+\.\s+|$)/gs)];
+  const lamps = attachments.filter((a) => a.url !== cover && lampNumber(a.name) !== null);
+  const labels = items.map((item) => cleanAttachmentLabel(item[2], ticker));
+  if (
+    !lamps.length ||
+    items.length !== lamps.length ||
+    items.some((item, i) => Number(item[1]) !== i + 1 || lampNumber(lamps[i].name) !== i + 1) ||
+    labels.some((label) => !label)
+  )
+    return attachments;
+  return attachments.map((a) => ({
+    ...a,
+    label: a.url === cover ? null : (labels[(lampNumber(a.name) ?? 0) - 1] ?? null),
+  }));
+}
+
 export function parseAnnouncements(input: unknown) {
   const page = announcementPage.parse(input);
   return {
@@ -50,7 +121,7 @@ export function parseAnnouncements(input: unknown) {
         published_at: p.TglPengumuman,
         url: primary?.url ?? idxUrl('/id/perusahaan-tercatat/keterbukaan-informasi/'),
         kind,
-        attachments: files.map(({ name, url }) => ({ name, url })),
+        attachments: orderAttachments(files, primary?.url ?? ''),
         reports: files.filter(
           (a) =>
             /\.pdf$/i.test(new URL(a.url).pathname) &&

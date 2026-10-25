@@ -564,7 +564,11 @@ BT /F1 10 Tf 1 0 0 1 529 530 Tm (-100) Tj ET`;
         kind: 'registry',
         url: 'https://www.idx.id/StaticData/From_EREP/unsupported.pdf',
         attachments: [
-          { name: 'report.pdf', url: 'https://www.idx.id/StaticData/From_EREP/unsupported.pdf' },
+          {
+            name: 'report.pdf',
+            url: 'https://www.idx.id/StaticData/From_EREP/unsupported.pdf',
+            label: null,
+          },
         ],
       });
       expect(result.report_gaps).toContainEqual({
@@ -812,3 +816,165 @@ BT /F1 10 Tf 1 0 0 1 529 530 Tm (-100) Tj ET`;
     }
   });
 });
+
+it('backfills legacy Parquet newest first within the limit without duplicates, repeat downloads, or failure starvation', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'idx-labels-'));
+  const net = network();
+  const options = {
+    data: join(root, 'data'),
+    out: join(root, 'out'),
+    since: '2026-10-20',
+    today: '2026-10-21',
+    attachmentLabelLimit: 1,
+  };
+  const make = (id: string, hour: number, cover = 'shared') => {
+    const d = announcement({
+      ticker: 'SINI',
+      id,
+      title: 'Penjelasan',
+      path: `/covers/${cover}.pdf`,
+      name: 'cover.pdf',
+    });
+    d.pengumuman.TglPengumuman = `2026-10-21T${String(hour).padStart(2, '0')}:00:00`;
+    d.attachments = [
+      {
+        OriginalFilename: 'report_lamp2.pdf',
+        FullSavePath: `https://www.idx.id/${id}/lamp2.pdf`,
+        IsAttachment: true,
+      },
+      ...d.attachments,
+      {
+        OriginalFilename: 'report_lamp1.pdf',
+        FullSavePath: `https://www.idx.id/${id}/lamp1.pdf`,
+        IsAttachment: true,
+      },
+    ];
+    for (const attachment of d.attachments)
+      attachment.FullSavePath = attachment.FullSavePath.replace('www.idx.co.id', 'www.idx.id');
+    return d;
+  };
+  const legacy = [
+    make('oldest', 1),
+    make('middle', 2),
+    make('bad-pdf', 3, 'invalid'),
+    make('fetch-failure', 4, 'missing'),
+    make('newest', 5),
+  ];
+  const ksei = announcement({
+    ticker: 'SINI',
+    id: 'ksei',
+    title: 'LAPORAN KEPEMILIKAN',
+    path: '/covers/ksei.pdf',
+    name: 'LK-report.pdf',
+  });
+  const fresh = make('fresh', 6, 'fresh');
+  const coverCalls: string[] = [];
+  const fetcher: typeof fetch = async (input, init) => {
+    const url = new URL(input instanceof Request ? input.url : input);
+    if (url.pathname.includes('GetAnnouncement'))
+      return Response.json({ ResultCount: 2, Replies: [legacy[0], fresh] });
+    if (url.pathname.startsWith('/covers/')) {
+      coverCalls.push(url.pathname);
+      expect(init?.signal).toBeInstanceOf(AbortSignal);
+      if (url.pathname === '/covers/missing.pdf') return new Response('', { status: 503 });
+      if (url.pathname === '/covers/invalid.pdf') return new Response('broken PDF');
+      return new Response(new Uint8Array(await fixture('SINI-2026-10-15-cover.pdf')));
+    }
+    return net.fetcher(input, init);
+  };
+  const published = async () =>
+    JSON.parse(await readFile(join(options.out, 'ticker/SINI.json'), 'utf8'));
+  try {
+    await ingest({ ...options, fetcher: net.fetcher });
+    const instance = await DuckDBInstance.create(':memory:');
+    const db = await instance.connect();
+    try {
+      await db.run(schema);
+      for (const d of [...legacy, ksei]) {
+        const attachments = d.attachments.map((a) => ({
+          name: a.OriginalFilename,
+          url: a.FullSavePath,
+        }));
+        const source = {
+          id: d.pengumuman.Id2,
+          ticker: 'SINI',
+          title: d.pengumuman.JudulPengumuman,
+          published_at: d.pengumuman.TglPengumuman,
+          url: d.attachments.find((a) => !a.IsAttachment)?.FullSavePath,
+          kind: 'other',
+          attachments,
+          reports: [],
+        };
+        await db.run(`INSERT INTO disclosures (date, id, ticker, title, published_at, url, kind, attachments, source_json, report_gaps)
+          VALUES ('2026-10-21', '${source.id}', 'SINI', '${source.title}', '${source.published_at}', '${source.url}',
+          'other', '${JSON.stringify(attachments)}', '${JSON.stringify(source)}', '[]')`);
+      }
+      await mkdir(join(options.data, 'parquet/disclosures'), { recursive: true });
+      await db.run(`COPY (SELECT * EXCLUDE(attachment_labels_version) FROM disclosures)
+        TO '${join(options.data, 'parquet/disclosures/2026.parquet')}' (FORMAT PARQUET)`);
+    } finally {
+      db.closeSync();
+      instance.closeSync();
+    }
+    const paused = await ingest({ ...options, attachmentLabelLimit: 0, fetcher });
+    expect(paused.attachment_labels).toEqual({ backfilled: 0, remaining: 5 });
+    expect(paused.processed).toBe(1);
+    expect(coverCalls).toEqual(['/covers/fresh.pdf']);
+    const initial = await published();
+    expect(initial.disclosures).toHaveLength(7);
+    expect(
+      initial.disclosures
+        .find((d: { id: string }) => d.id === 'fresh')
+        .attachments.map((a: { label: string | null }) => a.label),
+    ).toEqual([null, 'surat penyampaian penjelasan bursa', 'Penjelasan tentang Karhutla']);
+    expect(
+      initial.disclosures
+        .find((d: { id: string }) => d.id === 'oldest')
+        .attachments.map((a: { name: string; label: null }) => [a.name, a.label]),
+    ).toEqual([
+      ['cover.pdf', null],
+      ['report_lamp1.pdf', null],
+      ['report_lamp2.pdf', null],
+    ]);
+    for (const [id, remaining] of [
+      ['newest', 4],
+      ['fetch-failure', 3],
+      ['bad-pdf', 2],
+      ['middle', 1],
+      ['oldest', 0],
+    ] satisfies [string, number][]) {
+      const run = await ingest({ ...options, fetcher });
+      expect(run.attachment_labels).toEqual({ backfilled: 1, remaining });
+      expect(run.processed).toBe(0);
+      expect(run.counts.disclosures).toBe(7);
+      const row = (await published()).disclosures.find((d: { id: string }) => d.id === id);
+      expect(row.attachments[1].label).toBe(
+        ['fetch-failure', 'bad-pdf'].includes(id) ? null : 'surat penyampaian penjelasan bursa',
+      );
+      if (id === 'fetch-failure')
+        expect(run.report_gaps).toContainEqual(
+          expect.objectContaining({ id, reason: expect.stringContaining('IDX HTTP 503') }),
+        );
+      if (id === 'bad-pdf')
+        expect(run.report_gaps).toContainEqual(
+          expect.objectContaining({ id, reason: expect.stringContaining('Attachment labels:') }),
+        );
+    }
+    expect(coverCalls).toEqual([
+      '/covers/fresh.pdf',
+      '/covers/shared.pdf',
+      '/covers/missing.pdf',
+      '/covers/invalid.pdf',
+    ]);
+    const parquet = await readFile(join(options.data, 'parquet/disclosures/2026.parquet'));
+    const final = await published();
+    const replay = await ingest({ ...options, fetcher });
+    expect(replay.attachment_labels).toEqual({ backfilled: 0, remaining: 0 });
+    expect(replay.processed).toBe(0);
+    expect(await published()).toEqual(final);
+    expect(await readFile(join(options.data, 'parquet/disclosures/2026.parquet'))).toEqual(parquet);
+    expect(coverCalls).toHaveLength(4);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+}, 30_000);
