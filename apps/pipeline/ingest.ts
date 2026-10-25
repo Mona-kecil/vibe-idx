@@ -58,7 +58,7 @@ export async function ingest({
   registryOnly = false,
   reparseRegistry = false,
   limit = 100,
-  attachmentLabelLimit = 10,
+  attachmentLabelLimit = 200,
   today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' }),
   fetcher = fetch,
 }: {
@@ -746,7 +746,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   });
   if (!values.data || !values.out)
     throw new Error(
-      'Usage: ingest -- --data <dir> --out <dir> [--since YYYY-MM-DD] [--attachment-label-limit 10] [--registry-only --until YYYY-MM-DD --limit 100 --reparse-registry]',
+      'Usage: ingest -- --data <dir> --out <dir> [--since YYYY-MM-DD] [--attachment-label-limit 200] [--registry-only --until YYYY-MM-DD --limit 100 --reparse-registry]',
     );
   process.stdout.write(
     `${JSON.stringify(
