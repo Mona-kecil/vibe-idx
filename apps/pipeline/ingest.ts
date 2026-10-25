@@ -520,7 +520,6 @@ export async function ingest({
             if (!d.reports.length)
               gaps.push({ url: d.url, reason: 'No supported report PDF attachment' });
             for (const attachment of d.reports) {
-              if (attachment.url === d.url && labeled.gaps.length) continue;
               const result = await parseReport({
                 bytes: await raw(`reports/${hash(attachment.url)}.pdf`, attachment.url),
                 ticker: d.ticker,

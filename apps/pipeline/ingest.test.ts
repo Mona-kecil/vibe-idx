@@ -815,6 +815,37 @@ BT /F1 10 Tf 1 0 0 1 529 530 Tm (-100) Tj ET`;
       await rm(root, { recursive: true, force: true });
     }
   });
+
+  it('parses a registry report whose cover failed to download for attachment labels', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'idx-registry-label-gap-'));
+    const net = network({ reports: true });
+    const sini = net.disclosures.find((d) => d.pengumuman.Id2 === 'registry/SINI');
+    sini?.attachments.push({
+      OriginalFilename: 'SINI_lamp1.pdf',
+      FullSavePath: 'https://www.idx.co.id/StaticData/From_EREP/SINI_lamp1.pdf',
+      IsAttachment: true,
+    });
+    let coverFailures = 1;
+    try {
+      const result = await ingest({
+        data: join(root, 'data'),
+        out: join(root, 'out'),
+        since: '2026-10-21',
+        today: '2026-10-22',
+        fetcher: async (input, init) => {
+          const url = new URL(input instanceof Request ? input.url : input);
+          if (url.pathname === '/StaticData/From_EREP/SINI.pdf' && coverFailures-- > 0)
+            return new Response('unavailable', { status: 502 });
+          return net.fetcher(input, init);
+        },
+      });
+      expect(result.counts).toMatchObject({ registry: 4 });
+      const published = JSON.parse(await readFile(join(root, 'out/ticker/SINI.json'), 'utf8'));
+      expect(published.registry_history).toHaveLength(1);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
 });
 
 it('backfills legacy Parquet newest first within the limit without duplicates, repeat downloads, or failure starvation', async () => {
