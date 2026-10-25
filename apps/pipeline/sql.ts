@@ -82,9 +82,9 @@ FROM prices WINDOW w AS (
 );
 CREATE VIEW investor_snapshots AS
 WITH keyed AS (
-  SELECT *, array_to_string(list_sort(list_filter(regexp_split_to_array(
+  SELECT *, array_to_string(list_filter(regexp_split_to_array(
     regexp_replace(upper(investor), '[[:punct:]]', '', 'g'), '[[:space:]]+'),
-    token -> token NOT IN ('', 'PT', 'TBK', 'PTE', 'LTD', 'LIMITED'))), ' ') investor_key
+    token -> token NOT IN ('', 'PT', 'TBK', 'PTE', 'LTD', 'LIMITED')), ' ') investor_key
   FROM five_pct
 ), snapshots AS (
   SELECT date, ticker, investor_key, max(investor) investor,

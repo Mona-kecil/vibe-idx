@@ -218,9 +218,11 @@ describe('batch pipeline', () => {
         ('2026-10-21', 'SINI', 'PT. KREASI JASA PERSADA', 'a', 94940000, 94940000, 7.9, 7.9, '2026-10-20'),
         ('2026-10-21', 'SINI', 'PT. PETROSEA TBK', 'a', 239105000, 239105000, 19.88, 19.88, '2026-10-20'),
         ('2026-10-21', 'SINI', 'BATUBARA DEVELOPMENT PTE. LTD.', 'a', 74530000, 74530000, 6.2, 6.2, '2026-10-20'),
+        ('2026-10-21', 'SINI', 'PT. PERSADA JASA KREASI', 'a', 70000000, 70000000, 5.82, 5.82, '2026-10-20'),
         ('2026-10-23', 'SINI', 'KREASI  JASA PERSADA PT', 'a', 94940000, NULL, NULL, 7.9, '2026-10-21'),
         ('2026-10-23', 'SINI', 'PT PETROSEA TBK', 'a', 239105000, NULL, NULL, 19.88, '2026-10-21'),
-        ('2026-10-23', 'SINI', 'Development Batubara Limited', 'a', 74530000, NULL, NULL, 6.2, '2026-10-21');`);
+        ('2026-10-23', 'SINI', 'Batubara Development Limited', 'a', 74530000, NULL, NULL, 6.2, '2026-10-21'),
+        ('2026-10-23', 'SINI', 'PERSADA JASA KREASI PT', 'a', 70000000, NULL, NULL, 5.82, '2026-10-21');`);
       await db.run(analytics);
       const published = (await db.runAndReadAll(tickers)).getRowObjectsJson();
       expect(published).toMatchObject([
@@ -230,7 +232,8 @@ describe('batch pipeline', () => {
           holders: expect.arrayContaining([
             { investor: 'KREASI  JASA PERSADA PT', shares: 94940000, pct: 7.9 },
             { investor: 'PT PETROSEA TBK', shares: 239105000, pct: 19.88 },
-            { investor: 'Development Batubara Limited', shares: 74530000, pct: 6.2 },
+            { investor: 'Batubara Development Limited', shares: 74530000, pct: 6.2 },
+            { investor: 'PERSADA JASA KREASI PT', shares: 70000000, pct: 5.82 },
           ]),
         },
       ]);
