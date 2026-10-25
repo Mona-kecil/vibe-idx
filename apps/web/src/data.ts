@@ -170,7 +170,7 @@ const newsSchema = z.array(
   z.object({
     title: z.string(),
     url: z.url(),
-    published_at: z.string(),
+    published_at: z.string().refine((value) => Number.isFinite(Date.parse(value))),
     source: z.string(),
   }),
 );

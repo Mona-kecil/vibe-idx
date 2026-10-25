@@ -170,11 +170,6 @@ function TickerNav({ market, stocks }: { market: Market | null; stocks: Stock[] 
             )}
           </div>
         )}
-        <div className="language" aria-label="Language">
-          <b>EN</b>
-          <span>/</span>
-          <span>ID</span>
-        </div>
         <div className="signin">
           <AccountControls />
         </div>

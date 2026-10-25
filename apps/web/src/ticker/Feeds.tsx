@@ -225,14 +225,17 @@ export function FilingsNews({
   useEffect(() => {
     let active = true;
     setNews([]);
-    void loadNews(data.ticker, start && end ? { start, end } : undefined).then(
-      (rows) => {
-        if (active) setNews(rows);
-      },
-      () => {},
-    );
+    const timer = setTimeout(() => {
+      void loadNews(data.ticker, start && end ? { start, end } : undefined).then(
+        (rows) => {
+          if (active) setNews(rows);
+        },
+        () => {},
+      );
+    }, 300);
     return () => {
       active = false;
+      clearTimeout(timer);
     };
   }, [data.ticker, start, end]);
   const filings = data.disclosures
