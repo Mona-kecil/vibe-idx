@@ -54,22 +54,22 @@ export async function news(request: Request, fetcher: typeof fetch = fetch) {
   }
 
   try {
-    const companyResponse = await fetcher(
+    const name = await fetcher(
       `https://pub-7982bfb066694e6e8615750132283eba.r2.dev/ticker/${ticker.data}.json`,
       { signal: AbortSignal.timeout(10000) },
-    );
-    let query = `${ticker.data} saham`;
-    if (companyResponse.status !== 404) {
-      if (!companyResponse.ok) throw new Error('Company unavailable');
-      const company = z
-        .object({ ticker: z.literal(ticker.data), name: z.string() })
-        .parse(await companyResponse.json());
-      const name = company.name
-        .replace(/\b(?:PT|Tbk|Persero)\b\.?/gi, '')
-        .replace(/[^\p{L}\p{N}]+/gu, ' ')
-        .trim();
-      if (name) query = `("saham ${ticker.data}" OR "${ticker.data} saham" OR "${name}")`;
-    }
+    )
+      .then(async (response) =>
+        z
+          .object({ ticker: z.literal(ticker.data), name: z.string() })
+          .parse(await response.json())
+          .name.replace(/\b(?:PT|Tbk|Persero)\b\.?/gi, '')
+          .replace(/[^\p{L}\p{N}]+/gu, ' ')
+          .trim(),
+      )
+      .catch(() => '');
+    const query = name
+      ? `("saham ${ticker.data}" OR "${ticker.data} saham" OR "${name}")`
+      : `${ticker.data} saham`;
     const feeds = await Promise.all(
       windows.map(async (window) => {
         const url = new URL('https://news.google.com/rss/search');
