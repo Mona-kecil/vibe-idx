@@ -3,6 +3,7 @@ import { useEffect, useReducer, useRef, useState, type PointerEvent } from 'reac
 import { LocaleProvider, useLocale, type Locale } from './locale';
 import { AccountControls, LoginPage } from './BrokerPanel';
 import { load, type Stock, type Health } from './data';
+import { TickerPage } from './ticker/TickerPage';
 import { ModuleView } from './Modules';
 import { Tooltip } from './Tooltip';
 import {
@@ -48,9 +49,21 @@ export function App({
 }: { initialUrl?: string; initialLocale?: Locale } = {}) {
   return (
     <LocaleProvider initialLocale={initialLocale}>
-      <Workspace initialUrl={initialUrl} />
+      <AppRoute initialUrl={initialUrl} />
     </LocaleProvider>
   );
+}
+function AppRoute({ initialUrl }: { initialUrl?: string }) {
+  const [path, setPath] = useState(
+    () => initialUrl ?? (typeof window === 'undefined' ? '/' : window.location.pathname),
+  );
+  useEffect(() => {
+    const navigate = () => setPath(window.location.pathname);
+    window.addEventListener('popstate', navigate);
+    return () => window.removeEventListener('popstate', navigate);
+  }, []);
+  const ticker = tickerFromPath(path);
+  return ticker ? <TickerPage key={ticker} ticker={ticker} /> : <Workspace initialUrl={path} />;
 }
 function Workspace({ initialUrl }: { initialUrl?: string }) {
   const { t, locale, setLocale } = useLocale();
