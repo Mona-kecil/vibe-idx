@@ -98,7 +98,7 @@ export function createBrokerHandler({
       const body: unknown = await response.json();
       const days = sourceSchema.parse(body);
       days.sort((a, b) => b.date.localeCompare(a.date));
-      return json({ ticker: ticker.data, days: days.slice(0, 90) }, 200);
+      return json({ ticker: ticker.data, days }, 200);
     } catch {
       return json({ error: 'unavailable' }, 503);
     }

@@ -239,10 +239,10 @@ describe('private broker API', () => {
     expect(storageReads).toEqual([]);
   });
 
-  it('returns the last 90 source days with signed private reads, no audience requirement, and no cached data', async () => {
+  it('keeps January broker history beyond 90 source days with signed private reads and no cached data', async () => {
     const days = Array.from({ length: 95 }, (_, index) => ({
       ...day,
-      date: new Date(Date.UTC(2026, 5, index + 1)).toISOString().slice(0, 10),
+      date: new Date(Date.UTC(2026, 0, index + 2)).toISOString().slice(0, 10),
       sell: [{ ...row, broker: 'CC' }],
       internal: 'must not escape the schema',
     }));
@@ -257,11 +257,12 @@ describe('private broker API', () => {
       expectPrivate(response);
       const body: unknown = await response.json();
       const history = brokerHistorySchema.parse(body);
+      expect(history.days).toHaveLength(95);
       expect(body).toEqual(history);
       expect(history).toEqual({
         ticker: 'BBCA-W2',
         days: days
-          .slice(5)
+          .slice()
           .reverse()
           .map(({ date, buy, sell }) => ({ date, buy, sell })),
       });
