@@ -6,6 +6,10 @@ on:
     - cron: '17 0-9,11-23 * * *'
   workflow_dispatch:
     inputs:
+      brokers_only:
+        description: 'Run only broker backfill; skip IDX ingestion and ignore registry inputs'
+        type: boolean
+        default: false
       registry_since:
         description: 'Registry publication window start (YYYY-MM-DD); blank runs normal ingestion'
         type: string
@@ -43,12 +47,12 @@ jobs:
       DATA: /tmp/idx-data
       OUT: /tmp/idx-public
       PRIVATE_OUT: /tmp/idx-private
-      REGISTRY_ONLY: ${{ github.event_name == 'workflow_dispatch' && inputs.registry_since != '' }}
+      REGISTRY_ONLY: ${{ github.event_name == 'workflow_dispatch' && inputs.registry_since != '' && inputs.brokers_only != true }}
       REGISTRY_SINCE: ${{ inputs.registry_since }}
       REGISTRY_UNTIL: ${{ inputs.registry_until }}
       REGISTRY_REPARSE: ${{ inputs.registry_reparse }}
       REGISTRY_LIMIT: ${{ inputs.registry_limit }}
-      BROKER_RUN_KIND: ${{ github.event_name == 'schedule' && github.event.schedule != '17 10 * * *' && 'backfill' || 'daily' }}
+      BROKER_RUN_KIND: ${{ ((github.event_name == 'schedule' && github.event.schedule != '17 10 * * *') || (github.event_name == 'workflow_dispatch' && inputs.brokers_only == true)) && 'backfill' || 'daily' }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -93,7 +97,7 @@ jobs:
         if: env.BROKER_RUN_KIND == 'daily' || env.REGISTRY_ONLY == 'true'
         run: aws s3 sync "$OUT" s3://vibe-idx-public --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
       - name: Verify R2 conditional writes
-        if: github.event_name == 'workflow_dispatch' && env.REGISTRY_ONLY != 'true'
+        if: github.event_name == 'workflow_dispatch' && env.REGISTRY_ONLY != 'true' && inputs.brokers_only != true
         run: |
           node --input-type=module <<'NODE'
           import assert from 'node:assert/strict';
