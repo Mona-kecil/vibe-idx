@@ -224,7 +224,8 @@ describe('public ticker news', () => {
     const queries: string[] = [];
     const fetcher: typeof fetch = async (input) => {
       const url = new URL(input instanceof Request ? input.url : input.toString());
-      if (url.pathname === '/ticker/BBCA.json') return new Response('unavailable', { status: 503 });
+      if (url.pathname === '/ticker/BBCA.json')
+        return Response.json({ ticker: 'BBCA', name: 'Stale Company' }, { status: 503 });
       queries.push(url.searchParams.get('q') ?? '');
       return feed([
         { title: 'Headline', link: 'https://news.google.com/item', pubDate: '2026-08-12' },

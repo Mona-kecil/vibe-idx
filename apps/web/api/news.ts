@@ -58,14 +58,15 @@ export async function news(request: Request, fetcher: typeof fetch = fetch) {
       `https://pub-7982bfb066694e6e8615750132283eba.r2.dev/ticker/${ticker.data}.json`,
       { signal: AbortSignal.timeout(10000) },
     )
-      .then(async (response) =>
-        z
+      .then(async (response) => {
+        if (!response.ok) throw new Error('Company unavailable');
+        return z
           .object({ ticker: z.literal(ticker.data), name: z.string() })
           .parse(await response.json())
           .name.replace(/\b(?:PT|Tbk|Persero)\b\.?/gi, '')
           .replace(/[^\p{L}\p{N}]+/gu, ' ')
-          .trim(),
-      )
+          .trim();
+      })
       .catch(() => '');
     const query = name
       ? `("saham ${ticker.data}" OR "${ticker.data} saham" OR "${name}")`
