@@ -1,6 +1,10 @@
 # Design principles
 
-Let layout, spacing, and visual hierarchy explain the interface. Avoid secondary labels, subtitles, helper text, and descriptions that repeat what the layout or primary label already communicates.
+## UI/UX
+
+- Avoid unnecessary secondary labels and descriptions. Let the layout do the explaining.
+- Every element must serve a clear user purpose; no slogans, decoration, nested cards, or repeated info.
+- Show explanations only for abnormal states or required actions; put secondary details behind progressive disclosure.
 
 Keep units, reporting dates, and material uncertainty where they affect interpretation. Put supporting source details in tooltips or source views instead of repeating them throughout the page.
 
