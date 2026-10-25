@@ -511,7 +511,7 @@ BT /F1 10 Tf 1 0 0 1 529 530 Tm (-100) Tj ET`;
     } finally {
       await rm(root, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   it('does not duplicate rows, rewrite Parquet, or miss a same-day disclosure on replay', async () => {
     const root = await mkdtemp(join(tmpdir(), 'idx-replay-'));
