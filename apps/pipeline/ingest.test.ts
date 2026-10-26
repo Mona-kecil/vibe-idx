@@ -207,6 +207,202 @@ function network({ monthly = false, reports = false } = {}) {
 }
 
 describe('batch pipeline', () => {
+  it.each([
+    {
+      month: 'January',
+      since: '2026-01-01',
+      until: '2026-01-29',
+      today: '2026-01-30',
+      metadata: './fixtures/ownership-legacy-2026-01.json',
+      pdf: './fixtures/ownership-5pct-2026-01-29.pdf',
+      investor: 'ADARO STRATEGIC INVESTMENTS PT',
+    },
+    {
+      month: 'June',
+      since: '2026-06-01',
+      until: '2026-06-05',
+      today: '2026-06-08',
+      metadata: '../../samples/idx-5pct/latest-response.json',
+      pdf: '../../samples/idx-5pct/20260608_Semua Emiten Saham_Pengumuman Bursa_32098373_lamp1.pdf',
+      investor: 'ADARO STRATEGIC INVESTMENTS',
+    },
+  ])(
+    'backfills $month ownership PDF cells across pages instead of ignoring the legacy source',
+    async (source) => {
+      const root = await mkdtemp(join(tmpdir(), 'idx-legacy-ownership-'));
+      const page = JSON.parse(await readFile(new URL(source.metadata, import.meta.url), 'utf8'));
+      const legacy = page.Replies[0];
+      const attachment = legacy.attachments.find((a: { IsAttachment: boolean }) => a.IsAttachment);
+      const urls: string[] = [];
+      let includeXlsx = false;
+      const workbookUrl =
+        'https://www.idx.id/Media/dqvnijtx/peng-2026-06-05-00005-lima-persen.xlsx';
+      const options = {
+        data: join(root, 'data'),
+        out: join(root, 'out'),
+        since: source.since,
+        until: source.until,
+        today: source.today,
+        ownershipOnly: true,
+        fetcher: async (input: string | URL | Request) => {
+          const url = new URL(input instanceof Request ? input.url : input);
+          urls.push(url.href);
+          if (url.pathname.includes('data-kepemilikan-saham'))
+            return Response.json({
+              items: includeXlsx
+                ? [
+                    {
+                      Description: 'Pemegang Saham di Atas 5%',
+                      Prospectus: workbookUrl,
+                      ListingDate: '2026-06-05',
+                    },
+                  ]
+                : [],
+            });
+          if (url.href === workbookUrl)
+            return new Response(new Uint8Array(await fixture('ownership-5pct-2026-06-05.xlsx')));
+          if (url.pathname.includes('GetAnnouncement'))
+            return Response.json({ ResultCount: 1, Replies: [legacy] });
+          if (url.pathname === new URL(attachment.FullSavePath).pathname)
+            return new Response(
+              new Uint8Array(await readFile(new URL(source.pdf, import.meta.url))),
+            );
+          throw new Error(`Unexpected request: ${url.href}`);
+        },
+      };
+      try {
+        const result = await ingest(options);
+        expect(result.counts.five_pct).toBeGreaterThan(0);
+        const ticker = JSON.parse(await readFile(join(options.out, 'ticker/AADI.json'), 'utf8'));
+        expect(ticker.holders).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ investor: source.investor, shares: 3200142830, pct: 41.1 }),
+          ]),
+        );
+        expect(result.ownership?.five_pct_dates).toEqual([source.until]);
+        expect(result.counts.prices).toBe(0);
+        expect(result.counts.disclosures).toBe(0);
+        if (source.month === 'January') {
+          const alto = JSON.parse(await readFile(join(options.out, 'ticker/ALTO.json'), 'utf8'));
+          expect(alto.holders).toContainEqual({
+            investor: 'PT TRIMEGAH SEKURITAS INDONESIA TBK',
+            shares: 210832443,
+            pct: 9.62,
+          });
+          const dcii = JSON.parse(await readFile(join(options.out, 'ticker/DCII.json'), 'utf8'));
+          expect(dcii.holders).toContainEqual({
+            investor: 'ANTHONI SALIM',
+            shares: 265033461,
+            pct: 11.12,
+          });
+        }
+        const beforeReplay = urls.length;
+        const replay = await ingest(options);
+        expect(replay.counts.five_pct).toBe(result.counts.five_pct);
+        expect(replay.processed).toBe(0);
+        expect(urls.slice(beforeReplay).some((url) => url.endsWith('.pdf'))).toBe(false);
+        expect(
+          urls.some((url) => /GetCompanyProfiles|GetStockSummary|GetIndexSummary/.test(url)),
+        ).toBe(false);
+        if (source.month === 'June') {
+          includeXlsx = true;
+          const data = join(root, 'overlap/data');
+          await ingest({ ...options, data, out: join(root, 'overlap/out') });
+          const instance = await DuckDBInstance.create(':memory:');
+          const db = await instance.connect();
+          try {
+            const rows = (
+              await db.runAndReadAll(`SELECT shares FROM read_parquet('${join(data, 'parquet/five_pct/2026.parquet')}')
+              WHERE ticker = 'ABMM' AND investor = 'DRS LO KHENG HONG'
+                AND holder_name = 'PT OCBC SEKURITAS INDONESIA'`)
+            ).getRowObjectsJson();
+            // The XLSX source keeps a decimal that the PDF export renders differently.
+            expect(rows).toEqual([{ shares: 441.4 }]);
+          } finally {
+            db.closeSync();
+            instance.closeSync();
+          }
+        }
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
+    },
+    30_000,
+  );
+
+  it('keeps a late 1% snapshot from a primary XLSX attachment and ignores ticker-specific filings', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'idx-legacy-onepct-'));
+    const page = JSON.parse((await fixture('ownership-legacy-2026-01.json')).toString());
+    const bulk = {
+      ...page.Replies[0],
+      pengumuman: {
+        ...page.Replies[0].pengumuman,
+        Id2: 'legacy-onepct',
+        JudulPengumuman: 'Pemegang Saham di atas 1% (KSEI)',
+        TglPengumuman: '2026-03-02T12:00:00',
+      },
+      attachments: [
+        {
+          OriginalFilename: 'ownership.xlsx',
+          FullSavePath: '/StaticData/ownership.xlsx',
+          IsAttachment: false,
+        },
+      ],
+    };
+    const company = {
+      ...bulk,
+      pengumuman: { ...bulk.pengumuman, Id2: 'company-onepct', Kode_Emiten: 'AADI' },
+      attachments: [
+        {
+          OriginalFilename: 'ignore.xlsx',
+          FullSavePath: '/StaticData/ignore.xlsx',
+          IsAttachment: false,
+        },
+      ],
+    };
+    const options = {
+      data: join(root, 'data'),
+      out: join(root, 'out'),
+      ownershipOnly: true,
+      since: '2026-02-01',
+      until: '2026-02-28',
+      today: '2026-03-02',
+      fetcher: async (input: string | URL | Request) => {
+        const u = new URL(input instanceof Request ? input.url : input);
+        if (u.pathname.includes('data-kepemilikan-saham')) return Response.json({ items: [] });
+        if (u.pathname.includes('GetAnnouncement')) {
+          const page = Number(u.searchParams.get('indexFrom'));
+          return Response.json({ ResultCount: 2, Replies: page === 0 ? [bulk] : [company] });
+        }
+        if (u.pathname === '/StaticData/ownership.xlsx')
+          return new Response(new Uint8Array(await fixture('ownership-1pct-2026-02.xlsx')));
+        throw new Error(`Unexpected ownership request: ${u.href}`);
+      },
+    };
+    try {
+      const result = await ingest(options);
+      expect(result.counts.one_pct).toBe(7257);
+      expect(result.ownership?.one_pct_dates).toEqual(['2026-02-27']);
+      const ticker = JSON.parse(await readFile(join(options.out, 'ticker/ICON.json'), 'utf8'));
+      expect(
+        ticker.one_pct.holders.filter(
+          (h: { investor: string }) => h.investor === 'ISLAND REGENCY GROUP LIMITED',
+        ),
+      ).toEqual([
+        expect.objectContaining({ shares: 42187000 }),
+        expect.objectContaining({ shares: 20000000 }),
+      ]);
+      await expect(ingest({ ...options, registryOnly: true })).rejects.toThrow(
+        'without --registry-only',
+      );
+      await expect(ingest({ ...options, until: '2026-03-01' })).rejects.toThrow(
+        'one calendar month',
+      );
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  }, 30_000);
+
   it('repairs boolean tickers across Parquet years without key conflicts or replay changes', async () => {
     const root = await mkdtemp(join(tmpdir(), 'idx-true-ticker-'));
     const options = {

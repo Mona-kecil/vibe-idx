@@ -1,0 +1,83 @@
+name: Backfill IDX ownership month
+
+on:
+  workflow_dispatch:
+    inputs:
+      since:
+        description: 'Snapshot window start (YYYY-MM-DD); one calendar month per run'
+        type: string
+        required: true
+      until:
+        description: 'Snapshot window end (YYYY-MM-DD); publication discovery includes the next month'
+        type: string
+        required: true
+
+# Both IDX sections publish overlapping snapshots. Every ledger writer must share this queue.
+concurrency:
+  group: idx-batch-ingest
+  queue: max
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  ownership:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: auto
+      R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+      DATA: /tmp/idx-data
+      OUT: /tmp/idx-public
+      SINCE: ${{ inputs.since }}
+      UNTIL: ${{ inputs.until }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Restore IDX ledger and ownership archive
+        run: |
+          mkdir -p "$DATA/raw"
+          aws s3 sync s3://vibe-idx-private/parquet "$DATA/parquet" --exclude "brokers/*" --exclude "broker-coverage.parquet" --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          for prefix in ownership-list ownership-announcements five-pct one-pct; do
+            aws s3 sync "s3://vibe-idx-private/raw/$prefix" "$DATA/raw/$prefix" --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          done
+      - name: Backfill both IDX ownership sources
+        run: |
+          pnpm --filter @vibe-idx/pipeline ingest -- --ownership-only --since "$SINCE" --until "$UNTIL" --data "$DATA" --out "$OUT" | tee "$RUNNER_TEMP/ownership-summary.json"
+      - name: Record snapshot coverage
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync, appendFileSync } from 'node:fs';
+          const { ownership } = JSON.parse(readFileSync(`${process.env.RUNNER_TEMP}/ownership-summary.json`, 'utf8'));
+          appendFileSync(process.env.GITHUB_STEP_SUMMARY, [
+            `## IDX ownership: ${ownership.since} through ${ownership.until}`,
+            `5% snapshots: ${ownership.five_pct_dates.join(', ') || 'none'}`,
+            `1% snapshots: ${ownership.one_pct_dates.join(', ') || 'none; source availability unresolved'}`,
+            `Compared against ${ownership.price_dates_checked} restored price dates. An empty price baseline is not proof of completeness.`,
+            `Missing 5% dates against the restored price ledger: ${ownership.missing_five_pct_price_dates.map(r => r.date).join(', ') || 'none'}`,
+            'A successful run does not establish that every historical source file exists.',
+            '',
+          ].join('\n\n'));
+          NODE
+      - name: Archive ownership responses
+        if: ${{ always() }}
+        run: |
+          if [ -d "$DATA/raw" ]; then
+            aws s3 sync "$DATA/raw" s3://vibe-idx-private/raw --exclude "*" --include "ownership-list/*" --include "ownership-announcements/*" --include "five-pct/*" --include "one-pct/*" --no-overwrite --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          fi
+      - name: Upload ownership ledger
+        if: ${{ always() }}
+        run: |
+          if [ -d "$DATA/parquet" ]; then
+            aws s3 sync "$DATA/parquet" s3://vibe-idx-private/parquet --exclude "*" --include "five_pct/*.parquet" --include "one_pct/*.parquet" --include "ownership_files/*.parquet" --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          fi
+      - name: Publish website JSON
+        run: aws s3 sync "$OUT" s3://vibe-idx-public --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"

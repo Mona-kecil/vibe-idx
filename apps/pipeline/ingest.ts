@@ -10,7 +10,7 @@ import type { DuckDBValue } from '@duckdb/node-api';
 import { parsePrices } from './lib/prices';
 import { parseIndices } from './lib/indices';
 import { parseIssuers } from './lib/issuers';
-import { parseFivePct } from './lib/fivePct';
+import { parseFivePct, parseFivePctPdf } from './lib/fivePct';
 import { parseOnePct } from './lib/onePct';
 import { idxUrl, parseOwnershipList } from './lib/ownershipList';
 import { date } from './lib/rows';
@@ -56,6 +56,7 @@ export async function ingest({
   since,
   until,
   registryOnly = false,
+  ownershipOnly = false,
   reparseRegistry = false,
   limit = 100,
   attachmentLabelLimit = 200,
@@ -67,6 +68,7 @@ export async function ingest({
   since?: string;
   until?: string;
   registryOnly?: boolean;
+  ownershipOnly?: boolean;
   reparseRegistry?: boolean;
   limit?: number;
   attachmentLabelLimit?: number;
@@ -76,8 +78,17 @@ export async function ingest({
   date(today);
   if (since) date(since);
   if (until) date(until);
-  if (until && (!registryOnly || until > today || (since && since > until)))
-    throw new Error('Registry date range must end on or before today and after since');
+  if (until && ((!registryOnly && !ownershipOnly) || until > today || (since && since > until)))
+    throw new Error(
+      `${ownershipOnly ? 'Ownership' : 'Registry'} date range must end on or before today and after since`,
+    );
+  if (
+    ownershipOnly &&
+    (registryOnly || !since || !until || since.slice(0, 7) !== until.slice(0, 7))
+  )
+    throw new Error(
+      'Ownership backfill requires --since and --until within one calendar month, without --registry-only',
+    );
   if (!Number.isSafeInteger(limit) || limit < 1)
     throw new Error('limit must be a positive integer');
   if (!Number.isSafeInteger(attachmentLabelLimit) || attachmentLabelLimit < 0)
@@ -101,7 +112,7 @@ export async function ingest({
       }),
     );
   async function download(url: string, timeout = 60000) {
-    if (registryOnly) {
+    if (registryOnly || ownershipOnly) {
       await new Promise((resolve) =>
         setTimeout(resolve, Math.max(0, lastRequest + 1000 - Date.now())),
       );
@@ -228,7 +239,7 @@ export async function ingest({
         DELETE FROM ${table} WHERE ticker = '1'`);
       await save(table, years);
     }
-    if (!registryOnly && !(await present('issuers')).has(today)) {
+    if (!registryOnly && !ownershipOnly && !(await present('issuers')).has(today)) {
       const issuerBytes = await raw(
         `issuers/${today}.json`,
         '/primary/ListedCompany/GetCompanyProfiles?emitenType=s&start=0&length=9999',
@@ -258,7 +269,7 @@ export async function ingest({
       }),
     );
     for (const table of ['prices', 'indices'] as const) {
-      if (registryOnly) continue;
+      if (registryOnly || ownershipOnly) continue;
       const dates = await present(table);
       const years = new Set<string>();
       const first = since ?? [...dates].sort((a, b) => b.localeCompare(a))[0] ?? '2026-01-01';
@@ -335,6 +346,15 @@ export async function ingest({
       const knownFiles = new Set(
         (await query('SELECT url FROM ownership_files')).map((r) => r.url),
       );
+      const through = until ?? today;
+      // Include the next publication month, but bound downloads by the requested snapshot window.
+      const nextMonthEnd = new Date(
+        Date.UTC(Number(through.slice(0, 4)), Number(through.slice(5, 7)) + 1, 0),
+      )
+        .toISOString()
+        .slice(0, 10);
+      const publishedThrough = nextMonthEnd < today ? nextMonthEnd : today;
+      const files: ReturnType<typeof parseOwnershipList> = [];
       for (
         let year = Math.min(Number(first.slice(0, 4)), Number(monthlyFirst.slice(0, 4)));
         year <= Number(today.slice(0, 4));
@@ -344,88 +364,161 @@ export async function ingest({
           `/primary/list/id/perusahaan-tercatat/data-kepemilikan-saham/?year=${year}&lang=id&start=0&length=9999`,
         );
         await archive(`ownership-list/${year}-${hash(bytes)}.json`, bytes);
-        const files = parseOwnershipList(json(bytes));
-        for (const file of files) {
-          if (file.date > today || knownFiles.has(file.url)) continue;
-          if (file.source === 'onePct') {
-            if (file.date < monthlyFirst) continue;
-            const rows = parseOnePct(await raw(`one-pct/${hash(file.url)}.xlsx`, file.url));
-            if (!rows.length) throw new Error(`Empty 1% ownership file: ${file.url}`);
-            const incomingDates = new Set(rows.map((r) => r.asOf));
-            if (incomingDates.size !== 1) throw new Error(`Mixed 1% snapshot dates: ${file.url}`);
-            const incoming = rows.filter(
-              (r) => r.asOf >= monthlyFirst && r.asOf <= today && !monthlyDates.has(r.asOf),
+        files.push(...parseOwnershipList(json(bytes)));
+      }
+      if (ownershipOnly) {
+        // Announcements may publish a month-end snapshot in the following month.
+        let offset = 0;
+        let pageNumber = 0;
+        let total: number | undefined;
+        const ids = new Set<string>();
+        while (total === undefined || offset < total) {
+          const params = new URLSearchParams({
+            kodeEmiten: '',
+            emitenType: '*',
+            indexFrom: String(pageNumber),
+            pageSize: '100',
+            dateFrom: first.replaceAll('-', ''),
+            dateTo: publishedThrough.replaceAll('-', ''),
+            lang: 'id',
+            keyword: 'Pemegang Saham di atas',
+          });
+          const bytes = await download(`/primary/ListedCompany/GetAnnouncement?${params}`);
+          await archive(
+            `ownership-announcements/${first}-${publishedThrough}/${pageNumber}-${hash(bytes)}.json`,
+            bytes,
+          );
+          const page = parseAnnouncements(json(bytes));
+          if (total !== undefined && total !== page.total)
+            throw new Error(
+              'Ownership announcement count changed during pagination; retry the run',
             );
-            await append(
-              'one_pct',
-              incoming.map((r) => [
-                dayValue(r.asOf),
-                r.ticker,
-                r.investorName,
-                r.seq,
-                r.issuerName,
-                r.total,
-                r.percent,
-                r.classification ?? null,
-                r.localForeign ?? null,
-                r.nationality ?? null,
-                r.domicile ?? null,
-                r.scripless ?? null,
-                r.scrip ?? null,
-                file.url,
-              ]),
+          total = page.total;
+          if (
+            (!page.disclosures.length && offset < total) ||
+            offset + page.disclosures.length > total
+          )
+            throw new Error(`Incomplete ownership announcement page at ${offset} of ${total}`);
+          for (const d of page.disclosures) {
+            if (ids.has(d.id)) throw new Error(`Repeated ownership announcement: ${d.id}`);
+            ids.add(d.id);
+            const match = /^Pemegang Saham di\s*atas\s*([15])\s*%(?:\s*\(KSEI\))?$/i.exec(
+              d.title.trim(),
             );
-            for (const r of incoming) {
-              monthlyDates.add(r.asOf);
-              monthlyYears.add(r.asOf.slice(0, 4));
-            }
-            for (const asOf of incomingDates) {
-              if (asOf < monthlyFirst || asOf > today) continue;
-              await append('ownership_files', [[dayValue(asOf), file.source, file.url]]);
-              fileYears.add(asOf.slice(0, 4));
-              knownFiles.add(file.url);
-            }
-            continue;
+            if (!match || d.ticker !== null) continue;
+            const attachments = d.attachments.filter(
+              (a) =>
+                /\.xlsx$/i.test(new URL(a.url).pathname) ||
+                (a.url !== d.url && /\.pdf$/i.test(new URL(a.url).pathname)),
+            );
+            const xlsx = attachments.filter((a) => /\.xlsx$/i.test(new URL(a.url).pathname));
+            const selected = xlsx.length ? xlsx : attachments;
+            if (selected.length !== 1)
+              throw new Error(`Unsupported ownership attachments: ${d.id}`);
+            for (const attachment of selected)
+              files.push({
+                source: match[1] === '1' ? 'onePct' : 'fivePct',
+                date: d.published_at.slice(0, 10),
+                url: attachment.url,
+              });
           }
-          if (file.date < first) continue;
-          const parsed = parseFivePct(await raw(`five-pct/${hash(file.url)}.xlsx`, file.url));
-          if (parsed.asOf < first || parsed.asOf > today) continue;
-          await append('ownership_files', [[dayValue(parsed.asOf), file.source, file.url]]);
-          fileYears.add(parsed.asOf.slice(0, 4));
-          knownFiles.add(file.url);
-          if (dates.has(parsed.asOf)) continue;
-          const rows = parsed.groups.flatMap((g) =>
-            g.accounts.map((a) => [
-              dayValue(parsed.asOf),
-              g.holding.ticker,
-              g.holding.investorName,
-              JSON.stringify([a.holderName, a.accountName]),
-              a.holderName,
-              a.currentShares,
-              a.previousShares,
-              g.holding.combinedShares,
-              g.previousCombined,
-              g.previousPercent,
-              g.holding.percent,
-              dayValue(parsed.previousDate),
+          offset += page.disclosures.length;
+          pageNumber++;
+        }
+      }
+      // The two sections overlap. Parse the XLSX snapshot first and retain it on overlap.
+      files.sort(
+        (a, b) =>
+          Number(/\.pdf$/i.test(new URL(a.url).pathname)) -
+            Number(/\.pdf$/i.test(new URL(b.url).pathname)) || a.date.localeCompare(b.date),
+      );
+      for (const file of files) {
+        if (file.date > publishedThrough || knownFiles.has(file.url)) continue;
+        if (file.source === 'onePct') {
+          if (file.date < monthlyFirst) continue;
+          if (/\.pdf$/i.test(new URL(file.url).pathname))
+            throw new Error(`Legacy 1% PDF format is not supported: ${file.url}`);
+          const rows = parseOnePct(await raw(`one-pct/${hash(file.url)}.xlsx`, file.url));
+          if (!rows.length) throw new Error(`Empty 1% ownership file: ${file.url}`);
+          const incomingDates = new Set(rows.map((r) => r.asOf));
+          if (incomingDates.size !== 1) throw new Error(`Mixed 1% snapshot dates: ${file.url}`);
+          const incoming = rows.filter(
+            (r) => r.asOf >= monthlyFirst && r.asOf <= through && !monthlyDates.has(r.asOf),
+          );
+          await append(
+            'one_pct',
+            incoming.map((r) => [
+              dayValue(r.asOf),
+              r.ticker,
+              r.investorName,
+              r.seq,
+              r.issuerName,
+              r.total,
+              r.percent,
+              r.classification ?? null,
+              r.localForeign ?? null,
+              r.nationality ?? null,
+              r.domicile ?? null,
+              r.scripless ?? null,
+              r.scrip ?? null,
+              file.url,
             ]),
           );
-          await db.run('DELETE FROM incoming_five');
-          await append('incoming_five', rows);
-          await db.run(`INSERT INTO five_pct
+          for (const r of incoming) {
+            monthlyDates.add(r.asOf);
+            monthlyYears.add(r.asOf.slice(0, 4));
+          }
+          for (const asOf of incomingDates) {
+            if (asOf < monthlyFirst || asOf > through) continue;
+            await append('ownership_files', [[dayValue(asOf), file.source, file.url]]);
+            fileYears.add(asOf.slice(0, 4));
+            knownFiles.add(file.url);
+            if (ownershipOnly) processed++;
+          }
+          continue;
+        }
+        if (file.date < first) continue;
+        const pdf = /\.pdf$/i.test(new URL(file.url).pathname);
+        const bytes = await raw(`five-pct/${hash(file.url)}.${pdf ? 'pdf' : 'xlsx'}`, file.url);
+        const parsed = pdf ? await parseFivePctPdf(bytes) : parseFivePct(bytes);
+        if (!parsed.groups.length) throw new Error(`Empty 5% ownership file: ${file.url}`);
+        if (parsed.asOf < first || parsed.asOf > through) continue;
+        await append('ownership_files', [[dayValue(parsed.asOf), file.source, file.url]]);
+        fileYears.add(parsed.asOf.slice(0, 4));
+        knownFiles.add(file.url);
+        if (ownershipOnly) processed++;
+        if (dates.has(parsed.asOf)) continue;
+        const rows = parsed.groups.flatMap((g) =>
+          g.accounts.map((a) => [
+            dayValue(parsed.asOf),
+            g.holding.ticker,
+            g.holding.investorName,
+            JSON.stringify([a.holderName, a.accountName]),
+            a.holderName,
+            a.currentShares,
+            a.previousShares,
+            g.holding.combinedShares,
+            g.previousCombined,
+            g.previousPercent,
+            g.holding.percent,
+            dayValue(parsed.previousDate),
+          ]),
+        );
+        await db.run('DELETE FROM incoming_five');
+        await append('incoming_five', rows);
+        await db.run(`INSERT INTO five_pct
           SELECT date, ticker, investor, account, any_value(holder_name),
             sum(shares), sum(previous_shares), max(combined_shares), max(previous_combined),
             max(pct_before), max(pct_after), max(previous_date)
           FROM incoming_five GROUP BY date, ticker, investor, account`);
-          dates.add(parsed.asOf);
-          years.add(parsed.asOf.slice(0, 4));
-        }
+        dates.add(parsed.asOf);
+        years.add(parsed.asOf.slice(0, 4));
       }
       await save('five_pct', years);
       await save('one_pct', monthlyYears);
       await save('ownership_files', fileYears);
     }
-    {
+    if (!ownershipOnly) {
       const known = new Map(
         (
           await query(
@@ -738,6 +831,26 @@ export async function ingest({
       report_gaps,
       processed,
       remaining,
+      ownership: ownershipOnly
+        ? {
+            since,
+            until,
+            five_pct_dates: [...(await present('five_pct'))]
+              .filter((d) => d >= (since ?? '') && d <= (until ?? today))
+              .sort(),
+            one_pct_dates: [...(await present('one_pct'))]
+              .filter((d) => d >= (since ?? '') && d <= (until ?? today))
+              .sort(),
+            price_dates_checked: (
+              await query(`SELECT count(DISTINCT date)::INTEGER n FROM prices
+              WHERE date BETWEEN ${literal(since ?? today)} AND ${literal(until ?? today)}`)
+            )[0]?.n,
+            missing_five_pct_price_dates:
+              await query(`SELECT DISTINCT date::VARCHAR date FROM prices
+          WHERE date BETWEEN ${literal(since ?? today)} AND ${literal(until ?? today)}
+          EXCEPT SELECT DISTINCT date::VARCHAR date FROM five_pct ORDER BY date`),
+          }
+        : undefined,
       attachment_labels: { backfilled: labelsBackfilled, remaining: labelsRemaining },
     };
   } finally {
@@ -755,6 +868,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
       since: { type: 'string' },
       until: { type: 'string' },
       'registry-only': { type: 'boolean' },
+      'ownership-only': { type: 'boolean' },
       'reparse-registry': { type: 'boolean' },
       limit: { type: 'string' },
       'attachment-label-limit': { type: 'string' },
@@ -762,7 +876,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   });
   if (!values.data || !values.out)
     throw new Error(
-      'Usage: ingest -- --data <dir> --out <dir> [--since YYYY-MM-DD] [--attachment-label-limit 200] [--registry-only --until YYYY-MM-DD --limit 100 --reparse-registry]',
+      'Usage: ingest -- --data <dir> --out <dir> [--since YYYY-MM-DD] [--attachment-label-limit 200] [--registry-only --until YYYY-MM-DD --limit 100 --reparse-registry] [--ownership-only --since YYYY-MM-DD --until YYYY-MM-DD]',
     );
   process.stdout.write(
     `${JSON.stringify(
@@ -772,6 +886,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
         since: values.since,
         until: values.until,
         registryOnly: values['registry-only'],
+        ownershipOnly: values['ownership-only'],
         reparseRegistry: values['reparse-registry'],
         limit: values.limit ? Number(values.limit) : undefined,
         attachmentLabelLimit:
