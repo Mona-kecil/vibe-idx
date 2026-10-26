@@ -1,0 +1,52 @@
+{
+  "ResultCount": 1,
+  "Replies": [
+    {
+      "pengumuman": {
+        "Id2": "20260130211818-Peng-LKS-00020/BEI.PLP/01-2026_id-id",
+        "EfekEmiten_DIRE": false,
+        "EfekEmiten_DINFRA": false,
+        "Id": 0,
+        "FinalId": null,
+        "OldFinalId": 0,
+        "NoPengumuman": "Peng-LKS-00020/BEI.PLP/01-2026",
+        "TglPengumuman": "2026-01-30T21:18:18",
+        "JudulPengumuman": "Pemegang Saham di atas 5% (KSEI)",
+        "JenisPengumuman": "STOCK",
+        "Kode_Emiten": "Semua Emiten Saham                                                                                  ",
+        "CreatedDate": "2026-01-30T21:23:52",
+        "Form_Id": "00000",
+        "PerihalPengumuman": "Pemegang Saham di atas 5% (KSE",
+        "JMSXGroupID": "f-32023100-0",
+        "Divisi": "Divisi Peraturan dan Layanan P",
+        "KodeDivisi": "PLP",
+        "JenisEmiten": null,
+        "EfekEmiten_Saham": false,
+        "EfekEmiten_Obligasi": false,
+        "EfekEmiten_EBA": false,
+        "EfekEmiten_ETF": false,
+        "EfekEmiten_SPEI": false
+      },
+      "attachments": [
+        {
+          "Id": 0,
+          "PDFFilename": "a9c98802d6_021e4b1f82.pdf",
+          "FullSavePath": "https://www.idx.co.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202601/a9c98802d6_021e4b1f82.pdf",
+          "JMSXGroupID": null,
+          "CorrelationID": null,
+          "IsAttachment": false,
+          "OriginalFilename": "20260130_Semua Emiten Saham_Pengumuman Bursa_32023100.pdf"
+        },
+        {
+          "Id": 0,
+          "PDFFilename": "886b0c0f99_48b702090a.pdf",
+          "FullSavePath": "https://www.idx.co.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202601/886b0c0f99_48b702090a.pdf",
+          "JMSXGroupID": null,
+          "CorrelationID": null,
+          "IsAttachment": true,
+          "OriginalFilename": "20260130_Semua Emiten Saham_Pengumuman Bursa_32023100_lamp1.pdf"
+        }
+      ]
+    }
+  ]
+}
