@@ -26,7 +26,17 @@ export type BrokerRow = z.infer<typeof brokerRowSchema>;
 export type BrokerDay = z.infer<typeof brokerDaySchema>;
 export type BrokerHistory = z.infer<typeof brokerHistorySchema>;
 
-const accumulationWindowSchema = z.object({ pct: z.number(), broker: z.string() }).nullable();
+const accumulationWindowSchema = z
+  .object({
+    pct: z.number(),
+    broker: z.string(),
+    size: z.number().nullable().default(null),
+    broker_avg: z.number().nullable().default(null),
+    stock_avg: z.number().nullable().default(null),
+    buy_trades: z.number().nullable().default(null),
+    trades: z.number().nullable().default(null),
+  })
+  .nullable();
 export const accumulationSchema = z.object({
   date: z.iso.date().nullable(),
   stocks: z.array(

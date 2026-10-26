@@ -514,6 +514,47 @@ describe('market summary', () => {
     });
     expect(host.querySelector('.watch-link')?.getAttribute('href')).toBe('/t/BBCA');
   });
+  it('renders and sorts buy size with nulls last and keeps old accumulation payloads readable', async () => {
+    auth.user = { id: 'market-user', email: 'market@example.com' };
+    window.history.replaceState(null, '', '/market');
+    fetcher.mockResolvedValueOnce(Response.json(summary)).mockResolvedValueOnce(
+      Response.json({
+        ...marketAccumulation,
+        stocks: marketAccumulation.stocks.map((stock, i) => ({
+          ...stock,
+          windows: {
+            ...stock.windows,
+            '1d': {
+              pct: 0.182,
+              broker: 'XL',
+              size: i === 2 ? null : i === 0 ? 4.1 : 2,
+              broker_avg: 12400,
+              stock_avg: 3020,
+              buy_trades: 214,
+              trades: 18512,
+            },
+          },
+        })),
+      }),
+    );
+    await render();
+    expect(host.querySelector('th:nth-child(7)')?.textContent).toContain('Buy size');
+    const cells = () => [...host.querySelectorAll('#market-rows td:nth-child(7)')];
+    expect(cells().map((cell) => cell.textContent)).toEqual(['', '2.0×', '4.1×']);
+    expect(cells()[2]?.getAttribute('title')).toBe(
+      'XL avg 12,400 shares per buy trade over 214 trades; stock avg 3,020 over 18,512 trades',
+    );
+    await click('th:nth-child(7) button');
+    expect(order()).toEqual(['AAAA', 'BBCA', 'CCCC']);
+    expect(host.querySelector('th:nth-child(7)')?.getAttribute('aria-sort')).toBe('descending');
+    await click('th:nth-child(7) button');
+    expect(order()).toEqual(['BBCA', 'AAAA', 'CCCC']);
+    expect(host.querySelector('th:nth-child(7)')?.getAttribute('aria-sort')).toBe('ascending');
+    await click('.ranges button:nth-child(2)');
+    expect(host.textContent).toContain('30.0%AA');
+    expect(cells().map((cell) => cell.textContent)).toEqual(['', '', '']);
+    expect(host.querySelector('[role="alert"]')).toBeNull();
+  });
   it('keeps prices and sorting public, offers sign-in once and never requests private data while signed out', async () => {
     window.history.replaceState(null, '', '/market');
     await render();
@@ -524,6 +565,12 @@ describe('market summary', () => {
       [...host.querySelectorAll('button')].filter((button) => button.textContent === 'Sign in'),
     ).toHaveLength(1);
     expect(host.querySelector('.broker')).toBeNull();
+    expect(host.querySelector('th:nth-child(7)')?.textContent).toBe('');
+    expect(
+      [...host.querySelectorAll('#market-rows td:nth-child(7)')].every(
+        (cell) => cell.textContent === '',
+      ),
+    ).toBe(true);
     await click('.ranges button:nth-child(2)');
     await click('th:nth-child(3) button');
     expect(order()).toEqual(['BBCA', 'AAAA', 'CCCC']);

@@ -234,7 +234,27 @@ describe('private broker API', () => {
     const response = await handle(request({ query: 'view=market', token: await token() }));
     expect(response.status).toBe(200);
     expectPrivate(response);
-    expect(await response.json()).toEqual(body);
+    expect(await response.json()).toEqual({
+      ...body,
+      stocks: [
+        {
+          ticker: 'BBCA',
+          windows: {
+            '1d': {
+              pct: 0.2,
+              broker: 'YP',
+              size: null,
+              broker_avg: null,
+              stock_avg: null,
+              buy_trades: null,
+              trades: null,
+            },
+            '3d': null,
+            '5d': null,
+          },
+        },
+      ],
+    });
     expect(storageReads[0]?.path).toBe('/vibe-idx-private/site/market-accumulation.json');
   });
 

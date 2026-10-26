@@ -263,7 +263,7 @@ export async function brokers({
       if (existsSync(coverage))
         await db.run(`INSERT INTO broker_pairs SELECT * FROM read_parquet(${literal(coverage)})`);
       await db.run(`CREATE TEMP VIEW prices AS
-      SELECT date, ticker, volume FROM read_parquet(${literal(join(data, 'parquet', 'prices', '*.parquet'))});
+      SELECT date, ticker, volume, frequency FROM read_parquet(${literal(join(data, 'parquet', 'prices', '*.parquet'))});
       ${marketCalendar}
       CREATE TEMP VIEW traded AS
       SELECT DISTINCT date, ticker
