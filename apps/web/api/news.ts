@@ -104,16 +104,6 @@ export async function news(request: Request, fetcher: typeof fetch = fetch) {
       .trim();
     const items = feeds
       .flat()
-      .filter(
-        (item) =>
-          tickerToken.test(item.title) ||
-          (companyPhrase !== '' &&
-            ` ${item.title
-              .normalize('NFKC')
-              .toLowerCase()
-              .replace(/[^\p{L}\p{N}]+/gu, ' ')
-              .trim()} `.includes(` ${companyPhrase} `)),
-      )
       .filter((item) => Date.parse(item.pubDate) >= start && Date.parse(item.pubDate) < end)
       .sort((a, b) => Date.parse(b.pubDate) - Date.parse(a.pubDate))
       .map((item) => ({
@@ -123,6 +113,20 @@ export async function news(request: Request, fetcher: typeof fetch = fetch) {
         source:
           typeof item.source === 'string' ? item.source : (item.source?.['#text'] ?? 'Google News'),
       }))
+      .filter((item) => {
+        // Google appends " - Publisher"; a publisher named like the ticker (VIVA.co.id) is not a match.
+        const suffix = item.title.lastIndexOf(` - ${item.source}`);
+        const headline = suffix > 0 ? item.title.slice(0, suffix) : item.title;
+        return (
+          tickerToken.test(headline) ||
+          (companyPhrase !== '' &&
+            ` ${headline
+              .normalize('NFKC')
+              .toLowerCase()
+              .replace(/[^\p{L}\p{N}]+/gu, ' ')
+              .trim()} `.includes(` ${companyPhrase} `))
+        );
+      })
       .filter((item) => {
         const headline = JSON.stringify(
           [item.title, item.source].map((text) =>

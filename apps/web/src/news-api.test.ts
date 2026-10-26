@@ -23,6 +23,7 @@ describe('public ticker news', () => {
       'XSINI naik',
       'Singaraja Putranya Umumkan RUPS',
       'Pesingaraja Putra Umumkan RUPS',
+      'IHSG Melemah Sore Ini - SINI.co.id',
     ];
     for (const companyAvailable of [true, false]) {
       for (const [range, limit] of [
@@ -45,6 +46,7 @@ describe('public ticker news', () => {
               title,
               link: `https://news.google.com/${index}`,
               pubDate: '2026-10-23T01:00:00Z',
+              ...(title.endsWith(' - SINI.co.id') && { source: 'SINI.co.id' }),
             })),
           );
         };
