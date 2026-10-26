@@ -212,6 +212,22 @@ export async function ingest({
         } else await db.run(`INSERT INTO ${table} BY NAME SELECT * FROM ${source}`);
       }
     }
+    // IDX encodes TRUE as an Excel boolean; older parsers stored its ticker as '1'.
+    for (const table of ['five_pct', 'one_pct'] as const) {
+      const years = new Set<string>();
+      for (const r of await query(
+        `SELECT DISTINCT year(date)::VARCHAR partition_year FROM ${table} WHERE ticker = '1'`,
+      )) {
+        if (typeof r.partition_year !== 'string') throw new Error('Expected ownership ledger year');
+        years.add(r.partition_year);
+      }
+      if (!years.size) continue;
+      await db.run(`INSERT INTO ${table}
+        SELECT * REPLACE ('TRUE' AS ticker) FROM ${table} WHERE ticker = '1'
+        ON CONFLICT DO NOTHING;
+        DELETE FROM ${table} WHERE ticker = '1'`);
+      await save(table, years);
+    }
     if (!registryOnly && !(await present('issuers')).has(today)) {
       const issuerBytes = await raw(
         `issuers/${today}.json`,
