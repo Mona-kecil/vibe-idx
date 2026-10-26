@@ -245,8 +245,8 @@ export async function parseFivePctPdf(bytes: Uint8Array) {
         rowBounds.set(bounds.top, item.y);
       }
     }
-    if (rowBounds.size && !sheet.length)
-      throw new Error(`Missing legacy 5% date headers: page ${n}`);
+    if (!rowBounds.size) throw new Error(`Legacy 5% table page ${n} has no share rows`);
+    if (!sheet.length) throw new Error(`Missing legacy 5% date headers: page ${n}`);
     for (const y of [...rowBounds.values()].sort((a, b) => a - b)) {
       const row = indexes.map((column) => (column < 0 ? '' : cell(column, y).text));
       const ticker = row[1] ?? '';
