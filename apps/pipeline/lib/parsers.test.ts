@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { strToU8, zipSync } from 'fflate';
 import { describe, expect, it } from 'vite-plus/test';
 import { parseFivePct } from './fivePct';
 import { parseOnePct } from './onePct';
@@ -11,6 +12,34 @@ const json = (name: string): unknown => JSON.parse(bytes(name).toString());
 const five = parseFivePct(bytes('ownership-5pct-2026-10-19.xlsx'));
 
 describe('IDX fixture ingestion', () => {
+  it.each([
+    ['1', 'TRUE'],
+    ['0', 'FALSE'],
+  ])('keeps Excel boolean ticker %s as %s in both ownership parsers', (value, ticker) => {
+    const workbook = (rows: string) =>
+      zipSync({
+        'xl/worksheets/sheet1.xml': strToU8(
+          `<worksheet><sheetData>${rows}</sheetData></worksheet>`,
+        ),
+      });
+    const five = workbook(`
+      <row r="1"><c r="B1" t="inlineStr"><is><t>Kode Efek</t></is></c>
+        <c r="L1" t="inlineStr"><is><t>21-Oct-2026</t></is></c>
+        <c r="O1" t="inlineStr"><is><t>22-Oct-2026</t></is></c></row>
+      <row r="2"></row>
+      <row r="3"><c r="B3" t="b"><v>${value}</v></c>
+        <c r="C3" t="inlineStr"><is><t>TRINITI DINAMIK Tbk, PT</t></is></c>
+        <c r="E3" t="inlineStr"><is><t>INVESTOR</t></is></c></row>`);
+    const one = workbook(`
+      <row r="1"><c r="A1" t="inlineStr"><is><t>DATE</t></is></c>
+        <c r="B1" t="inlineStr"><is><t>SHARE_CODE</t></is></c></row>
+      <row r="2"><c r="A2" t="inlineStr"><is><t>2026-09-30</t></is></c>
+        <c r="B2" t="b"><v>${value}</v></c>
+        <c r="C2" t="inlineStr"><is><t>TRINITI DINAMIK Tbk, PT</t></is></c>
+        <c r="D2" t="inlineStr"><is><t>INVESTOR</t></is></c></row>`);
+    expect.soft(parseFivePct(five).groups.map((g) => g.holding.ticker)).toEqual([ticker]);
+    expect.soft(parseOnePct(one).map((r) => r.ticker)).toEqual([ticker]);
+  });
   it('retains investor identity and combined totals across 5% continuation accounts', () => {
     expect(five.asOf).toBe('2026-10-19');
     expect(five.previousDate).toBe('2026-10-16');

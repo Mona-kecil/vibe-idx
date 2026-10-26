@@ -207,6 +207,103 @@ function network({ monthly = false, reports = false } = {}) {
 }
 
 describe('batch pipeline', () => {
+  it('repairs boolean tickers across Parquet years without key conflicts or replay changes', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'idx-true-ticker-'));
+    const options = {
+      data: join(root, 'data'),
+      out: join(root, 'out'),
+      since: '2026-10-21',
+      today: '2026-10-21',
+      registryOnly: true,
+      fetcher: network().fetcher,
+    };
+    try {
+      const instance = await DuckDBInstance.create(':memory:');
+      const db = await instance.connect();
+      try {
+        await db.run(schema);
+        await db.run(`INSERT INTO five_pct (date, ticker, investor, account, shares,
+          combined_shares, previous_combined, pct_before, pct_after, previous_date) VALUES
+          ('2024-10-21', 'AADI', 'OTHER', 'a', 30, 30, 20, 2, 3, '2024-10-20'),
+          ('2025-10-21', '1', 'INVESTOR', 'a', 100, 100, 90, 9, 10, '2025-10-20'),
+          ('2026-10-21', '1', 'INVESTOR', 'a', 100, 100, 90, 9, 10, '2026-10-20'),
+          ('2026-10-21', 'TRUE', 'INVESTOR', 'a', 110, 110, 90, 9, 11, '2026-10-20'),
+          ('2026-10-21', '1', 'INVESTOR', 'b', 0, 110, 90, 9, 11, '2026-10-20');
+          INSERT INTO one_pct (date, ticker, investor, seq, shares, pct) VALUES
+          ('2024-09-30', 'AADI', 'OTHER', 0, 30, 3),
+          ('2025-09-30', '1', 'INVESTOR', 0, 100, 10),
+          ('2026-09-30', '1', 'INVESTOR', 0, 100, 10),
+          ('2026-09-30', 'TRUE', 'INVESTOR', 0, 110, 11),
+          ('2026-09-30', '1', 'INVESTOR', 1, 20, 2)`);
+        for (const table of ['five_pct', 'one_pct']) {
+          await mkdir(join(options.data, 'parquet', table), { recursive: true });
+          for (const year of [2024, 2025, 2026])
+            await db.run(`COPY (SELECT * FROM ${table} WHERE year(date) = ${year})
+              TO '${join(options.data, 'parquet', table, `${year}.parquet`)}' (FORMAT PARQUET)`);
+        }
+      } finally {
+        db.closeSync();
+        instance.closeSync();
+      }
+      const paths = ['five_pct', 'one_pct'].flatMap((table) =>
+        [2024, 2025, 2026].map((year) => join(options.data, 'parquet', table, `${year}.parquet`)),
+      );
+      const before = await Promise.all(paths.map((path) => readFile(path)));
+      const first = await ingest(options);
+      expect(first.counts).toMatchObject({ five_pct: 4, one_pct: 4 });
+      const ledger = await DuckDBInstance.create(':memory:');
+      const saved = await ledger.connect();
+      try {
+        for (const [table, extraShares] of [
+          ['five_pct', 0],
+          ['one_pct', 20],
+        ] as const) {
+          const rows =
+            await saved.runAndReadAll(`SELECT year(date)::INTEGER partition_year, ticker, shares
+            FROM read_parquet('${join(options.data, 'parquet', table, '*.parquet')}')
+            ORDER BY date, shares`);
+          expect(rows.getRowObjectsJson()).toEqual([
+            { partition_year: 2024, ticker: 'AADI', shares: 30 },
+            { partition_year: 2025, ticker: 'TRUE', shares: 100 },
+            { partition_year: 2026, ticker: 'TRUE', shares: extraShares },
+            { partition_year: 2026, ticker: 'TRUE', shares: 110 },
+          ]);
+        }
+      } finally {
+        saved.closeSync();
+        ledger.closeSync();
+      }
+      const published = JSON.parse(await readFile(join(options.out, 'ticker/TRUE.json'), 'utf8'));
+      expect(published.holders).toEqual([{ investor: 'INVESTOR', shares: 110, pct: 11 }]);
+      expect(published.one_pct.holders).toMatchObject([
+        { investor: 'INVESTOR', shares: 110, pct: 11 },
+        { investor: 'INVESTOR', shares: 20, pct: 2 },
+      ]);
+      expect(JSON.parse(await readFile(join(options.out, 'feed.json'), 'utf8'))).toEqual([
+        expect.objectContaining({ ticker: 'TRUE', kind: 'five_pct_change' }),
+      ]);
+      expect(await readdir(join(options.out, 'ticker'))).toEqual(['AADI.json', 'TRUE.json']);
+      const repaired = await Promise.all(paths.map((path) => readFile(path)));
+      expect(repaired[0]).toEqual(before[0]);
+      expect(repaired[3]).toEqual(before[3]);
+      const restored = { ...options, data: join(root, 'restored'), out: join(root, 'replayed') };
+      await cp(join(options.data, 'parquet'), join(restored.data, 'parquet'), { recursive: true });
+      const replay = await ingest(restored);
+      expect(replay.counts).toEqual(first.counts);
+      expect(JSON.parse(await readFile(join(restored.out, 'ticker/TRUE.json'), 'utf8'))).toEqual(
+        published,
+      );
+      expect(await readdir(join(restored.out, 'ticker'))).toEqual(['AADI.json', 'TRUE.json']);
+      expect(
+        await Promise.all(
+          paths.map((path) => readFile(join(restored.data, relative(options.data, path)))),
+        ),
+      ).toEqual(repaired);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it('does not publish spelling-only shareholder exits and keeps the latest holder names', async () => {
     const instance = await DuckDBInstance.create(':memory:');
     const db = await instance.connect();

@@ -55,7 +55,11 @@ export function readSheet(bytes: Uint8Array): string[][] {
         ? (strings[Number(raw)] ?? '')
         : /\bt="inlineStr"/.test(attrs)
           ? texts(body)
-          : decode(raw);
+          : /\bt="b"/.test(attrs)
+            ? raw === '1'
+              ? 'TRUE'
+              : 'FALSE'
+            : decode(raw);
     }
     return cells;
   });
