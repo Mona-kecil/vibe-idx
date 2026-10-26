@@ -619,7 +619,7 @@ describe('private broker pipeline', () => {
   });
 
   it('stops on Stockbit HTTP, timeout, and network errors, saves completed pairs, and steps down across runs', async () => {
-    for (const failure of ['401', '429', '503', 'timeout', 'network']) {
+    for (const failure of ['401', '429', '503', 'timeout', 'network', 'body']) {
       const f = await fixture();
       await prices(
         f.data,
@@ -629,6 +629,10 @@ describe('private broker pipeline', () => {
         if (date === previous) {
           if (failure === 'timeout') throw new DOMException('timed out', 'TimeoutError');
           if (failure === 'network') throw new TypeError('network failed');
+          if (failure === 'body')
+            return new Response(
+              new ReadableStream({ pull: (c) => c.error(new TypeError('body failed')) }),
+            );
           return new Response('', { status: Number(failure) });
         }
         return Response.json(summary(ticker, date));

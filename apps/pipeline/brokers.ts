@@ -301,11 +301,12 @@ export async function brokers({
       if (bounded()) return;
       lastStart = Date.now();
       try {
-        return await fetcher(url, {
+        const response = await fetcher(url, {
           ...init,
           redirect: 'error',
           signal: AbortSignal.timeout(60000),
         });
+        return { ok: response.ok, status: response.status, bytes: await response.bytes() };
       } catch (error) {
         throw new StockbitError(String(error), { cause: error });
       }
@@ -323,7 +324,7 @@ export async function brokers({
       });
       if (!auth) return false;
       if (!auth.ok) throw new StockbitError(`Stockbit auth HTTP ${auth.status}`);
-      const rotated = tokens(await auth.json());
+      const rotated = tokens(JSON.parse(new TextDecoder().decode(auth.bytes)));
       if (!rotated) throw new Error(`Invalid Stockbit auth HTTP ${auth.status}`);
       await mkdir(dirname(token), { recursive: true });
       await writeFile(token + '.tmp', JSON.stringify(rotated) + '\n', { mode: 0o600 });
@@ -351,7 +352,7 @@ export async function brokers({
       });
       if (!response) return;
       if (!response.ok) throw new StockbitError(`Stockbit HTTP ${response.status}`);
-      const bytes = Buffer.from(await response.arrayBuffer());
+      const bytes = Buffer.from(response.bytes);
       fetched++;
       await archive(key, bytes);
       return { bytes, cached: false };
