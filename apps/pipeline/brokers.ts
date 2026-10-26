@@ -11,6 +11,7 @@ import { dateValue, DuckDBInstance } from '@duckdb/node-api';
 import type { DuckDBValue } from '@duckdb/node-api';
 import { z } from 'zod';
 import { date } from './lib/rows';
+import { accumulation, marketCalendar } from './sql';
 
 const literal = (s: string) => `'${s.replaceAll("'", "''")}'`;
 const headers = {
@@ -261,9 +262,12 @@ export async function brokers({
       const coverage = join(data, 'parquet', 'broker-coverage.parquet');
       if (existsSync(coverage))
         await db.run(`INSERT INTO broker_pairs SELECT * FROM read_parquet(${literal(coverage)})`);
-      await db.run(`CREATE TEMP VIEW traded AS
+      await db.run(`CREATE TEMP VIEW prices AS
+      SELECT date, ticker, volume FROM read_parquet(${literal(join(data, 'parquet', 'prices', '*.parquet'))});
+      ${marketCalendar}
+      CREATE TEMP VIEW traded AS
       SELECT DISTINCT date, ticker
-      FROM read_parquet(${literal(join(data, 'parquet', 'prices', '*.parquet'))})
+      FROM prices
       WHERE volume > 0 AND date >= DATE '2026-01-01'
         AND date <= DATE ${literal(completedThrough)};
       INSERT INTO broker_pairs
@@ -424,6 +428,10 @@ export async function brokers({
         await rename(file + '.tmp', file);
         await put(`site/broker/${ticker}.json`, file);
       }
+      const accumulationFile = join(out, 'market-accumulation.json');
+      await writeFile(accumulationFile + '.tmp', `${(await output(accumulation))[0]}\n`);
+      await rename(accumulationFile + '.tmp', accumulationFile);
+      await put('site/market-accumulation.json', accumulationFile);
       if (failure) throw failure;
       const pending = entries.length - completed;
       await aws('delete-object', ['--key', 'broker-run.json']);

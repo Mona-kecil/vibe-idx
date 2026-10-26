@@ -25,3 +25,19 @@ export const brokerHistorySchema = z.object({
 export type BrokerRow = z.infer<typeof brokerRowSchema>;
 export type BrokerDay = z.infer<typeof brokerDaySchema>;
 export type BrokerHistory = z.infer<typeof brokerHistorySchema>;
+
+const accumulationWindowSchema = z.object({ pct: z.number(), broker: z.string() }).nullable();
+export const accumulationSchema = z.object({
+  date: z.iso.date().nullable(),
+  stocks: z.array(
+    z.object({
+      ticker: brokerTickerSchema,
+      windows: z.object({
+        '1d': accumulationWindowSchema,
+        '3d': accumulationWindowSchema,
+        '5d': accumulationWindowSchema,
+      }),
+    }),
+  ),
+});
+export type Accumulation = z.infer<typeof accumulationSchema>;

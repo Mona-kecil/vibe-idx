@@ -1050,3 +1050,64 @@ body {
 .home-page .signin span {
   max-width: 200px;
 }
+
+:is(.home-page, .ticker-page) .main-nav {
+  display: flex;
+  gap: 4px;
+}
+:is(.home-page, .ticker-page) .main-nav a {
+  padding: 9px 11px;
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: none;
+  border-radius: 4px;
+}
+:is(.home-page, .ticker-page) .main-nav a[aria-current='page'] {
+  background: #eeeee6;
+}
+:is(.home-page, .ticker-page) .topbar-inner {
+  gap: 32px;
+}
+@media (max-width: 1100px) {
+  :is(.home-page, .ticker-page) .topbar-inner {
+    gap: 20px;
+  }
+  :is(.home-page, .ticker-page) .search {
+    flex: 1;
+    min-width: 0;
+  }
+}
+@media (max-width: 750px) {
+  :is(.home-page, .ticker-page) .main-nav {
+    grid-column: 2;
+    grid-row: 1;
+    gap: 0;
+  }
+  :is(.home-page, .ticker-page) .main-nav a {
+    padding: 8px 10px;
+    font-size: 11px;
+  }
+  :is(.home-page, .ticker-page) .topbar-inner {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    height: auto;
+    min-height: 122px;
+    padding: 18px 0;
+    gap: 14px 18px;
+  }
+  :is(.home-page, .ticker-page) .topbar-inner .search {
+    width: auto;
+    margin: 0;
+    grid-column: 1/-1;
+    grid-row: 2;
+  }
+  :is(.home-page, .ticker-page) .topbar-inner .signin {
+    grid-column: 2;
+    grid-row: 3;
+  }
+  .ticker-page .topbar-inner .ihsg {
+    grid-column: 1;
+    grid-row: 3;
+    justify-self: start;
+  }
+}

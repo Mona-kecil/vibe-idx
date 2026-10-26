@@ -16,7 +16,7 @@ import { idxUrl, parseOwnershipList } from './lib/ownershipList';
 import { date } from './lib/rows';
 import { labelAttachments, orderAttachments, parseAnnouncements, parseReport } from './reports';
 import { registryParserVersion } from './registry';
-import { analytics, health, market, schema, stockTable, tickers } from './sql';
+import { analytics, health, market, marketSummary, schema, stockTable, tickers } from './sql';
 
 const archivedDisclosure = z.object({
   id: z.string(),
@@ -689,6 +689,7 @@ export async function ingest({
       join(out, 'feed.json'),
       `[${(await output('SELECT * FROM feed ORDER BY kind, ticker')).join(',')}]\n`,
     );
+    await writeFile(join(out, 'market-summary.json'), `${(await output(marketSummary))[0]}\n`);
     await writeFile(join(out, 'market.json'), `${(await output(market))[0]}\n`);
     await writeFile(join(out, 'tickers.json'), `[${(await output(stockTable)).join(',')}]\n`);
     await writeFile(join(out, 'health.json'), `${(await output(health))[0]}\n`);

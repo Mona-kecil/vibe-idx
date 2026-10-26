@@ -647,6 +647,13 @@ BT /F1 10 Tf 1 0 0 1 529 530 Tm (-100) Tj ET`;
     };
     try {
       const first = await ingest(options);
+      const marketSummary = JSON.parse(
+        await readFile(join(options.out, 'market-summary.json'), 'utf8'),
+      );
+      expect(marketSummary.date).toBe('2026-10-21');
+      expect(marketSummary.stocks.length).toBeGreaterThan(0);
+      expect(Object.keys(marketSummary.stocks[0].windows)).toEqual(['1d', '3d', '5d']);
+      expect(JSON.stringify(marketSummary)).not.toContain('broker');
       expect(
         new URL(net.urls.find((u) => u.includes('GetAnnouncement')) ?? '').searchParams.get(
           'dateFrom',

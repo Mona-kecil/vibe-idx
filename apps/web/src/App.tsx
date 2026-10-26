@@ -4,6 +4,7 @@ import { LocaleProvider, useLocale, type Locale } from './locale';
 import { LoginPage } from './BrokerPanel';
 import { TickerPage } from './ticker/TickerPage';
 import { Home } from './Home';
+import { MarketPage } from './MarketPage';
 
 export function App({
   initialUrl,
@@ -27,6 +28,7 @@ function AppRoute({ initialUrl }: { initialUrl?: string }) {
   }, []);
   if (path === '/login') return <LoginPage />;
   if (path === '/callback') return <p role="status">{t('Signing you in…')}</p>;
+  if (path === '/market') return <MarketPage />;
   const ticker = /^\/t\/([A-Z0-9-]{1,12})\/?$/i.exec(path)?.[1]?.toUpperCase();
   return ticker ? <TickerPage key={ticker} ticker={ticker} /> : <Home />;
 }
