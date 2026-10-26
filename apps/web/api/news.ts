@@ -96,6 +96,12 @@ export async function news(request: Request, fetcher: typeof fetch = fetch) {
     const headlines = new Set<string>();
     const start = range ? Date.parse(`${range.from}T00:00:00+07:00`) : -Infinity;
     const end = range ? Date.parse(`${range.to}T00:00:00+07:00`) + dayMs : Infinity;
+    const tickerToken = new RegExp(`(?:^|[^\\p{L}\\p{N}])${ticker.data}(?=$|[^\\p{L}\\p{N}])`, 'u');
+    const companyPhrase = name
+      .normalize('NFKC')
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}]+/gu, ' ')
+      .trim();
     const items = feeds
       .flat()
       .filter((item) => Date.parse(item.pubDate) >= start && Date.parse(item.pubDate) < end)
@@ -107,6 +113,20 @@ export async function news(request: Request, fetcher: typeof fetch = fetch) {
         source:
           typeof item.source === 'string' ? item.source : (item.source?.['#text'] ?? 'Google News'),
       }))
+      .filter((item) => {
+        // Google appends " - Publisher"; a publisher named like the ticker (VIVA.co.id) is not a match.
+        const suffix = item.title.lastIndexOf(` - ${item.source}`);
+        const headline = suffix > 0 ? item.title.slice(0, suffix) : item.title;
+        return (
+          tickerToken.test(headline) ||
+          (companyPhrase !== '' &&
+            ` ${headline
+              .normalize('NFKC')
+              .toLowerCase()
+              .replace(/[^\p{L}\p{N}]+/gu, ' ')
+              .trim()} `.includes(` ${companyPhrase} `))
+        );
+      })
       .filter((item) => {
         const headline = JSON.stringify(
           [item.title, item.source].map((text) =>
