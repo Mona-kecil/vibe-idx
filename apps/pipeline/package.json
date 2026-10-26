@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@duckdb/node-api": "^1.4.3-r.3",
+    "aws4fetch": "^1.0.20",
     "fflate": "^0.8.3",
     "tsx": "^4.20.6",
     "unpdf": "^1.9.1",

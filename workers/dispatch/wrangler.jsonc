@@ -1,0 +1,8 @@
+{
+  "name": "vibe-idx-dispatch",
+  "main": "src/index.js",
+  "compatibility_date": "2026-10-27",
+  "triggers": {
+    "crons": ["*/10 * * * *", "17 10 * * *"]
+  }
+}
