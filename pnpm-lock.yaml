@@ -17,6 +17,9 @@ importers:
       '@duckdb/node-api':
         specifier: ^1.4.3-r.3
         version: 1.4.3-r.3
+      aws4fetch:
+        specifier: ^1.0.20
+        version: 1.0.20
       fflate:
         specifier: ^0.8.3
         version: 0.8.3

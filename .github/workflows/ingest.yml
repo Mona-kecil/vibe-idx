@@ -1,15 +1,8 @@
 name: Daily IDX batch
 
 on:
-  schedule:
-    - cron: '17 10 * * *'
-    - cron: '17 0-9,11-23 * * *'
   workflow_dispatch:
     inputs:
-      brokers_only:
-        description: 'Run only broker backfill; skip IDX ingestion and ignore registry inputs'
-        type: boolean
-        default: false
       registry_since:
         description: 'Registry publication window start (YYYY-MM-DD); blank runs normal ingestion'
         type: string
@@ -46,13 +39,11 @@ jobs:
       R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
       DATA: /tmp/idx-data
       OUT: /tmp/idx-public
-      PRIVATE_OUT: /tmp/idx-private
-      REGISTRY_ONLY: ${{ github.event_name == 'workflow_dispatch' && inputs.registry_since != '' && inputs.brokers_only != true }}
+      REGISTRY_ONLY: ${{ github.event_name == 'workflow_dispatch' && inputs.registry_since != '' }}
       REGISTRY_SINCE: ${{ inputs.registry_since }}
       REGISTRY_UNTIL: ${{ inputs.registry_until }}
       REGISTRY_REPARSE: ${{ inputs.registry_reparse }}
       REGISTRY_LIMIT: ${{ inputs.registry_limit }}
-      BROKER_RUN_KIND: ${{ ((github.event_name == 'schedule' && github.event.schedule != '17 10 * * *') || (github.event_name == 'workflow_dispatch' && inputs.brokers_only == true)) && 'backfill' || 'daily' }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -64,10 +55,8 @@ jobs:
       - name: Restore Parquet ledger
         run: mkdir -p "$DATA/raw" && aws s3 sync s3://vibe-idx-private/parquet "$DATA/parquet" --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
       - name: Restore IDX raw responses
-        if: env.BROKER_RUN_KIND == 'daily' || env.REGISTRY_ONLY == 'true'
         run: aws s3 sync s3://vibe-idx-private/raw "$DATA/raw" --exclude "broker/*" --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
       - name: Ingest IDX and emit website JSON
-        if: env.BROKER_RUN_KIND == 'daily' || env.REGISTRY_ONLY == 'true'
         run: |
           if [ "$REGISTRY_ONLY" = true ]; then
             args=(--registry-only --since "$REGISTRY_SINCE" --limit "$REGISTRY_LIMIT")
@@ -82,77 +71,16 @@ jobs:
           fi
           pnpm --filter @vibe-idx/pipeline ingest -- --data "$DATA" --out "$OUT"
       - name: Archive raw responses
-        if: ${{ always() && (env.BROKER_RUN_KIND == 'daily' || env.REGISTRY_ONLY == 'true') }}
+        if: ${{ always() }}
         run: |
           if [ -d "$DATA/raw" ]; then
             aws s3 sync "$DATA/raw" s3://vibe-idx-private/raw --exclude "broker/*" --no-overwrite --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
           fi
       - name: Upload Parquet ledger
-        if: ${{ always() && (env.BROKER_RUN_KIND == 'daily' || env.REGISTRY_ONLY == 'true') }}
+        if: ${{ always() }}
         run: |
           if [ -d "$DATA/parquet" ]; then
             aws s3 sync "$DATA/parquet" s3://vibe-idx-private/parquet --exclude "*.tmp" --exclude "brokers/*" --exclude "broker-coverage.parquet" --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
           fi
       - name: Publish website JSON
-        if: env.BROKER_RUN_KIND == 'daily' || env.REGISTRY_ONLY == 'true'
         run: aws s3 sync "$OUT" s3://vibe-idx-public --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
-      - name: Verify R2 conditional writes
-        if: github.event_name == 'workflow_dispatch' && env.REGISTRY_ONLY != 'true' && inputs.brokers_only != true
-        run: |
-          node --input-type=module <<'NODE'
-          import assert from 'node:assert/strict';
-          import { spawnSync } from 'node:child_process';
-          import { randomUUID } from 'node:crypto';
-          import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-          import { tmpdir } from 'node:os';
-          import { join } from 'node:path';
-
-          const dir = mkdtempSync(join(tmpdir(), 'broker-r2-check-'));
-          const body = join(dir, 'body');
-          const received = join(dir, 'received');
-          const key = `checks/brokers/${process.env.GITHUB_RUN_ID}-${randomUUID()}.json`;
-          const initial = `${key}:A`;
-          const updated = `${key}:B`;
-          const args = ['--bucket', 'vibe-idx-private', '--key', key];
-          const aws = (...args) => spawnSync('aws', ['s3api', ...args, '--endpoint-url', `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`], {
-            encoding: 'utf8', env: { ...process.env, AWS_MAX_ATTEMPTS: '1' }, timeout: 30000,
-          });
-          const ok = (result) => {
-            assert.equal(result.status, 0, result.stderr || result.error?.message);
-            return result.stdout.trim() ? JSON.parse(result.stdout) : {};
-          };
-          const rejected = (result) => {
-            assert.notEqual(result.status, 0);
-            assert.match(result.stderr, /PreconditionFailed|\b412\b/);
-          };
-          let created = false;
-          try {
-            writeFileSync(body, initial);
-            const result = aws('put-object', ...args, '--body', body, '--if-none-match', '*');
-            created = result.status === 0;
-            const first = ok(result);
-            rejected(aws('put-object', ...args, '--body', body, '--if-none-match', '*'));
-            rejected(aws('put-object', ...args, '--body', body, '--if-match', '"wrong-etag"'));
-            writeFileSync(body, updated);
-            ok(aws('put-object', ...args, '--body', body, '--if-match', first.ETag));
-            ok(aws('get-object', ...args, received));
-            assert.equal(readFileSync(received, 'utf8'), updated);
-            console.log('R2 create-once, ETag conflict, conditional update, and readback passed');
-          } finally {
-            try {
-              if (!created) {
-                const saved = aws('get-object', ...args, received);
-                if (saved.status === 0) {
-                  const value = readFileSync(received, 'utf8');
-                  created = value === initial || value === updated;
-                }
-              }
-              if (created) ok(aws('delete-object', ...args));
-            } finally {
-              rmSync(dir, { recursive: true, force: true });
-            }
-          }
-          NODE
-      - name: Ingest private broker summaries
-        if: env.REGISTRY_ONLY != 'true'
-        run: pnpm --filter @vibe-idx/pipeline brokers -- --data "$DATA" --token "$DATA/stockbit.json" --out "$PRIVATE_OUT"

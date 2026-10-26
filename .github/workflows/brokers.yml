@@ -1,0 +1,36 @@
+name: Broker collector
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: broker-collector
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  brokers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    env:
+      BROKER_DEADLINE_MINUTES: 330
+      AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: auto
+      R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+      DATA: /tmp/idx-data
+      PRIVATE_OUT: /tmp/idx-private
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Restore Parquet ledger
+        run: mkdir -p "$DATA/raw" && aws s3 sync s3://vibe-idx-private/parquet "$DATA/parquet" --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+      - name: Collect private broker summaries
+        run: pnpm --filter @vibe-idx/pipeline brokers -- --data "$DATA" --token "$DATA/stockbit.json" --out "$PRIVATE_OUT"

@@ -1,14 +1,13 @@
-import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { chmod, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { chmod, mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { setTimeout } from 'node:timers/promises';
 import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 import { dateValue, DuckDBInstance } from '@duckdb/node-api';
 import type { DuckDBValue } from '@duckdb/node-api';
+import { AwsClient } from 'aws4fetch';
 import { z } from 'zod';
 import { date } from './lib/rows';
 import { accumulation, marketCalendar } from './sql';
@@ -52,110 +51,243 @@ function number(row: Record<string, unknown>, key: string): number {
   return value;
 }
 
+export type R2 = {
+  get(key: string): Promise<{ bytes: Buffer; etag: string } | undefined>;
+  put(
+    key: string,
+    bytes: Buffer,
+    condition?: { ifNoneMatch: '*' } | { ifMatch: string },
+  ): Promise<string>;
+  delete(key: string): Promise<void>;
+  list(prefix: string): Promise<string[]>;
+};
+
+export function createR2({
+  accountId,
+  accessKeyId = process.env.AWS_ACCESS_KEY_ID,
+  secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY,
+  fetcher = fetch,
+}: {
+  accountId: string;
+  accessKeyId?: string;
+  secretAccessKey?: string;
+  fetcher?: typeof fetch;
+}): R2 {
+  if (!/^[a-zA-Z0-9]+$/.test(accountId)) throw new Error('Invalid R2 account ID');
+  if (!accessKeyId || !secretAccessKey) throw new Error('Missing R2 credentials');
+  const signer = new AwsClient({ accessKeyId, secretAccessKey, service: 's3', region: 'auto' });
+  async function request(method: string, key: string, init: RequestInit = {}, search = '') {
+    const url = `https://${accountId}.r2.cloudflarestorage.com/vibe-idx-private/${key.split('/').map(encodeURIComponent).join('/')}${search}`;
+    for (let attempt = 0; ; attempt++) {
+      let result;
+      try {
+        const response = await fetcher(
+          await signer.sign(url, {
+            ...init,
+            method,
+            redirect: 'error',
+            signal: AbortSignal.timeout(60000),
+          }),
+        );
+        result = {
+          status: response.status,
+          headers: response.headers,
+          bytes: Buffer.from(await response.arrayBuffer()),
+        };
+      } catch (error) {
+        if (attempt >= 3) throw error;
+      }
+      if (result) {
+        if (
+          result.status === 412 &&
+          attempt > 0 &&
+          new Headers(init.headers).get('If-None-Match') === '*'
+        ) {
+          const saved = await client.get(key);
+          if (
+            saved &&
+            init.body instanceof ArrayBuffer &&
+            saved.bytes.equals(Buffer.from(init.body))
+          )
+            return {
+              status: 200,
+              headers: new Headers({ ETag: saved.etag }),
+              bytes: Buffer.alloc(0),
+            };
+          throw new Error(`R2 create-once conflict: ${key}`);
+        }
+        if (result.status !== 429 && result.status < 500) return result;
+        if (attempt >= 3) throw new Error(`R2 ${method} HTTP ${result.status}: ${key}`);
+      }
+      await setTimeout(250 * 2 ** attempt);
+    }
+  }
+  function check(status: number, key: string) {
+    if (status < 200 || status >= 300) throw new Error(`R2 HTTP ${status}: ${key}`);
+  }
+  function etag(headers: Headers, key: string) {
+    const value = headers.get('ETag');
+    if (!value) throw new Error(`Missing R2 ETag: ${key}`);
+    return value;
+  }
+  const client: R2 = {
+    async get(key) {
+      const result = await request('GET', key);
+      if (result.status === 404) return;
+      check(result.status, key);
+      return { bytes: result.bytes, etag: etag(result.headers, key) };
+    },
+    async put(key, bytes, condition) {
+      const headers = new Headers();
+      if (condition) {
+        if ('ifMatch' in condition) headers.set('If-Match', condition.ifMatch);
+        else headers.set('If-None-Match', condition.ifNoneMatch);
+      }
+      const result = await request('PUT', key, { body: new Uint8Array(bytes).buffer, headers });
+      check(result.status, key);
+      return etag(result.headers, key);
+    },
+    async delete(key) {
+      const result = await request('DELETE', key);
+      check(result.status, key);
+    },
+    async list(prefix) {
+      const keys: string[] = [];
+      let continuation: string | undefined;
+      do {
+        const params = new URLSearchParams({ 'list-type': '2', prefix, 'encoding-type': 'url' });
+        if (continuation) params.set('continuation-token', continuation);
+        const result = await request('GET', '', {}, `?${params}`);
+        check(result.status, prefix);
+        const xml = result.bytes.toString('utf8');
+        keys.push(
+          ...Array.from(xml.matchAll(/<Key>(.*?)<\/Key>/gs), (match) =>
+            decodeURIComponent(match[1]),
+          ),
+        );
+        const truncated = /<IsTruncated>(true|false)<\/IsTruncated>/.exec(xml)?.[1];
+        if (!truncated) throw new Error(`Invalid R2 listing: ${prefix}`);
+        continuation =
+          truncated === 'true'
+            ? /<NextContinuationToken>(.*?)<\/NextContinuationToken>/s.exec(xml)?.[1]
+            : undefined;
+        if (truncated === 'true' && !continuation)
+          throw new Error(`Missing R2 continuation: ${prefix}`);
+        continuation = continuation
+          ?.replaceAll('&lt;', '<')
+          .replaceAll('&gt;', '>')
+          .replaceAll('&quot;', '"')
+          .replaceAll('&apos;', "'")
+          .replaceAll('&amp;', '&');
+      } while (continuation);
+      return keys;
+    },
+  };
+  return client;
+}
+
+type BrokerSummary = {
+  fetched: number;
+  replayed: number;
+  completed: number;
+  pending: number;
+  failed: { ticker: string; date: string; error: string }[];
+};
+
+export class BrokerRunError extends Error {
+  constructor(
+    message: string,
+    readonly summary: BrokerSummary,
+  ) {
+    super(message);
+  }
+}
+
 export async function brokers({
   data,
   token,
   out,
+  deadline,
   accountId,
-  runKind,
+  r2 = createR2({ accountId }),
   fetcher = fetch,
 }: {
   data: string;
   token: string;
   out: string;
+  deadline: number;
   accountId: string;
-  runKind: 'daily' | 'backfill';
+  r2?: R2;
   fetcher?: typeof fetch;
 }) {
-  if (!/^[a-zA-Z0-9]+$/.test(accountId)) throw new Error('Invalid R2 account ID');
   const started = Date.now();
-  let rpm = 20;
+  let rpm = 30;
   const completedThrough = new Date(started - (10 * 60 + 17) * 60000).toISOString().slice(0, 10);
-  const scratch = await mkdtemp(join(tmpdir(), 'broker-run-'));
-  async function aws(operation: string, args: string[]) {
-    return new Promise<string>((resolve, reject) => {
-      execFile(
-        'aws',
-        [
-          's3api',
-          operation,
-          '--endpoint-url',
-          `https://${accountId}.r2.cloudflarestorage.com`,
-          '--region',
-          'auto',
-          '--bucket',
-          'vibe-idx-private',
-          '--output',
-          'json',
-          ...args,
-        ],
-        { env: { ...process.env, AWS_MAX_ATTEMPTS: '1' } },
-        (error, stdout, stderr) =>
-          error ? reject(Object.assign(error, { stderr })) : resolve(stdout),
-      );
-    });
+  if (await r2.get('broker-run.json'))
+    throw new Error('Broker run marker requires operator review');
+  const marker = Buffer.from(JSON.stringify({ id: randomUUID(), started }));
+  try {
+    await r2.put('broker-run.json', marker, { ifNoneMatch: '*' });
+  } catch (error) {
+    const saved = await r2.get('broker-run.json');
+    if (saved?.bytes.equals(marker)) await r2.delete('broker-run.json');
+    throw error;
   }
-  async function get(key: string) {
-    const file = join(scratch, 'download');
-    let metadata: unknown;
-    try {
-      metadata = JSON.parse(await aws('get-object', ['--key', key, file]));
-    } catch (error) {
-      if (isObject(error) && typeof error.stderr === 'string' && /\(NoSuchKey\)/.test(error.stderr))
-        return;
-      throw error;
-    }
-    if (!isObject(metadata) || typeof metadata.ETag !== 'string' || !metadata.ETag)
-      throw new Error(`Missing R2 ETag: ${key}`);
-    return { bytes: await readFile(file), etag: metadata.ETag };
+  const uploads = new Set<Promise<void>>();
+  let uploadError: unknown;
+  async function drain() {
+    await Promise.all(uploads);
+    if (uploadError) throw uploadError;
   }
-  async function put(key: string, file: string, condition: string[] = []) {
-    await aws('put-object', ['--key', key, '--body', file, ...condition]);
-  }
-  async function verifiedPut(key: string, file: string, condition: string[]) {
-    const bytes = await readFile(file);
-    await put(key, file, condition);
-    const saved = await get(key);
-    if (!saved || !saved.bytes.equals(bytes)) throw new Error(`R2 readback mismatch: ${key}`);
-    return saved;
+  async function archive(key: string, bytes: Buffer) {
+    if (uploads.size >= 8) await Promise.race(uploads);
+    if (uploadError) throw uploadError;
+    const upload = r2
+      .put(key, bytes, { ifNoneMatch: '*' })
+      .then(
+        () => {},
+        (error: unknown) => {
+          uploadError ??= error;
+        },
+      )
+      .finally(() => uploads.delete(upload));
+    uploads.add(upload);
   }
   try {
-    if (await get('broker-run.json')) throw new Error('Broker run marker requires operator review');
-    const marker = join(scratch, 'marker');
-    await writeFile(marker, JSON.stringify({ id: randomUUID(), started }));
-    await verifiedPut('broker-run.json', marker, ['--if-none-match', '*']);
-    const rateFile = join(scratch, 'rpm');
-    let rate = await get('broker-rpm.json');
+    const rate = await r2.get('broker-rpm.json');
+    const rateEtag = rate
+      ? rate.etag
+      : await r2.put('broker-rpm.json', Buffer.from('30'), { ifNoneMatch: '*' });
     if (rate)
       rpm = z
-        .union([z.literal(20), z.literal(15), z.literal(12)])
+        .union([z.literal(30), z.literal(20), z.literal(15), z.literal(12)])
         .parse(JSON.parse(rate.bytes.toString('utf8')));
-    else {
-      await writeFile(rateFile, JSON.stringify(rpm));
-      rate = await verifiedPut('broker-rpm.json', rateFile, ['--if-none-match', '*']);
-    }
     console.error(JSON.stringify({ stockbit_rpm: rpm }));
     try {
       return await collect();
     } catch (error) {
-      const nextRpm = rpm === 20 ? 15 : 12;
+      const nextRpm = rpm === 30 ? 20 : rpm === 20 ? 15 : 12;
       if (nextRpm !== rpm) {
         console.error(
           JSON.stringify({ stockbit_rpm: rpm, next_stockbit_rpm: nextRpm, status: 'failed' }),
         );
-        await writeFile(rateFile, JSON.stringify(nextRpm));
-        await verifiedPut('broker-rpm.json', rateFile, ['--if-match', rate.etag]);
+        await r2.put('broker-rpm.json', Buffer.from(JSON.stringify(nextRpm)), {
+          ifMatch: rateEtag,
+        });
       }
       throw error;
     }
   } finally {
-    await rm(scratch, { recursive: true, force: true });
+    try {
+      await drain();
+    } finally {
+      await r2.delete('broker-run.json');
+    }
   }
 
   async function collect() {
-    let attempts = 0;
     let lastStart: number | undefined;
-    const bounded = () => attempts >= 500 || Date.now() - started >= 50 * 60000;
+    const bounded = () => Date.now() >= deadline;
     async function stockbit(url: string, init: RequestInit) {
       if (bounded()) return;
       const interval = 60000 / rpm;
@@ -164,12 +296,11 @@ export async function brokers({
       );
       if (bounded()) return;
       lastStart = Date.now();
-      attempts++;
       return fetcher(url, { ...init, redirect: 'error', signal: AbortSignal.timeout(60000) });
     }
     let access: string | undefined;
     async function authenticate() {
-      const saved = await get('auth/stockbit.json');
+      const saved = await r2.get('auth/stockbit.json');
       if (!saved) throw new Error('Missing Stockbit token');
       const current: unknown = JSON.parse(saved.bytes.toString('utf8'));
       if (!isObject(current) || typeof current.refresh !== 'string' || !current.refresh)
@@ -186,7 +317,7 @@ export async function brokers({
       await writeFile(token + '.tmp', JSON.stringify(rotated) + '\n', { mode: 0o600 });
       await chmod(token + '.tmp', 0o600);
       await rename(token + '.tmp', token);
-      await verifiedPut('auth/stockbit.json', token, ['--if-match', saved.etag]);
+      await r2.put('auth/stockbit.json', await readFile(token), { ifMatch: saved.etag });
       access = rotated.access;
       return true;
     }
@@ -196,36 +327,22 @@ export async function brokers({
     let fetched = 0;
     let replayed = 0;
     let completed = 0;
-    async function raw(path: string, url: string) {
-      const key = `raw/broker/${path}`;
-      const file = join(data, key);
-      const cached = await get(key);
-      if (cached) {
-        if (existsSync(file) && !(await readFile(file)).equals(cached.bytes))
-          throw new Error(`R2 raw conflict: ${key}`);
-        await mkdir(dirname(file), { recursive: true });
-        await writeFile(file + '.tmp', cached.bytes);
-        await rename(file + '.tmp', file);
-        return { bytes: cached.bytes, cached: true };
+    async function raw(key: string, url: string, archivedKeys: Set<string>) {
+      if (archivedKeys.has(key)) {
+        const saved = await r2.get(key);
+        if (!saved) throw new Error(`Missing listed R2 raw: ${key}`);
+        return { bytes: saved.bytes, cached: true };
       }
-      let bytes: Uint8Array;
-      const local = existsSync(file);
-      if (local) bytes = await readFile(file);
-      else {
-        if (!access && !(await authenticate())) return;
-        const response = await stockbit(url, {
-          headers: { ...headers, Authorization: `Bearer ${access}` },
-        });
-        if (!response) return;
-        if (!response.ok) throw new Error(`Stockbit HTTP ${response.status}`);
-        bytes = new Uint8Array(await response.arrayBuffer());
-        fetched++;
-      }
-      await mkdir(dirname(file), { recursive: true });
-      await writeFile(file + '.tmp', bytes);
-      await rename(file + '.tmp', file);
-      await verifiedPut(key, file, ['--if-none-match', '*']);
-      return { bytes, cached: local };
+      if (!access && !(await authenticate())) return;
+      const response = await stockbit(url, {
+        headers: { ...headers, Authorization: `Bearer ${access}` },
+      });
+      if (!response) return;
+      if (!response.ok) throw new Error(`Stockbit HTTP ${response.status}`);
+      const bytes = Buffer.from(await response.arrayBuffer());
+      fetched++;
+      await archive(key, bytes);
+      return { bytes, cached: false };
     }
     async function append(rows: DuckDBValue[][]) {
       const appender = await db.createAppender('brokers');
@@ -278,8 +395,13 @@ export async function brokers({
         WHERE brokers.date = broker_pairs.date AND brokers.ticker = broker_pairs.ticker)`);
       const entries = (
         await query(
-          `SELECT ticker, date::VARCHAR date FROM broker_pairs
-         JOIN traded USING(date, ticker) WHERE NOT complete ORDER BY date DESC, ticker`,
+          `WITH activity AS (
+            SELECT ticker, sum(frequency) frequency FROM prices
+            WHERE date >= DATE '2026-01-01' AND date < DATE '2027-01-01' GROUP BY ticker
+          )
+          SELECT ticker, date::VARCHAR date FROM broker_pairs
+          JOIN traded USING(date, ticker) LEFT JOIN activity USING(ticker)
+          WHERE NOT complete ORDER BY frequency DESC NULLS LAST, ticker, date DESC`,
         )
       ).map((entry) => {
         if (
@@ -291,124 +413,36 @@ export async function brokers({
           throw new Error('Invalid broker target');
         return { ticker: entry.ticker, date: entry.date };
       });
+      const archivedKeys = new Set<string>();
+      for (const day of new Set(entries.map((entry) => entry.date)))
+        for (const key of await r2.list(`raw/broker/${day}/`)) archivedKeys.add(key);
       const years = new Map<string, boolean>();
       if (existsSync(parquet))
         for (const file of await readdir(parquet))
           if (file.endsWith('.parquet')) years.set(file.slice(0, -8), false);
+      let lastCheckpoint = started;
       async function checkpoint() {
+        await drain();
         for (const [year, changed] of years) {
           const file = join(parquet, `${year}.parquet`);
           if (changed) {
             await mkdir(dirname(file), { recursive: true });
             await db.run(`COPY (SELECT * FROM brokers WHERE year(date) = ${Number(year)} ORDER BY ALL)
-          TO ${literal(file + '.tmp')} (FORMAT PARQUET, COMPRESSION ZSTD)`);
+              TO ${literal(file + '.tmp')} (FORMAT PARQUET, COMPRESSION ZSTD)`);
             await rename(file + '.tmp', file);
           }
-          await put(`parquet/brokers/${year}.parquet`, file);
+          await r2.put(`parquet/brokers/${year}.parquet`, await readFile(file));
         }
         await mkdir(dirname(coverage), { recursive: true });
         await db.run(`COPY (SELECT * FROM broker_pairs ORDER BY ALL)
-        TO ${literal(coverage + '.tmp')} (FORMAT PARQUET, COMPRESSION ZSTD)`);
+          TO ${literal(coverage + '.tmp')} (FORMAT PARQUET, COMPRESSION ZSTD)`);
         await rename(coverage + '.tmp', coverage);
-        await put('parquet/broker-coverage.parquet', coverage);
+        await r2.put('parquet/broker-coverage.parquet', await readFile(coverage));
         years.clear();
+        lastCheckpoint = Date.now();
       }
-      let failure: Error | undefined;
-      try {
-        if (runKind === 'daily') await authenticate();
-      } catch (error) {
-        failure = error instanceof Error ? error : new Error(String(error));
-      }
-      for (const entry of entries) {
-        if (failure || bounded()) break;
-        const { ticker, date: day } = entry;
-        const pair = `${ticker}/${day}`;
-        try {
-          const url = new URL(`https://exodus.stockbit.com/marketdetectors/${ticker}`);
-          url.search = new URLSearchParams({
-            from: day,
-            to: day,
-            transaction_type: 'TRANSACTION_TYPE_GROSS',
-            market_board: 'MARKET_BOARD_ALL',
-            investor_type: 'INVESTOR_TYPE_ALL',
-            limit: '200',
-          }).toString();
-          const archived = await raw(`${day}/${ticker}.json`, url.href);
-          if (!archived) break;
-          const parsed: unknown = JSON.parse(new TextDecoder().decode(archived.bytes));
-          if (!isObject(parsed) || !isObject(parsed.data))
-            throw new Error(`Invalid broker response: ${pair}`);
-          const result = parsed.data;
-          if (result.from !== day || result.to !== day)
-            throw new Error(`Broker date mismatch: ${pair}`);
-          const summary = result.broker_summary;
-          const counts = result.bandar_detector;
-          if (
-            !isObject(summary) ||
-            !isObject(counts) ||
-            !Array.isArray(summary.brokers_buy) ||
-            !Array.isArray(summary.brokers_sell) ||
-            !Number.isInteger(counts.total_buyer) ||
-            !Number.isInteger(counts.total_seller) ||
-            summary.brokers_buy.length !== counts.total_buyer ||
-            summary.brokers_sell.length !== counts.total_seller
-          )
-            throw new Error(`Incomplete broker summary: ${pair}`);
-          if (summary.symbol !== ticker) throw new Error(`Broker symbol mismatch: ${pair}`);
-          const sides = [
-            { side: 'buy', source: summary.brokers_buy },
-            { side: 'sell', source: summary.brokers_sell },
-          ];
-          const rows = sides.flatMap(({ side, source }) => {
-            const prefix = side === 'buy' ? 'b' : 's';
-            const codes = new Set<string>();
-            return source.map((row: unknown) => {
-              if (!isObject(row)) throw new Error(`Invalid broker row: ${pair}`);
-              if (row.netbs_date !== day.replaceAll('-', ''))
-                throw new Error(`Broker row date mismatch: ${pair}`);
-              if (row.netbs_stock_code !== ticker)
-                throw new Error(`Broker row symbol mismatch: ${pair}`);
-              const broker = field(row, 'netbs_broker_code');
-              if (codes.has(broker)) throw new Error(`Duplicate broker row: ${pair}`);
-              codes.add(broker);
-              return [
-                dateValue(Date.parse(day) / 86400000),
-                ticker,
-                side,
-                broker,
-                field(row, 'type'),
-                number(row, `${prefix}lotv`),
-                number(row, `${prefix}val`),
-                number(row, `netbs_${side}_avg_price`),
-                number(row, 'freq'),
-              ];
-            });
-          });
-          await db.run('BEGIN TRANSACTION');
-          try {
-            await append(rows);
-            await db.run(`UPDATE broker_pairs SET complete = true
-            WHERE date = ${literal(day)} AND ticker = ${literal(ticker)}`);
-            await db.run('COMMIT');
-          } catch (error) {
-            await db.run('ROLLBACK');
-            throw error;
-          }
-          if (rows.length) years.set(day.slice(0, 4), true);
-          if (archived.cached) replayed++;
-          completed++;
-        } catch (error) {
-          failure = new Error(`${pair}: ${error instanceof Error ? error.message : String(error)}`);
-          break;
-        }
-        if (completed % 25 === 0) await checkpoint();
-      }
-      await checkpoint();
-      const tickers = await query(
-        'SELECT ticker FROM brokers UNION SELECT ticker FROM broker_pairs WHERE complete',
-      );
-      for (const { ticker } of tickers) {
-        if (typeof ticker !== 'string') throw new Error('Expected broker ticker');
+      async function publish(ticker: string) {
+        await drain();
         const rows = await output(`SELECT date,
         coalesce(list(struct_pack(broker := broker, investor_type := investor_type,
           shares := shares, value := value, avg_price := avg_price, freq := freq) ORDER BY broker)
@@ -426,16 +460,130 @@ export async function brokers({
         const file = join(out, 'broker', `${ticker}.json`);
         await writeFile(file + '.tmp', `[${rows.join(',')}]\n`);
         await rename(file + '.tmp', file);
-        await put(`site/broker/${ticker}.json`, file);
+        await r2.put(`site/broker/${ticker}.json`, await readFile(file));
       }
+      const groups = new Map<string, typeof entries>();
+      for (const entry of entries) {
+        const group = groups.get(entry.ticker) ?? [];
+        group.push(entry);
+        groups.set(entry.ticker, group);
+      }
+      const touched = new Set<string>();
+      const failed: BrokerSummary['failed'] = [];
+      let currentTicker: string | undefined;
+      let failure: Error | undefined;
+      try {
+        collection: for (const [ticker, group] of groups) {
+          currentTicker = ticker;
+          for (const { date: day } of group) {
+            if (bounded()) break collection;
+            const url = new URL(`https://exodus.stockbit.com/marketdetectors/${ticker}`);
+            url.search = new URLSearchParams({
+              from: day,
+              to: day,
+              transaction_type: 'TRANSACTION_TYPE_GROSS',
+              market_board: 'MARKET_BOARD_ALL',
+              investor_type: 'INVESTOR_TYPE_ALL',
+              limit: '200',
+            }).toString();
+            const archived = await raw(`raw/broker/${day}/${ticker}.json`, url.href, archivedKeys);
+            if (!archived) break collection;
+            const pair = `${ticker}/${day}`;
+            let rows: DuckDBValue[][];
+            try {
+              const parsed: unknown = JSON.parse(new TextDecoder().decode(archived.bytes));
+              if (!isObject(parsed) || !isObject(parsed.data))
+                throw new Error(`Invalid broker response: ${pair}`);
+              const result = parsed.data;
+              if (result.from !== day || result.to !== day)
+                throw new Error(`Broker date mismatch: ${pair}`);
+              const summary = result.broker_summary;
+              const counts = result.bandar_detector;
+              if (
+                !isObject(summary) ||
+                !isObject(counts) ||
+                !Array.isArray(summary.brokers_buy) ||
+                !Array.isArray(summary.brokers_sell) ||
+                !Number.isInteger(counts.total_buyer) ||
+                !Number.isInteger(counts.total_seller) ||
+                summary.brokers_buy.length !== counts.total_buyer ||
+                summary.brokers_sell.length !== counts.total_seller
+              )
+                throw new Error(`Incomplete broker summary: ${pair}`);
+              if (summary.symbol !== ticker) throw new Error(`Broker symbol mismatch: ${pair}`);
+              const sides = [
+                { side: 'buy', source: summary.brokers_buy },
+                { side: 'sell', source: summary.brokers_sell },
+              ];
+              rows = sides.flatMap(({ side, source }) => {
+                const prefix = side === 'buy' ? 'b' : 's';
+                const codes = new Set<string>();
+                return source.map((row: unknown) => {
+                  if (!isObject(row)) throw new Error(`Invalid broker row: ${pair}`);
+                  if (row.netbs_date !== day.replaceAll('-', ''))
+                    throw new Error(`Broker row date mismatch: ${pair}`);
+                  if (row.netbs_stock_code !== ticker)
+                    throw new Error(`Broker row symbol mismatch: ${pair}`);
+                  const broker = field(row, 'netbs_broker_code');
+                  if (codes.has(broker)) throw new Error(`Duplicate broker row: ${pair}`);
+                  codes.add(broker);
+                  return [
+                    dateValue(Date.parse(day) / 86400000),
+                    ticker,
+                    side,
+                    broker,
+                    field(row, 'type'),
+                    number(row, `${prefix}lotv`),
+                    number(row, `${prefix}val`),
+                    number(row, `netbs_${side}_avg_price`),
+                    number(row, 'freq'),
+                  ];
+                });
+              });
+            } catch (error) {
+              failed.push({
+                ticker,
+                date: day,
+                error: error instanceof Error ? error.message : String(error),
+              });
+              continue;
+            }
+            await db.run('BEGIN TRANSACTION');
+            try {
+              await append(rows);
+              await db.run(`UPDATE broker_pairs SET complete = true
+                WHERE date = ${literal(day)} AND ticker = ${literal(ticker)}`);
+              await db.run('COMMIT');
+            } catch (error) {
+              await db.run('ROLLBACK');
+              throw error;
+            }
+            if (rows.length) years.set(day.slice(0, 4), true);
+            if (archived.cached) replayed++;
+            completed++;
+            touched.add(ticker);
+          }
+          if (Date.now() - lastCheckpoint >= 10 * 60000) await checkpoint();
+          if (touched.has(ticker)) await publish(ticker);
+          currentTicker = undefined;
+        }
+      } catch (error) {
+        failure = error instanceof Error ? error : new Error(String(error));
+      }
+      await checkpoint();
+      if (currentTicker && touched.has(currentTicker)) await publish(currentTicker);
+      await mkdir(out, { recursive: true });
       const accumulationFile = join(out, 'market-accumulation.json');
       await writeFile(accumulationFile + '.tmp', `${(await output(accumulation))[0]}\n`);
       await rename(accumulationFile + '.tmp', accumulationFile);
-      await put('site/market-accumulation.json', accumulationFile);
-      if (failure) throw failure;
-      const pending = entries.length - completed;
-      await aws('delete-object', ['--key', 'broker-run.json']);
-      return { fetched, replayed, completed, pending };
+      await r2.put('site/market-accumulation.json', await readFile(accumulationFile));
+      const summary = { fetched, replayed, completed, pending: entries.length - completed, failed };
+      if (failure || failed.length)
+        throw new BrokerRunError(
+          failure ? failure.message : `${failed.length} invalid broker pairs`,
+          summary,
+        );
+      return summary;
     } finally {
       db.closeSync();
       instance.closeSync();
@@ -455,10 +603,21 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   if (!values.data || !values.token || !values.out)
     throw new Error('Usage: brokers -- --data <dir> --token <file> --out <private dir>');
   const accountId = process.env.R2_ACCOUNT_ID;
-  const runKind = process.env.BROKER_RUN_KIND;
-  if (!accountId || (runKind !== 'daily' && runKind !== 'backfill'))
-    throw new Error('R2_ACCOUNT_ID and BROKER_RUN_KIND (daily or backfill) are required');
-  process.stdout.write(
-    `${JSON.stringify(await brokers({ data: resolve(values.data), token: resolve(values.token), out: resolve(values.out), accountId, runKind }))}\n`,
-  );
+  const minutes = Number(process.env.BROKER_DEADLINE_MINUTES);
+  if (!accountId || !Number.isFinite(minutes) || minutes <= 0)
+    throw new Error('R2_ACCOUNT_ID and positive BROKER_DEADLINE_MINUTES are required');
+  try {
+    const summary = await brokers({
+      data: resolve(values.data),
+      token: resolve(values.token),
+      out: resolve(values.out),
+      accountId,
+      deadline: Date.now() + (minutes * 60 - process.uptime()) * 1000,
+    });
+    process.stdout.write(`${JSON.stringify(summary)}\n`);
+  } catch (error) {
+    if (error instanceof BrokerRunError) process.stdout.write(`${JSON.stringify(error.summary)}\n`);
+    console.error(error);
+    process.exitCode = 1;
+  }
 }
