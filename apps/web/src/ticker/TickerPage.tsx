@@ -65,7 +65,7 @@ export function TickerPage({ ticker }: { ticker: string }) {
             <p role="status">Loading data…</p>
           ) : state.kind === 'missing' ? (
             <p>
-              Ticker {ticker} not found. <a href="/">Open workspace</a>
+              Ticker {ticker} not found. <a href="/">Open home</a>
             </p>
           ) : (
             <p role="alert">

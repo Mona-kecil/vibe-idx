@@ -7,7 +7,8 @@ export const thresholds = {
   araLowBand: 34,
   araMidBand: 24,
   araHighBand: 19,
-  foreignDays: 5,
+  foreignDays: 7,
+  foreignShare: 0.03,
   redMarketPct: -2,
   greenMinValue: 1e9,
   marketDays: 60,
@@ -119,11 +120,11 @@ WHERE NOT EXISTS (SELECT 1 FROM investor_snapshots c
 CREATE VIEW foreign_runs AS
 WITH calendar AS (SELECT date, dense_rank() OVER (ORDER BY date) trading_day FROM prices GROUP BY date),
 buys AS (
-  SELECT ticker, date, net_foreign,
+  SELECT ticker, date, net_foreign, value,
     trading_day - row_number() OVER (PARTITION BY ticker ORDER BY date) grp
   FROM features JOIN calendar USING(date) WHERE net_foreign > 0
 )
-SELECT ticker, max(date) date, count(*)::INTEGER streak_days, sum(net_foreign) net_foreign
+SELECT ticker, max(date) date, count(*)::INTEGER streak_days, sum(net_foreign) net_foreign, sum(value) traded_value
 FROM buys GROUP BY ticker, grp;
 CREATE VIEW feed AS
 SELECT ticker, 'volume_spike' kind, date,
@@ -140,6 +141,7 @@ UNION ALL
 SELECT ticker, 'foreign_streak', date,
   to_json(struct_pack(streak_days := streak_days, net_foreign := net_foreign))
 FROM foreign_runs WHERE date = (SELECT date FROM latest) AND streak_days >= ${thresholds.foreignDays}
+  AND net_foreign >= ${thresholds.foreignShare} * traded_value
 UNION ALL
 SELECT f.ticker, 'green_on_red', f.date,
   to_json(struct_pack(change_pct := f.change_pct, market_change_pct := i.change / nullif(i.prev, 0) * 100,
