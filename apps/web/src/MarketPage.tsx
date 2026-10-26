@@ -246,44 +246,60 @@ export function MarketPage() {
               </colgroup>
               <thead>
                 <tr>
-                  {columns.map((column) => (
-                    <th
-                      key={column.key}
-                      scope="col"
-                      aria-sort={
-                        sort.key === column.key
-                          ? sort.ascending
-                            ? 'ascending'
-                            : 'descending'
-                          : 'none'
-                      }
-                    >
-                      <button
-                        type="button"
-                        title={column.title}
-                        onClick={() =>
-                          setSort({
-                            key: column.key,
-                            ascending:
-                              sort.key === column.key ? !sort.ascending : column.key === 'ticker',
-                          })
+                  {columns.map((column) =>
+                    column.key === 'acc' && !privateData ? (
+                      <th key={column.key} scope="col" className="accumulation-gate">
+                        {column.label}{' '}
+                        {isLoading || (user && privateState.kind === 'loading') ? (
+                          <span role="status">Loading…</span>
+                        ) : !user ? (
+                          <SignInButton />
+                        ) : (
+                          <span role="alert">
+                            Unavailable{' '}
+                            <button onClick={() => window.location.reload()}>Reload</button>
+                          </span>
+                        )}
+                      </th>
+                    ) : (
+                      <th
+                        key={column.key}
+                        scope="col"
+                        aria-sort={
+                          sort.key === column.key
+                            ? sort.ascending
+                              ? 'ascending'
+                              : 'descending'
+                            : 'none'
                         }
                       >
-                        {column.label}
-                        {column.unit && <small>{column.unit}</small>}
-                        <span className="sort-icon" aria-hidden="true">
-                          {sort.key === column.key ? (sort.ascending ? '↑' : '↓') : ''}
-                        </span>
-                      </button>
-                    </th>
-                  ))}
+                        <button
+                          type="button"
+                          title={column.title}
+                          onClick={() =>
+                            setSort({
+                              key: column.key,
+                              ascending:
+                                sort.key === column.key ? !sort.ascending : column.key === 'ticker',
+                            })
+                          }
+                        >
+                          {column.label}
+                          {column.unit && <small>{column.unit}</small>}
+                          <span className="sort-icon" aria-hidden="true">
+                            {sort.key === column.key ? (sort.ascending ? '↑' : '↓') : ''}
+                          </span>
+                        </button>
+                      </th>
+                    ),
+                  )}
                   <th scope="col">
                     <span className="sr-only">Pin</span>
                   </th>
                 </tr>
               </thead>
               <tbody id="market-rows">
-                {rows.map((stock, index) => {
+                {rows.map((stock) => {
                   const metrics = stock.windows[period],
                     acc = accumulation.get(stock.ticker),
                     pinned = pins.includes(stock.ticker);
@@ -352,22 +368,9 @@ export function MarketPage() {
                             '—'
                           )}
                         </td>
-                      ) : index === 0 ? (
-                        <td className="accumulation-gate" rowSpan={rows.length}>
-                          {isLoading ? (
-                            <span role="status">Loading…</span>
-                          ) : !user ? (
-                            <SignInButton />
-                          ) : privateState.kind === 'loading' ? (
-                            <span role="status">Loading…</span>
-                          ) : (
-                            <span role="alert">
-                              Broker data unavailable.{' '}
-                              <button onClick={() => window.location.reload()}>Reload</button>
-                            </span>
-                          )}
-                        </td>
-                      ) : null}
+                      ) : (
+                        <td />
+                      )}
                       <td>
                         <button
                           className="pin"
@@ -387,7 +390,9 @@ export function MarketPage() {
                 {!rows.length && (
                   <tr>
                     <td colSpan={7} className="empty-state">
-                      No stocks match this search.
+                      {query
+                        ? 'No stocks match this search.'
+                        : 'No stocks traded on the latest date.'}
                     </td>
                   </tr>
                 )}

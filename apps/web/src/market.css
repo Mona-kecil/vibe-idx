@@ -1,5 +1,3 @@
-@font-face {
-}
 .market-page {
   --paper: #f8f7f3;
   --surface: #fdfcf9;
@@ -9,7 +7,6 @@
   --up: #167049;
   --down: #b43c36;
   --font: 'Manrope', sans-serif;
-  --radius: 6px;
 }
 .market-page * {
   box-sizing: border-box;
@@ -528,11 +525,7 @@
   }
 }
 .market-page .accumulation-gate {
-  vertical-align: top;
-  padding-top: 18px;
-  white-space: normal;
-  font-size: 12px;
-  font-weight: 500;
+  white-space: nowrap;
 }
 .market-page .accumulation-gate button {
   text-decoration: underline;
