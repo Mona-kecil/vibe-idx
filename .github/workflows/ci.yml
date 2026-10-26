@@ -20,6 +20,12 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec vp check apps/pipeline apps/web .github/workflows
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - run: apps/pipeline/formal/check.sh
+      - run: apps/pipeline/formal/check.sh mutants
       - run: pnpm --filter @vibe-idx/pipeline test
       - run: pnpm --filter @vibe-idx/web test
       - run: pnpm --filter @vibe-idx/web build
