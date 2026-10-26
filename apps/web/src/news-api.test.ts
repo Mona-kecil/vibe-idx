@@ -7,6 +7,61 @@ function feed(items: { title: string; link: string; pubDate: string; source?: st
 }
 
 describe('public ticker news', () => {
+  it('drops unrelated SINI headlines before either cap and uses only the ticker when company lookup fails', async () => {
+    const tickerTitles = [
+      'Saham SINI Ditekan Aksi Jual Investor Asing Pekan Ini',
+      'Rencana Akuisisi SINI?',
+      'Emiten (SINI) Umumkan RUPS',
+      'SINI, Saham Pilihan',
+    ];
+    const companyTitles = ['Singaraja Putra Umumkan RUPS', 'ＳＩＮＧＡＲＡＪＡ—putra: Dividen'];
+    const unrelatedTitles = [
+      '5 Saham Ini Potensial untuk Scalping',
+      'Bupati Buleleng Cup 2026: Putra Kubutambahan',
+      'Pilihan saham sini',
+      'SINIX naik',
+      'XSINI naik',
+      'Singaraja Putranya Umumkan RUPS',
+      'Pesingaraja Putra Umumkan RUPS',
+    ];
+    for (const companyAvailable of [true, false]) {
+      for (const [range, limit] of [
+        ['', 20],
+        ['&from=2026-10-23&to=2026-10-23', 200],
+      ] as const) {
+        const fetcher: typeof fetch = async (input) => {
+          const url = new URL(input instanceof Request ? input.url : input.toString());
+          if (url.pathname === '/ticker/SINI.json')
+            return companyAvailable
+              ? Response.json({ ticker: 'SINI', name: 'PT Singaraja Putra Tbk.' })
+              : new Response(null, { status: 404 });
+          return feed(
+            [
+              ...Array.from({ length: limit }, (_, index) => `Pilihan saham sini ${index}`),
+              ...unrelatedTitles,
+              ...tickerTitles,
+              ...companyTitles,
+            ].map((title, index) => ({
+              title,
+              link: `https://news.google.com/${index}`,
+              pubDate: '2026-10-23T01:00:00Z',
+            })),
+          );
+        };
+        const response = await news(
+          new Request(`https://vibe.test/api/news?ticker=SINI${range}`),
+          fetcher,
+        );
+        expect(response.status).toBe(200);
+        const items: { title: string }[] = await response.json();
+        expect(items.map((item) => item.title)).toEqual([
+          ...tickerTitles,
+          ...(companyAvailable ? companyTitles : []),
+        ]);
+      }
+    }
+  });
+
   it('uses the published company name instead of client input and refuses arbitrary targets', async () => {
     const calls: string[] = [];
     const fetcher: typeof fetch = async (input) => {
@@ -64,12 +119,12 @@ describe('public ticker news', () => {
       await new Promise<void>((resolve) => pending.push(resolve));
       const items = [
         {
-          title: 'Before first Jakarta date',
+          title: 'SINI Before first Jakarta date',
           link: 'https://news.google.com/before',
           pubDate: '2026-08-10T16:59:59Z',
         },
         {
-          title: 'First Jakarta midnight',
+          title: 'SINI First Jakarta midnight',
           link: 'https://news.google.com/first',
           pubDate: '2026-08-10T17:00:00Z',
         },
@@ -80,12 +135,12 @@ describe('public ticker news', () => {
           source: 'Publisher',
         },
         {
-          title: 'Different title with the same link',
+          title: 'SINI Different title with the same link',
           link: 'https://news.google.com/acquisition',
           pubDate: '2026-08-14T01:00:00Z',
         },
         {
-          title: '  sini — ACQUISITION! ',
+          title: '  SINI — ACQUISITION! ',
           link: 'https://news.google.com/duplicate-title',
           pubDate: '2026-08-13T01:00:00Z',
           source: ' PUBLISHER ',
@@ -97,12 +152,12 @@ describe('public ticker news', () => {
           source: 'Another Publisher',
         },
         {
-          title: 'Last Jakarta second',
+          title: 'SINI Last Jakarta second',
           link: 'https://news.google.com/last',
           pubDate: '2026-10-01T16:59:59Z',
         },
         {
-          title: 'After last Jakarta date',
+          title: 'SINI After last Jakarta date',
           link: 'https://news.google.com/after',
           pubDate: '2026-10-01T17:00:00Z',
         },
@@ -128,7 +183,7 @@ describe('public ticker news', () => {
     );
     expect(await response.json()).toEqual([
       {
-        title: 'Last Jakarta second',
+        title: 'SINI Last Jakarta second',
         url: 'https://news.google.com/last',
         published_at: '2026-10-01T16:59:59Z',
         source: 'Google News',
@@ -146,7 +201,7 @@ describe('public ticker news', () => {
         source: 'Another Publisher',
       },
       {
-        title: 'First Jakarta midnight',
+        title: 'SINI First Jakarta midnight',
         url: 'https://news.google.com/first',
         published_at: '2026-08-10T17:00:00Z',
         source: 'Google News',
@@ -190,7 +245,7 @@ describe('public ticker news', () => {
         queries.push(url.searchParams.get('q') ?? '');
         return feed(
           Array.from({ length: 205 }, (_, index) => ({
-            title: `Headline ${index}`,
+            title: `UNKNOWN Headline ${index}`,
             link: `https://news.google.com/${index}`,
             pubDate: new Date(Date.parse('2026-10-25T00:00:00Z') + index * 1000).toISOString(),
           })),
@@ -209,8 +264,8 @@ describe('public ticker news', () => {
         expect(response.status).toBe(200);
         const items: { title: string }[] = await response.json();
         expect(items).toHaveLength(limit);
-        expect(items[0]?.title).toBe('Headline 204');
-        expect(items.at(-1)?.title).toBe(`Headline ${205 - limit}`);
+        expect(items[0]?.title).toBe('UNKNOWN Headline 204');
+        expect(items.at(-1)?.title).toBe(`UNKNOWN Headline ${205 - limit}`);
         expect(response.headers.get('Cache-Control')).toContain(`s-maxage=${cache}`);
       }
       expect(queries[0]).toBe('UNKNOWN saham when:30d');
@@ -233,7 +288,7 @@ describe('public ticker news', () => {
         if (url.pathname === '/ticker/BBCA.json') return lookup();
         queries.push(url.searchParams.get('q') ?? '');
         return feed([
-          { title: 'Headline', link: 'https://news.google.com/item', pubDate: '2026-08-12' },
+          { title: 'BBCA Headline', link: 'https://news.google.com/item', pubDate: '2026-08-12' },
         ]);
       };
       const response = await news(new Request('https://vibe.test/api/news?ticker=BBCA'), fetcher);

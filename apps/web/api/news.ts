@@ -96,8 +96,24 @@ export async function news(request: Request, fetcher: typeof fetch = fetch) {
     const headlines = new Set<string>();
     const start = range ? Date.parse(`${range.from}T00:00:00+07:00`) : -Infinity;
     const end = range ? Date.parse(`${range.to}T00:00:00+07:00`) + dayMs : Infinity;
+    const tickerToken = new RegExp(`(?:^|[^\\p{L}\\p{N}])${ticker.data}(?=$|[^\\p{L}\\p{N}])`, 'u');
+    const companyPhrase = name
+      .normalize('NFKC')
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}]+/gu, ' ')
+      .trim();
     const items = feeds
       .flat()
+      .filter(
+        (item) =>
+          tickerToken.test(item.title) ||
+          (companyPhrase !== '' &&
+            ` ${item.title
+              .normalize('NFKC')
+              .toLowerCase()
+              .replace(/[^\p{L}\p{N}]+/gu, ' ')
+              .trim()} `.includes(` ${companyPhrase} `)),
+      )
       .filter((item) => Date.parse(item.pubDate) >= start && Date.parse(item.pubDate) < end)
       .sort((a, b) => Date.parse(b.pubDate) - Date.parse(a.pubDate))
       .map((item) => ({
