@@ -7,31 +7,31 @@ description: Model-check the private broker collector (apps/pipeline/brokers.ts 
 
 `apps/pipeline/formal/BrokerCollector.tla` models the broker collector step by step. Each R2 object call and each Stockbit call is one atomic step. Any call can succeed, fail without effect, or take effect and still report an error. Any run can crash between steps. TLC explores every interleaving of these steps within the bounds below and checks four properties.
 
-| Property | Plain statement | Harm when broken |
-| --- | --- | --- |
-| `LedgerIntegrity` | Every pair in `parquet/broker-coverage.parquet` has an archived raw response, and `parquet/brokers/<year>.parquet` holds exactly that response's rows. Stored rows always match the archived raw. | Complete pairs are never fetched again, so that day's broker flow is permanently missing or wrong. |
-| `RawImmutable` | `raw/broker/<date>/<ticker>.json` never changes once written. | Replays rebuild a different history from the same pair. |
-| `MutualExclusion` | At most one live run holds `broker-run.json`. | Two collectors overwrite each other's ledger and rotated token. |
-| `TokenRecoverable` | When no marker is present and no collector is alive, `auth/stockbit.json` holds the refresh token that Stockbit currently accepts. | Scheduled runs fail authentication with no marker to alert the operator, and the session must be re-seeded. |
+| Property           | Plain statement                                                                                                                                                                                   | Harm when broken                                                                                            |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `LedgerIntegrity`  | Every pair in `parquet/broker-coverage.parquet` has an archived raw response, and `parquet/brokers/<year>.parquet` holds exactly that response's rows. Stored rows always match the archived raw. | Complete pairs are never fetched again, so that day's broker flow is permanently missing or wrong.          |
+| `RawImmutable`     | `raw/broker/<date>/<ticker>.json` never changes once written.                                                                                                                                     | Replays rebuild a different history from the same pair.                                                     |
+| `MutualExclusion`  | At most one live run holds `broker-run.json`.                                                                                                                                                     | Two collectors overwrite each other's ledger and rotated token.                                             |
+| `TokenRecoverable` | When no marker is present and no collector is alive, `auth/stockbit.json` holds the refresh token that Stockbit currently accepts.                                                                | Scheduled runs fail authentication with no marker to alert the operator, and the session must be re-seeded. |
 
 ## Does my change touch the verified code?
 
 The model was last confirmed against the code at commit **`5e84726`** (the sync commit). It covers:
 
-| Code | Model action |
-| --- | --- |
-| `.github/workflows/ingest.yml` `concurrency` block | `Queued` constant, `Start` |
-| `ingest.yml` "Restore Parquet ledger" (`aws s3 sync .../parquet`) | `Restore` (rows and coverage read independently, in either order) |
-| `ingest.yml` "Restore IDX raw responses" `--exclude "broker/*"`, "Upload Parquet ledger" excludes | No local broker raw at pair start; IDX steps never touch broker objects |
-| `brokers.ts` `get`, `put`, `verifiedPut` | One action per call; readback is its own action |
-| `brokers()` marker block (`get('broker-run.json')`, `verifiedPut(... '--if-none-match', '*')`) | `MarkerGet`, `MarkerPut`, `MarkerVerify` |
-| `collect()` → `authenticate()` | `AuthGet`, `Refresh`, `AuthPut`, `AuthVerify` |
-| `collect()` → `raw()` | `RawGet`, `Fetch`, `RawPut`, `RawVerify` |
-| DB load (`INSERT INTO brokers ... read_parquet`, `UPDATE broker_pairs SET complete = true WHERE EXISTS`) | `MarkerVerify` (DB load folded in) |
-| Pair loop, `BEGIN TRANSACTION` … `COMMIT`, `years.set`, `completed % 25` | `Pair`, `Commit`, `AfterCommit` |
-| `checkpoint()` (year files, then coverage, `years.clear()`) | `Checkpoint` |
-| Publication of `site/broker/*.json` and `site/market-accumulation.json`, `if (failure) throw`, `delete-object broker-run.json` | `Publish`, `DeleteMarker` |
-| README "Run the batch" marker-recovery procedure | `Review`, `ReseedLogin`, `ReseedPut`, `ReseedVerify`, `ClearMarker` |
+| Code                                                                                                                           | Model action                                                            |
+| ------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------- |
+| `.github/workflows/ingest.yml` `concurrency` block                                                                             | `Queued` constant, `Start`                                              |
+| `ingest.yml` "Restore Parquet ledger" (`aws s3 sync .../parquet`)                                                              | `Restore` (rows and coverage read independently, in either order)       |
+| `ingest.yml` "Restore IDX raw responses" `--exclude "broker/*"`, "Upload Parquet ledger" excludes                              | No local broker raw at pair start; IDX steps never touch broker objects |
+| `brokers.ts` `get`, `put`, `verifiedPut`                                                                                       | One action per call; readback is its own action                         |
+| `brokers()` marker block (`get('broker-run.json')`, `verifiedPut(... '--if-none-match', '*')`)                                 | `MarkerGet`, `MarkerPut`, `MarkerVerify`                                |
+| `collect()` → `authenticate()`                                                                                                 | `AuthGet`, `Refresh`, `AuthPut`, `AuthVerify`                           |
+| `collect()` → `raw()`                                                                                                          | `RawGet`, `Fetch`, `RawPut`, `RawVerify`                                |
+| DB load (`INSERT INTO brokers ... read_parquet`, `UPDATE broker_pairs SET complete = true WHERE EXISTS`)                       | `MarkerVerify` (DB load folded in)                                      |
+| Pair loop, `BEGIN TRANSACTION` … `COMMIT`, `years.set`, `completed % 25`                                                       | `Pair`, `Commit`, `AfterCommit`                                         |
+| `checkpoint()` (year files, then coverage, `years.clear()`)                                                                    | `Checkpoint`                                                            |
+| Publication of `site/broker/*.json` and `site/market-accumulation.json`, `if (failure) throw`, `delete-object broker-run.json` | `Publish`, `DeleteMarker`                                               |
+| README "Run the batch" marker-recovery procedure                                                                               | `Review`, `ReseedLogin`, `ReseedPut`, `ReseedVerify`, `ClearMarker`     |
 
 To see whether covered code changed since the sync commit, run:
 
@@ -44,16 +44,16 @@ A change touches the model if it adds, removes, reorders, or changes the conditi
 
 Each run's local state lives in `run[r]`. Its fields map to the code like this:
 
-| Field | Code |
-| --- | --- |
-| `pc` | Position in `brokers()` / `collect()` |
-| `rows`, `coverage` | DuckDB tables `brokers` and `broker_pairs` (complete pairs) |
-| `file` | Local `$DATA/parquet/brokers/2026.parquet` as last restored or written |
-| `year` | The year is a key in the `years` map |
-| `changed` | That key's value is `true` (`years.set(year, true)`) |
-| `failure` | The `failure` variable in `collect()` |
-| `held` | This run acquired `broker-run.json` |
-| `token`, `etag`, `access` | `authenticate()`'s saved token and ETag, and whether `access` is set |
+| Field                     | Code                                                                   |
+| ------------------------- | ---------------------------------------------------------------------- |
+| `pc`                      | Position in `brokers()` / `collect()`                                  |
+| `rows`, `coverage`        | DuckDB tables `brokers` and `broker_pairs` (complete pairs)            |
+| `file`                    | Local `$DATA/parquet/brokers/2026.parquet` as last restored or written |
+| `year`                    | The year is a key in the `years` map                                   |
+| `changed`                 | That key's value is `true` (`years.set(year, true)`)                   |
+| `failure`                 | The `failure` variable in `collect()`                                  |
+| `held`                    | This run acquired `broker-run.json`                                    |
+| `token`, `etag`, `access` | `authenticate()`'s saved token and ETag, and whether `access` is set   |
 
 For example, deleting `years.set(day.slice(0, 4), true)` means `Commit` must leave `year` and `changed` unchanged.
 
@@ -73,7 +73,7 @@ The script downloads the pinned `tla2tools.jar` (v1.7.4, SHA-256 checked) into `
 
 ## When the check fails
 
-TLC prints `Error: Invariant <Name> is violated` and then a trace of states. Read the trace one state at a time. Each state names the action that produced it, and the `run` variable shows each collector's `pc` (its position in the code). Translate the trace into code steps using the table above, for example: "run 1 put the coverage object, then crashed before putting `brokers/2026.parquet`".
+TLC prints `Error: Invariant <Name> is violated` and then a trace of states. `check.sh` also writes `.cache/<mode>.html`, which shows the trace as one lane per run with the R2 objects and ledger at each step. Render any other log with `node apps/pipeline/formal/trace.mjs <log> <out.html>`. Read the trace one state at a time. Each state names the action that produced it, and the `run` variable shows each collector's `pc` (its position in the code). Translate the trace into code steps using the table above, for example: "run 1 put the coverage object, then crashed before putting `brokers/2026.parquet`".
 
 Then decide which kind of failure it is.
 

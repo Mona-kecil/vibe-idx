@@ -1,0 +1,548 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>__INVARIANT__ counterexample</title>
+    <style>
+      :root {
+        --c-panel: var(--card, #fff);
+        --c-ink: var(--foreground, #1d1d1f);
+        --c-muted: var(--muted-foreground, #6b6b70);
+        --c-line: var(--border, #e4e4e2);
+        --c-accent: var(--primary, #2f5bd3);
+        --c-accent-soft: var(--accent-surface, #e9eefc);
+        --c-bad: var(--destructive, #c4321f);
+        --c-bad-soft: var(--destructive-surface, #fdecea);
+        --c-warn: var(--warning, #b7791f);
+        --c-ok: var(--success, #2c7a4b);
+        --c-mono: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+        --c-r: var(--radius, 6px);
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --c-panel: var(--card, #1c1c1f);
+          --c-ink: var(--foreground, #ececee);
+          --c-muted: var(--muted-foreground, #9a9aa2);
+          --c-line: var(--border, #2e2e33);
+          --c-accent: var(--primary, #8aa6ff);
+          --c-accent-soft: var(--accent-surface, #232b45);
+          --c-bad: var(--destructive, #ff7a66);
+          --c-bad-soft: var(--destructive-surface, #3a1f1c);
+          --c-warn: var(--warning, #e0a84a);
+          --c-ok: var(--success, #6fd39a);
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        color: var(--c-ink);
+        font: 14px/1.45 var(--font-sans, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif);
+      }
+      header {
+        padding: 4px 0 12px;
+      }
+      h1 {
+        margin: 0 0 4px;
+        font-size: 18px;
+      }
+      h1 code {
+        color: var(--c-bad);
+      }
+      header p {
+        margin: 2px 0;
+        color: var(--c-muted);
+        max-width: 900px;
+      }
+      .timeline {
+        border: 1px solid var(--c-line);
+        border-radius: var(--c-r);
+      }
+      @media (min-width: 1100px) {
+        body {
+          padding: 0 20px;
+        }
+        main {
+          display: grid;
+          grid-template-columns: minmax(520px, 1.25fr) minmax(400px, 1fr);
+          gap: 20px;
+        }
+        .state {
+          position: sticky;
+          top: 12px;
+          align-self: start;
+        }
+      }
+      .lanes,
+      .step {
+        display: grid;
+        grid-template-columns: 44px repeat(var(--lanes), 1fr);
+      }
+      .lanes {
+        position: sticky;
+        top: 0;
+        background: var(--c-panel);
+        z-index: 1;
+        border-bottom: 1px solid var(--c-line);
+        font-size: 12px;
+        color: var(--c-muted);
+        font-weight: 600;
+      }
+      .lanes div {
+        padding: 8px 10px;
+      }
+      .step {
+        border-bottom: 1px solid var(--c-line);
+        cursor: pointer;
+      }
+      .step:hover {
+        background: var(--c-accent-soft);
+      }
+      .step.sel {
+        background: var(--c-accent-soft);
+        box-shadow: inset 3px 0 0 var(--c-accent);
+      }
+      .step.violation .card {
+        border-color: var(--c-bad);
+        background: var(--c-bad-soft);
+      }
+      .n {
+        padding: 9px 0 0 12px;
+        color: var(--c-muted);
+        font: 12px var(--c-mono);
+      }
+      .cell {
+        padding: 6px 8px;
+        min-height: 38px;
+      }
+      .card {
+        border: 1px solid var(--c-line);
+        background: var(--c-panel);
+        border-radius: var(--c-r);
+        padding: 6px 8px;
+      }
+      .card b {
+        font-weight: 600;
+      }
+      .card .ref {
+        color: var(--c-muted);
+        font: 11px var(--c-mono);
+      }
+      .out {
+        font-size: 12px;
+        margin-top: 2px;
+      }
+      .out.err {
+        color: var(--c-bad);
+      }
+      .out.amb {
+        color: var(--c-warn);
+      }
+      .out.ok {
+        color: var(--c-ok);
+      }
+      .dead {
+        color: var(--c-muted);
+        font-size: 12px;
+        padding-top: 10px;
+      }
+      .state {
+        padding: 14px 16px 18px;
+      }
+      .timeline .state {
+        border-bottom: 1px solid var(--c-line);
+        background: var(--c-panel);
+      }
+      .state h2 {
+        font-size: 13px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--c-muted);
+        margin: 18px 0 8px;
+      }
+      .state h2:first-child {
+        margin-top: 0;
+      }
+      .what {
+        font-size: 15px;
+        margin: 0 0 4px;
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        background: var(--c-panel);
+        border: 1px solid var(--c-line);
+        border-radius: var(--c-r);
+        overflow: hidden;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 6px 10px;
+        border-bottom: 1px solid var(--c-line);
+        font-size: 13px;
+      }
+      th {
+        color: var(--c-muted);
+        font-weight: 600;
+        font-size: 12px;
+      }
+      td code,
+      .obj {
+        font: 12px var(--c-mono);
+      }
+      tr:last-child td {
+        border-bottom: 0;
+      }
+      td.changed {
+        background: var(--c-accent-soft);
+        font-weight: 600;
+      }
+      .verdict.bad {
+        color: var(--c-bad);
+        font-weight: 600;
+      }
+      .verdict.good {
+        color: var(--c-ok);
+      }
+      .hint {
+        color: var(--c-muted);
+        font-size: 12px;
+        margin-top: 10px;
+      }
+      .why {
+        background: var(--c-bad-soft);
+        border: 1px solid var(--c-bad);
+        border-radius: var(--c-r);
+        padding: 8px 10px;
+        margin-top: 10px;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>TLC counterexample: <code>__INVARIANT__</code></h1>
+      <p id="property"></p>
+      <p id="summary"></p>
+    </header>
+    <main>
+      <section class="timeline" id="timeline"></section>
+      <section class="state" id="state"></section>
+    </main>
+    <script>
+      const trace = __TRACE__;
+      const invariant = '__INVARIANT__';
+      const properties = {
+        LedgerIntegrity:
+          "Every pair marked complete in broker-coverage.parquet has archived raw, and brokers/2026.parquet holds exactly that raw response's rows. If not, the pair is never fetched again and its broker flow is permanently missing or wrong.",
+        RawImmutable:
+          'Archived raw/broker objects never change once written. If they do, replays rebuild a different history.',
+        MutualExclusion:
+          "At most one live collector holds broker-run.json. If two do, they overwrite each other's ledger and token.",
+        TokenRecoverable:
+          'With no marker and no live collector, auth/stockbit.json holds the refresh token Stockbit accepts. If not, scheduled runs fail with no operator signal.',
+      };
+      const runIds = trace[0].vars.run.map((_, i) => i);
+      const pairs = trace[0].vars.cloudRaw.map((_, i) => i);
+      const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+      const rowsOf = (raw) => (raw === 'empty' ? 'none' : raw);
+      const esc = (s) =>
+        String(s).replace(
+          /[&<>"]/g,
+          (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c],
+        );
+
+      function outcome(changed, done, failedNow) {
+        if (!done && !failedNow) return ['ok', 'ok'];
+        return changed
+          ? ['amb', 'took effect, but reported an error']
+          : ['err', 'error, no effect'];
+      }
+
+      function describe(i) {
+        const cur = trace[i],
+          prev = trace[i - 1],
+          a = cur.action;
+        if (!prev)
+          return {
+            actor: null,
+            what: 'Initial cloud state',
+            ref: 'consistent ledger, valid token',
+          };
+        const r = runIds.find((k) => !same(prev.vars.run[k], cur.vars.run[k]));
+        const s0 = r === undefined ? null : prev.vars.run[r],
+          s1 = r === undefined ? null : cur.vars.run[r];
+        const done = s1?.pc === 'done';
+        const failedNow = s1 && s1.failure && !s0.failure;
+        const cloud = (k) => !same(prev.vars[k], cur.vars[k]);
+        const p = s1 ? `pair ${s1.pair}` : '';
+        const d = (what, ref, out) => ({ actor: r, what, ref, out });
+        switch (a) {
+          case 'Start':
+            return d('Job starts', 'ingest.yml:56');
+          case 'Restore': {
+            if (done)
+              return d('aws s3 sync fails; job stops', 'ingest.yml:65', ['err', 'job failed']);
+            const obj = s1.restored.find((o) => !s0.restored.includes(o));
+            return d(
+              `Download ${obj === 'rows' ? 'parquet/brokers/2026.parquet' : 'parquet/broker-coverage.parquet'}`,
+              'ingest.yml:65',
+            );
+          }
+          case 'MarkerGet':
+            return done
+              ? d(
+                  'get broker-run.json',
+                  'brokers.ts:123',
+                  cur.vars.marker ? ['err', 'marker present: stop for review'] : ['err', 'error'],
+                )
+              : d('get broker-run.json → absent', 'brokers.ts:123');
+          case 'MarkerPut':
+            return d(
+              "put broker-run.json --if-none-match '*'",
+              'brokers.ts:126',
+              outcome(cloud('marker'), done),
+            );
+          case 'MarkerVerify':
+            return done
+              ? d('Marker readback', 'brokers.ts:118', ['err', 'mismatch or error'])
+              : d(
+                  `Marker readback OK; load DuckDB from restored Parquet (${s1.pc === 'authGet' ? 'daily' : 'backfill'} run)`,
+                  'brokers.ts:126, 258-283',
+                );
+          case 'AuthGet':
+            return failedNow
+              ? d('get auth/stockbit.json', 'brokers.ts:172, 317-321', [
+                  'err',
+                  'error → failure; go to final checkpoint',
+                ])
+              : d('get auth/stockbit.json', 'brokers.ts:172');
+          case 'Refresh':
+            if (s1.pc === 'authPut')
+              return d('POST /login/refresh', 'brokers.ts:177', [
+                'ok',
+                `rotated to token ${s1.token}`,
+              ]);
+            if (failedNow)
+              return d(
+                'POST /login/refresh',
+                'brokers.ts:177-184',
+                outcome(cloud('validRefresh'), true),
+              );
+            return d('bounded(): skip refresh', 'brokers.ts:160, 181');
+          case 'AuthPut':
+            return d(
+              'put auth/stockbit.json --if-match ETag',
+              'brokers.ts:189',
+              outcome(cloud('cloudToken'), done, failedNow),
+            );
+          case 'AuthVerify':
+            return d(
+              'Token readback',
+              'brokers.ts:189-190',
+              failedNow ? ['err', 'mismatch or error'] : undefined,
+            );
+          case 'Pair':
+            return s1.pc === 'rawGet'
+              ? d(`Next target: ${p}`, 'brokers.ts:322-336')
+              : d('Leave pair loop (done or bounded)', 'brokers.ts:323');
+          case 'RawGet':
+            if (failedNow)
+              return d(`get raw/broker/… (${p})`, 'brokers.ts:202', ['err', 'error → failure']);
+            return s1.pc === 'commit'
+              ? d(`get raw/broker/… (${p}) → archived "${s1.bytes}", replay`, 'brokers.ts:202-209')
+              : d(`get raw/broker/… (${p}) → missing, must fetch`, 'brokers.ts:202-215');
+          case 'Fetch':
+            if (failedNow)
+              return d(`GET Stockbit marketdetectors (${p})`, 'brokers.ts:216-220', [
+                'err',
+                'error → failure',
+              ]);
+            return s1.final
+              ? d('bounded(): skip fetch', 'brokers.ts:219, 337')
+              : d(`GET Stockbit marketdetectors (${p}) → "${s1.bytes}"`, 'brokers.ts:216-222');
+          case 'RawPut':
+            return d(
+              `put raw/broker/… (${p}) --if-none-match '*'`,
+              'brokers.ts:227',
+              outcome(cloud('cloudRaw'), done, failedNow),
+            );
+          case 'RawVerify':
+            return d(
+              `Raw readback (${p})`,
+              'brokers.ts:227',
+              failedNow ? ['err', 'mismatch or error'] : undefined,
+            );
+          case 'Commit':
+            return failedNow
+              ? d(`Parse/validate (${p})`, 'brokers.ts:338-386, 400', ['err', 'error → failure'])
+              : d(`COMMIT rows + complete for ${p} (local DuckDB)`, 'brokers.ts:387-392');
+          case 'AfterCommit':
+            return s1.pc === 'cpFirst'
+              ? d('Periodic checkpoint (completed % 25 === 0)', 'brokers.ts:404')
+              : d('Continue without checkpoint', 'brokers.ts:404');
+          case 'Checkpoint': {
+            const obj = cloud('cloudCoverage')
+              ? 'coverage'
+              : cloud('cloudRows')
+                ? 'rows'
+                : s0.pc === 'cpFirst'
+                  ? 'rows'
+                  : 'coverage';
+            if (obj === 'rows' && !s0.year)
+              return d('No broker year file to upload', 'brokers.ts:299');
+            const name =
+              obj === 'rows' ? 'parquet/brokers/2026.parquet' : 'parquet/broker-coverage.parquet';
+            return d(
+              `put ${name}${obj === 'rows' && !s0.changed ? ' (unchanged local file)' : ''}`,
+              obj === 'rows' ? 'brokers.ts:300-307' : 'brokers.ts:309-313',
+              outcome(cloud(obj === 'rows' ? 'cloudRows' : 'cloudCoverage'), done),
+            );
+          }
+          case 'Publish':
+            if (done && s1.failure !== undefined && s0.failure)
+              return d('Publish site/broker/*.json, then throw failure', 'brokers.ts:407-435', [
+                'err',
+                'marker kept for review',
+              ]);
+            return d(
+              'Publish site/broker/*.json',
+              'brokers.ts:407-434',
+              done ? ['err', 'error; marker kept'] : undefined,
+            );
+          case 'DeleteMarker':
+            return d('delete broker-run.json', 'brokers.ts:437', outcome(cloud('marker'), false));
+          case 'Crash':
+            return d('Job killed', 'any step', ['err', 'process state lost; cloud kept']);
+          default:
+            return { actor: 'op', what: `Operator: ${a}`, ref: 'README marker recovery' };
+        }
+      }
+
+      function brokenPairs(v) {
+        return pairs.filter((p) => {
+          const raw = v.cloudRaw[p],
+            rows = v.cloudRows[p],
+            complete = v.cloudCoverage.includes(p + 1);
+          return (
+            (complete && (raw === 'none' || rows !== rowsOf(raw))) ||
+            (rows !== 'none' && rows !== raw)
+          );
+        });
+      }
+
+      const steps = trace.map((_, i) => describe(i));
+      const hasOp = steps.some((s) => s.actor === 'op');
+      const lanes = [...runIds.map((r) => `Run ${r + 1}`), ...(hasOp ? ['Operator'] : [])];
+      document.documentElement.style.setProperty('--lanes', lanes.length);
+      document.getElementById('property').textContent = properties[invariant] ?? '';
+      document.getElementById('summary').textContent =
+        `${trace.length} states. Each row is one atomic step: one R2 object call, one Stockbit call, or local DuckDB work. Click a step or use ↑/↓.`;
+
+      const tl = document.getElementById('timeline');
+      tl.innerHTML =
+        `<div class="lanes"><div>#</div>${lanes.map((l) => `<div>${l}</div>`).join('')}</div>` +
+        steps
+          .map((s, i) => {
+            const lane = s.actor === 'op' ? runIds.length : s.actor;
+            const cells = lanes
+              .map((_, k) => {
+                if (k !== lane) {
+                  const pc = k < runIds.length ? trace[i].vars.run[k].pc : '';
+                  return `<div class="cell"><div class="dead">${pc === 'idle' || pc === 'done' ? (pc === 'done' ? '—' : '') : '│'}</div></div>`;
+                }
+                const out = s.out ? `<div class="out ${s.out[0]}">${esc(s.out[1])}</div>` : '';
+                return `<div class="cell"><div class="card"><b>${esc(s.what)}</b>${out}<div class="ref">${esc(s.ref)}</div></div></div>`;
+              })
+              .join('');
+            const initial =
+              s.actor === null
+                ? `<div class="cell" style="grid-column: span ${lanes.length}"><div class="card"><b>${s.what}</b></div></div>`
+                : cells;
+            return `<div class="step${i === trace.length - 1 ? ' violation' : ''}" data-i="${i}"><div class="n">${trace[i].n}</div>${initial}</div>`;
+          })
+          .join('');
+
+      let sel = trace.length - 1;
+      const wide = matchMedia('(min-width: 1100px)');
+      function show(i, scroll = true) {
+        sel = Math.max(0, Math.min(trace.length - 1, i));
+        tl.querySelectorAll('.step').forEach((el) =>
+          el.classList.toggle('sel', Number(el.dataset.i) === sel),
+        );
+        const row = tl.querySelector(`[data-i="${sel}"]`);
+        const panel = document.getElementById('state');
+        if (wide.matches) document.querySelector('main').append(panel);
+        else row.after(panel);
+        if (scroll) row.scrollIntoView({ block: 'nearest' });
+        const v = trace[sel].vars,
+          pv = (trace[sel - 1] ?? trace[sel]).vars,
+          s = steps[sel];
+        const ch = (now, before) => (sel > 0 && !same(now, before) ? ' class="changed"' : '');
+        const broken = brokenPairs(v);
+        const pairRows = pairs
+          .map((p) => {
+            const complete = v.cloudCoverage.includes(p + 1);
+            const bad = broken.includes(p);
+            return `<tr><td>pair ${p + 1}</td><td${ch(v.cloudRaw[p], pv.cloudRaw[p])}><code>${v.cloudRaw[p]}</code></td>
+      <td${ch(v.cloudRows[p], pv.cloudRows[p])}><code>${v.cloudRows[p]}</code></td>
+      <td${ch(complete, pv.cloudCoverage.includes(p + 1))}>${complete ? 'complete' : 'pending'}</td>
+      <td class="verdict ${bad ? 'bad' : 'good'}">${bad ? 'broken' : 'ok'}</td></tr>`;
+          })
+          .join('');
+        const runRows = runIds
+          .map((r) => {
+            const x = v.run[r],
+              px = pv.run[r];
+            const db =
+              x.pc === 'idle'
+                ? '—'
+                : pairs
+                    .map((p) => `${p + 1}:${x.rows[p]}${x.coverage.includes(p + 1) ? '✓' : ''}`)
+                    .join(' ');
+            return `<tr><td>Run ${r + 1}</td><td${ch(x.pc, px.pc)}><code>${x.pc}</code></td>
+      <td${ch([x.rows, x.coverage], [px.rows, px.coverage])}><code>${db}</code></td>
+      <td>${x.held ? 'yes' : 'no'}</td><td>${x.failure ? 'yes' : 'no'}</td></tr>`;
+          })
+          .join('');
+        const why =
+          sel === trace.length - 1 && broken.length
+            ? `<div class="why">${broken.map((p) => `Pair ${p + 1}: coverage says ${v.cloudCoverage.includes(p + 1) ? 'complete' : 'pending'}, archived raw is <code>${v.cloudRaw[p]}</code>, but brokers/2026.parquet has <code>${v.cloudRows[p]}</code>. A complete pair is never fetched again.`).join('<br>')}</div>`
+            : '';
+        document.getElementById('state').innerHTML = `
+    <h2>Step ${trace[sel].n}${s.actor === null ? '' : ` · ${s.actor === 'op' ? 'Operator' : `Run ${s.actor + 1}`}`}</h2>
+    <p class="what"><b>${esc(s.what)}</b>${s.out ? ` — ${esc(s.out[1])}` : ''}</p>
+    <div class="ref obj">${esc(s.ref)} · TLA+ action ${trace[sel].action}</div>${why}
+    <h2>R2 private bucket</h2>
+    <table><tr><th>Object</th><th>Value</th></tr>
+      <tr><td><code>broker-run.json</code></td><td${ch(v.marker, pv.marker)}>${v.marker ? `held by Run ${v.marker}` : 'absent'}</td></tr>
+      <tr><td><code>auth/stockbit.json</code></td><td${ch(v.cloudToken, pv.cloudToken)}>refresh token ${v.cloudToken}</td></tr>
+      <tr><td>Stockbit accepts</td><td${ch(v.validRefresh, pv.validRefresh)}>refresh token ${v.validRefresh}</td></tr>
+    </table>
+    <h2>Broker ledger</h2>
+    <table><tr><th>Pair</th><th>raw/broker</th><th>brokers/2026.parquet</th><th>coverage</th><th>${invariant === 'LedgerIntegrity' ? 'Integrity' : 'Ledger'}</th></tr>${pairRows}</table>
+    <h2>Collectors</h2>
+    <table><tr><th>Run</th><th>pc</th><th>Local DuckDB (rows, ✓ complete)</th><th>Holds marker</th><th>Failed</th></tr>${runRows}</table>
+    <p class="hint">Highlighted cells changed in this step. Responses: <code>a</code>/<code>b</code> are two different non-empty summaries, <code>empty</code> is a successful empty summary, <code>none</code> means absent.</p>`;
+      }
+      tl.addEventListener('click', (e) => {
+        const el = e.target.closest('.step');
+        if (el) show(Number(el.dataset.i));
+      });
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowDown' || e.key === 'j') {
+          show(sel + 1);
+          e.preventDefault();
+        }
+        if (e.key === 'ArrowUp' || e.key === 'k') {
+          show(sel - 1);
+          e.preventDefault();
+        }
+      });
+      show(sel, false);
+      wide.addEventListener('change', () => show(sel, false));
+    </script>
+  </body>
+</html>

@@ -69,6 +69,9 @@ case "$mode" in
       echo "$cfg passed."
     else
       cat "$log"
+      if grep -q 'is violated' "$log" && command -v node >/dev/null; then
+        node trace.mjs "$log" "$cache/$mode.html"
+      fi
       if [[ "$mode" == unqueued ]] && grep -q 'Invariant LedgerIntegrity is violated' "$log"; then
         echo "$cfg failed: known finding, overlapping runs can publish a stale or torn restore."
       else
