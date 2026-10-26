@@ -132,7 +132,6 @@ function BrokerData({
           <strong>{row.code}</strong>
           <span title={brokerName(row.code)}>
             {brokerName(row.code)
-              .replace(' · ', '  ')
               .replace(/^PT /, '')
               .replace(/ Sekuritas( Indonesia)?$/, '')}
           </span>
@@ -191,7 +190,7 @@ function BrokerData({
             {(selection ? rows : [...buyers, ...sellers]).map((row) => (
               <tr key={row.code}>
                 <td>{row.code}</td>
-                <td>{brokerName(row.code).replace(' · ', '  ')}</td>
+                <td>{brokerName(row.code)}</td>
                 <td className="num" title={nf(row.buyValue) + ' IDR'}>
                   {short(row.buyValue)}
                 </td>

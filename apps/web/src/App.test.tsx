@@ -1,16 +1,9 @@
 // @vitest-environment happy-dom
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { App } from './App';
-import { ModuleView } from './Modules';
-import { BrokerView } from './BrokerPanel';
-import { LocaleProvider } from './locale';
-import { brokerHistorySchema } from './brokers';
-import { defaultBrokerCodes, inventorySeries, accountIdentity } from './broker-data';
-import { chartSegments } from './Chart';
-import { initialWorkspace, layoutKey, makePanel, type WorkspaceState } from './workspace';
-import type { Ticker } from './data';
+import type { Feed, Ticker } from './data';
 
 const auth = vi.hoisted(() => ({
   user: null as { id: string; email: string } | null,
@@ -40,7 +33,13 @@ function ticker(symbol: string): Ticker {
   return {
     ticker: symbol,
     name: `Company ${symbol}`,
-    prices: dates.map((date) => ({ date, close: 100, volume: 700, value: 70000, net_foreign: 0 })),
+    prices: dates.map((date, i) => ({
+      date,
+      close: 100 + i,
+      volume: 700,
+      value: 70000,
+      net_foreign: 0,
+    })),
     holders: [{ investor: 'Synthetic holder', shares: 100, pct: 10 }],
     changes: [],
     one_pct: { date: '2026-09-30', holders: [] },
@@ -49,8 +48,58 @@ function ticker(symbol: string): Ticker {
     registry_history: [],
   };
 }
-let root: Root;
-let host: HTMLDivElement;
+const symbols = [
+  'AAAA',
+  'BBBB',
+  'CCCC',
+  'DDDD',
+  'EEEE',
+  'FFFF',
+  'GGGG',
+  'HHHH',
+  'IIII',
+  'JJJJ',
+  'KKKK',
+  'LLLL',
+  'BBCA',
+  'MMMM',
+];
+const ownership = (
+  ticker: string,
+  investor: string,
+  before: number,
+  after: number | null,
+  extra = {},
+): Feed[number] => ({
+  ticker,
+  date: '2026-10-22',
+  kind: 'five_pct_change',
+  numbers: {
+    investor,
+    shares_before: 10000,
+    shares_after: after === null ? null : 20000,
+    net_shares: after === null ? null : 10000,
+    pct_before: before,
+    pct_after: after,
+    previous_date: '2026-10-21',
+    ...extra,
+  },
+});
+const ara = (ticker: string, change_pct: number): Feed[number] => ({
+  ticker,
+  date: '2026-10-22',
+  kind: 'ara',
+  numbers: { change_pct, close: 135, prev: 100, band_pct: 34 },
+});
+const volume = (ticker: string, multiple: number): Feed[number] => ({
+  ticker,
+  date: '2026-10-22',
+  kind: 'volume_spike',
+  numbers: { multiple, volume: 500, avg_volume: 100, prior_days: 20, value: 50000 },
+});
+let feed: unknown[];
+let history: Ticker;
+let root: Root, host: HTMLDivElement;
 const fetcher = vi.fn<(input: string) => Promise<Response>>(async (input) => {
   const url = String(input);
   if (url.includes('/api/brokers'))
@@ -69,9 +118,9 @@ const fetcher = vi.fn<(input: string) => Promise<Response>>(async (input) => {
     });
   if (url.includes('tickers.json'))
     return Response.json(
-      ['SINI', 'BBCA', 'BREN'].map((symbol) => ({
+      symbols.map((symbol) => ({
         ticker: symbol,
-        name: symbol,
+        name: `Company ${symbol}`,
         close: 100,
         change_pct: 1,
         volume: 700,
@@ -84,33 +133,31 @@ const fetcher = vi.fn<(input: string) => Promise<Response>>(async (input) => {
       date: dates.at(-1),
       up: 1,
       down: 1,
-      history: dates.slice(1).map((date) => ({ date, close: 5000, change: 10, change_pct: 1 })),
+      history: dates.map((date) => ({ date, close: 5000, change: 10, change_pct: 1 })),
     });
-  if (url.includes('feed.json') || url.includes('/api/news')) return Response.json([]);
-  const symbol = /ticker\/([A-Z]+).json/.exec(url)?.[1];
-  return Response.json(ticker(symbol ?? 'SINI'));
+  if (url.includes('feed.json')) return Response.json(feed);
+  if (url.includes('/api/news')) return Response.json([]);
+  return Response.json(history);
 });
 function element<T extends Element>(selector: string, type: { new (...args: never[]): T }): T {
   const el = host.querySelector(selector);
   if (!(el instanceof type)) throw new Error(`Missing ${selector}`);
   return el;
 }
-const button = (selector: string) => element(selector, HTMLButtonElement);
 async function click(selector: string) {
-  await act(async () => button(selector).click());
-}
-async function select(selector: string, value: string) {
-  await act(async () => {
-    const el = element(selector, HTMLSelectElement);
-    el.value = value;
-    el.dispatchEvent(new Event('change', { bubbles: true }));
-  });
+  await act(async () => element(selector, HTMLButtonElement).click());
 }
 async function render() {
   await act(async () => root.render(<App initialUrl={window.location.pathname} />));
 }
-function saved(): WorkspaceState {
-  return JSON.parse(window.localStorage.getItem(layoutKey) ?? '{}');
+const stockOrder = (selector: string) =>
+  [...host.querySelectorAll(selector)].map((el) => el.textContent);
+async function typeQuery(query: string) {
+  await act(async () => {
+    const input = element('input[type="search"]', HTMLInputElement);
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(input, query);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
 }
 beforeEach(() => {
   window.localStorage.clear();
@@ -119,6 +166,8 @@ beforeEach(() => {
   auth.getAccessToken.mockClear();
   auth.getAccessToken.mockResolvedValue('test-token');
   fetcher.mockClear();
+  history = ticker('BBCA');
+  feed = [];
   vi.stubGlobal('fetch', fetcher);
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
   host = document.createElement('div');
@@ -132,159 +181,208 @@ afterEach(async () => {
   vi.restoreAllMocks();
 });
 
-describe('research workspace', () => {
-  it('shows public monthly registry gaps, exact records and relationship badges in Ownership and Profile', async () => {
-    const data = ticker('REGX');
-    const snapshot = {
-      date: '2026-05-31',
-      sid_count: 5742,
-      free_float_pct: 25.07,
-      total_shares: 481000000,
-      free_float_shares: 120591000,
-      url: 'https://www.idx.id/registry.pdf',
-      investor_types: [
-        { label: 'Bank', shares: 228000, page: 3 },
-        { label: 'Government', shares: null, page: 3 },
-      ],
-      holders: [
-        { investor: 'Hapsoro', pct: 9, controller: true, controller_affiliate: null, page: 2 },
-        { investor: 'Affiliate', pct: 5, controller: null, controller_affiliate: true, page: 2 },
-        {
-          investor: 'Blank holder',
-          pct: 10,
-          controller: null,
-          controller_affiliate: null,
-          page: 2,
-        },
-      ],
-    };
-    data.registry_history = [
-      snapshot,
-      { ...snapshot, date: '2026-07-31', sid_count: 6944, free_float_pct: null },
-      { ...snapshot, date: '2026-08-31', sid_count: null },
-      { ...snapshot, date: '2026-09-30', sid_count: 7000 },
+describe('daily briefing', () => {
+  it('keeps latest ownership alphabetic, merges holder aliases, ranks stock and holder moves, and renders exits without invented shares', async () => {
+    feed = [
+      ownership('BBBB', 'Exit holder', 15, null, { exited: true, net_shares: 123 }),
+      ownership('AAAA', 'Zeta', 6, 8),
+      ownership('AAAA', 'PT Alpha Tbk.', 6, 6.5),
+      ownership('AAAA', 'Alpha', 6, 6.5),
+      ...symbols
+        .slice(2, 12)
+        .map((t) => ownership(t, 'Holder', t === 'CCCC' ? 5.1 : 5, t === 'CCCC' ? null : 6)),
+      { ...ownership('BBCA', 'Old filing', 5, 99), date: '2026-10-21' },
+      ownership('UNKNOWN', 'Missing stock', 5, 6),
     ];
-    vi.stubGlobal('fetch', async () => Response.json(data));
-    const panel = makePanel('registry', 'ownership', 'REGX');
-    panel.state.ownershipView = 'registry';
-    await act(async () =>
-      root.render(
-        <LocaleProvider>
-          <ModuleView
-            panel={panel}
-            stocks={[]}
-            health={null}
-            update={() => {}}
-            selectTicker={() => {}}
-          />
-        </LocaleProvider>,
-      ),
-    );
-    expect(host.textContent).toContain('KSEI scripless shares');
-    expect(host.querySelectorAll('[data-series="SID"] polyline')).toHaveLength(0);
-    expect(host.querySelectorAll('[data-series="SID"] circle')).toHaveLength(3);
-    expect(host.querySelector('[data-plot-date="2026-06-30"]')).not.toBeNull();
-    const chart = element('svg[aria-label^="SID "]', SVGSVGElement);
-    await act(async () => {
-      chart.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
-      chart.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true }));
-      chart.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
-    });
-    expect(host.querySelector('.chart-readout')?.textContent).toContain('Not reported');
-    expect(host.querySelectorAll('.relationship-badge')).toHaveLength(2);
-    expect(
-      [...host.querySelectorAll('tr')]
-        .find((row) => row.textContent?.includes('Blank holder'))
-        ?.querySelector('.relationship-badge'),
-    ).toBeNull();
-    expect(host.querySelector('details')?.textContent).toContain('228,000');
-    expect(host.querySelector('.relationship-badge')?.getAttribute('data-tip')).toContain(
-      '2026-09-30',
-    );
-    await act(async () =>
-      root.render(
-        <LocaleProvider>
-          <ModuleView
-            panel={{ ...panel, type: 'profile' }}
-            stocks={[]}
-            health={null}
-            update={() => {}}
-            selectTicker={() => {}}
-          />
-        </LocaleProvider>,
-      ),
-    );
-    expect(host.textContent).toContain('481,000,000');
-    expect(host.textContent).toContain('120,591,000');
-    expect(host.textContent).toContain('7,000');
-    expect(auth.signIn).not.toHaveBeenCalled();
-  });
-
-  it('keeps unlinked Broksum tickers and controls independent, relinks from the active panel, and restores the layout', async () => {
-    auth.user = { id: 'fixture-user', email: 'fixture@example.test' };
     await render();
-    await click('[aria-label="Broksum panel actions"] + .panel-menu-list button');
-    expect(host.querySelectorAll('[aria-label="Broksum panel"]')).toHaveLength(2);
-    await click('.link-toggle');
-    await select('[data-panel-id="p1"] .panel-ticker', 'BBCA');
-    await select('[data-panel-id="p5"] .panel-ticker', 'BREN');
-    await select('[data-panel-id="p1"] [aria-label="Broker measure"]', 'value');
-    await select('[data-panel-id="p5"] [aria-label="Broker flow"]', 'gross');
-    expect(element('[data-panel-id="p1"] .panel-ticker', HTMLSelectElement).value).toBe('BBCA');
-    expect(element('[data-panel-id="p5"] .panel-ticker', HTMLSelectElement).value).toBe('BREN');
-    expect(
-      element('[data-panel-id="p5"] [aria-label="Broker measure"]', HTMLSelectElement).value,
-    ).toBe('shares');
-    expect(
-      element('[data-panel-id="p1"] [aria-label="Broker flow"]', HTMLSelectElement).value,
-    ).toBe('net');
-    await act(async () => {
-      const input = element('[data-panel-id="p1"] [aria-label="Range start"]', HTMLInputElement);
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(
-        input,
-        dates[1],
-      );
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-    });
-    const from = saved().panels.find((panel) => panel.id === 'p1')?.state.from;
-    expect(from).toBe('2026-10-20');
-    await act(async () => element('[data-panel-id="p5"] .panel-ticker', HTMLSelectElement).focus());
-    await click('.link-toggle');
-    for (const el of host.querySelectorAll<HTMLSelectElement>('.panel-ticker'))
-      expect(el.value).toBe('BREN');
-    expect(saved().panels.find((panel) => panel.id === 'p1')?.state.from).toBe(from);
-    expect(
-      element('[data-panel-id="p1"] [aria-label="Broker measure"]', HTMLSelectElement).value,
-    ).toBe('value');
-    await click('[data-panel-id="p5"] .panel-menu-list button:nth-child(2)');
-    await act(async () =>
-      button('[data-panel-id="p5"] .panel-resize').dispatchEvent(
-        new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }),
-      ),
+    expect(stockOrder('#ownership-rows .stock-id strong')).toEqual(symbols.slice(0, 10));
+    expect(stockOrder('#ownership-rows .holder').slice(0, 3)).toEqual([
+      'PT Alpha Tbk.',
+      'Zeta',
+      'Exit holder',
+    ]);
+    expect(host.textContent).not.toContain('Old filing');
+    expect(host.textContent).not.toContain('Missing stock');
+    const exit = [...host.querySelectorAll('.holder-row')].find((el) =>
+      el.textContent?.includes('Exit holder'),
     );
-    const before = saved();
-    const navigation = {
-      name: '/',
-      entryType: 'navigation',
-      duration: 0,
-      startTime: 0,
-      type: 'reload',
-      toJSON: () => ({}),
-    };
-    vi.spyOn(performance, 'getEntriesByType').mockReturnValue([navigation]);
+    expect(exit?.textContent).toContain('15.00 → <5%');
+    expect(exit?.querySelector('.net')?.textContent).toBe('Exit');
+    expect(host.querySelectorAll('.net.exit')).toHaveLength(2);
+    expect(host.querySelector('.sources')?.textContent).toContain('1 feed record excluded');
+    await click('[aria-controls="ownership-rows"]');
+    expect(host.querySelectorAll('#ownership-rows > div')).toHaveLength(12);
+    await click('[aria-controls="ownership-rows"]');
+    expect(host.querySelectorAll('#ownership-rows > div')).toHaveLength(10);
+    await act(async () => {
+      const select = element('select[aria-label="Sort ownership moves"]', HTMLSelectElement);
+      select.value = 'move';
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    expect(stockOrder('#ownership-rows .stock-id strong').slice(0, 2)).toEqual(['BBBB', 'AAAA']);
+    expect(stockOrder('#ownership-rows .holder').slice(0, 3)).toEqual([
+      'Exit holder',
+      'Zeta',
+      'PT Alpha Tbk.',
+    ]);
+    expect(window.localStorage.getItem('vibe-idx:ownership-sort')).toBe('move');
     await act(async () => root.unmount());
     root = createRoot(host);
     await render();
-    expect(saved()).toEqual(before);
-    expect(host.querySelector('[data-panel-id="p5"]')?.getAttribute('style')).toContain('570px');
-    await click('[data-panel-id="p5"] [aria-label="Focus Broksum"]');
-    expect(host.querySelectorAll('.module-panel')).toHaveLength(1);
-    await click('[aria-label="Show all panels Broksum"]');
-    expect(host.querySelectorAll('.module-panel')).toHaveLength(5);
-    await click('[data-panel-id="p5"] [aria-label="Remove Broksum panel"]');
-    expect(host.querySelectorAll('.module-panel')).toHaveLength(4);
+    expect(stockOrder('#ownership-rows .stock-id strong')[0]).toBe('BBBB');
   });
-  it('opens the public ticker page without broker tokens and keeps the workspace on /', async () => {
+  it('groups multiple signals first, sorts each kind by strength, ignores new kinds, and lists each stock once', async () => {
+    feed = [
+      ara('AAAA', 40),
+      volume('AAAA', 12),
+      ...['BBBB', 'CCCC', 'DDDD', 'EEEE', 'FFFF', 'GGGG'].map((t, i) => ara(t, 35 + i)),
+      volume('HHHH', 7),
+      volume('IIII', 9),
+      {
+        ticker: 'JJJJ',
+        date: dates[3],
+        kind: 'foreign_streak',
+        numbers: { streak_days: 7, net_foreign: 1e8 },
+      },
+      {
+        ticker: 'KKKK',
+        date: dates[3],
+        kind: 'foreign_streak',
+        numbers: { streak_days: 7, net_foreign: 2e8 },
+      },
+      {
+        ticker: 'LLLL',
+        date: dates[3],
+        kind: 'green_on_red',
+        numbers: { change_pct: 5, market_change_pct: -3, value: 1e9 },
+      },
+      {
+        ticker: 'BBCA',
+        date: dates[3],
+        kind: 'foreign_streak',
+        numbers: { streak_days: 8, net_foreign: 1e7 },
+      },
+      {
+        ticker: 'MMMM',
+        date: dates[3],
+        kind: 'green_on_red',
+        numbers: { change_pct: 2, market_change_pct: -3, value: 1e9 },
+      },
+      { kind: 'future_signal', ticker: 'BBCA', numbers: {} },
+    ];
+    await render();
+    expect(stockOrder('.signal-list h3')).toEqual([
+      'Multiple signals',
+      'ARA',
+      'Volume spike',
+      'Foreign streak',
+      'Green on red',
+    ]);
+    expect(stockOrder('#signals-multiple-rows strong')).toEqual(['AAAA']);
+    expect(stockOrder('#signals-ara-rows strong')).toEqual([
+      'GGGG',
+      'FFFF',
+      'EEEE',
+      'DDDD',
+      'CCCC',
+    ]);
+    await click('[aria-controls="signals-ara-rows"]');
+    expect(stockOrder('#signals-ara-rows strong')).toEqual([
+      'GGGG',
+      'FFFF',
+      'EEEE',
+      'DDDD',
+      'CCCC',
+      'BBBB',
+    ]);
+    const listed = stockOrder('.signal-group .stock-id strong');
+    expect(listed).toHaveLength(14);
+    expect(new Set(listed).size).toBe(14);
+    expect(stockOrder('#signals-volume_spike-rows strong')).toEqual(['IIII', 'HHHH']);
+    expect(stockOrder('#signals-foreign_streak-rows strong')).toEqual(['BBCA', 'KKKK', 'JJJJ']);
+    expect(stockOrder('#signals-green_on_red-rows strong')).toEqual(['LLLL', 'MMMM']);
+    expect(host.querySelector('#signals-volume_spike-rows .signal-item .up')).toBeNull();
+    expect(
+      host.querySelector('#signals-ara-rows .signal-link')?.textContent?.match(/%/g),
+    ).toHaveLength(1);
+  });
+  it('searches company names and codes, supports the slash shortcut, and opens the selected research page', async () => {
+    const navigate = vi.spyOn(window.location, 'assign').mockImplementation(() => {});
+    await render();
+    await act(async () =>
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: '/', bubbles: true })),
+    );
+    expect(document.activeElement).toBe(host.querySelector('input[type="search"]'));
+    await typeQuery('Company BBCA');
+    expect(host.querySelector('.search-results a')?.getAttribute('href')).toBe('/t/BBCA');
+    await click('.search-results [aria-label="Pin BBCA"]');
+    expect(host.querySelector('.watch-link')?.getAttribute('href')).toBe('/t/BBCA');
+    await click('.search-results [aria-label="Unpin BBCA"]');
+    expect(host.querySelector('.watch-link')).toBeNull();
+    await typeQuery('bbca');
+    await act(async () =>
+      element('input[type="search"]', HTMLInputElement).dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
+      ),
+    );
+    expect(navigate).toHaveBeenCalledWith('/t/BBCA');
+    expect(auth.getAccessToken).not.toHaveBeenCalled();
+  });
+  it('seeds saved workspace tickers once, shows snapshot prices and the latest disclosure, and persists unpinning', async () => {
+    window.localStorage.setItem(
+      'vibe-idx-workspace-v1',
+      JSON.stringify({ panels: [{ state: { ticker: 'BBCA' } }, { state: { ticker: 'BBCA' } }] }),
+    );
+    feed = [ara('BBCA', 35)];
+    history.disclosures = [
+      {
+        id: 'new',
+        title: 'Newer disclosure',
+        published_at: '2026-10-23T12:00:00',
+        url: 'https://idx.id/report',
+        kind: 'other',
+        attachments: [],
+      },
+    ];
+    await render();
+    expect(host.querySelectorAll('.watch-group')).toHaveLength(1);
+    expect(host.querySelector('.watch-link .signal-price')?.textContent).toBe('100');
+    expect(host.querySelector('.watch-link .latest-event')?.textContent).toContain(
+      'Newer disclosure',
+    );
+    expect(host.querySelector('.watch-link svg')).not.toBeNull();
+    await click('.watch-group [aria-label="Unpin BBCA"]');
+    expect(host.querySelectorAll('.watch-group')).toHaveLength(0);
+    await act(async () => root.unmount());
+    root = createRoot(host);
+    await render();
+    expect(host.querySelectorAll('.watch-group')).toHaveLength(0);
+    await click('.signal-group [aria-label="Pin BBCA"]');
+    expect(host.querySelectorAll('.watch-group')).toHaveLength(1);
+    expect(JSON.parse(window.localStorage.getItem('vibe-idx:watchlist') ?? 'null')).toEqual([
+      'BBCA',
+    ]);
+  });
+  it('keeps the briefing, sort and pins working when sandbox storage throws', async () => {
+    vi.spyOn(window, 'localStorage', 'get').mockImplementation(() => {
+      throw new DOMException('Blocked', 'SecurityError');
+    });
+    feed = [ownership('AAAA', 'Holder', 5, 6)];
+    await render();
+    expect(host.querySelector('h1')?.textContent).toBe('IHSG');
+    await click('[aria-label="Pin AAAA"]');
+    expect(host.querySelector('.watch-group')).not.toBeNull();
+    await act(async () => {
+      const select = element('select', HTMLSelectElement);
+      select.value = 'move';
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    expect(host.querySelector('[role="alert"]')).toBeNull();
+  });
+});
+
+describe('ticker research regressions', () => {
+  it('opens public ticker research without broker tokens and returns to the briefing', async () => {
     window.history.replaceState(null, '', '/t/BBCA');
     await render();
     expect(host.querySelector('h1')?.textContent).toBe('BBCA');
@@ -293,22 +391,17 @@ describe('research workspace', () => {
     expect(host.querySelector('#broker-section button')?.textContent).toBe('Sign in');
     expect(auth.getAccessToken).not.toHaveBeenCalled();
     expect(fetcher.mock.calls.some(([url]) => String(url).includes('/api/brokers'))).toBe(false);
-    expect(window.localStorage.getItem(layoutKey)).toBeNull();
+    expect(window.localStorage.getItem('vibe-idx:watchlist')).toBeNull();
     await act(async () => {
       window.history.pushState(null, '', '/');
       window.dispatchEvent(new PopStateEvent('popstate'));
     });
-    expect(host.querySelectorAll('.module-panel')).toHaveLength(4);
-    await select('.workspace-tools select', 'id');
-    expect(host.textContent).toContain('Ruang kerja Anda.');
-    expect(host.textContent).toContain('Masuk untuk melihat ringkasan broker');
-    expect(host.textContent).toContain('Ringkasan pasar');
-    expect(window.localStorage.getItem('vibe-idx-language')).toBe('id');
+    expect(host.querySelector('h1')?.textContent).toBe('IHSG');
     await act(async () => {
       window.history.pushState(null, '', '/callback');
       window.dispatchEvent(new PopStateEvent('popstate'));
     });
-    expect(host.querySelector('[role="status"]')?.textContent).toBe('Memproses masuk…');
+    expect(host.querySelector('[role="status"]')?.textContent).toBe('Signing you in…');
     await act(async () => {
       window.history.pushState(null, '', '/login');
       window.dispatchEvent(new PopStateEvent('popstate'));
@@ -344,79 +437,5 @@ describe('research workspace', () => {
     expect(host.querySelector('#news')?.textContent).toContain('No news');
     expect(host.querySelector('[role="alert"]')).toBeNull();
     fetcher.mockImplementation(baseFetch ?? (async () => Response.json([])));
-  });
-  it('does not send an empty bearer token even when a user object exists', async () => {
-    auth.user = { id: 'fixture-user', email: 'fixture@example.test' };
-    auth.getAccessToken.mockResolvedValue(undefined);
-    await render();
-    expect(fetcher.mock.calls.some(([url]) => String(url).includes('/api/brokers'))).toBe(false);
-    expect(host.textContent).toContain('Sign in');
-  });
-  it('plots data-derived buyers and sellers and breaks inventory at an absent session instead of adding zero', async () => {
-    const history = brokerHistorySchema.parse({ ticker: 'BBCA', days });
-    const codes = defaultBrokerCodes(history.days);
-    expect(codes).toEqual(['AK', 'SQ', 'PD', 'CC']);
-    expect(
-      defaultBrokerCodes([
-        { date: dates[0] ?? '2026-10-19', buy: [row('ZZ', 9)], sell: [row('YY', 9)] },
-      ]),
-    ).toEqual(['ZZ', 'YY']);
-    const incomplete = history.days.filter((day) => day.date !== dates[2]);
-    const series = inventorySeries(incomplete, dates, codes, 'shares');
-    expect(series[0]?.points.map((point) => point.value)).toEqual([500, 1000, null, null]);
-    expect(series[0]?.points.at(-1)?.delta).toBe(500);
-    expect(chartSegments(series[0]?.points ?? [])).toHaveLength(1);
-    const controls = makePanel('p1', 'brokers', 'BBCA').state;
-    await act(async () =>
-      root.render(
-        <LocaleProvider>
-          <BrokerView
-            days={incomplete}
-            tradingDates={dates}
-            controls={controls}
-            update={() => {}}
-          />
-        </LocaleProvider>,
-      ),
-    );
-    expect(host.textContent).toContain('Missing broker dates');
-    expect(host.textContent).toContain('2026-10-21');
-    expect(
-      host.querySelector('[data-series="AK"] polyline')?.getAttribute('points')?.split(' '),
-    ).toHaveLength(2);
-    expect(host.textContent).toContain('Change since 2026-10-19');
-    expect(host.querySelectorAll('.broker-sides')).toHaveLength(2);
-    expect(accountIdentity('BANK CENTRAL ASIA Tbk, PT')?.kind).toBe('custodian');
-    expect(accountIdentity('PT BCA SEKURITAS')).toEqual({ kind: 'broker', code: 'SQ' });
-  });
-  it('shows every panel when the stored focus names a removed panel', async () => {
-    window.localStorage.setItem(
-      layoutKey,
-      JSON.stringify({ ...initialWorkspace(), activeId: 'p99', focusId: 'p99' }),
-    );
-    await render();
-    expect(host.querySelectorAll('.module-panel')).toHaveLength(4);
-  });
-  it('adds any module and preserves independent dates while linked ticker changes propagate', async () => {
-    const state = initialWorkspace();
-    state.panels[0] = makePanel('p1', 'price', 'SINI');
-    window.localStorage.setItem(layoutKey, JSON.stringify(state));
-    await render();
-    await click('[aria-label="Add News module"]');
-    expect(host.querySelectorAll('.module-panel')).toHaveLength(5);
-    await select('[data-panel-id="p1"] .panel-ticker', 'BBCA');
-    for (const el of host.querySelectorAll<HTMLSelectElement>('.panel-ticker'))
-      expect(el.value).toBe('BBCA');
-    expect(saved().panels.find((panel) => panel.type === 'news')?.state.from).toBe('');
-    await act(async () =>
-      element('[data-panel-id="p1"] .chart-legend input', HTMLInputElement).click(),
-    );
-    expect(host.querySelector('[data-panel-id="p1"] [data-series="IHSG"]')).not.toBeNull();
-    expect(
-      host.querySelector('[data-panel-id="p1"] [data-plot-date]')?.getAttribute('data-plot-date'),
-    ).toBe('2026-10-20');
-
-    await click('[aria-label="Collapse module sidebar"]');
-    expect(host.querySelector('.desk.collapsed')).not.toBeNull();
   });
 });

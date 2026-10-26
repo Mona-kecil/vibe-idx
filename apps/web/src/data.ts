@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const healthSchema = z.object({
+const healthSchema = z.object({
   prices: z.string().nullable(),
   indices: z.string().nullable(),
   five_pct: z.string().nullable(),
@@ -9,7 +9,7 @@ export const healthSchema = z.object({
   run_at: z.string(),
 });
 
-export const marketSchema = z.object({
+const marketSchema = z.object({
   date: z.string().nullable(),
   up: z.number(),
   down: z.number(),
@@ -30,9 +30,10 @@ const ownershipChangeSchema = z.object({
   net_shares: z.number().nullable(),
   pct_before: z.number(),
   pct_after: z.number().nullable(),
+  exited: z.boolean().optional(),
 });
 const feedBase = z.object({ ticker: z.string(), date: z.string() });
-export const feedSchema = z.array(
+const knownFeedSchema = z.array(
   z.discriminatedUnion('kind', [
     feedBase.extend({
       kind: z.literal('volume_spike'),
@@ -72,7 +73,15 @@ export const feedSchema = z.array(
   ]),
 );
 
-export const stocksSchema = z.array(
+const feedKinds: ReadonlySet<string> = new Set(
+  knownFeedSchema.element.options.map((option) => option.shape.kind.value),
+);
+const feedSchema = z
+  .array(z.object({ kind: z.string() }).passthrough())
+  .transform((rows) => rows.filter((row) => feedKinds.has(row.kind)))
+  .pipe(knownFeedSchema);
+
+const stocksSchema = z.array(
   z.object({
     ticker: z.string(),
     name: z.string(),
@@ -191,7 +200,6 @@ export type Market = z.infer<typeof marketSchema>;
 export type Feed = z.infer<typeof feedSchema>;
 export type Stock = z.infer<typeof stocksSchema>[number];
 export type Ticker = z.infer<typeof tickerSchema>;
-export type OwnershipChange = z.infer<typeof ownershipChangeSchema>;
 
 type TickerPath = `ticker/${string}.json`;
 export function load(path: 'health.json'): Promise<Health>;

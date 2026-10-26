@@ -1009,3 +1009,42 @@ it('backfills legacy Parquet newest first within the limit without duplicates, r
     await rm(root, { recursive: true, force: true });
   }
 }, 30_000);
+
+it('excludes small seven-day foreign inflows and five-day runs while including runs at or above three percent of traded value', async () => {
+  const instance = await DuckDBInstance.create(':memory:');
+  const db = await instance.connect();
+  try {
+    await db.run(schema);
+    for (const [ticker, netShares, start] of [
+      ['LOW', 2, 1],
+      ['EDGE', 3, 1],
+      ['HIGH', 4, 1],
+      ['SHORT', 4, 3],
+    ] satisfies [string, number, number][]) {
+      for (let day = start; day <= 7; day++)
+        await db.run(`INSERT INTO prices (date, ticker, close, prev, volume, value, foreign_buy, foreign_sell)
+          VALUES ('2026-10-0${day}', '${ticker}', 100, 100, 100, 10000, ${netShares}, 0)`);
+    }
+    await db.run(analytics);
+    const result = await db.runAndReadAll(
+      `SELECT ticker, (numbers->>'streak_days')::INTEGER streak_days,
+       (numbers->>'net_foreign')::DOUBLE net_foreign
+       FROM feed WHERE kind = 'foreign_streak' ORDER BY ticker`,
+    );
+    expect(result.getRowObjectsJson()).toEqual([
+      {
+        ticker: 'EDGE',
+        streak_days: 7,
+        net_foreign: 2100,
+      },
+      {
+        ticker: 'HIGH',
+        streak_days: 7,
+        net_foreign: 2800,
+      },
+    ]);
+  } finally {
+    db.closeSync();
+    instance.closeSync();
+  }
+});
