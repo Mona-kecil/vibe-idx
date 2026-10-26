@@ -33,24 +33,34 @@ export async function parseFivePctPdf(bytes: Uint8Array) {
       return [{ text: item.str.trim(), x, y, width: item.width }];
     });
     const dates = cells.filter((c) => /^Kepemilikan Per /i.test(c.text)).sort((a, b) => a.x - b.x);
-    if (!dates.length) {
+    if (!cells.length) throw new Error(`Legacy 5% page ${n} has no text items`);
+    // A standalone dash is a zero holding; punctuation alone is not a share value.
+    const numeric = (text: string) => /^(?:-|-?\d[\d,.]*)$/.test(text);
+    if (
+      !dates.length &&
+      cells.some((c) => c.text === 'Yth. Bapak/Ibu') &&
+      !cells.some((c) => c.text !== '-' && numeric(c.text))
+    ) {
       page.cleanup();
       continue;
     }
-    if (dates.length !== 2) throw new Error('Unsupported legacy 5% date columns');
-    const previous = headerDate(dates[0]?.text ?? '');
-    const current = headerDate(dates[1]?.text ?? '');
-    if (!sheet.length) {
-      const header: string[] = [];
-      header[1] = 'Kode Efek';
-      header[11] = dates[0]?.text ?? '';
-      header[14] = dates[1]?.text ?? '';
-      sheet.push(header, []);
-    } else if (
-      headerDate(sheet[0]?.[11] ?? '') !== previous ||
-      headerDate(sheet[0]?.[14] ?? '') !== current
-    )
-      throw new Error('Mixed legacy 5% snapshot dates');
+    // Continuation pages may omit headers; their rows still use the established dates.
+    if (dates.length && dates.length !== 2) throw new Error('Unsupported legacy 5% date columns');
+    if (dates.length) {
+      const previous = headerDate(dates[0]?.text ?? '');
+      const current = headerDate(dates[1]?.text ?? '');
+      if (!sheet.length) {
+        const header: string[] = [];
+        header[1] = 'Kode Efek';
+        header[11] = dates[0]?.text ?? '';
+        header[14] = dates[1]?.text ?? '';
+        sheet.push(header, []);
+      } else if (
+        headerDate(sheet[0]?.[11] ?? '') !== previous ||
+        headerDate(sheet[0]?.[14] ?? '') !== current
+      )
+        throw new Error('Mixed legacy 5% snapshot dates');
+    }
 
     const operators = await page.getOperatorList();
     let transform: z.infer<typeof matrix> = [1, 0, 0, 1, 0, 0];
@@ -130,11 +140,21 @@ export async function parseFivePctPdf(bytes: Uint8Array) {
           const p = point(cursor);
           cursor += (glyph.width * fontSize) / 1000 + charSpacing;
           const q = point(cursor);
+          // Excel clips some baselines 0.12 points beyond the cell edge.
           if (
-            !clip ||
-            (p[1] >= clip.top && p[1] <= clip.bottom && p[0] <= clip.right && q[0] >= clip.left)
+            Math.abs(p[1] - q[1]) < 0.01 &&
+            (!clip ||
+              (p[1] >= clip.top - 0.3 &&
+                p[1] <= clip.bottom + 0.3 &&
+                p[0] <= clip.right &&
+                q[0] >= clip.left))
           )
-            letters.push({ text: glyph.unicode, x: p[0], y: p[1], width: q[0] - p[0] });
+            letters.push({
+              text: glyph.unicode,
+              x: p[0],
+              y: clip ? Math.max(clip.top + 0.01, Math.min(p[1], clip.bottom - 0.01)) : p[1],
+              width: q[0] - p[0],
+            });
         }
       }
       if (op !== OPS.constructPath || operators.argsArray[i]?.[0] === OPS.endPath) continue;
@@ -168,28 +188,30 @@ export async function parseFivePctPdf(bytes: Uint8Array) {
       }
     }
     const columns = rectangles
-      .filter((r) => r.right - r.left < 1 && r.bottom - r.top > 50)
+      .filter((r) => r.right - r.left < 1 && r.bottom - r.top > 1)
       .map((r) => (r.left + r.right) / 2)
       .sort((x, y) => x - y)
       .filter((x, i, all) => i === 0 || x - (all[i - 1] ?? 0) > 1);
-    if (columns.length !== 19) throw new Error(`Unsupported legacy 5% columns: ${columns.length}`);
+    if (columns.length !== 19 && columns.length !== 21)
+      throw new Error(`Unsupported legacy 5% columns: ${columns.length}`);
     const byColumn = columns
       .slice(0, -1)
       .map((left, i) =>
         letters.filter((item) => item.x >= left && item.x < (columns[i + 1] ?? NaN)),
       );
-    function cell(column: number, y: number) {
-      const left = columns[column] ?? NaN;
-      const right = columns[column + 1] ?? NaN;
-      const center = (left + right) / 2;
-      const lines = rectangles
+    const borders = columns.slice(0, -1).map((left, i) => {
+      const center = (left + (columns[i + 1] ?? NaN)) / 2;
+      return rectangles
         .filter((r) => r.bottom - r.top < 1 && r.left < center && r.right > center)
         .map((r) => (r.top + r.bottom) / 2)
         .sort((x, y) => x - y);
+    });
+    function cell(column: number, y: number) {
+      const lines = borders[column] ?? [];
       const upper = lines.filter((line) => line < y).at(-1);
       const lower = lines.find((line) => line > y);
       const top = upper ?? Math.min(...rectangles.map((r) => r.top));
-      const bottom = lower ?? Math.max(...rectangles.map((r) => r.bottom));
+      const bottom = lower ?? Math.max(...rectangles.map((r) => r.bottom)) + 0.3;
       if (!(top < y && y < bottom))
         throw new Error(`Unbounded legacy 5% cell: page ${n}, column ${column}, row ${y}`);
       const contents = (byColumn[column] ?? [])
@@ -198,42 +220,69 @@ export async function parseFivePctPdf(bytes: Uint8Array) {
       let text = '';
       for (const [i, item] of contents.entries()) {
         const previous = contents[i - 1];
-        if (previous && (item.y - previous.y > 0.3 || item.x - previous.x - previous.width > 0.2))
+        if (
+          previous &&
+          ((item.y - previous.y > 0.3 && previous.text !== '-') ||
+            item.x - previous.x - previous.width > 0.2)
+        )
           text += ' ';
         text += item.text;
       }
-      return { top, bottom, open: lower === undefined, text: text.trim() };
+      return { top, bottom, open: lower === undefined, text: text.replace(/\s+/g, ' ').trim() };
     }
-    const tickers = cells.filter(
-      (item) =>
-        item.x > (columns[1] ?? NaN) &&
-        item.x < (columns[2] ?? NaN) &&
-        /^[A-Z0-9-]{2,12}$/.test(item.text),
-    );
-    for (const ticker of tickers) {
-      const row = Array.from({ length: 18 }, (_, column) => cell(column, ticker.y).text);
-      const root = cell(4, ticker.y);
+    // The status layout omits issuer/custodian and adds status/reason for each date.
+    const indexes =
+      columns.length === 21
+        ? [0, 1, -1, -1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 14, 15, 16, 19]
+        : Array.from({ length: 18 }, (_, i) => i);
+    const rowBounds = new Map<number, number>();
+    for (const column of [indexes[11] ?? NaN, indexes[14] ?? NaN]) {
+      for (const item of cells.filter(
+        (c) =>
+          c.x > (columns[column] ?? NaN) && c.x < (columns[column + 1] ?? NaN) && numeric(c.text),
+      )) {
+        const bounds = cell(column, item.y);
+        rowBounds.set(bounds.top, item.y);
+      }
+    }
+    if (rowBounds.size && !sheet.length)
+      throw new Error(`Missing legacy 5% date headers: page ${n}`);
+    for (const y of [...rowBounds.values()].sort((a, b) => a - b)) {
+      const row = indexes.map((column) => (column < 0 ? '' : cell(column, y).text));
+      const ticker = row[1] ?? '';
+      if (!/^[A-Z0-9-]{2,12}$/.test(ticker))
+        throw new Error(`Unexpected legacy 5% ticker: page ${n}, ${ticker}`);
+      const root = cell(indexes[4] ?? NaN, y);
       const segment = `${n}/${root.top}/${root.bottom}`;
       let group = groups.at(-1);
       if (segment !== previousSegment) {
         if (!group?.open) {
-          group = { ticker: ticker.text, rows: [], fields: [], open: root.open };
+          group = {
+            ticker,
+            rows: [],
+            fields: indexes[2] === -1 ? ['', '', ''] : [],
+            open: root.open,
+          };
           groups.push(group);
         }
-        if (group.ticker !== ticker.text) throw new Error('Legacy 5% investor crosses tickers');
-        for (const column of [0, 2, 4, 12, 13, 15, 16]) {
+        if (group.ticker !== ticker) throw new Error('Legacy 5% investor crosses tickers');
+        for (const column of [2, 4, 12, 13, 15, 16]) {
           const text = row[column];
           if (!text) continue;
-          if (group.fields[column] && group.fields[column] !== text)
-            throw new Error(`Conflicting legacy 5% investor field: ${column}`);
-          group.fields[column] = text;
+          if (group.fields[column] && group.fields[column] !== text) {
+            if (column === 2 || column === 4) group.fields[column] += ` ${text}`;
+            else throw new Error(`Conflicting legacy 5% investor field: ${column}`);
+          } else group.fields[column] = text;
         }
         group.open = root.open;
         previousSegment = segment;
       }
       if (!group) throw new Error('Missing legacy 5% investor group');
+      if (indexes[3] !== -1 && !row[3]?.trim())
+        throw new Error(`Missing legacy 5% account: page ${n}`);
       for (const column of [11, 14])
-        if (!row[column]) throw new Error('Missing legacy 5% ownership number');
+        if (!row[column] || !numeric(row[column]))
+          throw new Error('Missing legacy 5% ownership number');
       group.rows.push(row);
     }
     page.cleanup();
@@ -241,11 +290,16 @@ export async function parseFivePctPdf(bytes: Uint8Array) {
   if (!groups.length || groups.at(-1)?.open) throw new Error('Incomplete legacy 5% table');
   for (const group of groups) {
     for (const column of [2, 4, 12, 13, 15, 16])
-      if (!group.fields[column]) throw new Error(`Missing legacy 5% investor field: ${column}`);
+      if (group.fields[column] === undefined)
+        throw new Error(`Missing legacy 5% investor field: ${column}`);
     for (const [i, row] of group.rows.entries()) {
       row[4] = '';
       if (i === 0)
         for (const column of [2, 4, 12, 13, 15, 16]) row[column] = group.fields[column] ?? '';
+      for (const column of [11, 12, 14, 15]) {
+        const value = row[column] ?? '';
+        if (/^\d+,\d{1,2}$/.test(value)) row[column] = value.replace(',', '.');
+      }
       sheet.push(row);
     }
   }
@@ -270,7 +324,7 @@ function parseFiveRows(sheet: string[][]) {
   }[] = [];
   let group: (typeof groups)[number] | undefined;
   for (const r of sheet.slice(header + 2)) {
-    if (!r[3]?.trim() && !r[4]?.trim()) continue;
+    if (!r[3]?.trim() && !r[4]?.trim() && !r[11]?.trim() && !r[14]?.trim()) continue;
     if (r[4]?.trim()) {
       group = {
         holding: fiveHolding.parse({

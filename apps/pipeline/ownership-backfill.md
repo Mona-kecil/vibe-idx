@@ -97,4 +97,40 @@ The paused monitoring task stays disabled. Do not change broker collection, its 
 
 The failing-before ingestion regression reported `expected 0 to be greater than 0`: the legacy announcement produced no ownership rows. Local checks cover both real PDF layouts, merged cells across pages, clipping, publication lag, XLSX precedence, primary 1% attachments, ticker-filing exclusion, bounds, and replay behavior.
 
-Local validation: 44 pipeline tests and 30 web tests passed; the web build, `vp check`, and manual-workflow YAML checks passed. No data workflow was dispatched.
+## Legacy PDF corpus audit, 27 October 2026
+
+All 78 attachments published from January through June parsed: **78 OK / 0 FAIL**. No attachment required OCR. Rows come from both share columns, including rows with zero holdings; missing or unsupported tickers throw. Headerless continuation pages retain the established snapshot dates. A table without established dates throws.
+
+The regressions use lossless page extracts. Their decompressed content streams match the original pages. Dates below are publication dates; fixture names use `ownership-5pct-legacy-<date>.pdf`.
+
+| Publication | Original pages |   Bytes | Regression                                                 |
+| ----------- | -------------- | ------: | ---------------------------------------------------------- |
+| 2026-01-09  | 2–3            | 117,387 | Headerless continuation left the table incomplete          |
+| 2026-01-12  | 33–34          | 225,114 | Investor name split across pages conflicted in field 4     |
+| 2026-03-09  | 9–12           | 198,595 | Watermark text conflicted in unused sequence field 0       |
+| 2026-04-23  | 39             | 219,676 | Short final page had no borders over 50 points tall        |
+| 2026-05-20  | 6–8            | 255,697 | Baseline on the page boundary lost investor fields         |
+| 2026-05-29  | 2–4            | 317,005 | Status/reason columns; issuer and custodian columns absent |
+
+Added PDF bytes: **1,333,474**. The 29 May layout retains empty issuer/custodian fields; it does not infer them from another snapshot. Its account rows remain present.
+
+The 5 June overlap has the same **829 tickers**. The PDF has **1,876 investor groups / 3,072 accounts**; the XLSX has **1,875 / 3,070**. Exact-key comparison finds 73 differing holding keys and 163 differing account keys. These comprise 36 investor-label substitutions, four account-label formatting differences, 19 account keys with numeric discrepancies, and one extra PDF investor alias with two accounts. All 36 renamed holdings retain the same combined shares. The 71 changed account-name keys pair with the same ticker, custodian, and share values.
+
+Source examples:
+
+- PDF page 2 names AISA's investor `PT. PANGAN SEJAHTERA INVESTAMA`; the XLSX names it `PT PANGAN SEJAHTERA INVESTAMA`.
+- PDF page 4 prints BEEF / DIMAS WIBOWO / PT. STOCKBIT SEKURITAS DIGITAL as `134,322` in both share columns. XLSX cells **L366 and O366 contain the numeric value `134.322`**. The 19 numeric differences follow this thousandfold pattern. Decimal-comma PDF values such as ABMM's `441,4` parse as `441.4` and match the XLSX.
+- PDF page 14 repeats NOBU's 728,000,000-share holding under `MATAHARI DEPARTMENT STORE TBK, PT` and `PT MATAHARI DEPATMENT STORE TBK`. The XLSX retains only the latter. The extra PDF alias has 655,500,000 shares at PT CIPTADANA SEKURITAS ASIA and 72,500,000 at PT OCBC SEKURITAS INDONESIA.
+
+Continuity compared **165,975 common account keys across 59 date-linked snapshot pairs** from all 78 PDFs. It sums shares per exact ticker, investor, custodian, and account key, using decimal arithmetic to avoid floating-point sum differences. Six source discrepancies remain. In every row below, B's previous-share cell prints `-` (zero), despite A's current-share cell printing the stated holding. Page numbers refer to the original PDFs; dates are publication dates.
+
+| Ticker | Custodian                    | Investor/account                                    | A publication, page, current shares | B publication, page, previous shares |
+| ------ | ---------------------------- | --------------------------------------------------- | ----------------------------------- | ------------------------------------ |
+| BINA   | BANK CENTRAL ASIA Tbk, PT    | PT INDOLIFE PENSIONTAMA                             | 2026-01-21 p6: 1,339,483,685        | 2026-01-22 p5: `-`                   |
+| JECC   | BANK CENTRAL ASIA Tbk, PT    | PT INDOLIFE PENSIONTAMA                             | 2026-01-21 p19: 132,891,500         | 2026-01-22 p16: `-`                  |
+| NIPS   | BANK CENTRAL ASIA Tbk, PT    | PT INDOLIFE PENSIONTAMA                             | 2026-01-21 p26: 124,057,589         | 2026-01-22 p22: `-`                  |
+| GDWU   | PT INA SEKURITAS INDONESIA   | PT. INDOLIFE PENSIONTAMA / PT. Indolife Pensiontama | 2026-01-22 p13: 14,263,940          | 2026-01-23 p13: `-`                  |
+| TNCA   | PT Yakin Bertumbuh Sekuritas | PT. Asuransi Intra Asia                             | 2026-04-15 p18: 21,082,000          | 2026-04-16 p34: `-`                  |
+| NELY   | PT LOTUS ANDALAN SEKURITAS   | HASKOJAYA ABADI,PT                                  | 2026-05-21 p13: 1,970,091,600       | 2026-05-22 p13: `-`                  |
+
+Local validation: 52 pipeline tests passed; `pnpm exec vp check apps/pipeline apps/web .github/workflows` passed. No data workflow was dispatched.

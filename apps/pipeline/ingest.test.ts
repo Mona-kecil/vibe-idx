@@ -313,11 +313,11 @@ describe('batch pipeline', () => {
           try {
             const rows = (
               await db.runAndReadAll(`SELECT shares FROM read_parquet('${join(data, 'parquet/five_pct/2026.parquet')}')
-              WHERE ticker = 'ABMM' AND investor = 'DRS LO KHENG HONG'
-                AND holder_name = 'PT OCBC SEKURITAS INDONESIA'`)
+              WHERE ticker = 'BEEF' AND investor = 'DIMAS WIBOWO'
+                AND holder_name = 'PT. STOCKBIT SEKURITAS DIGITAL'`)
             ).getRowObjectsJson();
-            // The XLSX source keeps a decimal that the PDF export renders differently.
-            expect(rows).toEqual([{ shares: 441.4 }]);
+            // These sources disagree: the PDF says 134,322, the XLSX cell says 134.322.
+            expect(rows).toEqual([{ shares: 134.322 }]);
           } finally {
             db.closeSync();
             instance.closeSync();
