@@ -78,8 +78,8 @@ async function prices(data: string, rows: { ticker: string; date: string; volume
   for (const year of new Set(rows.map((row) => row.date.slice(0, 4)))) {
     const values = rows
       .filter((row) => row.date.startsWith(year))
-      .map((row) => `(DATE '${row.date}', '${row.ticker}', ${row.volume})`);
-    await query(`COPY (SELECT * FROM (VALUES ${values.join(',')}) p(date, ticker, volume))
+      .map((row) => `(DATE '${row.date}', '${row.ticker}', ${row.volume}, 10)`);
+    await query(`COPY (SELECT * FROM (VALUES ${values.join(',')}) p(date, ticker, volume, frequency))
       TO '${join(path, `${year}.parquet`)}' (FORMAT PARQUET)`);
   }
 }

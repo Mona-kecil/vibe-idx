@@ -9,7 +9,7 @@ import { initialPins, readStorage, writeStorage } from './watchlist';
 import './market.css';
 
 type Stock = MarketSummary['stocks'][number];
-type SortKey = 'ticker' | 'close' | 'change_pct' | 'value' | 'rel_volume' | 'acc';
+type SortKey = 'ticker' | 'close' | 'change_pct' | 'value' | 'rel_volume' | 'acc' | 'size';
 const columns: { key: SortKey; label: string; unit?: string; title?: string }[] = [
   { key: 'ticker', label: 'Stock' },
   { key: 'close', label: 'Close', unit: 'IDR' },
@@ -35,6 +35,7 @@ const columns: { key: SortKey; label: string; unit?: string; title?: string }[] 
     title:
       'Top net-buying broker’s net shares ÷ total price volume over the window. Broker net buying does not identify the underlying investor.',
   },
+  { key: 'size', label: 'Buy size' },
 ];
 const compact = (n: number | null) => {
   if (n === null) return '—';
@@ -137,7 +138,9 @@ export function MarketPage() {
       ? stock[key]
       : key === 'acc'
         ? (accumulation.get(stock.ticker)?.pct ?? null)
-        : stock.windows[period][key];
+        : key === 'size'
+          ? (accumulation.get(stock.ticker)?.size ?? null)
+          : stock.windows[period][key];
   const rows = (data?.stocks ?? [])
     .filter((stock) =>
       (stock.ticker + ' ' + stock.name).toLowerCase().includes(query.trim().toLowerCase()),
@@ -240,9 +243,11 @@ export function MarketPage() {
             <table>
               <caption>Every IDX stock traded on the latest price date</caption>
               <colgroup>
-                {['stock', 'close', 'change', 'value', 'volume', 'acc', 'pin-col'].map((name) => (
-                  <col key={name} className={name} />
-                ))}
+                {['stock', 'close', 'change', 'value', 'volume', 'acc', 'size', 'pin-col'].map(
+                  (name) => (
+                    <col key={name} className={name} />
+                  ),
+                )}
               </colgroup>
               <thead>
                 <tr>
@@ -261,6 +266,8 @@ export function MarketPage() {
                           </span>
                         )}
                       </th>
+                    ) : column.key === 'size' && !privateData ? (
+                      <th key={column.key} scope="col" />
                     ) : (
                       <th
                         key={column.key}
@@ -371,6 +378,19 @@ export function MarketPage() {
                       ) : (
                         <td />
                       )}
+                      <td
+                        title={
+                          acc?.size != null &&
+                          acc.broker_avg !== null &&
+                          acc.stock_avg !== null &&
+                          acc.buy_trades !== null &&
+                          acc.trades !== null
+                            ? `${acc.broker} avg ${nf(acc.broker_avg)} shares per buy trade over ${nf(acc.buy_trades)} trades; stock avg ${nf(acc.stock_avg)} over ${nf(acc.trades)} trades`
+                            : undefined
+                        }
+                      >
+                        {acc?.size == null ? '' : nf(acc.size, 1) + '×'}
+                      </td>
                       <td>
                         <button
                           className="pin"
@@ -389,7 +409,7 @@ export function MarketPage() {
                 })}
                 {!rows.length && (
                   <tr>
-                    <td colSpan={7} className="empty-state">
+                    <td colSpan={8} className="empty-state">
                       {query
                         ? 'No stocks match this search.'
                         : 'No stocks traded on the latest date.'}

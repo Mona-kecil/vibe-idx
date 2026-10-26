@@ -197,7 +197,7 @@
 }
 .market-page table {
   width: 100%;
-  min-width: 1040px;
+  min-width: 1140px;
   border-collapse: separate;
   border-spacing: 0;
   table-layout: fixed;
@@ -210,7 +210,7 @@
   clip: rect(0, 0, 0, 0);
 }
 .market-page col.stock {
-  width: 28%;
+  width: 24%;
 }
 .market-page col.close {
   width: 10%;
@@ -219,13 +219,16 @@
   width: 11%;
 }
 .market-page col.value {
-  width: 15%;
+  width: 13%;
 }
 .market-page col.volume {
-  width: 16%;
+  width: 15%;
 }
 .market-page col.acc {
-  width: 16%;
+  width: 15%;
+}
+.market-page col.size {
+  width: 8%;
 }
 .market-page col.pin-col {
   width: 4%;
@@ -465,7 +468,7 @@
     max-height: calc(100dvh - 249px);
   }
   .market-page table {
-    min-width: 960px;
+    min-width: 1080px;
   }
   .market-page col.stock {
     width: 150px;
@@ -484,6 +487,9 @@
   }
   .market-page col.acc {
     width: 190px;
+  }
+  .market-page col.size {
+    width: 120px;
   }
   .market-page col.pin-col {
     width: 42px;

@@ -123,7 +123,8 @@ WITH active AS (
     count(p.volume) = w.window_days AND bool_and(CASE WHEN p.volume > 0
       THEN coalesce(bp.complete, false) AND coalesce(b.valid, false) AND coalesce(b.row_count, 0) > 0
       ELSE true END) complete,
-    sum(p.volume) volume
+    sum(p.volume) volume, sum(p.frequency) trades,
+    sum(p.volume) / nullif(sum(p.frequency), 0) stock_avg
   FROM active a CROSS JOIN market_periods w
   JOIN market_calendar c ON c.session_no <= w.window_days
   LEFT JOIN prices p ON p.date = c.date AND p.ticker = a.ticker
@@ -132,7 +133,10 @@ WITH active AS (
   GROUP BY a.ticker, w.window_days
 ), nets AS (
   SELECT a.ticker, w.window_days, b.broker,
-    sum(CASE WHEN b.side = 'buy' THEN b.shares ELSE -b.shares END) net
+    sum(CASE WHEN b.side = 'buy' THEN b.shares ELSE -b.shares END) net,
+    sum(b.freq) FILTER (WHERE b.side = 'buy') buy_trades,
+    sum(b.shares) FILTER (WHERE b.side = 'buy') /
+      nullif(sum(b.freq) FILTER (WHERE b.side = 'buy'), 0) broker_avg
   FROM active a CROSS JOIN market_periods w
   JOIN market_calendar c ON c.session_no <= w.window_days
   JOIN brokers b ON b.date = c.date AND b.ticker = a.ticker
@@ -141,7 +145,12 @@ WITH active AS (
   SELECT *, row_number() OVER (PARTITION BY ticker, window_days ORDER BY net DESC, broker) rank FROM nets
 ), periods AS (
   SELECT c.ticker, c.window_days, CASE WHEN c.complete AND c.volume > 0 AND r.broker IS NOT NULL
-    THEN struct_pack(pct := r.net / c.volume, broker := r.broker) END result
+    THEN struct_pack(pct := r.net / c.volume, broker := r.broker,
+      size := CASE WHEN isfinite(r.broker_avg / nullif(c.stock_avg, 0))
+        THEN r.broker_avg / nullif(c.stock_avg, 0) END,
+      broker_avg := CASE WHEN isfinite(r.broker_avg) THEN r.broker_avg END,
+      stock_avg := CASE WHEN isfinite(c.stock_avg) THEN c.stock_avg END,
+      buy_trades := r.buy_trades, trades := c.trades) END result
   FROM coverage c LEFT JOIN ranked r ON r.ticker = c.ticker AND r.window_days = c.window_days AND r.rank = 1
 )
 SELECT (SELECT max(date) FROM prices) date, coalesce(list(s ORDER BY ticker), []) stocks
