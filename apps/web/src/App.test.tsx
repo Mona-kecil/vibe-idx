@@ -328,7 +328,7 @@ describe('daily briefing', () => {
     expect(navigate).toHaveBeenCalledWith('/t/BBCA');
     expect(auth.getAccessToken).not.toHaveBeenCalled();
   });
-  it('seeds saved workspace tickers once, fetches watch prices and the latest disclosure, and persists unpinning', async () => {
+  it('seeds saved workspace tickers once, shows snapshot prices and the latest disclosure, and persists unpinning', async () => {
     window.localStorage.setItem(
       'vibe-idx-workspace-v1',
       JSON.stringify({ panels: [{ state: { ticker: 'BBCA' } }, { state: { ticker: 'BBCA' } }] }),
@@ -346,7 +346,7 @@ describe('daily briefing', () => {
     ];
     await render();
     expect(host.querySelectorAll('.watch-group')).toHaveLength(1);
-    expect(host.querySelector('.watch-link .signal-price')?.textContent).toBe('103');
+    expect(host.querySelector('.watch-link .signal-price')?.textContent).toBe('100');
     expect(host.querySelector('.watch-link .latest-event')?.textContent).toContain(
       'Newer disclosure',
     );

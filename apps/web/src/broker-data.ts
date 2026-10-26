@@ -8,7 +8,7 @@ export function brokerName(code: string) {
   return row
     ? row.name +
         ('historicalOnly' in row
-          ? ` · historical code; licence revoked ${row.licenseRevokedOn}`
+          ? ` (historical code; licence revoked ${row.licenseRevokedOn})`
           : '')
     : code;
 }

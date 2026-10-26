@@ -336,10 +336,7 @@ function WatchRow({ stock, feed, pin }: { stock: Stock; feed: Feed; pin: ReactNo
       active = false;
     };
   }, [stock.ticker]);
-  const prices = history?.prices.slice(-60) ?? [],
-    last = prices.at(-1),
-    prev = prices.at(-2);
-  const change = last && prev && prev.close ? (last.close / prev.close - 1) * 100 : null;
+  const prices = history?.prices.slice(-60) ?? [];
   const events: { date: string; text: ReactNode }[] = feed
     .filter((s) => s.ticker === stock.ticker)
     .map((s) => ({
@@ -382,8 +379,10 @@ function WatchRow({ stock, feed, pin }: { stock: Stock; feed: Feed; pin: ReactNo
             </span>
           )}
         </div>
-        <span className="signal-price num">{last ? nf(last.close) : '—'}</span>
-        <span className={`signal-change num ${direction(change)}`}>{pct(change)}</span>
+        <span className="signal-price num">{nf(stock.close)}</span>
+        <span className={`signal-change num ${direction(stock.change_pct)}`}>
+          {pct(stock.change_pct)}
+        </span>
         <span className="latest-event">
           {event ? (
             <>
@@ -668,12 +667,12 @@ export function Home() {
               </details>
             </div>
             <MarketBlock market={state.market} />
-            <section className="section" aria-label="Watchlist">
+            <section className="section" aria-labelledby="watch-heading">
+              <div className="section-head">
+                <h2 id="watch-heading">Watchlist</h2>
+              </div>
               {pins.some((t) => stockMap.has(t)) ? (
                 <>
-                  <div className="section-head">
-                    <h2>Watchlist</h2>
-                  </div>
                   <div className="table-head watch-head" aria-hidden="true">
                     <span>Stock</span>
                     <span>Price history</span>

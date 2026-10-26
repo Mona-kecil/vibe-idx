@@ -16,15 +16,14 @@ body {
   box-sizing: border-box;
 }
 .home-page {
+  min-height: 100vh;
+  margin: 0;
   background: var(--paper);
   color: var(--ink);
   font-family: var(--font);
   font-size: 14px;
   font-variant-numeric: tabular-nums;
   scroll-behavior: smooth;
-}
-.home-page {
-  margin: 0;
 }
 .home-page button,
 .home-page input,
@@ -1031,13 +1030,6 @@ body {
   .home-page .ticker-row {
     transition: none;
   }
-}
-
-.home-page {
-  min-height: 100vh;
-  background: var(--paper);
-  color: var(--ink);
-  font-family: var(--font);
 }
 .home-page .signin {
   max-width: 100%;
