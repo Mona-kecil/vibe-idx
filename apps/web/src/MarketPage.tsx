@@ -35,7 +35,12 @@ const columns: { key: SortKey; label: string; unit?: string; title?: string }[] 
     title:
       'Top net-buying broker’s net shares ÷ total price volume over the window. Broker net buying does not identify the underlying investor.',
   },
-  { key: 'size', label: 'Buy size' },
+  {
+    key: 'size',
+    label: 'Buy size',
+    title:
+      'Top net-buying broker’s average buy trade ÷ the stock’s average trade, in shares, over the window.',
+  },
 ];
 const compact = (n: number | null) => {
   if (n === null) return '—';
