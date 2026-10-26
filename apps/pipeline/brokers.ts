@@ -198,10 +198,13 @@ export class BrokerRunError extends Error {
   constructor(
     message: string,
     readonly summary: BrokerSummary,
+    options?: ErrorOptions,
   ) {
-    super(message);
+    super(message, options);
   }
 }
+
+class StockbitError extends Error {}
 
 export async function brokers({
   data,
@@ -266,6 +269,7 @@ export async function brokers({
     try {
       return await collect();
     } catch (error) {
+      if (!(error instanceof BrokerRunError && error.cause instanceof StockbitError)) throw error;
       const nextRpm = rpm === 30 ? 20 : rpm === 20 ? 15 : 12;
       if (nextRpm !== rpm) {
         console.error(
@@ -296,7 +300,15 @@ export async function brokers({
       );
       if (bounded()) return;
       lastStart = Date.now();
-      return fetcher(url, { ...init, redirect: 'error', signal: AbortSignal.timeout(60000) });
+      try {
+        return await fetcher(url, {
+          ...init,
+          redirect: 'error',
+          signal: AbortSignal.timeout(60000),
+        });
+      } catch (error) {
+        throw new StockbitError(String(error), { cause: error });
+      }
     }
     let access: string | undefined;
     async function authenticate() {
@@ -310,7 +322,7 @@ export async function brokers({
         headers: { ...headers, Authorization: `Bearer ${current.refresh}` },
       });
       if (!auth) return false;
-      if (!auth.ok) throw new Error(`Stockbit auth HTTP ${auth.status}`);
+      if (!auth.ok) throw new StockbitError(`Stockbit auth HTTP ${auth.status}`);
       const rotated = tokens(await auth.json());
       if (!rotated) throw new Error(`Invalid Stockbit auth HTTP ${auth.status}`);
       await mkdir(dirname(token), { recursive: true });
@@ -338,7 +350,7 @@ export async function brokers({
         headers: { ...headers, Authorization: `Bearer ${access}` },
       });
       if (!response) return;
-      if (!response.ok) throw new Error(`Stockbit HTTP ${response.status}`);
+      if (!response.ok) throw new StockbitError(`Stockbit HTTP ${response.status}`);
       const bytes = Buffer.from(await response.arrayBuffer());
       fetched++;
       await archive(key, bytes);
@@ -582,6 +594,7 @@ export async function brokers({
         throw new BrokerRunError(
           failure ? failure.message : `${failed.length} invalid broker pairs`,
           summary,
+          { cause: failure },
         );
       return summary;
     } finally {

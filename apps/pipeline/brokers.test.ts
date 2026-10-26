@@ -540,7 +540,7 @@ describe('private broker pipeline', () => {
       f.events.filter((e) => e.startsWith('put parquet/') || e.startsWith('put site/')),
     ).toEqual([]);
     expect(f.objects.has('broker-run.json')).toBe(false);
-    expect(JSON.parse(f.load('broker-rpm.json').toString())).toBe(20);
+    expect(JSON.parse(f.load('broker-rpm.json').toString())).toBe(30);
   });
 
   it('skips invalid pairs, preserves their evidence, finishes later pairs, and reports failure after publication', async () => {
@@ -614,7 +614,7 @@ describe('private broker pipeline', () => {
       await expect(brokers(options)).rejects.toBeInstanceOf(BrokerRunError);
       expect(net.calls).toEqual([]);
       expect(f.load(`raw/broker/${day}/FAIL.json`)).toEqual(bytes);
-      expect(JSON.parse(f.load('broker-rpm.json').toString())).toBe(15);
+      expect(JSON.parse(f.load('broker-rpm.json').toString())).toBe(30);
     }
   });
 
