@@ -1,7 +1,7 @@
 import { AwsClient } from 'aws4fetch';
 import { createRemoteJWKSet, customFetch, errors, jwtVerify } from 'jose';
 import { z } from 'zod';
-import { brokerDaySchema, brokerTickerSchema } from '../src/brokers.js';
+import { accumulationSchema, brokerDaySchema, brokerTickerSchema } from '../src/brokers.js';
 
 const clientIdSchema = z.string().regex(/^client_[a-zA-Z0-9]+$/);
 const storageConfigSchema = z.object({
@@ -41,9 +41,12 @@ export function createBrokerHandler({
       return json({ error: 'method_not_allowed' }, 405, { Allow: 'GET' });
     }
 
-    const tickers = new URL(request.url).searchParams.getAll('ticker');
+    const params = new URL(request.url).searchParams;
+    const isMarket = params.getAll('view').length === 1 && params.get('view') === 'market';
+    const tickers = params.getAll('ticker');
     const ticker = brokerTickerSchema.safeParse(tickers.length === 1 ? tickers[0] : undefined);
-    if (!ticker.success) return json({ error: 'invalid_ticker' }, 400);
+    const target = isMarket ? 'market' : ticker.success ? { ticker: ticker.data } : null;
+    if (!target) return json({ error: 'invalid_ticker' }, 400);
 
     const bearer = /^Bearer (\S+)$/i.exec(request.headers.get('Authorization') ?? '');
     if (!bearer?.[1]) return json({ error: 'unauthorized' }, 401);
@@ -88,17 +91,20 @@ export function createBrokerHandler({
         service: 's3',
         region: 'auto',
       });
+      const key =
+        target === 'market' ? 'site/market-accumulation.json' : `site/broker/${target.ticker}.json`;
       const signed = await aws.sign(
-        `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com/vibe-idx-private/site/broker/${ticker.data}.json`,
+        `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com/vibe-idx-private/${key}`,
         { method: 'GET', cache: 'no-store', redirect: 'error', signal: AbortSignal.timeout(10000) },
       );
       const response = await fetcher(signed);
       if (response.status === 404) return json({ error: 'not_found' }, 404);
       if (!response.ok) return json({ error: 'unavailable' }, 503);
       const body: unknown = await response.json();
+      if (target === 'market') return json(accumulationSchema.parse(body), 200);
       const days = sourceSchema.parse(body);
       days.sort((a, b) => b.date.localeCompare(a.date));
-      return json({ ticker: ticker.data, days }, 200);
+      return json({ ticker: target.ticker, days }, 200);
     } catch {
       return json({ error: 'unavailable' }, 503);
     }

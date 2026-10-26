@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '@workos-inc/authkit-react';
 import { useLocale } from './locale';
 
-function SignInButton() {
+export function SignInButton() {
   const { signIn, isLoading } = useAuth();
   const { t } = useLocale();
   const [failed, setFailed] = useState(false);
@@ -13,7 +13,7 @@ function SignInButton() {
         disabled={isLoading}
         onClick={() => {
           const path = window.location.pathname;
-          if (/^(?:\/|\/stocks|\/t\/[A-Z0-9-]+)$/.test(path))
+          if (/^(?:\/|\/stocks|\/market|\/t\/[A-Z0-9-]+)$/.test(path))
             window.sessionStorage.setItem('vibe-idx-return-to', path);
           void signIn().catch(() => setFailed(true));
         }}

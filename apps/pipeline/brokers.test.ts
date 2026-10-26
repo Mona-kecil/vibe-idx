@@ -341,6 +341,12 @@ describe('private broker pipeline', () => {
           days.map((date) => ({ date, buy: [buy], sell: [sell] })),
         );
       }
+      const accumulationBytes = await f.load('site/market-accumulation.json');
+      expect(accumulationBytes).toEqual(await readFile(join(f.out, 'market-accumulation.json')));
+      expect(JSON.parse(accumulationBytes.toString())).toEqual({
+        date: new Date(Date.parse(day) + 86400000).toISOString().slice(0, 10),
+        stocks: [{ ticker: 'FUTURE', windows: { '1d': null, '3d': null, '5d': null } }],
+      });
       expect(JSON.parse((await f.load('site/broker/EMPTY.json')).toString())).toEqual([
         { date: day, buy: [], sell: [] },
         { date: previous, buy: [], sell: [] },

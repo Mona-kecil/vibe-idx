@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { z } from 'zod';
+import { initialPins, readStorage, writeStorage } from './watchlist';
 import { AccountControls } from './BrokerPanel';
 import { load, type Feed, type Health, type Market, type Stock, type Ticker } from './data';
 import { dateText, direction, nf } from './ticker/format';
@@ -23,34 +23,6 @@ const signed = (n: number, format = short) =>
   (n > 0 ? '+' : n < 0 ? '−' : '') + format(Math.abs(n));
 const pct = (n: number | null) => (n === null ? '—' : signed(n, (v) => nf(v, 2)) + '%');
 const date = (d: string | null) => (d ? dateText(d) : 'Not reported');
-function readStorage(key: string) {
-  try {
-    return window.localStorage.getItem(key);
-  } catch {
-    return null;
-  }
-}
-function writeStorage(key: string, value: string) {
-  try {
-    window.localStorage.setItem(key, value);
-  } catch {
-    /* Storage may be blocked. */
-  }
-}
-function initialPins() {
-  try {
-    const saved = readStorage('vibe-idx:watchlist');
-    if (saved !== null) return z.array(z.string()).parse(JSON.parse(saved));
-    const legacy = z
-      .object({ panels: z.array(z.object({ state: z.object({ ticker: z.string() }) })) })
-      .safeParse(JSON.parse(readStorage('vibe-idx-workspace-v1') ?? 'null'));
-    const pins = legacy.success ? [...new Set(legacy.data.panels.map((p) => p.state.ticker))] : [];
-    writeStorage('vibe-idx:watchlist', JSON.stringify(pins));
-    return pins;
-  } catch {
-    return [];
-  }
-}
 const isExit = (row: Ownership) =>
   row.numbers.exited === true ||
   (row.numbers.pct_after === null && row.numbers.net_shares === null);
@@ -563,6 +535,12 @@ export function Home() {
           <a className="wordmark" href="/" aria-label="Vibe IDX home">
             Vibe <span>IDX</span>
           </a>
+          <nav className="main-nav" aria-label="Main">
+            <a href="/" aria-current="page">
+              Home
+            </a>
+            <a href="/market">Market</a>
+          </nav>
           <div className="search" ref={searchBox}>
             <svg
               viewBox="0 0 24 24"

@@ -69,7 +69,93 @@ CREATE TABLE issuers (
 );
 CREATE TEMP TABLE incoming_five AS SELECT * FROM five_pct WHERE false;`;
 
+export const marketCalendar = `
+CREATE TEMP VIEW market_calendar AS
+SELECT date, row_number() OVER (ORDER BY date DESC) session_no
+FROM (SELECT DISTINCT date FROM prices);
+CREATE TEMP VIEW market_periods AS SELECT unnest([1, 3, 5]) window_days;
+`;
+
+const marketSummaryView = `
+CREATE VIEW market_summary AS
+WITH active AS (
+  SELECT ticker, name, close FROM prices WHERE date = (SELECT max(date) FROM prices) AND volume > 0
+), totals AS (
+  SELECT a.ticker, a.name, a.close, w.window_days,
+    max(p.close) FILTER (WHERE c.session_no = w.window_days + 1) reference_close,
+    CASE WHEN count(p.volume) FILTER (WHERE c.session_no <= w.window_days) = w.window_days
+      AND count(p.value) FILTER (WHERE c.session_no <= w.window_days) = w.window_days
+      THEN sum(p.value) FILTER (WHERE c.session_no <= w.window_days) END AS value,
+    CASE WHEN count(p.volume) FILTER (WHERE c.session_no <= w.window_days) = w.window_days
+      AND count(p.value) FILTER (WHERE c.session_no <= w.window_days) = w.window_days
+      THEN sum(p.volume) FILTER (WHERE c.session_no <= w.window_days) / w.window_days END daily_volume,
+    CASE WHEN count(p.volume) FILTER (WHERE c.session_no > w.window_days) = 20
+      THEN avg(p.volume) FILTER (WHERE c.session_no > w.window_days) END baseline_volume
+  FROM active a CROSS JOIN market_periods w
+  JOIN market_calendar c ON c.session_no <= w.window_days + 20
+  LEFT JOIN prices p ON p.date = c.date AND p.ticker = a.ticker
+  GROUP BY a.ticker, a.name, a.close, w.window_days
+)
+SELECT ticker, name, close, window_days,
+  (close / nullif(reference_close, 0) - 1) * 100 change_pct,
+  value, daily_volume / nullif(baseline_volume, 0) rel_volume
+FROM totals;
+`;
+
+export const marketSummary = `
+SELECT (SELECT max(date) FROM prices) date, coalesce(list(s ORDER BY ticker), []) stocks
+FROM (
+  SELECT ticker, name, close, struct_pack(
+    "1d" := first(struct_pack(change_pct := change_pct, value := value, rel_volume := rel_volume)) FILTER (WHERE window_days = 1),
+    "3d" := first(struct_pack(change_pct := change_pct, value := value, rel_volume := rel_volume)) FILTER (WHERE window_days = 3),
+    "5d" := first(struct_pack(change_pct := change_pct, value := value, rel_volume := rel_volume)) FILTER (WHERE window_days = 5)
+  ) windows FROM market_summary GROUP BY ticker, name, close
+) s`;
+
+export const accumulation = `
+WITH active AS (
+  SELECT ticker FROM prices WHERE date = (SELECT max(date) FROM prices) AND volume > 0
+), broker_days AS (
+  SELECT date, ticker, count(*) row_count, bool_and(shares IS NOT NULL AND isfinite(shares)) AS valid
+  FROM brokers GROUP BY date, ticker
+), coverage AS (
+  SELECT a.ticker, w.window_days,
+    count(p.volume) = w.window_days AND bool_and(CASE WHEN p.volume > 0
+      THEN coalesce(bp.complete, false) AND coalesce(b.valid, false) AND coalesce(b.row_count, 0) > 0
+      ELSE true END) complete,
+    sum(p.volume) volume
+  FROM active a CROSS JOIN market_periods w
+  JOIN market_calendar c ON c.session_no <= w.window_days
+  LEFT JOIN prices p ON p.date = c.date AND p.ticker = a.ticker
+  LEFT JOIN broker_pairs bp ON bp.date = c.date AND bp.ticker = a.ticker
+  LEFT JOIN broker_days b ON b.date = c.date AND b.ticker = a.ticker
+  GROUP BY a.ticker, w.window_days
+), nets AS (
+  SELECT a.ticker, w.window_days, b.broker,
+    sum(CASE WHEN b.side = 'buy' THEN b.shares ELSE -b.shares END) net
+  FROM active a CROSS JOIN market_periods w
+  JOIN market_calendar c ON c.session_no <= w.window_days
+  JOIN brokers b ON b.date = c.date AND b.ticker = a.ticker
+  GROUP BY a.ticker, w.window_days, b.broker
+), ranked AS (
+  SELECT *, row_number() OVER (PARTITION BY ticker, window_days ORDER BY net DESC, broker) rank FROM nets
+), periods AS (
+  SELECT c.ticker, c.window_days, CASE WHEN c.complete AND c.volume > 0 AND r.broker IS NOT NULL
+    THEN struct_pack(pct := r.net / c.volume, broker := r.broker) END result
+  FROM coverage c LEFT JOIN ranked r ON r.ticker = c.ticker AND r.window_days = c.window_days AND r.rank = 1
+)
+SELECT (SELECT max(date) FROM prices) date, coalesce(list(s ORDER BY ticker), []) stocks
+FROM (
+  SELECT ticker, struct_pack(
+    "1d" := first(result) FILTER (WHERE window_days = 1),
+    "3d" := first(result) FILTER (WHERE window_days = 3),
+    "5d" := first(result) FILTER (WHERE window_days = 5)
+  ) windows FROM periods GROUP BY ticker
+) s`;
+
 export const analytics = `
+${marketCalendar}
+${marketSummaryView}
 CREATE VIEW latest AS SELECT max(date) date FROM prices;
 CREATE VIEW features AS
 SELECT *, (close / nullif(prev, 0) - 1) * 100 change_pct,

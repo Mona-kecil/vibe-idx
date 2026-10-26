@@ -114,6 +114,10 @@ function TickerNav({ market, stocks }: { market: Market | null; stocks: Stock[] 
         <a className="wordmark" href="/" aria-label="Vibe IDX home">
           Vibe <span>IDX</span>
         </a>
+        <nav className="main-nav" aria-label="Main">
+          <a href="/">Home</a>
+          <a href="/market">Market</a>
+        </nav>
         <div className="search" ref={container}>
           <svg
             viewBox="0 0 24 24"

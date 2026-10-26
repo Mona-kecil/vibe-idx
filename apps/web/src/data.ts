@@ -23,6 +23,29 @@ const marketSchema = z.object({
   ),
 });
 
+const marketWindowSchema = z.object({
+  change_pct: z.number().nullable(),
+  value: z.number().nullable(),
+  rel_volume: z.number().nullable(),
+});
+const marketSummarySchema = z.object({
+  date: z.iso.date().nullable(),
+  stocks: z.array(
+    z.object({
+      ticker: z.string(),
+      name: z.string(),
+      close: z.number().nullable(),
+      windows: z.object({
+        '1d': marketWindowSchema,
+        '3d': marketWindowSchema,
+        '5d': marketWindowSchema,
+      }),
+    }),
+  ),
+});
+export type MarketSummary = z.infer<typeof marketSummarySchema>;
+export type MarketPeriod = keyof MarketSummary['stocks'][number]['windows'];
+
 const ownershipChangeSchema = z.object({
   investor: z.string(),
   shares_before: z.number(),
@@ -203,12 +226,19 @@ export type Ticker = z.infer<typeof tickerSchema>;
 
 type TickerPath = `ticker/${string}.json`;
 export function load(path: 'health.json'): Promise<Health>;
+export function load(path: 'market-summary.json'): Promise<MarketSummary>;
 export function load(path: 'market.json'): Promise<Market>;
 export function load(path: 'feed.json'): Promise<Feed>;
 export function load(path: 'tickers.json'): Promise<Stock[]>;
 export function load(path: TickerPath): Promise<Ticker | null>;
 export async function load(
-  path: 'health.json' | 'market.json' | 'feed.json' | 'tickers.json' | TickerPath,
+  path:
+    | 'market-summary.json'
+    | 'health.json'
+    | 'market.json'
+    | 'feed.json'
+    | 'tickers.json'
+    | TickerPath,
 ) {
   const response = await fetch(`/data/${path}`);
   if (response.status === 404 && path.startsWith('ticker/')) return null;
@@ -217,6 +247,8 @@ export async function load(
   switch (path) {
     case 'health.json':
       return healthSchema.parse(json);
+    case 'market-summary.json':
+      return marketSummarySchema.parse(json);
     case 'market.json':
       return marketSchema.parse(json);
     case 'feed.json':

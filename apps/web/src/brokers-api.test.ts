@@ -158,6 +158,8 @@ describe('private broker API', () => {
             const brokerResponse = await brokers.fetch(new Request('https://vibe.test/api/brokers?ticker=BBCA'));
             assert.equal(brokerResponse.status, 401);
             assert.deepEqual(await brokerResponse.json(), { error: 'unauthorized' });
+            const accumulationResponse = await brokers.fetch(new Request('https://vibe.test/api/brokers?view=market'));
+            assert.equal(accumulationResponse.status, 401);
             const newsResponse = await news.fetch(new Request('https://vibe.test/api/news?ticker=../auth/stockbit'));
             assert.equal(newsResponse.status, 400);
             assert.deepEqual(await newsResponse.json(), { error: 'invalid_ticker' });
@@ -207,6 +209,33 @@ describe('private broker API', () => {
     const success = await handle(request({ token: await token() }));
     expect(success.status).toBe(200);
     expect(storageReads).toHaveLength(1);
+  });
+
+  it('protects market accumulation with the same JWT checks and reads only the private summary key', async () => {
+    const handle = createBrokerHandler({ env, fetcher });
+    for (const invalid of [
+      undefined,
+      'not-a-jwt',
+      await token({ exp: 1 }),
+      await token({}, otherClientKeys.privateKey),
+    ]) {
+      const response = await handle(request({ query: 'view=market', token: invalid }));
+      expect(response.status).toBe(401);
+      expectPrivate(response);
+    }
+    expect(storageReads).toEqual([]);
+    const body = {
+      date: '2026-10-23',
+      stocks: [
+        { ticker: 'BBCA', windows: { '1d': { pct: 0.2, broker: 'YP' }, '3d': null, '5d': null } },
+      ],
+    };
+    storageBody = JSON.stringify(body);
+    const response = await handle(request({ query: 'view=market', token: await token() }));
+    expect(response.status).toBe(200);
+    expectPrivate(response);
+    expect(await response.json()).toEqual(body);
+    expect(storageReads[0]?.path).toBe('/vibe-idx-private/site/market-accumulation.json');
   });
 
   it('blocks unsupported methods and unsafe ticker paths without touching WorkOS or R2', async () => {

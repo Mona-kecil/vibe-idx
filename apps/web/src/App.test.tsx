@@ -100,8 +100,39 @@ const volume = (ticker: string, multiple: number): Feed[number] => ({
 let feed: unknown[];
 let history: Ticker;
 let root: Root, host: HTMLDivElement;
+const marketStock = (ticker: string, value: number, change: number | null) => ({
+  ticker,
+  name: `Company ${ticker}`,
+  close: 100,
+  windows: {
+    '1d': { change_pct: change, value, rel_volume: 1.5 },
+    '3d': { change_pct: change === null ? null : -change, value: value * 3, rel_volume: 2.5 },
+    '5d': { change_pct: change === null ? null : change * 2, value: value * 5, rel_volume: 3.5 },
+  },
+});
+const summary = {
+  date: '2026-10-23',
+  stocks: [
+    marketStock('AAAA', 1e9, 2),
+    marketStock('BBCA', 2e9, -1),
+    marketStock('CCCC', 3e9, null),
+  ],
+};
+const marketAccumulation = {
+  date: summary.date,
+  stocks: summary.stocks.map((s, i) => ({
+    ticker: s.ticker,
+    windows: {
+      '1d': i === 2 ? null : { pct: 0.1 + i * 0.1, broker: 'YP' },
+      '3d': i === 2 ? null : { pct: 0.3 + i * 0.1, broker: 'AA' },
+      '5d': i === 2 ? null : { pct: 0.5 + i * 0.1, broker: 'BB' },
+    },
+  })),
+};
 const fetcher = vi.fn<(input: string) => Promise<Response>>(async (input) => {
   const url = String(input);
+  if (url.includes('market-summary.json')) return Response.json(summary);
+  if (url.includes('/api/brokers?view=market')) return Response.json(marketAccumulation);
   if (url.includes('/api/brokers'))
     return Response.json({
       ticker: new URL(url, 'http://localhost').searchParams.get('ticker'),
@@ -437,5 +468,68 @@ describe('ticker research regressions', () => {
     expect(host.querySelector('#news')?.textContent).toContain('No news');
     expect(host.querySelector('[role="alert"]')).toBeNull();
     fetcher.mockImplementation(baseFetch ?? (async () => Response.json([])));
+  });
+});
+
+describe('market summary', () => {
+  const order = () => stockOrder('#market-rows .stock-link strong');
+  it('switches trading windows, sorts both ways with missing values last, searches and shares pins with Home', async () => {
+    auth.user = { id: 'market-user', email: 'market@example.com' };
+    window.history.replaceState(null, '', '/market');
+    await render();
+    expect(order()).toEqual(['CCCC', 'BBCA', 'AAAA']);
+    expect(host.querySelector('#market-rows a')?.getAttribute('href')).toBe('/t/CCCC');
+    expect(fetcher).toHaveBeenCalledWith('/api/brokers?view=market', {
+      headers: { Authorization: 'Bearer test-token' },
+      cache: 'no-store',
+    });
+    expect(host.textContent).toContain('20.0%YP');
+    await click('.ranges button:nth-child(2)');
+    expect(host.querySelector('.ranges button:nth-child(2)')?.getAttribute('aria-pressed')).toBe(
+      'true',
+    );
+    expect(host.textContent).toContain('30.0%AA');
+    expect(host.textContent).toContain('2.5×');
+    expect(host.textContent).toContain('9.0B');
+    await click('th:nth-child(3) button');
+    expect(order()).toEqual(['BBCA', 'AAAA', 'CCCC']);
+    await click('th:nth-child(3) button');
+    expect(order()).toEqual(['AAAA', 'BBCA', 'CCCC']);
+    await click('.ranges button:nth-child(3)');
+    expect(host.textContent).toContain('50.0%BB');
+    expect(host.textContent).toContain('15.0B');
+    await click('th:nth-child(6) button');
+    expect(order()).toEqual(['BBCA', 'AAAA', 'CCCC']);
+    await click('th:nth-child(6) button');
+    expect(order()).toEqual(['AAAA', 'BBCA', 'CCCC']);
+    await typeQuery('company bbca');
+    expect(order()).toEqual(['BBCA']);
+    await click('[aria-label="Pin BBCA"]');
+    expect(JSON.parse(window.localStorage.getItem('vibe-idx:watchlist') ?? 'null')).toEqual([
+      'BBCA',
+    ]);
+    await act(async () => {
+      window.history.pushState(null, '', '/');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    });
+    expect(host.querySelector('.watch-link')?.getAttribute('href')).toBe('/t/BBCA');
+  });
+  it('keeps prices and sorting public, offers sign-in once and never requests private data while signed out', async () => {
+    window.history.replaceState(null, '', '/market');
+    await render();
+    expect(order()).toHaveLength(3);
+    expect(host.textContent).toContain('3.0B');
+    expect(host.querySelectorAll('.accumulation-gate button')).toHaveLength(1);
+    expect(
+      [...host.querySelectorAll('button')].filter((button) => button.textContent === 'Sign in'),
+    ).toHaveLength(1);
+    expect(host.querySelector('.broker')).toBeNull();
+    await click('.ranges button:nth-child(2)');
+    await click('th:nth-child(3) button');
+    expect(order()).toEqual(['BBCA', 'AAAA', 'CCCC']);
+    expect(auth.getAccessToken).not.toHaveBeenCalled();
+    expect(fetcher.mock.calls.every(([url]) => !url.includes('/api/brokers'))).toBe(true);
+    await click('.accumulation-gate button');
+    expect(window.sessionStorage.getItem('vibe-idx-return-to')).toBe('/market');
   });
 });
