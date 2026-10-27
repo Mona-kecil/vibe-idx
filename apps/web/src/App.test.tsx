@@ -442,7 +442,8 @@ describe('ticker research regressions', () => {
     expect(auth.signIn).toHaveBeenCalled();
     auth.signIn.mockClear();
   });
-  it('renders anchored TPIA values, all change markers and uncertain month-end moves without extending HSBC', async () => {
+  it('clusters overlapping TPIA reports on the drawn line without changing anchored values or extending HSBC', async () => {
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(948);
     history = tickerSchema.parse(tpiaFixture);
     window.history.replaceState(null, '', '/t/TPIA');
     await render();
@@ -459,13 +460,84 @@ describe('ticker research regressions', () => {
     const scgLine = host.querySelector(
       `.holdings-series[data-holder="${scg?.getAttribute('data-holder')}"]`,
     );
-    expect(scgLine?.querySelectorAll('.holding-event')).toHaveLength(7);
-    expect(scgLine?.querySelector('.holding-uncertain')).not.toBeNull();
+    // Seven reports become three markers: Jan 13, Feb 24, and the five June 2–8 reports.
+    expect(scgLine?.querySelectorAll('.holding-event')).toHaveLength(3);
     const marker = scgLine?.querySelector('[data-date="2026-06-08"]');
-    if (!marker) throw new Error('Missing SCG exit marker');
+    if (!marker) throw new Error('Missing SCG June cluster');
+    expect(marker.getAttribute('aria-label')).toBe(
+      'SCG CHEMICALS PUBLIC COMPANY LIMITED 2 Jun 2026–8 Jun 2026, 5 reports',
+    );
+    for (const unit of ['shares', 'pct']) {
+      await click(`.holdings-mode [data-unit="${unit}"]`);
+      const diagonal = scgLine
+        ?.querySelector('.holding-uncertain')
+        ?.getAttribute('d')
+        ?.match(/^M([^,]+),(\S+) L([^,]+),(\S+)$/);
+      if (!diagonal) throw new Error('Missing SCG May 29–June 30 diagonal');
+      const may29X = Number(diagonal[1]),
+        may29Y = Number(diagonal[2]),
+        june30X = Number(diagonal[3]),
+        june30Y = Number(diagonal[4]),
+        cx = Number(marker.getAttribute('cx')),
+        cy = Number(marker.getAttribute('cy'));
+      expect(cx).toBeCloseTo(may29X + ((june30X - may29X) * 10) / 32);
+      expect(cy).toBeGreaterThan(may29Y);
+      expect(cy).toBeLessThan(june30Y);
+      expect(cy).toBeCloseTo(may29Y + ((june30Y - may29Y) * (cx - may29X)) / (june30X - may29X));
+    }
     await act(async () => marker.dispatchEvent(new Event('click', { bubbles: true })));
+    expect(
+      [...host.querySelectorAll('#holdings-tooltip .tooltip-date')].map((el) => el.textContent),
+    ).toEqual(['2 Jun 2026', '3 Jun 2026', '4 Jun 2026', '5 Jun 2026', '8 Jun 2026']);
+    expect(
+      [...host.querySelectorAll('#holdings-tooltip .holding-transition')].map(
+        (el) => el.textContent,
+      ),
+    ).toEqual([
+      '0 (0.00%) → 9.1B (10.57%)+9.1B',
+      '9.1B (10.57%) → 10.1B (11.66%)+947.2M',
+      '10.1B (11.66%) → 10.8B (12.45%)+676.3M',
+      '10.8B (12.45%) → 13.1B (15.10%)+2.3B',
+      '13.1B (15.10%) → Below 5%',
+    ]);
     expect(host.querySelector('#holdings-tooltip')?.textContent).toContain('SCG CHEMICALS');
     expect(host.querySelector('#holdings-tooltip')?.textContent).toContain('Below 5%');
+    await act(async () =>
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })),
+    );
+    expect(host.querySelector('#holdings-tooltip')).toBeNull();
+    for (const event of [
+      new FocusEvent('focusin', { bubbles: true }),
+      new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
+      new KeyboardEvent('keydown', { key: ' ', bubbles: true }),
+    ]) {
+      await act(async () => marker.dispatchEvent(event));
+      expect(host.querySelectorAll('#holdings-tooltip .tooltip-date')).toHaveLength(5);
+      await act(async () =>
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })),
+      );
+    }
+    const single = scgLine?.querySelector('[data-date="2026-01-13"]');
+    if (!single) throw new Error('Missing SCG January report');
+    expect(single.getAttribute('aria-label')).toBe(
+      'SCG CHEMICALS PUBLIC COMPANY LIMITED 13 Jan 2026 0 → 9,144,270,316 shares',
+    );
+    await act(async () => single.dispatchEvent(new Event('click', { bubbles: true })));
+    expect(host.querySelectorAll('#holdings-tooltip .tooltip-date')).toHaveLength(1);
+    expect(host.querySelector('#holdings-tooltip .tooltip-date')?.textContent).toBe('13 Jan 2026');
+    const prajogo = keys.find((el) => el.textContent?.includes('PRAJOGO PANGESTU'));
+    const prajogoLine = host.querySelector(
+      `.holdings-series[data-holder="${prajogo?.getAttribute('data-holder')}"]`,
+    );
+    const march16 = prajogoLine?.querySelector('[data-date="2026-03-16"]');
+    const step = [...(prajogoLine?.querySelectorAll('.holding-line') ?? [])]
+      .map((el) => el.getAttribute('d')?.match(/^M([^,]+),(\S+) H(\S+) V(\S+)$/))
+      .find((match) => match && Number(match[3]) === Number(march16?.getAttribute('cx')));
+    if (!step) throw new Error('Missing Prajogo March 16 step');
+    expect(Number(prajogoLine?.querySelector('[data-date="2026-03-12"]')?.getAttribute('cy'))).toBe(
+      Number(step[2]),
+    );
+    expect(Number(march16?.getAttribute('cy'))).toBe(Number(step[4]));
     const hsbc = keys.find((el) => el.textContent?.includes('HSBC'));
     const hsbcLine = host.querySelector(
       `.holdings-series[data-holder="${hsbc?.getAttribute('data-holder')}"]`,
