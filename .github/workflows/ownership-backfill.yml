@@ -63,6 +63,7 @@ jobs:
             `## IDX ownership: ${ownership.since} through ${ownership.until}`,
             `5% snapshots: ${ownership.five_pct_dates.join(', ') || 'none'}`,
             `1% snapshots: ${ownership.one_pct_dates.join(', ') || 'none; source availability unresolved'}`,
+            `Skipped legacy 1% PDFs: ${ownership.skipped_one_pct_pdfs.join(', ') || 'none'}`,
             `Compared against ${ownership.price_dates_checked} restored price dates. An empty price baseline is not proof of completeness.`,
             `Missing 5% dates against the restored price ledger: ${ownership.missing_five_pct_price_dates.map(r => r.date).join(', ') || 'none'}`,
             'A successful run does not establish that every historical source file exists.',

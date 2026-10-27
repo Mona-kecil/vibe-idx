@@ -99,6 +99,7 @@ export async function ingest({
   let labelsBackfilled = 0;
   let labelsRemaining = 0;
   let lastRequest = 0;
+  const skippedOnePctPdfs: string[] = [];
   const instance = await DuckDBInstance.create(':memory:');
   const db = await instance.connect();
   let fetched = 0;
@@ -436,8 +437,11 @@ export async function ingest({
         if (file.date > publishedThrough || knownFiles.has(file.url)) continue;
         if (file.source === 'onePct') {
           if (file.date < monthlyFirst) continue;
-          if (/\.pdf$/i.test(new URL(file.url).pathname))
-            throw new Error(`Legacy 1% PDF format is not supported: ${file.url}`);
+          // The XLSX list republishes these month-end snapshots; report the PDFs instead of parsing them.
+          if (/\.pdf$/i.test(new URL(file.url).pathname)) {
+            skippedOnePctPdfs.push(file.url);
+            continue;
+          }
           const rows = parseOnePct(await raw(`one-pct/${hash(file.url)}.xlsx`, file.url));
           if (!rows.length) throw new Error(`Empty 1% ownership file: ${file.url}`);
           const incomingDates = new Set(rows.map((r) => r.asOf));
@@ -841,6 +845,7 @@ export async function ingest({
             one_pct_dates: [...(await present('one_pct'))]
               .filter((d) => d >= (since ?? '') && d <= (until ?? today))
               .sort(),
+            skipped_one_pct_pdfs: skippedOnePctPdfs,
             price_dates_checked: (
               await query(`SELECT count(DISTINCT date)::INTEGER n FROM prices
               WHERE date BETWEEN ${literal(since ?? today)} AND ${literal(until ?? today)}`)
