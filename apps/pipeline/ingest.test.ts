@@ -82,6 +82,7 @@ const insiderExamples = [
     ticker: 'BJTM',
     file: 'LK-08062026-4607-00.pdf',
     reporter: 'R ARIEF WICAKSONO',
+    holder_key: 'RARIEFWICAKSONO',
     before: 2718600,
     after: 3718600,
   },
@@ -89,6 +90,7 @@ const insiderExamples = [
     ticker: 'TPIA',
     file: 'LK-08062026-5332-00.pdf',
     reporter: 'FRANSISKUS RULY ARYAWAN',
+    holder_key: 'FRANSISKUSRULYARYAWAN',
     before: 400212,
     after: 1010212,
   },
@@ -96,6 +98,7 @@ const insiderExamples = [
     ticker: 'BUKK',
     file: 'LK-08062026-6195-00.pdf',
     reporter: 'NADIA ACHMAD',
+    holder_key: 'NADIAACHMAD',
     before: 185613823,
     after: 388475003,
   },
@@ -103,6 +106,7 @@ const insiderExamples = [
     ticker: 'BEEF',
     file: 'LK-08062026-9030-00.pdf',
     reporter: 'PT ESTIKA TATA TIARA TBK',
+    holder_key: 'ESTIKATATATIARA',
     before: 10712200,
     after: 11969900,
   },
@@ -985,10 +989,11 @@ BT /F1 10 Tf 1 0 0 1 529 530 Tm (-100) Tj ET`;
         const ticker = JSON.parse(
           await readFile(join(root, `out/ticker/${r.ticker}.json`), 'utf8'),
         );
-        expect(ticker.insiders).toMatchObject([
+        expect(ticker.insiders).toEqual([
           {
             date: '2026-06-08',
             reporter: r.reporter,
+            holder_key: r.holder_key,
             shares_before: r.before,
             shares_after: r.after,
             net_shares: r.after - r.before,

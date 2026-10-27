@@ -236,9 +236,9 @@ it('keeps corrected monthly snapshots, KSEI cells and blank relationships throug
             investor_types: [...report.investor_types].sort((a, b) =>
               a.label.localeCompare(b.label, 'en', { sensitivity: 'variant' }),
             ),
-            holders: [...report.holders].sort((a, b) =>
-              a.investor < b.investor ? -1 : a.investor > b.investor ? 1 : 0,
-            ),
+            holders: [...report.holders]
+              .sort((a, b) => (a.investor < b.investor ? -1 : a.investor > b.investor ? 1 : 0))
+              .map((h) => ({ ...h, holder_key: expect.any(String) })),
           },
         ]);
         const hash = createHash('sha256').update(row.sourceUrl).digest('hex');
@@ -301,7 +301,7 @@ it('keeps corrected monthly snapshots, KSEI cells and blank relationships throug
         JSON.parse(await readFile(join(out, `ticker/${ticker}.json`), 'utf8')),
       );
       expect(actual.registry_history.map((r) => r.date)).toEqual(['2026-05-31', '2026-06-30']);
-      expect(actual.registry_history).toMatchObject(history);
+      expect(actual.registry_history).toEqual(history);
     }
     // Simulate a parser upgrade and a legacy report-per-file registry ledger.
     const instance = await DuckDBInstance.create(':memory:');
