@@ -1508,7 +1508,7 @@ it('keeps ARGO and PEMDA entities separate while resolving legal affixes and reg
       ('2026-09-30','ALKA',1000,'https://example.com/alka.pdf'),
       ('2026-09-30','FIRE',1000,'https://example.com/fire.pdf');
       INSERT INTO registry_holders (date,ticker,investor,pct,page) VALUES
-      ('2026-09-30','BJBR','PEMDA KABUPATEN',10,1),
+      ('2026-09-30','BJBR','PEMDA KABUPATEN',10.02,1),
       ('2026-09-30','BJBR','PEMDA PROVINSI',30,1),
       ('2026-09-30','ALKA','PT GESIT',83.8,1),
       ('2026-09-30','FIRE','PT ASABRI (PERSERO)',23.6,1)`);
@@ -1546,5 +1546,77 @@ it('keeps ARGO and PEMDA entities separate while resolving legal affixes and reg
   } finally {
     db.closeSync();
     instance.closeSync();
+  }
+});
+
+it('publishes ownership conflicts on offline export while excluding public aggregates and unavailable months', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'ownership-quality-'));
+  const instance = await DuckDBInstance.create(':memory:');
+  const db = await instance.connect();
+  try {
+    await db.run(schema);
+    await db.run(`INSERT INTO registry (date,ticker,total_shares,url) VALUES
+      ('2026-09-30','CHECK',1000,'https://example.com/registry.pdf'),
+      ('2026-01-31','CHECK',1000,'https://example.com/january.pdf');
+      INSERT INTO registry_holders (date,ticker,investor,pct,page) VALUES
+      ('2026-09-30','CHECK','Exact, PT',10.004,1),
+      ('2026-09-30','CHECK','Missing Investor',5,1),
+      ('2026-09-30','CHECK','Small Difference',9,1),
+      ('2026-09-30','CHECK','Large Difference',20,1),
+      ('2026-09-30','CHECK','Threshold Difference',2.3,1),
+      ('2026-09-30','CHECK','PEMDA KABUPATEN',7.5,1),
+      ('2026-09-30','CHECK','Masyarakat',60,1),
+      ('2026-09-30','CHECK','MASYARAKA T LAINNYA',60,1),
+      ('2026-09-30','CHECK','PEMDA SE- JAWA BARAT',29.78,1),
+      ('2026-09-30','CHECK','-',0,1),
+      ('2026-09-30','CHECK','Afiliasi',30,1),
+      ('2026-01-31','CHECK','Missing Investor',5,1);
+      INSERT INTO one_pct (date,ticker,investor,seq,shares,pct,url) VALUES
+      ('2026-09-30','CHECK','PT Exact',1,60,6,'https://example.com/one.xlsx'),
+      ('2026-09-30','CHECK','Exact, PT',2,40,4,'https://example.com/one.xlsx'),
+      ('2026-09-30','CHECK','Small Difference',3,85,8.5,'https://example.com/one.xlsx'),
+      ('2026-09-30','CHECK','Large Difference',4,100,10,'https://example.com/one.xlsx'),
+      ('2026-09-30','CHECK','Threshold Difference',7,13,1.3,'https://example.com/one.xlsx'),
+      ('2026-09-30','CHECK','PEMDA KABUPATEN BANDUNG',5,100,10,'https://example.com/one.xlsx'),
+      ('2026-09-30','CHECK','PEMDA KABUPATEN BOGOR',6,200,20,'https://example.com/one.xlsx')`);
+    const data = join(root, 'data');
+    for (const table of ['registry', 'registry_holders', 'one_pct']) {
+      const dir = join(data, 'parquet', table);
+      await mkdir(dir, { recursive: true });
+      await db.run(`COPY ${table} TO '${join(dir, '2026.parquet')}' (FORMAT PARQUET)`);
+    }
+    const result = await ingest({
+      data,
+      out: join(root, 'out'),
+      registryOnly: true,
+      reparseRegistry: true,
+      since: '2000-01-01',
+      until: '2000-01-01',
+      today: '2026-10-27',
+      fetcher: async () => {
+        throw new Error('Offline reconciliation fetched IDX');
+      },
+    });
+    expect(result.requests).toBe(0);
+    const report = JSON.parse(await readFile(join(root, 'out/ownership-quality.json'), 'utf8'));
+    expect(report).toMatchObject({
+      months: ['2026-09'],
+      agreement_tolerance_pp: 0.02,
+      counts: { agree: 1, missing: 1, differ_small: 1, differ_large: 2, ambiguous_name: 1 },
+    });
+    expect(report.conflicts).toHaveLength(5);
+    expect(report.conflicts).toContainEqual({
+      ticker: 'CHECK',
+      month: '2026-09',
+      holder: 'Large Difference',
+      registry_pct: 20,
+      one_pct: 10,
+      category: 'differ_large',
+      sources: ['https://example.com/registry.pdf', 'https://example.com/one.xlsx'],
+    });
+  } finally {
+    db.closeSync();
+    instance.closeSync();
+    await rm(root, { recursive: true, force: true });
   }
 });

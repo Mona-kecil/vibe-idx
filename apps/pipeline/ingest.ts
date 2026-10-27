@@ -17,7 +17,7 @@ import { date } from './lib/rows';
 import { labelAttachments, orderAttachments, parseAnnouncements, parseReport } from './reports';
 import { registryParserVersion } from './registry';
 import { tickerSchema } from '../web/src/data';
-import { resolveHolderKeys } from './ownership';
+import { ownershipQuality, reconcileOwnership, resolveHolderKeys } from './ownership';
 import { analytics, health, market, marketSummary, schema, stockTable, tickers } from './sql';
 
 const archivedDisclosure = z.object({
@@ -808,11 +808,24 @@ export async function ingest({
     await writeFile(join(out, 'market.json'), `${(await output(market))[0]}\n`);
     await writeFile(join(out, 'tickers.json'), `[${(await output(stockTable)).join(',')}]\n`);
     await writeFile(join(out, 'health.json'), `${(await output(health))[0]}\n`);
+    const monthlySources = new Map<string, string[]>();
+    for (const row of await query(
+      "SELECT DISTINCT strftime(date, '%Y-%m') AS month_key, url FROM one_pct ORDER BY month_key, url",
+    )) {
+      const source = z.object({ month_key: z.string(), url: z.string().nullable() }).parse(row);
+      const urls = monthlySources.get(source.month_key) ?? [];
+      if (source.url) urls.push(source.url);
+      monthlySources.set(source.month_key, urls);
+    }
+    const quality = ownershipQuality([...monthlySources.keys()]);
     for (const row of await output(tickers)) {
-      const { data: parsed } = resolveHolderKeys(tickerSchema.parse(JSON.parse(row)));
+      const resolved = resolveHolderKeys(tickerSchema.parse(JSON.parse(row)));
+      const { data: parsed } = resolved;
+      reconcileOwnership(quality, resolved, monthlySources);
       if (!/^[A-Z0-9-]+$/.test(parsed.ticker)) throw new Error('Invalid output ticker');
       await writeFile(join(out, 'ticker', `${parsed.ticker}.json`), `${JSON.stringify(parsed)}\n`);
     }
+    await writeFile(join(out, 'ownership-quality.json'), `${JSON.stringify(quality)}\n`);
     const counts = Object.fromEntries(
       await Promise.all(
         tables.map(async (table) => [
