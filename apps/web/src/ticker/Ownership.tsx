@@ -7,7 +7,6 @@ import {
   inRange,
   registryAt,
   pctAt,
-  sameHolder,
   sharesAt,
   totalAt,
   type HoldingEvent,
@@ -164,7 +163,7 @@ export function Ownership({
               </thead>
               <tbody id="holders">
                 {holders.map(({ s, shares, pct }) => {
-                  const role = snapshot?.holders.find((h) => sameHolder(h.investor, s.name));
+                  const role = snapshot?.holders.find((h) => h.holder_key === s.holder_key);
                   const changed = !!selection && s.events.some((e) => inRange(e.date, selection));
                   const before = sharesAt(s, previous),
                     source =

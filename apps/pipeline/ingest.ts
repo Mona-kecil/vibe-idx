@@ -16,6 +16,8 @@ import { idxUrl, parseOwnershipList } from './lib/ownershipList';
 import { date } from './lib/rows';
 import { labelAttachments, orderAttachments, parseAnnouncements, parseReport } from './reports';
 import { registryParserVersion } from './registry';
+import { tickerSchema } from '../web/src/data';
+import { resolveHolderKeys } from './ownership';
 import { analytics, health, market, marketSummary, schema, stockTable, tickers } from './sql';
 
 const archivedDisclosure = z.object({
@@ -807,16 +809,9 @@ export async function ingest({
     await writeFile(join(out, 'tickers.json'), `[${(await output(stockTable)).join(',')}]\n`);
     await writeFile(join(out, 'health.json'), `${(await output(health))[0]}\n`);
     for (const row of await output(tickers)) {
-      const parsed: unknown = JSON.parse(row);
-      if (
-        typeof parsed !== 'object' ||
-        parsed === null ||
-        !('ticker' in parsed) ||
-        typeof parsed.ticker !== 'string' ||
-        !/^[A-Z0-9-]+$/.test(parsed.ticker)
-      )
-        throw new Error('Invalid output ticker');
-      await writeFile(join(out, 'ticker', `${parsed.ticker}.json`), `${row}\n`);
+      const { data: parsed } = resolveHolderKeys(tickerSchema.parse(JSON.parse(row)));
+      if (!/^[A-Z0-9-]+$/.test(parsed.ticker)) throw new Error('Invalid output ticker');
+      await writeFile(join(out, 'ticker', `${parsed.ticker}.json`), `${JSON.stringify(parsed)}\n`);
     }
     const counts = Object.fromEntries(
       await Promise.all(

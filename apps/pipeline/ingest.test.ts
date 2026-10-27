@@ -4,6 +4,7 @@ import { dirname, join, relative } from 'node:path';
 import { DuckDBInstance } from '@duckdb/node-api';
 import { describe, expect, it } from 'vite-plus/test';
 import { ingest } from './ingest';
+import { resolveHolderKeys } from './ownership';
 import { analytics, schema, tickers } from './sql';
 import { tickerSchema } from '../web/src/data';
 import { holdingSeries, pctAt, sharesAt } from '../web/src/ticker/logic';
@@ -352,12 +353,14 @@ describe('batch pipeline', () => {
           const alto = JSON.parse(await readFile(join(options.out, 'ticker/ALTO.json'), 'utf8'));
           expect(alto.holders).toContainEqual({
             investor: 'PT TRIMEGAH SEKURITAS INDONESIA TBK',
+            holder_key: 'TRIMEGAH SEKURITAS INDONESIA',
             shares: 210832443,
             pct: 9.62,
           });
           const dcii = JSON.parse(await readFile(join(options.out, 'ticker/DCII.json'), 'utf8'));
           expect(dcii.holders).toContainEqual({
             investor: 'ANTHONI SALIM',
+            holder_key: 'ANTHONI SALIM',
             shares: 265033461,
             pct: 11.12,
           });
@@ -555,9 +558,11 @@ describe('batch pipeline', () => {
         ledger.closeSync();
       }
       const published = JSON.parse(await readFile(join(options.out, 'ticker/TRUE.json'), 'utf8'));
-      expect(published.holders).toEqual([{ investor: 'INVESTOR', shares: 110, pct: 11 }]);
+      expect(published.holders).toEqual([
+        { investor: 'INVESTOR', holder_key: 'INVESTOR', shares: 110, pct: 11 },
+      ]);
       expect(published.one_pct.holders).toMatchObject([
-        { investor: 'INVESTOR', shares: 110, pct: 11 },
+        { investor: 'INVESTOR', holder_key: 'INVESTOR', shares: 110, pct: 11 },
         { investor: 'INVESTOR', shares: 20, pct: 2 },
       ]);
       expect(JSON.parse(await readFile(join(options.out, 'feed.json'), 'utf8'))).toEqual([
@@ -608,10 +613,25 @@ describe('batch pipeline', () => {
           ticker: 'SINI',
           changes: [],
           holders: expect.arrayContaining([
-            { investor: 'KREASI  JASA PERSADA PT', shares: 94940000, pct: 7.9 },
-            { investor: 'PT PETROSEA TBK', shares: 239105000, pct: 19.88 },
-            { investor: 'Batubara Development Limited', shares: 74530000, pct: 6.2 },
-            { investor: 'PERSADA JASA KREASI PT', shares: 70000000, pct: 5.82 },
+            {
+              investor: 'KREASI  JASA PERSADA PT',
+              holder_key: 'KREASI JASA PERSADA',
+              shares: 94940000,
+              pct: 7.9,
+            },
+            { investor: 'PT PETROSEA TBK', holder_key: 'PETROSEA', shares: 239105000, pct: 19.88 },
+            {
+              investor: 'Batubara Development Limited',
+              holder_key: 'BATUBARA DEVELOPMENT',
+              shares: 74530000,
+              pct: 6.2,
+            },
+            {
+              investor: 'PERSADA JASA KREASI PT',
+              holder_key: 'PERSADA JASA KREASI',
+              shares: 70000000,
+              pct: 5.82,
+            },
           ]),
         },
       ]);
@@ -926,6 +946,7 @@ BT /F1 10 Tf 1 0 0 1 529 530 Tm (-100) Tj ET`;
         holders: expect.arrayContaining([
           {
             investor: 'PT PERSADA CAPITAL INVESTAMA',
+            holder_key: 'PERSADA CAPITAL INVESTAMA',
             shares: 119887170,
             pct: 1.54,
             classification: 'Corporate',
@@ -958,7 +979,7 @@ BT /F1 10 Tf 1 0 0 1 529 530 Tm (-100) Tj ET`;
         const ticker = JSON.parse(
           await readFile(join(root, `out/ticker/${r.ticker}.json`), 'utf8'),
         );
-        expect(ticker.insiders).toEqual([
+        expect(ticker.insiders).toMatchObject([
           {
             date: '2026-06-08',
             reporter: r.reporter,
@@ -1462,6 +1483,66 @@ it('uses issued shares to prevent a listed-base step in BBCA Dwimuria holdings',
     expect(pctAt(data, holder, '2026-09-30')).toBeCloseTo(54.94, 2);
     expect(pctAt(data, holder, '2026-08-28')).toBeCloseTo(54.94, 2);
     expect(pctAt(data, holder, '2026-10-30')).toBeCloseTo(50, 2);
+  } finally {
+    db.closeSync();
+    instance.closeSync();
+  }
+});
+
+it('keeps ARGO and PEMDA entities separate while resolving legal affixes and registry truncation', async () => {
+  const instance = await DuckDBInstance.create(':memory:');
+  const db = await instance.connect();
+  try {
+    await db.run(schema);
+    await db.run(`INSERT INTO one_pct (date,ticker,investor,seq,shares,pct) VALUES
+      ('2026-09-30','ARGO','Argo Land',1,100,10),
+      ('2026-09-30','ARGO','PT Argo Manunggal',2,200,20),
+      ('2026-09-30','BJBR','PEMDA KABUPATEN BANDUNG',1,100,10),
+      ('2026-09-30','BJBR','PEMDA KABUPATEN BOGOR',2,200,20),
+      ('2026-09-30','BJBR','PEMDA PROVINSI JAWA BARAT',3,300,30),
+      ('2026-09-30','ALKA','GESIT PERKASA, PT',1,73284750,14.44),
+      ('2026-09-30','ALKA','PT GESIT PERKASA',2,352108805,69.36),
+      ('2026-09-30','FIRE','PERUSAHAAN PERSEROAN (PERSERO) PT ASABRI',1,236,23.6);
+      INSERT INTO registry (date,ticker,total_shares,url) VALUES
+      ('2026-09-30','BJBR',1000,'https://example.com/bjbr.pdf'),
+      ('2026-09-30','ALKA',1000,'https://example.com/alka.pdf'),
+      ('2026-09-30','FIRE',1000,'https://example.com/fire.pdf');
+      INSERT INTO registry_holders (date,ticker,investor,pct,page) VALUES
+      ('2026-09-30','BJBR','PEMDA KABUPATEN',10,1),
+      ('2026-09-30','BJBR','PEMDA PROVINSI',30,1),
+      ('2026-09-30','ALKA','PT GESIT',83.8,1),
+      ('2026-09-30','FIRE','PT ASABRI (PERSERO)',23.6,1)`);
+    await db.run(analytics);
+    const rows = (await db.runAndReadAll(tickers))
+      .getRowObjectsJson()
+      .map((r) => resolveHolderKeys(tickerSchema.parse(r)));
+    const argo = rows.find((r) => r.data.ticker === 'ARGO');
+    expect(
+      argo &&
+        holdingSeries(argo.data, null)
+          .map((s) => s.holder_key)
+          .sort(),
+    ).toEqual(['ARGO LAND', 'ARGO MANUNGGAL']);
+    const bjbr = rows.find((r) => r.data.ticker === 'BJBR');
+    expect(bjbr?.ambiguous.size).toBe(0);
+    expect(bjbr?.data.registry_history[0]?.holders.map((h) => h.holder_key)).toEqual([
+      'PEMDA KABUPATEN BANDUNG',
+      'PEMDA PROVINSI JAWA BARAT',
+    ]);
+    expect(bjbr && holdingSeries(bjbr.data, null)).toHaveLength(3);
+    const alka = rows.find((r) => r.data.ticker === 'ALKA');
+    expect(alka && holdingSeries(alka.data, null)).toHaveLength(1);
+    expect(alka?.data.registry_history[0]?.holders[0]?.holder_key).toBe('GESIT PERKASA');
+    const fire = rows.find((r) => r.data.ticker === 'FIRE');
+    expect(fire && holdingSeries(fire.data, null)).toHaveLength(1);
+    expect(alka && holdingSeries(alka.data, null)[0]?.points[0]?.shares).toBe(425393555);
+    await db.run(`UPDATE one_pct SET pct = 10 WHERE ticker = 'BJBR' AND investor LIKE '%BOGOR'`);
+    const ambiguous = (await db.runAndReadAll(tickers))
+      .getRowObjectsJson()
+      .map((r) => resolveHolderKeys(tickerSchema.parse(r)))
+      .find((r) => r.data.ticker === 'BJBR');
+    expect(ambiguous?.ambiguous.has('PEMDA KABUPATEN')).toBe(true);
+    expect(ambiguous?.data.registry_history[0]?.holders[0]?.holder_key).toBe('PEMDA KABUPATEN');
   } finally {
     db.closeSync();
     instance.closeSync();

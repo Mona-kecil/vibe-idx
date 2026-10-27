@@ -98,23 +98,8 @@ export function holderLabel(name: string) {
     .replace(/\s+/g, ' ')
     .replace(/[. ]+$/, '');
 }
-function holderTokens(name: string) {
-  return name
-    .toUpperCase()
-    .replace(/[^A-Z0-9 ]/g, ' ')
-    .split(/\s+/)
-    .filter((t) => t && !['PT', 'TBK', 'PTE', 'LTD', 'LIMITED'].includes(t));
-}
-export function sameHolder(a: string, b: string) {
-  const left = holderTokens(a),
-    right = holderTokens(b);
-  return (
-    left.length > 0 &&
-    right.length > 0 &&
-    (left.every((t) => right.includes(t)) || right.every((t) => left.includes(t)))
-  );
-}
 export type HoldingEvent = {
+  holder_key: string;
   date: string;
   name: string;
   shares_before: number | null;
@@ -127,7 +112,7 @@ export function ownershipEvents(data: Ticker): HoldingEvent[] {
     (e) =>
       !(
         e.shares_after === null &&
-        data.holders.some((h) => sameHolder(h.investor, e.investor) && h.shares === e.shares_before)
+        data.holders.some((h) => h.holder_key === e.holder_key && h.shares === e.shares_before)
       ),
   );
   for (const e of [
@@ -136,9 +121,9 @@ export function ownershipEvents(data: Ticker): HoldingEvent[] {
   ]) {
     const url =
       e.url ??
-      data.insiders.find((i) => i.date === e.date && i.reporter && sameHolder(i.reporter, e.name))
+      data.insiders.find((i) => i.date === e.date && i.reporter && i.holder_key === e.holder_key)
         ?.url;
-    const old = events.find((v) => v.date === e.date && sameHolder(v.name, e.name));
+    const old = events.find((v) => v.date === e.date && v.holder_key === e.holder_key);
     if (old) {
       old.shares_before = e.shares_before;
       old.shares_after = e.shares_after;
@@ -147,6 +132,7 @@ export function ownershipEvents(data: Ticker): HoldingEvent[] {
       events.push({
         date: e.date,
         name: e.name,
+        holder_key: e.holder_key ?? '',
         shares_before: e.shares_before,
         shares_after: e.shares_after,
         sources: url ? [url] : [],
@@ -180,7 +166,12 @@ export type HoldingPoint = {
   priority: number;
   event?: boolean;
 };
-export type HoldingSeries = { name: string; points: HoldingPoint[]; events: HoldingEvent[] };
+export type HoldingSeries = {
+  holder_key: string;
+  name: string;
+  points: HoldingPoint[];
+  events: HoldingEvent[];
+};
 export function holdingSeries(
   data: Ticker,
   dailyDate: string | null,
@@ -188,10 +179,10 @@ export function holdingSeries(
 ) {
   const series: HoldingSeries[] = [];
   const snapshots = [...data.registry_history].sort((a, b) => a.date.localeCompare(b.date));
-  function get(name: string) {
-    let s = series.find((s) => sameHolder(s.name, name));
+  function get(holder_key: string, name: string) {
+    let s = series.find((s) => s.holder_key === holder_key);
     if (!s) {
-      s = { name, points: [], events: [] };
+      s = { holder_key, name, points: [], events: [] };
       series.push(s);
     }
     return s;
@@ -199,7 +190,7 @@ export function holdingSeries(
   for (const snap of snapshots)
     for (const h of snap.holders) {
       if (snap.issued_shares)
-        get(h.investor).points.push({
+        get(h.holder_key, h.investor).points.push({
           date: snap.date,
           shares: (h.pct / 100) * snap.issued_shares,
           rounded: true,
@@ -211,26 +202,30 @@ export function holdingSeries(
     monthly.push({ date: data.one_pct.date, holders: data.one_pct.holders });
   monthly.sort((a, b) => a.date.localeCompare(b.date));
   for (const snap of monthly) {
-    const accounts = new Map<string, { investor: string; shares: number; pct: number }>();
+    const accounts = new Map<
+      string,
+      { holder_key: string; investor: string; shares: number; pct: number }
+    >();
     for (const h of snap.holders) {
-      const name = get(h.investor).name;
+      const name = h.holder_key;
       const combined = accounts.get(name);
       accounts.set(name, {
-        investor: name,
+        holder_key: h.holder_key,
+        investor: h.investor,
         shares: (combined?.shares ?? 0) + h.shares,
         pct: (combined?.pct ?? 0) + h.pct,
       });
     }
     for (const h of accounts.values()) {
-      const s = get(h.investor);
+      const s = get(h.holder_key, h.investor);
       s.points = s.points.filter((p) => p.date.slice(0, 7) !== snap.date.slice(0, 7));
       s.points.push({ date: snap.date, shares: h.shares, pct: h.pct, priority: 4 });
     }
   }
-  for (const e of events) get(e.name).events.push(e);
+  for (const e of events) get(e.holder_key, e.name).events.push(e);
   if (dailyDate)
     for (const h of data.holders) {
-      const s = get(h.investor);
+      const s = get(h.holder_key, h.investor);
       if (!s.points.length)
         s.points.push({ date: dailyDate, shares: h.shares, pct: h.pct, priority: 5 });
     }
@@ -252,8 +247,8 @@ export function holdingSeries(
       const next = monthly[i + 1];
       if (
         next &&
-        snap.holders.some((h) => sameHolder(h.investor, s.name)) &&
-        !next.holders.some((h) => sameHolder(h.investor, s.name))
+        snap.holders.some((h) => h.holder_key === s.holder_key) &&
+        !next.holders.some((h) => h.holder_key === s.holder_key)
       ) {
         const end = new Date(snap.date);
         end.setUTCDate(end.getUTCDate() + 1);
@@ -280,8 +275,8 @@ export function holdingSeries(
         s.points = s.points.filter((p, i, all) => all[i + 1]?.date !== p.date);
       }
     }
-    const latest = [...data.holders, ...data.one_pct.holders].find((h) =>
-      sameHolder(h.investor, s.name),
+    const latest = [...data.holders, ...data.one_pct.holders].find(
+      (h) => h.holder_key === s.holder_key,
     );
     if (latest) s.name = latest.investor;
   }

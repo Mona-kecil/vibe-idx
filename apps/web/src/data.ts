@@ -132,6 +132,7 @@ const registrySchema = z.object({
     .array(
       z.object({
         investor: z.string(),
+        holder_key: z.string(),
         pct: z.number(),
         controller: z.boolean().nullable(),
         controller_affiliate: z.boolean().nullable(),
@@ -143,6 +144,7 @@ const registrySchema = z.object({
 
 const onePctHolderSchema = z.object({
   investor: z.string(),
+  holder_key: z.string(),
   shares: z.number(),
   pct: z.number(),
   classification: z.string().nullable(),
@@ -161,8 +163,10 @@ export const tickerSchema = z.object({
       net_foreign: z.number(),
     }),
   ),
-  holders: z.array(z.object({ investor: z.string(), shares: z.number(), pct: z.number() })),
-  changes: z.array(ownershipChangeSchema.extend({ date: z.string() })),
+  holders: z.array(
+    z.object({ investor: z.string(), holder_key: z.string(), shares: z.number(), pct: z.number() }),
+  ),
+  changes: z.array(ownershipChangeSchema.extend({ date: z.string(), holder_key: z.string() })),
   one_pct: z
     .object({
       date: z.string().nullable(),
@@ -196,6 +200,7 @@ export const tickerSchema = z.object({
       z.object({
         date: z.string(),
         reporter: z.string().nullable(),
+        holder_key: z.string().nullable(),
         shares_before: z.number().nullable(),
         shares_after: z.number().nullable(),
         net_shares: z.number().nullable(),

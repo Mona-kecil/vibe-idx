@@ -41,7 +41,9 @@ function ticker(symbol: string): Ticker {
       value: 70000,
       net_foreign: 0,
     })),
-    holders: [{ investor: 'Synthetic holder', shares: 100, pct: 10 }],
+    holders: [
+      { investor: 'Synthetic holder', holder_key: 'SYNTHETIC HOLDER', shares: 100, pct: 10 },
+    ],
     changes: [],
     one_pct: { date: '2026-09-30', holders: [] },
     one_pct_history: [],

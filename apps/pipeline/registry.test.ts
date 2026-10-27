@@ -187,7 +187,7 @@ it('keeps corrected monthly snapshots, KSEI cells and blank relationships throug
     };
     attachments: { OriginalFilename: string; FullSavePath: string; IsAttachment: boolean }[];
   }[] = [];
-  const expected = new Map<string, ReturnType<typeof tickerSchema.parse>['registry_history']>();
+  const expected = new Map<string, object[]>();
   try {
     await mkdir(join(data, 'raw/reports'), { recursive: true });
     for (const ticker of ['SINI', 'BRPT', 'TPIA', 'BREN']) {
@@ -222,7 +222,20 @@ it('keeps corrected monthly snapshots, KSEI cells and blank relationships throug
         }
         expected.set(ticker, [
           ...(expected.get(ticker) ?? []),
-          { ...report, issued_shares: report.total_shares, url: row.sourceUrl },
+          {
+            date: report.date,
+            free_float_pct: report.free_float_pct,
+            issued_shares: report.total_shares,
+            sid_count: report.sid_count,
+            free_float_shares: report.free_float_shares,
+            url: row.sourceUrl,
+            investor_types: [...report.investor_types].sort((a, b) =>
+              a.label.localeCompare(b.label, 'en', { sensitivity: 'variant' }),
+            ),
+            holders: [...report.holders].sort((a, b) =>
+              a.investor < b.investor ? -1 : a.investor > b.investor ? 1 : 0,
+            ),
+          },
         ]);
         const hash = createHash('sha256').update(row.sourceUrl).digest('hex');
         await writeFile(join(data, `raw/reports/${hash}.pdf`), bytes);
@@ -284,19 +297,7 @@ it('keeps corrected monthly snapshots, KSEI cells and blank relationships throug
         JSON.parse(await readFile(join(out, `ticker/${ticker}.json`), 'utf8')),
       );
       expect(actual.registry_history.map((r) => r.date)).toEqual(['2026-05-31', '2026-06-30']);
-      expect(actual.registry_history).toEqual(
-        history
-          .map(({ investor_types, holders, ...r }) => ({
-            ...r,
-            investor_types: investor_types
-              .slice()
-              .sort((a, b) => a.label.localeCompare(b.label, 'en', { sensitivity: 'variant' })),
-            holders: holders
-              .slice()
-              .sort((a, b) => (a.investor < b.investor ? -1 : a.investor > b.investor ? 1 : 0)),
-          }))
-          .map((r) => tickerSchema.shape.registry_history.parse([r])[0]),
-      );
+      expect(actual.registry_history).toMatchObject(history);
     }
     // Simulate a parser upgrade and a legacy report-per-file registry ledger.
     const instance = await DuckDBInstance.create(':memory:');
