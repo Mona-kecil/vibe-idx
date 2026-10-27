@@ -7,6 +7,7 @@ import { z } from 'zod';
 import { expect, it } from 'vite-plus/test';
 import { ingest } from './ingest';
 import { parseReport } from './reports';
+import { parseRegistryLayout } from './registry';
 import { tickerSchema } from '../web/src/data';
 
 const research = new URL('../../docs/prototypes/workspace/research/', import.meta.url);
@@ -334,3 +335,13 @@ it('keeps corrected monthly snapshots, KSEI cells and blank relationships throug
     await rm(root, { recursive: true, force: true });
   }
 }, 30_000);
+
+it('sums Astra International account rows within the AALI September table', async () => {
+  const result = await parseRegistryLayout(
+    await readFile(new URL('./fixtures/AALI-2026-09-main.pdf', import.meta.url)),
+  );
+  expect(result.holders.find((h) => /Astra International/i.test(h.investor))?.pct).toBeCloseTo(
+    79.68,
+    2,
+  );
+});

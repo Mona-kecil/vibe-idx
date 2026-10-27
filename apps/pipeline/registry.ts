@@ -1,7 +1,7 @@
 import { getDocumentProxy, getResolvedPDFJS } from 'unpdf';
 import { z } from 'zod';
 
-export const registryParserVersion = 3;
+export const registryParserVersion = 4;
 
 const categories = [
   'Bank',
@@ -230,6 +230,7 @@ export async function parseRegistryLayout(bytes: Uint8Array) {
             c.y < end,
         )
         .sort((a, b) => a.y - b.y);
+      const table: typeof holders = new Map();
       for (const [i, stake] of stakes.entries()) {
         const next = stakes[i + 1]?.y ?? end;
         const row = cells.filter((c) => c.y >= stake.y - 2 && c.y < next - 2);
@@ -249,12 +250,12 @@ export async function parseRegistryLayout(bytes: Uint8Array) {
           gap(`holder ${investor} ${field}`);
           return null;
         };
-        const existing = holders.get(investor);
+        const existing = table.get(investor);
         const isController = flag(controller, 'controller');
         const isAffiliate = flag(affiliate, 'controller affiliate');
-        holders.set(investor, {
+        table.set(investor, {
           investor,
-          pct: Math.max(existing?.pct ?? pct, pct),
+          pct: (existing?.pct ?? 0) + pct,
           controller:
             existing?.controller === true || isController === true
               ? true
@@ -265,6 +266,10 @@ export async function parseRegistryLayout(bytes: Uint8Array) {
               : (existing?.controller_affiliate ?? isAffiliate),
           page: Math.min(existing?.page ?? index + 1, index + 1),
         });
+      }
+      for (const [investor, holder] of table) {
+        const existing = holders.get(investor);
+        if (!existing || holder.pct > existing.pct) holders.set(investor, holder);
       }
     }
   }
