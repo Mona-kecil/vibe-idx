@@ -1240,6 +1240,18 @@
 .ticker-page .holdings-tooltip .tooltip-date {
   font-size: 11px;
 }
+.ticker-page .holdings-tooltip .holding-report {
+  margin-top: 8px;
+}
+.ticker-page .holdings-tooltip .holding-report .tooltip-date {
+  padding-bottom: 0;
+  border-bottom: 0;
+  margin-bottom: 0;
+}
+.ticker-page .holdings-tooltip .holding-report .event-delta {
+  font-size: 12px;
+  margin: 0 0 0 6px;
+}
 .ticker-page .holdings-tooltip strong {
   font-size: 12px;
 }

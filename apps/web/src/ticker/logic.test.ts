@@ -357,4 +357,36 @@ describe('month-end anchored TPIA holdings', () => {
     expect(sharesAt(resumed, '2026-06-30')).toBe(hsbc.shares);
     expect(sharesAt(resumed, '2026-07-01')).toBeNull();
   });
+
+  it('prefers a disagreeing 1% value over the registry and seeds only unanchored daily holders', () => {
+    const barito = holder('PT BARITO PACIFIC TBK');
+    const series = holdingSeries(
+      {
+        ...tpia,
+        one_pct_history: tpia.one_pct_history.map((m) =>
+          m.date === '2026-05-29'
+            ? {
+                ...m,
+                holders: m.holders.map((h) =>
+                  sameHolder(h.investor, barito.name) ? { ...h, shares: 25_000_000_000 } : h,
+                ),
+              }
+            : m,
+        ),
+        holders: [
+          ...tpia.holders,
+          { investor: 'NEW HOLDER', shares: 5_000_000_000, pct: 5.78, local_foreign: null },
+        ],
+      },
+      end,
+    );
+    const changed = series.find((s) => sameHolder(s.name, barito.name));
+    if (!changed) throw new Error('Missing Barito');
+    expect(sharesAt(changed, '2026-05-31')).toBe(25_000_000_000);
+    expect(sharesAt(changed, '2026-06-30')).toBe(29_957_670_400);
+    expect(sharesAt(changed, '2026-09-30')).toBe(29_957_670_400);
+    expect(sharesAt(changed, end)).toBe(29_957_670_400);
+    const added = series.find((s) => s.name === 'NEW HOLDER');
+    expect(added?.points.map((p) => [p.date, p.shares])).toEqual([[end, 5_000_000_000]]);
+  });
 });

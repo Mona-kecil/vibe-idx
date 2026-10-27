@@ -306,9 +306,11 @@ function HoldingsChart({
   const [unit, setUnit] = useState<'shares' | 'pct'>('shares');
   const [hidden, setHidden] = useState<string[]>([]),
     [focus, setFocus] = useState<string | null>(null);
-  const [tooltip, setTooltip] = useState<{ events: HoldingEvent[]; x: number; y: number } | null>(
-    null,
-  );
+  const [tooltip, setTooltip] = useState<{
+    events: [HoldingEvent, ...HoldingEvent[]];
+    x: number;
+    y: number;
+  } | null>(null);
   const shell = useRef<HTMLDivElement>(null),
     [width, setWidth] = useState(948);
   useEffect(() => {
@@ -665,12 +667,12 @@ function HoldingsChart({
               className="tooltip holdings-tooltip"
               style={{ left: tooltip.x, top: tooltip.y }}
             >
+              <strong>{tooltip.events[0].name}</strong>
               {tooltip.events.map((event) => (
-                <div key={event.date}>
-                  <div className="tooltip-date">{dateText(event.date)}</div>
-                  <strong>
-                    <OwnershipName event={event} />
-                  </strong>
+                <div className="holding-report" key={event.date}>
+                  <div className="tooltip-date">
+                    <OwnershipName event={event} label={dateText(event.date)} />
+                  </div>
                   <div className="holding-transition">
                     <HoldingValue data={data} event={event} side="before" /> →{' '}
                     <HoldingValue data={data} event={event} side="after" />
