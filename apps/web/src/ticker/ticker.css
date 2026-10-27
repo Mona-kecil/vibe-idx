@@ -1337,13 +1337,6 @@
 .ticker-page .holdings-tooltip .holding-transition {
   margin-top: 6px;
 }
-.ticker-page .holdings-svg .holding-label {
-  font-size: 9px;
-  font-weight: 650;
-  paint-order: stroke;
-  stroke: var(--paper);
-  stroke-width: 3px;
-}
 .ticker-page .event-value .event-pct {
   font-weight: 500;
   font-size: 10px;
