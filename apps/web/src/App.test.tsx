@@ -544,7 +544,6 @@ describe('ticker research regressions', () => {
     );
     expect(hsbcLine?.querySelectorAll('.holding-line')).toHaveLength(0);
     expect(hsbcLine?.querySelectorAll('.holding-anchor')).toHaveLength(1);
-    expect(hsbcLine?.querySelector('.holding-label')).toBeNull();
     expect(hsbc?.querySelector('strong')?.textContent).toBe('—');
   });
   it('loads signed-in ticker brokers through the bearer API and tolerates unavailable news', async () => {

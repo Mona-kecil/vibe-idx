@@ -345,7 +345,7 @@ function HoldingsChart({
   if (!firstDate || !lastDate) return null;
   const W = width,
     L = 42,
-    R = 118,
+    R = 12,
     T = 46,
     B = 316,
     markerRadius = 4.5,
@@ -386,17 +386,6 @@ function HoldingsChart({
     monthTicks.push(tick.toISOString().slice(0, 10));
     tick.setUTCMonth(tick.getUTCMonth() + 1);
   }
-  const labels = series
-    .map((s, i) => ({ s, i, y: y(amount(sharesAt(s, lastDate) ?? 0, lastDate)), labelY: 0 }))
-    .filter((l) => !hidden.includes(l.s.name) && l.s.points.at(-1)?.shares != null)
-    .sort((a, b) => a.y - b.y);
-  labels.forEach((l, i) => {
-    l.labelY = Math.max(l.y, i ? (labels[i - 1]?.labelY ?? T) + 14 : T);
-  });
-  const overflow = Math.max(0, (labels.at(-1)?.labelY ?? B) - B);
-  labels.forEach((l) => {
-    l.labelY -= overflow;
-  });
   return (
     <>
       <div className="holdings-head">
@@ -501,8 +490,7 @@ function HoldingsChart({
             {series.map((s, i) => {
               if (hidden.includes(s.name)) return null;
               const color = palette[i % palette.length],
-                last = s.points.at(-1),
-                label = labels.find((l) => l.s === s);
+                last = s.points.at(-1);
               const points =
                 last && last.shares !== null
                   ? [...s.points, { ...last, date: lastDate, event: false }]
@@ -533,11 +521,6 @@ function HoldingsChart({
                   cluster.push(event);
                 else clusters.push([event]);
               }
-              const name = holderLabel(s.name)
-                .split(' ')
-                .slice(0, 2)
-                .map((word) => word[0]?.toUpperCase() + word.slice(1).toLowerCase())
-                .join(' ');
               return (
                 <g
                   className="holdings-series"
@@ -639,24 +622,6 @@ function HoldingsChart({
                       />
                     );
                   })}
-                  {last && label && (
-                    <>
-                      <path
-                        d={`M${W - R},${lineY({ ...last, date: lastDate })} L${W - R + 9},${label.labelY}`}
-                        stroke={color}
-                        fill="none"
-                        strokeWidth={1}
-                      />
-                      <text
-                        className="holding-label"
-                        x={W - R + 13}
-                        y={label.labelY + 3}
-                        style={{ fill: color }}
-                      >
-                        {name}
-                      </text>
-                    </>
-                  )}
                 </g>
               );
             })}
