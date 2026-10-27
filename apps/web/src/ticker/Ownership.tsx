@@ -306,9 +306,11 @@ function HoldingsChart({
   const [unit, setUnit] = useState<'shares' | 'pct'>('shares');
   const [hidden, setHidden] = useState<string[]>([]),
     [focus, setFocus] = useState<string | null>(null);
-  const [tooltip, setTooltip] = useState<{ event: HoldingEvent; x: number; y: number } | null>(
-    null,
-  );
+  const [tooltip, setTooltip] = useState<{
+    events: [HoldingEvent, ...HoldingEvent[]];
+    x: number;
+    y: number;
+  } | null>(null);
   const shell = useRef<HTMLDivElement>(null),
     [width, setWidth] = useState(948);
   useEffect(() => {
@@ -330,12 +332,13 @@ function HoldingsChart({
     return () => document.removeEventListener('keydown', escape);
   }, []);
   const firstDate = series
-    .flatMap((s) => s.points)
+    .flatMap((s) => [...s.points, ...s.events])
     .map((p) => p.date)
     .sort()[0];
   const lastDate = [
+    end,
     data.prices.at(-1)?.date ?? '',
-    ...series.flatMap((s) => s.points).map((p) => p.date),
+    ...series.flatMap((s) => [...s.points, ...s.events]).map((p) => p.date),
   ]
     .sort()
     .at(-1);
@@ -345,6 +348,8 @@ function HoldingsChart({
     R = 118,
     T = 46,
     B = 316,
+    markerRadius = 4.5,
+    markerStroke = 1.5,
     start = Date.parse(firstDate),
     finish = Date.parse(lastDate),
     plot = W - L - R;
@@ -355,7 +360,12 @@ function HoldingsChart({
     1,
     ...series
       .filter((s) => !hidden.includes(s.name))
-      .flatMap((s) => s.points.map((p) => amount(p.shares ?? 0, p.date))),
+      .flatMap((s) => [
+        ...s.points.map((p) => amount(p.shares ?? 0, p.date)),
+        ...s.events.map((e) =>
+          amount(sharesAt(s, e.date) ?? e.shares_after ?? e.shares_before ?? 0, e.date),
+        ),
+      ]),
   );
   const magnitude = 10 ** Math.floor(Math.log10(peak));
   const yMax = Math.ceil((peak * 1.03) / (magnitude / 2)) * (magnitude / 2),
@@ -378,7 +388,7 @@ function HoldingsChart({
   }
   const labels = series
     .map((s, i) => ({ s, i, y: y(amount(sharesAt(s, lastDate) ?? 0, lastDate)), labelY: 0 }))
-    .filter((l) => !hidden.includes(l.s.name))
+    .filter((l) => !hidden.includes(l.s.name) && l.s.points.at(-1)?.shares != null)
     .sort((a, b) => a.y - b.y);
   labels.forEach((l, i) => {
     l.labelY = Math.max(l.y, i ? (labels[i - 1]?.labelY ?? T) + 14 : T);
@@ -493,9 +503,10 @@ function HoldingsChart({
               const color = palette[i % palette.length],
                 last = s.points.at(-1),
                 label = labels.find((l) => l.s === s);
-              const points = last
-                ? [...s.points, { ...last, date: lastDate, event: false }]
-                : s.points;
+              const points =
+                last && last.shares !== null
+                  ? [...s.points, { ...last, date: lastDate, event: false }]
+                  : s.points;
               const lineY = (p: { shares: number | null; date: string }) => {
                 const value = amount(p.shares ?? 0, p.date),
                   peers = series.filter(
@@ -510,6 +521,18 @@ function HoldingsChart({
                     : 0)
                 );
               };
+              const clusters: [HoldingEvent, ...HoldingEvent[]][] = [];
+              for (const event of [...s.events].sort((a, b) => a.date.localeCompare(b.date))) {
+                const cluster = clusters.at(-1),
+                  previous = cluster?.at(-1);
+                if (
+                  cluster &&
+                  previous &&
+                  x(event.date) - x(previous.date) < markerRadius * 2 + markerStroke
+                )
+                  cluster.push(event);
+                else clusters.push([event]);
+              }
               const name = holderLabel(s.name)
                 .split(' ')
                 .slice(0, 2)
@@ -526,8 +549,20 @@ function HoldingsChart({
                 >
                   {points.map((p, j) => {
                     const prior = points[j - 1];
-                    if (!prior || p.shares === null || prior.shares === null) return null;
-                    const event = s.events.some((e) => e.date === p.date),
+                    if (p.shares === null) return null;
+                    if ((!prior || prior.shares === null) && points[j + 1]?.shares == null)
+                      return (
+                        <circle
+                          className="holding-anchor"
+                          key={j}
+                          cx={x(p.date)}
+                          cy={lineY(p)}
+                          r={2}
+                          fill={color}
+                        />
+                      );
+                    if (!prior || prior.shares === null) return null;
+                    const event = p.event,
                       dotted =
                         !event && amount(prior.shares, prior.date) !== amount(p.shares, p.date);
                     return (
@@ -548,45 +583,62 @@ function HoldingsChart({
                       />
                     );
                   })}
-                  {s.events
-                    .filter((e) => e.shares_after !== null)
-                    .map((e) => {
-                      const cx = x(e.date),
-                        cy = lineY({ date: e.date, shares: e.shares_after });
-                      const show = () => {
-                        setFocus(s.name);
-                        setTooltip({
-                          event: e,
-                          x: Math.max(0, Math.min(W - 340, cx > W / 2 ? cx - 356 : cx + 16)),
-                          y: Math.max(34, Math.min(180, cy - 40)),
-                        });
-                      };
-                      return (
-                        <circle
-                          className="holding-event"
-                          key={e.date}
-                          data-date={e.date}
-                          cx={cx}
-                          cy={cy}
-                          r={4.5}
-                          fill={color}
-                          stroke="var(--paper)"
-                          strokeWidth={1.5}
-                          tabIndex={0}
-                          role="button"
-                          aria-label={`${s.name} ${dateText(e.date)} ${nf(e.shares_before ?? 0)} → ${nf(e.shares_after ?? 0)} shares`}
-                          onPointerEnter={show}
-                          onFocus={show}
-                          onClick={show}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter' || e.key === ' ') {
-                              e.preventDefault();
-                              show();
-                            }
-                          }}
-                        />
-                      );
-                    })}
+                  {clusters.map((events) => {
+                    const first = events[0],
+                      e = events.at(-1) ?? first;
+                    const cx = x(e.date),
+                      prior = points.filter((p) => p.date <= e.date).at(-1),
+                      next = points.find((p) => p.date > e.date);
+                    let cy = lineY(
+                      prior?.shares != null
+                        ? prior
+                        : {
+                            date: e.date,
+                            shares: sharesAt(s, e.date) ?? e.shares_after ?? e.shares_before,
+                          },
+                    );
+                    if (prior?.shares != null && next?.shares != null && !next.event)
+                      cy +=
+                        (lineY(next) - cy) *
+                        ((cx - x(prior.date)) / (x(next.date) - x(prior.date)));
+                    const show = () => {
+                      setFocus(s.name);
+                      setTooltip({
+                        events,
+                        x: Math.max(0, Math.min(W - 340, cx > W / 2 ? cx - 356 : cx + 16)),
+                        y: Math.max(34, Math.min(180, cy - 40)),
+                      });
+                    };
+                    return (
+                      <circle
+                        className="holding-event"
+                        key={e.date}
+                        data-date={e.date}
+                        cx={cx}
+                        cy={cy}
+                        r={markerRadius}
+                        fill={color}
+                        stroke="var(--paper)"
+                        strokeWidth={markerStroke}
+                        tabIndex={0}
+                        role="button"
+                        aria-label={
+                          events.length > 1
+                            ? `${s.name} ${dateText(first.date)}–${dateText(e.date)}, ${events.length} reports`
+                            : `${s.name} ${dateText(e.date)} ${e.shares_before === null ? 'Unknown' : nf(e.shares_before)} → ${e.shares_after === null ? 'No longer on the 5% list' : nf(e.shares_after) + ' shares'}`
+                        }
+                        onPointerEnter={show}
+                        onFocus={show}
+                        onClick={show}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            show();
+                          }
+                        }}
+                      />
+                    );
+                  })}
                   {last && label && (
                     <>
                       <path
@@ -615,25 +667,26 @@ function HoldingsChart({
               className="tooltip holdings-tooltip"
               style={{ left: tooltip.x, top: tooltip.y }}
             >
-              <div className="tooltip-date">{dateText(tooltip.event.date)}</div>
-              <strong>
-                <OwnershipName event={tooltip.event} />
-              </strong>
-              <div className="holding-transition">
-                <HoldingValue data={data} event={tooltip.event} side="before" /> →{' '}
-                <HoldingValue data={data} event={tooltip.event} side="after" />
-                {tooltip.event.shares_before !== null && tooltip.event.shares_after !== null && (
-                  <span
-                    className={`event-delta ${direction(tooltip.event.shares_after - tooltip.event.shares_before)}`}
-                    title={
-                      signed(tooltip.event.shares_after - tooltip.event.shares_before, nf) +
-                      ' shares'
-                    }
-                  >
-                    {signed(tooltip.event.shares_after - tooltip.event.shares_before)}
-                  </span>
-                )}
-              </div>
+              <strong>{tooltip.events[0].name}</strong>
+              {tooltip.events.map((event) => (
+                <div className="holding-report" key={event.date}>
+                  <div className="tooltip-date">
+                    <OwnershipName event={event} label={dateText(event.date)} />
+                  </div>
+                  <div className="holding-transition">
+                    <HoldingValue data={data} event={event} side="before" /> →{' '}
+                    <HoldingValue data={data} event={event} side="after" />
+                    {event.shares_before !== null && event.shares_after !== null && (
+                      <span
+                        className={`event-delta ${direction(event.shares_after - event.shares_before)}`}
+                        title={signed(event.shares_after - event.shares_before, nf) + ' shares'}
+                      >
+                        {signed(event.shares_after - event.shares_before)}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </div>

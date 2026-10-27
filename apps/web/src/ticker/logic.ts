@@ -196,25 +196,23 @@ export function holdingSeries(
           priority: 0,
         });
     }
-  for (const e of events) {
-    const s = get(e.name);
-    s.events.push(e);
-    s.points.push({ date: e.date, shares: e.shares_after, priority: 3, event: true });
-    const previous = snapshots.filter((p) => p.date < e.date).at(-1);
-    if (previous && !s.points.some((p) => p.date === previous.date) && e.shares_before !== null)
-      s.points.push({ date: previous.date, shares: e.shares_before, priority: 1 });
-  }
-  if (data.one_pct.date)
-    for (const h of data.one_pct.holders)
-      get(h.investor).points.push({
-        date: data.one_pct.date,
-        shares: h.shares,
-        pct: h.pct,
-        priority: 4,
-      });
+  const monthly = [...data.one_pct_history];
+  if (data.one_pct.date && !monthly.some((m) => m.date === data.one_pct.date))
+    monthly.push({ date: data.one_pct.date, holders: data.one_pct.holders });
+  monthly.sort((a, b) => a.date.localeCompare(b.date));
+  for (const snap of monthly)
+    for (const h of snap.holders) {
+      const s = get(h.investor);
+      s.points = s.points.filter((p) => p.date.slice(0, 7) !== snap.date.slice(0, 7));
+      s.points.push({ date: snap.date, shares: h.shares, pct: h.pct, priority: 4 });
+    }
+  for (const e of events) get(e.name).events.push(e);
   if (dailyDate)
-    for (const h of data.holders)
-      get(h.investor).points.push({ date: dailyDate, shares: h.shares, pct: h.pct, priority: 5 });
+    for (const h of data.holders) {
+      const s = get(h.investor);
+      if (!s.points.length)
+        s.points.push({ date: dailyDate, shares: h.shares, pct: h.pct, priority: 5 });
+    }
   for (const s of series) {
     const exacts = [
       ...s.events.flatMap((e) => [e.shares_before, e.shares_after]),
@@ -229,28 +227,45 @@ export function holdingSeries(
         .sort((a, b) => Math.abs(a - shares) - Math.abs(b - shares))[0];
       if (nearest !== undefined) p.shares = nearest;
     }
-    s.points.sort((a, b) => a.date.localeCompare(b.date) || a.priority - b.priority);
-    s.points = s.points.filter((p, i, all) => all[i + 1]?.date !== p.date);
-    const first = s.points[0];
-    if (!first) continue;
-    for (const snap of snapshots.filter((p) => p.date > first.date)) {
-      if (!s.points.some((p) => p.date === snap.date)) {
-        const prior = s.points.filter((p) => p.date < snap.date).at(-1);
-        if (prior) {
-          s.points.push({ date: snap.date, shares: prior.shares, priority: 0 });
-          s.points.sort((a, b) => a.date.localeCompare(b.date));
-        }
+    for (const [i, snap] of monthly.entries()) {
+      const next = monthly[i + 1];
+      if (
+        next &&
+        snap.holders.some((h) => sameHolder(h.investor, s.name)) &&
+        !next.holders.some((h) => sameHolder(h.investor, s.name))
+      ) {
+        const end = new Date(snap.date);
+        end.setUTCDate(end.getUTCDate() + 1);
+        s.points.push({ date: end.toISOString().slice(0, 10), shares: null, priority: -1 });
       }
     }
-    const previous = snapshots.filter((p) => p.date < first.date).at(-1);
-    if (previous) s.points.unshift({ date: previous.date, shares: 0, priority: 0 });
+    s.points.sort((a, b) => a.date.localeCompare(b.date) || a.priority - b.priority);
+    s.points = s.points.filter((p, i, all) => all[i + 1]?.date !== p.date);
+    for (const e of [...s.events].sort((a, b) => a.date.localeCompare(b.date))) {
+      const current = s.points.filter((p) => p.date < e.date).at(-1);
+      if (
+        current?.shares != null &&
+        e.shares_before !== null &&
+        e.shares_after !== null &&
+        Math.abs(e.shares_before - current.shares) <= (totalAt(data, e.date) ?? 0) * 0.00005 + 1
+      ) {
+        const anchor = s.points.find((p) => p.date === e.date);
+        if (anchor) {
+          anchor.event = anchor.shares === e.shares_after;
+          continue;
+        }
+        s.points.push({ date: e.date, shares: e.shares_after, priority: 3, event: true });
+        s.points.sort((a, b) => a.date.localeCompare(b.date) || a.priority - b.priority);
+        s.points = s.points.filter((p, i, all) => all[i + 1]?.date !== p.date);
+      }
+    }
     const latest = [...data.holders, ...data.one_pct.holders].find((h) =>
       sameHolder(h.investor, s.name),
     );
     if (latest) s.name = latest.investor;
   }
   return series
-    .filter((s) => s.points.some((p) => p.shares !== null && p.shares > 0))
+    .filter((s) => s.events.length > 0 || s.points.some((p) => p.shares !== null && p.shares > 0))
     .sort((a, b) => (b.points.at(-1)?.shares ?? 0) - (a.points.at(-1)?.shares ?? 0));
 }
 export function sharesAt(series: HoldingSeries, date: string) {

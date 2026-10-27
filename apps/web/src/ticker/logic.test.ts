@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vite-plus/test';
 import { tickerSchema } from '../data';
+import tpiaFixture from './fixtures/TPIA-history.json';
 import {
   aggregateRange,
   attachments,
@@ -8,6 +9,8 @@ import {
   holdingSeries,
   moveEdge,
   ownershipEvents,
+  pctAt,
+  sameHolder,
   registryAt,
   selectionKey,
   sharesAt,
@@ -244,5 +247,143 @@ describe('ticker selection and historical data', () => {
       ['https://example.com/2.pdf', 'Shareholder report'],
       ['https://example.com/10.pdf', 'Lampiran 10'],
     ]);
+  });
+});
+
+describe('month-end anchored TPIA holdings', () => {
+  const tpia = tickerSchema.parse(tpiaFixture);
+  const end = '2026-10-23';
+  const series = holdingSeries(tpia, end);
+  function holder(name: string) {
+    const result = series.find((s) => sameHolder(s.name, name));
+    if (!result) throw new Error(`Missing ${name}`);
+    return result;
+  }
+
+  it('keeps partial 5% reports and list exits from replacing Barito, SCG and Prajogo levels', () => {
+    const barito = holder('Barito Pacific');
+    expect(sharesAt(barito, end)).toBe(29_957_670_400);
+    expect(barito.points.some((p) => p.shares === 11_825_453_500)).toBe(false);
+    expect(pctAt(tpia, barito, end)).toBeCloseTo(34.63, 2);
+    expect(
+      composition(tpia, series, end).find((p) => sameHolder(p.name, barito.name))?.pct,
+    ).toBeCloseTo(34.63, 2);
+
+    const scg = holder('SCG Chemicals');
+    expect(scg.points.every((p) => p.shares !== null)).toBe(true);
+    for (const date of ['2026-02-27', '2026-03-31', '2026-04-30', '2026-05-29', '2026-06-29'])
+      expect(sharesAt(scg, date)).toBe(26_446_618_924);
+    for (const date of ['2026-06-30', '2026-07-31', '2026-09-30', end])
+      expect(sharesAt(scg, date)).toBe(13_589_972_562);
+    expect(scg.points.some((p) => p.shares === 9_144_270_316)).toBe(false);
+    expect(scg.events.map((e) => [e.date, e.shares_before, e.shares_after])).toEqual(
+      tpia.changes
+        .filter((e) => sameHolder(e.investor, scg.name))
+        .map((e) => [e.date, e.shares_before, e.shares_after]),
+    );
+
+    const prajogo = holder('Prajogo Pangestu');
+    for (const date of ['2026-03-12', '2026-03-15'])
+      expect(sharesAt(prajogo, date)).toBe(5_154_382_164);
+    for (const date of ['2026-03-16', '2026-07-05', '2026-07-06', '2026-07-07', end])
+      expect(sharesAt(prajogo, date)).toBe(4_354_382_164);
+    expect(prajogo.points.every((p) => p.shares !== null)).toBe(true);
+    expect(prajogo.events.some((e) => e.date === '2026-07-06' && e.shares_after === null)).toBe(
+      true,
+    );
+  });
+
+  it('starts Bangkok at its first report and ends HSBC at its last 1% month without inventing zero holdings', () => {
+    const bangkok = holder('Bangkok Bank');
+    expect(bangkok.points[0]).toMatchObject({ date: '2026-02-27', shares: 1_472_648_400 });
+    expect(sharesAt(bangkok, '2026-02-26')).toBeUndefined();
+    expect(sharesAt(bangkok, '2026-06-29')).toBe(1_472_648_400);
+    expect(sharesAt(bangkok, '2026-06-30')).toBe(4_317_648_400);
+    expect(sharesAt(bangkok, end)).toBe(4_317_648_400);
+    expect(bangkok.points.some((p) => p.shares === 0)).toBe(false);
+    const hsbc = holder('HSBC LTD-SINGAPORE BRANCH PRIVATE BANKING DIVISION ACCOUNT CLIENTS');
+    expect(hsbc.points.filter((p) => p.shares !== null).map((p) => p.date)).toEqual(['2026-02-27']);
+    expect(sharesAt(hsbc, '2026-02-27')).toBe(2_567_057_927);
+    expect(sharesAt(hsbc, '2026-02-28')).toBeNull();
+    expect(sharesAt(hsbc, end)).toBeNull();
+  });
+
+  it('keeps month-end anchors authoritative when a matched daily event falls on the same date', () => {
+    const prajogo = holder('Prajogo Pangestu');
+    const events = ownershipEvents(tpia).filter((e) => !sameHolder(e.name, prajogo.name));
+    const bangkok = holder('Bangkok Bank');
+    events.push(
+      {
+        name: prajogo.name,
+        date: '2026-03-31',
+        shares_before: 4_354_382_164,
+        shares_after: 5_154_382_164,
+        sources: [],
+      },
+      {
+        name: bangkok.name,
+        date: '2026-06-30',
+        shares_before: 1_472_648_400,
+        shares_after: 4_317_648_400,
+        sources: [],
+      },
+    );
+    const changed = holdingSeries(tpia, end, events);
+    expect(
+      changed.find((s) => s.name === prajogo.name)?.points.find((p) => p.date === '2026-03-31'),
+    ).toMatchObject({ shares: 4_354_382_164, event: false });
+    expect(
+      changed.find((s) => s.name === bangkok.name)?.points.find((p) => p.date === '2026-06-30'),
+    ).toMatchObject({ shares: 4_317_648_400, event: true });
+  });
+
+  it('resumes a below-1% gap only at a later anchor and accepts legacy JSON without history', () => {
+    expect(data.one_pct_history).toEqual([]);
+    const hsbc = tpia.one_pct_history[0]?.holders.find((h) => h.investor.startsWith('HSBC'));
+    if (!hsbc) throw new Error('Missing HSBC fixture');
+    const resumed = holdingSeries(
+      {
+        ...tpia,
+        one_pct_history: tpia.one_pct_history
+          .map((m) => (m.date === '2026-06-30' ? { ...m, holders: [...m.holders, hsbc] } : m))
+          .reverse(),
+        registry_history: [...tpia.registry_history].reverse(),
+        changes: [...tpia.changes].reverse(),
+      },
+      end,
+    ).find((s) => sameHolder(s.name, hsbc.investor));
+    if (!resumed) throw new Error('Missing resumed HSBC');
+    expect(sharesAt(resumed, '2026-06-29')).toBeNull();
+    expect(sharesAt(resumed, '2026-06-30')).toBe(hsbc.shares);
+    expect(sharesAt(resumed, '2026-07-01')).toBeNull();
+  });
+
+  it('prefers a disagreeing 1% value over the registry and seeds only unanchored daily holders', () => {
+    const barito = holder('PT BARITO PACIFIC TBK');
+    const series = holdingSeries(
+      {
+        ...tpia,
+        one_pct_history: tpia.one_pct_history.map((m) =>
+          m.date === '2026-05-29'
+            ? {
+                ...m,
+                holders: m.holders.map((h) =>
+                  sameHolder(h.investor, barito.name) ? { ...h, shares: 25_000_000_000 } : h,
+                ),
+              }
+            : m,
+        ),
+        holders: [...tpia.holders, { investor: 'NEW HOLDER', shares: 5_000_000_000, pct: 5.78 }],
+      },
+      end,
+    );
+    const changed = series.find((s) => sameHolder(s.name, barito.name));
+    if (!changed) throw new Error('Missing Barito');
+    expect(sharesAt(changed, '2026-05-31')).toBe(25_000_000_000);
+    expect(sharesAt(changed, '2026-06-30')).toBe(29_957_670_400);
+    expect(sharesAt(changed, '2026-09-30')).toBe(29_957_670_400);
+    expect(sharesAt(changed, end)).toBe(29_957_670_400);
+    const added = series.find((s) => s.name === 'NEW HOLDER');
+    expect(added?.points.map((p) => [p.date, p.shares])).toEqual([[end, 5_000_000_000]]);
   });
 });
