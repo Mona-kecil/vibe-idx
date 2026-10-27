@@ -220,7 +220,10 @@ it('keeps corrected monthly snapshots, KSEI cells and blank relationships throug
             page: holder.page,
           });
         }
-        expected.set(ticker, [...(expected.get(ticker) ?? []), { ...report, url: row.sourceUrl }]);
+        expected.set(ticker, [
+          ...(expected.get(ticker) ?? []),
+          { ...report, issued_shares: report.total_shares, url: row.sourceUrl },
+        ]);
         const hash = createHash('sha256').update(row.sourceUrl).digest('hex');
         await writeFile(join(data, `raw/reports/${hash}.pdf`), bytes);
         replies.push({

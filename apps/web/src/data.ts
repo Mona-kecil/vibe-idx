@@ -119,7 +119,7 @@ const stocksSchema = z.array(
 const registrySchema = z.object({
   date: z.string(),
   free_float_pct: z.number().nullable(),
-  total_shares: z.number().nullable(),
+  issued_shares: z.number().nullable(),
   sid_count: z.number().nullable(),
   url: z.url(),
   free_float_shares: z.number().nullable().default(null),

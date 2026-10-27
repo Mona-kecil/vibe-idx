@@ -160,7 +160,17 @@ export function registryAt(data: Ticker, date: string) {
     .sort((a, b) => b.date.localeCompare(a.date))[0];
 }
 export function totalAt(data: Ticker, date: string) {
-  return registryAt(data, date)?.total_shares ?? null;
+  const registry = registryAt(data, date);
+  const monthly = [...data.one_pct_history];
+  if (data.one_pct.date) monthly.push({ date: data.one_pct.date, holders: data.one_pct.holders });
+  const latest = monthly
+    .filter((s) => s.date <= date && (!registry || s.date.slice(0, 7) > registry.date.slice(0, 7)))
+    .sort((a, b) => b.date.localeCompare(a.date))
+    .find((s) => s.holders.some((h) => h.shares > 0 && h.pct > 0));
+  const largest = latest?.holders
+    .filter((h) => h.shares > 0 && h.pct > 0)
+    .sort((a, b) => b.shares - a.shares)[0];
+  return largest ? (largest.shares * 100) / largest.pct : (registry?.issued_shares ?? null);
 }
 export type HoldingPoint = {
   date: string;
@@ -188,10 +198,10 @@ export function holdingSeries(
   }
   for (const snap of snapshots)
     for (const h of snap.holders) {
-      if (snap.total_shares)
+      if (snap.issued_shares)
         get(h.investor).points.push({
           date: snap.date,
-          shares: (h.pct / 100) * snap.total_shares,
+          shares: (h.pct / 100) * snap.issued_shares,
           rounded: true,
           priority: 0,
         });

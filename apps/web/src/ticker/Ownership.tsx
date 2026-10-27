@@ -374,7 +374,7 @@ function HoldingsChart({
   const snapshots = [...data.registry_history].sort((a, b) => a.date.localeCompare(b.date));
   const issues = snapshots.flatMap((s, i) => {
     const previous = snapshots[i - 1];
-    return previous?.total_shares && s.total_shares && s.total_shares !== previous.total_shares
+    return previous?.issued_shares && s.issued_shares && s.issued_shares !== previous.issued_shares
       ? [{ start: previous, end: s }]
       : [];
   });
@@ -455,7 +455,7 @@ function HoldingsChart({
                 <text x={(x(issue.start.date) + x(issue.end.date)) / 2} y={19} textAnchor="middle">
                   Total shares{' '}
                   <tspan dx={7}>
-                    {short(issue.start.total_shares ?? 0)} → {short(issue.end.total_shares ?? 0)}{' '}
+                    {short(issue.start.issued_shares ?? 0)} → {short(issue.end.issued_shares ?? 0)}{' '}
                     shares
                   </tspan>
                 </text>

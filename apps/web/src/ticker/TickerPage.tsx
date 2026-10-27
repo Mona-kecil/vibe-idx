@@ -239,10 +239,10 @@ function TickerDetail({ data, health }: { data: Ticker; health: Health | null })
           cls: '',
         },
         {
-          label: 'Total shares',
-          value: registry?.total_shares == null ? '—' : short(registry.total_shares),
-          title: registry?.total_shares
-            ? `${nf(registry.total_shares)} shares  ${dateText(registry.date)}`
+          label: 'Share base',
+          value: registry?.issued_shares == null ? '—' : short(registry.issued_shares),
+          title: registry?.issued_shares
+            ? `${nf(registry.issued_shares)} shares  ${dateText(registry.date)}`
             : '',
           cls: '',
         },

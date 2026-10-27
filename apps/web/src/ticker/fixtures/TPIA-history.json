@@ -188,7 +188,7 @@
     {
       "date": "2025-12-31",
       "free_float_pct": 10.66,
-      "total_shares": 86511545092,
+      "issued_shares": 86511545092,
       "sid_count": null,
       "url": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202601/27f9eac276_7e5051e4c8.pdf",
       "free_float_shares": 9225602772,
@@ -282,7 +282,7 @@
     {
       "date": "2026-01-31",
       "free_float_pct": 10.66,
-      "total_shares": 86511545092,
+      "issued_shares": 86511545092,
       "sid_count": null,
       "url": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202602/03d2c6da89_557957a589.pdf",
       "free_float_shares": 9225602772,
@@ -376,7 +376,7 @@
     {
       "date": "2026-04-30",
       "free_float_pct": 9.91,
-      "total_shares": 86511545092,
+      "issued_shares": 86507855616.51747,
       "sid_count": 26987,
       "url": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202605/e80f842531_812fdc5dc5.pdf",
       "free_float_shares": 8571584548,
@@ -463,7 +463,7 @@
     {
       "date": "2026-05-31",
       "free_float_pct": 10.56,
-      "total_shares": 86511545092,
+      "issued_shares": 86507855616.51747,
       "sid_count": 38456,
       "url": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202606/dcd67eec5b_1c6bf42f28.pdf",
       "free_float_shares": 9133336275,
@@ -550,7 +550,7 @@
     {
       "date": "2026-06-30",
       "free_float_pct": 25.41,
-      "total_shares": 86511545092,
+      "issued_shares": 86507855616.51747,
       "sid_count": 110840,
       "url": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202607/e2cac25d2d_6c67e315e8.pdf",
       "free_float_shares": 21980220234,
@@ -637,7 +637,7 @@
     {
       "date": "2026-07-31",
       "free_float_pct": 25.38,
-      "total_shares": 86511545092,
+      "issued_shares": 86507855616.51747,
       "sid_count": 100597,
       "url": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202608/c72dcbec4e_28a5f5c666.pdf",
       "free_float_shares": 21960695634,
@@ -724,7 +724,7 @@
     {
       "date": "2026-08-31",
       "free_float_pct": 25.42,
-      "total_shares": 86511545092,
+      "issued_shares": 86507855616.51747,
       "sid_count": 135611,
       "url": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202609/903cbca926_6ef1378b55.pdf",
       "free_float_shares": 21993774134,
@@ -811,7 +811,7 @@
     {
       "date": "2026-09-30",
       "free_float_pct": 25.42,
-      "total_shares": 86511545092,
+      "issued_shares": 86507855616.51747,
       "sid_count": 130081,
       "url": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202610/8efd99278a_1ac5839046.pdf",
       "free_float_shares": 21994208534,

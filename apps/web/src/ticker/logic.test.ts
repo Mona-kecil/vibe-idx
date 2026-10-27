@@ -54,7 +54,7 @@ const data = tickerSchema.parse({
   registry_history: [
     {
       date: '2026-07-31',
-      total_shares: 1000,
+      issued_shares: 1000,
       free_float_pct: 35,
       sid_count: 20,
       url: 'https://example.com/july.pdf',
@@ -64,7 +64,7 @@ const data = tickerSchema.parse({
     },
     {
       date: '2026-08-31',
-      total_shares: 1000,
+      issued_shares: 1000,
       free_float_pct: 50,
       sid_count: 25,
       url: 'https://example.com/august.pdf',

@@ -469,16 +469,15 @@ describe('ticker research regressions', () => {
     );
     for (const unit of ['shares', 'pct']) {
       await click(`.holdings-mode [data-unit="${unit}"]`);
-      const diagonal = scgLine
-        ?.querySelector('.holding-uncertain')
-        ?.getAttribute('d')
-        ?.match(/^M([^,]+),(\S+) L([^,]+),(\S+)$/);
+      const cx = Number(marker.getAttribute('cx'));
+      const diagonal = [...(scgLine?.querySelectorAll('.holding-uncertain') ?? [])]
+        .map((path) => path.getAttribute('d')?.match(/^M([^,]+),(\S+) L([^,]+),(\S+)$/))
+        .find((path) => path && Number(path[1]) < cx && Number(path[3]) > cx);
       if (!diagonal) throw new Error('Missing SCG May 29–June 30 diagonal');
       const may29X = Number(diagonal[1]),
         may29Y = Number(diagonal[2]),
         june30X = Number(diagonal[3]),
         june30Y = Number(diagonal[4]),
-        cx = Number(marker.getAttribute('cx')),
         cy = Number(marker.getAttribute('cy'));
       expect(cx).toBeCloseTo(may29X + ((june30X - may29X) * 10) / 32);
       expect(cy).toBeGreaterThan(may29Y);
@@ -495,8 +494,8 @@ describe('ticker research regressions', () => {
       ),
     ).toEqual([
       '0 (0.00%) → 9.1B (10.57%)+9.1B',
-      '9.1B (10.57%) → 10.1B (11.66%)+947.2M',
-      '10.1B (11.66%) → 10.8B (12.45%)+676.3M',
+      '9.1B (10.57%) → 10.1B (11.67%)+947.2M',
+      '10.1B (11.67%) → 10.8B (12.45%)+676.3M',
       '10.8B (12.45%) → 13.1B (15.10%)+2.3B',
       '13.1B (15.10%) → Below 5%',
     ]);

@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vite-plus/test';
 import { ingest } from './ingest';
 import { analytics, schema, tickers } from './sql';
 import { tickerSchema } from '../web/src/data';
+import { holdingSeries, pctAt, sharesAt } from '../web/src/ticker/logic';
 import tpiaFixture from '../web/src/ticker/fixtures/TPIA-history.json';
 
 it('exports every stored TPIA 1% month oldest first without changing the latest snapshot', async () => {
@@ -873,7 +874,7 @@ BT /F1 10 Tf 1 0 0 1 529 530 Tm (-100) Tj ET`;
       expect(negativeSid.registry_history.at(-1)).toMatchObject({
         date: '2026-09-30',
         free_float_pct: null,
-        total_shares: null,
+        issued_shares: null,
         sid_count: 900,
         url: 'https://www.idx.id/StaticData/From_EREP/negative-sid.pdf',
       });
@@ -975,7 +976,7 @@ BT /F1 10 Tf 1 0 0 1 529 530 Tm (-100) Tj ET`;
         expect(ticker.registry_history.at(-1)).toMatchObject({
           date: '2026-05-31',
           free_float_pct: r.pct,
-          total_shares: r.total,
+          issued_shares: r.total,
           sid_count: r.sid,
           url: `https://www.idx.id/StaticData/From_EREP/${r.ticker}.pdf`,
         });
@@ -1427,6 +1428,40 @@ it('excludes small seven-day foreign inflows and five-day runs while including r
         net_foreign: 2800,
       },
     ]);
+  } finally {
+    db.closeSync();
+    instance.closeSync();
+  }
+});
+
+it('uses issued shares to prevent a listed-base step in BBCA Dwimuria holdings', async () => {
+  const instance = await DuckDBInstance.create(':memory:');
+  const db = await instance.connect();
+  try {
+    await db.run(schema);
+    await db.run(`INSERT INTO registry (date, ticker, total_shares, url) VALUES
+      ('2026-08-31', 'BBCA', 122042299500, 'https://example.com/aug.pdf'),
+      ('2026-09-30', 'BBCA', 122042299500, 'https://example.com/sep.pdf'),
+      ('2026-01-31', 'BBCA', 122042299500, 'https://example.com/jan.pdf');
+      INSERT INTO registry_holders (date, ticker, investor, pct, page) VALUES
+      ('2026-08-31', 'BBCA', 'PT DWIMURIA INVESTAMA ANDALAN', 54.94, 1),
+      ('2026-09-30', 'BBCA', 'PT DWIMURIA INVESTAMA ANDALAN', 54.94, 1);
+      INSERT INTO one_pct (date, ticker, investor, seq, shares, pct) VALUES
+      ('2026-08-28', 'BBCA', 'PT DWIMURIA INVESTAMA ANDALAN', 1, 67729950000, 54.94),
+      ('2026-09-30', 'BBCA', 'PT DWIMURIA INVESTAMA ANDALAN', 1, 67729950000, 54.94),
+      ('2026-10-30', 'BBCA', 'PT DWIMURIA INVESTAMA ANDALAN', 1, 67729950000, 50)`);
+    await db.run(analytics);
+    const data = tickerSchema.parse((await db.runAndReadAll(tickers)).getRowObjectsJson()[0]);
+    expect(data.registry_history[0]?.issued_shares).toBe(122042299500);
+    expect(data.registry_history[1]?.issued_shares).toBeCloseTo(67729950000 / 0.5494, 0);
+    expect(data.registry_history[2]?.issued_shares).toBe(data.registry_history[1]?.issued_shares);
+    const holder = holdingSeries(data, null)[0];
+    if (!holder) throw new Error('Missing Dwimuria');
+    expect(sharesAt(holder, '2026-08-31')).toBe(67729950000);
+    expect(sharesAt(holder, '2026-09-30')).toBe(67729950000);
+    expect(pctAt(data, holder, '2026-09-30')).toBeCloseTo(54.94, 2);
+    expect(pctAt(data, holder, '2026-08-28')).toBeCloseTo(54.94, 2);
+    expect(pctAt(data, holder, '2026-10-30')).toBeCloseTo(50, 2);
   } finally {
     db.closeSync();
     instance.closeSync();
