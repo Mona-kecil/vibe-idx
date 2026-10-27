@@ -200,12 +200,23 @@ export function holdingSeries(
   if (data.one_pct.date && !monthly.some((m) => m.date === data.one_pct.date))
     monthly.push({ date: data.one_pct.date, holders: data.one_pct.holders });
   monthly.sort((a, b) => a.date.localeCompare(b.date));
-  for (const snap of monthly)
+  for (const snap of monthly) {
+    const accounts = new Map<string, { investor: string; shares: number; pct: number }>();
     for (const h of snap.holders) {
+      const name = get(h.investor).name;
+      const combined = accounts.get(name);
+      accounts.set(name, {
+        investor: name,
+        shares: (combined?.shares ?? 0) + h.shares,
+        pct: (combined?.pct ?? 0) + h.pct,
+      });
+    }
+    for (const h of accounts.values()) {
       const s = get(h.investor);
       s.points = s.points.filter((p) => p.date.slice(0, 7) !== snap.date.slice(0, 7));
       s.points.push({ date: snap.date, shares: h.shares, pct: h.pct, priority: 4 });
     }
+  }
   for (const e of events) get(e.name).events.push(e);
   if (dailyDate)
     for (const h of data.holders) {

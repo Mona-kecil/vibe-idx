@@ -387,3 +387,37 @@ describe('month-end anchored TPIA holdings', () => {
     expect(added?.points.map((p) => [p.date, p.shares])).toEqual([[end, 5_000_000_000]]);
   });
 });
+
+it('sums Gesit accounts instead of keeping the last ALKA September row', () => {
+  const alka = tickerSchema.parse({
+    ticker: 'ALKA',
+    name: 'ALKA',
+    prices: [],
+    holders: [],
+    changes: [],
+    one_pct_history: [
+      {
+        date: '2026-09-30',
+        holders: [
+          {
+            investor: 'GESIT PERKASA, PT',
+            shares: 73_284_750,
+            pct: 14.44,
+            classification: null,
+            local_foreign: null,
+          },
+          {
+            investor: 'PT GESIT PERKASA',
+            shares: 352_108_805,
+            pct: 69.36,
+            classification: null,
+            local_foreign: null,
+          },
+        ],
+      },
+    ],
+  });
+  expect(holdingSeries(alka, null)[0]?.points).toEqual([
+    { date: '2026-09-30', shares: 425_393_555, pct: 83.8, priority: 4 },
+  ]);
+});
