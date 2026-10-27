@@ -7,6 +7,7 @@ import { z } from 'zod';
 import { expect, it } from 'vite-plus/test';
 import { ingest } from './ingest';
 import { parseReport } from './reports';
+import { parseRegistryLayout } from './registry';
 import { tickerSchema } from '../web/src/data';
 
 const research = new URL('../../docs/prototypes/workspace/research/', import.meta.url);
@@ -78,6 +79,7 @@ it('reads the older monthly header without joining holder names to treasury and 
     },
   ]);
   expect(result.gaps).toEqual([
+    'Registry unlisted shares: unsupported or missing labeled cells',
     'Registry SID count: unsupported or missing labeled cells',
     'Registry investor types: unsupported or missing labeled cells',
   ]);
@@ -186,7 +188,7 @@ it('keeps corrected monthly snapshots, KSEI cells and blank relationships throug
     };
     attachments: { OriginalFilename: string; FullSavePath: string; IsAttachment: boolean }[];
   }[] = [];
-  const expected = new Map<string, ReturnType<typeof tickerSchema.parse>['registry_history']>();
+  const expected = new Map<string, object[]>();
   try {
     await mkdir(join(data, 'raw/reports'), { recursive: true });
     for (const ticker of ['SINI', 'BRPT', 'TPIA', 'BREN']) {
@@ -219,7 +221,26 @@ it('keeps corrected monthly snapshots, KSEI cells and blank relationships throug
             page: holder.page,
           });
         }
-        expected.set(ticker, [...(expected.get(ticker) ?? []), { ...report, url: row.sourceUrl }]);
+        expected.set(ticker, [
+          ...(expected.get(ticker) ?? []),
+          {
+            date: report.date,
+            free_float_pct: report.free_float_pct,
+            issued_shares:
+              report.total_shares === null
+                ? null
+                : report.total_shares + (report.unlisted_shares ?? 0),
+            sid_count: report.sid_count,
+            free_float_shares: report.free_float_shares,
+            url: row.sourceUrl,
+            investor_types: [...report.investor_types].sort((a, b) =>
+              a.label.localeCompare(b.label, 'en', { sensitivity: 'variant' }),
+            ),
+            holders: [...report.holders]
+              .sort((a, b) => (a.investor < b.investor ? -1 : a.investor > b.investor ? 1 : 0))
+              .map((h) => ({ ...h, holder_key: expect.any(String) })),
+          },
+        ]);
         const hash = createHash('sha256').update(row.sourceUrl).digest('hex');
         await writeFile(join(data, `raw/reports/${hash}.pdf`), bytes);
         replies.push({
@@ -280,19 +301,7 @@ it('keeps corrected monthly snapshots, KSEI cells and blank relationships throug
         JSON.parse(await readFile(join(out, `ticker/${ticker}.json`), 'utf8')),
       );
       expect(actual.registry_history.map((r) => r.date)).toEqual(['2026-05-31', '2026-06-30']);
-      expect(actual.registry_history).toEqual(
-        history
-          .map(({ investor_types, holders, ...r }) => ({
-            ...r,
-            investor_types: investor_types
-              .slice()
-              .sort((a, b) => a.label.localeCompare(b.label, 'en', { sensitivity: 'variant' })),
-            holders: holders
-              .slice()
-              .sort((a, b) => (a.investor < b.investor ? -1 : a.investor > b.investor ? 1 : 0)),
-          }))
-          .map((r) => tickerSchema.shape.registry_history.parse([r])[0]),
-      );
+      expect(actual.registry_history).toEqual(history);
     }
     // Simulate a parser upgrade and a legacy report-per-file registry ledger.
     const instance = await DuckDBInstance.create(':memory:');
@@ -305,7 +314,7 @@ it('keeps corrected monthly snapshots, KSEI cells and blank relationships throug
       await rm(file);
       await db.run(`COPY old TO '${file}' (FORMAT PARQUET)`);
       const register = join(data, 'parquet/registry/2026.parquet');
-      await db.run(`CREATE TABLE legacy AS SELECT * EXCLUDE(free_float_shares) FROM read_parquet('${register}')
+      await db.run(`CREATE TABLE legacy AS SELECT * EXCLUDE(free_float_shares, unlisted_shares) FROM read_parquet('${register}')
         UNION ALL SELECT date, 'TPIA/older', ticker, 1, total_shares, 1, url
         FROM read_parquet('${register}') WHERE ticker = 'TPIA' AND month(date) = 6`);
       await rm(register);
@@ -334,3 +343,89 @@ it('keeps corrected monthly snapshots, KSEI cells and blank relationships throug
     await rm(root, { recursive: true, force: true });
   }
 }, 30_000);
+
+it('sums Astra International account rows within the AALI September table', async () => {
+  const result = await parseRegistryLayout(
+    await readFile(new URL('./fixtures/AALI-2026-09-main.pdf', import.meta.url)),
+  );
+  expect(result.unlisted_shares).toBe(0);
+  expect(result.holders.find((h) => /Astra International/i.test(h.investor))?.pct).toBeCloseTo(
+    79.68,
+    2,
+  );
+});
+
+it('exports BBCA listed plus unlisted shares without inferring the base from rounded stakes after parquet reload', async () => {
+  const bytes = await readFile(new URL('./fixtures/BBCA-2026-09-main.pdf', import.meta.url));
+  const parsed = await parseRegistryLayout(bytes);
+  expect(parsed.unlisted_shares).toBe(1_232_750_500);
+  expect(parsed.holders.find((h) => /Dwimuria/.test(h.investor))?.pct).toBe(54.942);
+  const root = await mkdtemp(join(tmpdir(), 'bbca-issued-shares-'));
+  const url = 'https://www.idx.id/StaticData/From_EREP/BBCA.pdf';
+  const data = join(root, 'data');
+  const out = join(root, 'out');
+  const options = {
+    data,
+    out,
+    registryOnly: true,
+    since: '2026-10-01',
+    until: '2026-10-27',
+    today: '2026-10-27',
+  };
+  try {
+    await mkdir(join(data, 'raw/reports'), { recursive: true });
+    await writeFile(
+      join(data, `raw/reports/${createHash('sha256').update(url).digest('hex')}.pdf`),
+      bytes,
+    );
+    await ingest({
+      ...options,
+      fetcher: async () =>
+        Response.json({
+          ResultCount: 1,
+          Replies: [
+            {
+              pengumuman: {
+                Id2: 'BBCA/2026-09-30',
+                Kode_Emiten: 'BBCA',
+                JudulPengumuman: 'Laporan Bulanan Registrasi Pemegang Efek',
+                TglPengumuman: '2026-10-07T12:00:00',
+              },
+              attachments: [
+                { OriginalFilename: 'BBCA.pdf', FullSavePath: url, IsAttachment: false },
+              ],
+            },
+          ],
+        }),
+    });
+    const offline: typeof fetch = () => {
+      throw new Error('BBCA replay fetched IDX');
+    };
+    expect((await ingest({ ...options, reparseRegistry: true, fetcher: offline })).processed).toBe(
+      0,
+    );
+    const actual = tickerSchema.parse(
+      JSON.parse(await readFile(join(out, 'ticker/BBCA.json'), 'utf8')),
+    );
+    expect(actual.registry_history[0]?.issued_shares).toBe(123_275_050_000);
+    expect(actual.registry_history[0]?.holders.find((h) => /Dwimuria/.test(h.investor))?.pct).toBe(
+      54.942,
+    );
+    const instance = await DuckDBInstance.create(':memory:');
+    const db = await instance.connect();
+    try {
+      expect(
+        (
+          await db.runAndReadAll(
+            `SELECT unlisted_shares FROM read_parquet('${join(data, 'parquet/registry/2026.parquet')}')`,
+          )
+        ).getRowObjectsJson(),
+      ).toEqual([{ unlisted_shares: 1_232_750_500 }]);
+    } finally {
+      db.closeSync();
+      instance.closeSync();
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

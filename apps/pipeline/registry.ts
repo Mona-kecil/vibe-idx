@@ -1,7 +1,7 @@
 import { getDocumentProxy, getResolvedPDFJS } from 'unpdf';
 import { z } from 'zod';
 
-export const registryParserVersion = 3;
+export const registryParserVersion = 4;
 
 const categories = [
   'Bank',
@@ -131,6 +131,20 @@ export async function parseRegistryLayout(bytes: Uint8Array) {
   const free_float_pct = floatValue('% Saham Free Float', 'free float percentage', true);
   const total_shares = floatValue('Jumlah saham tercatat di Bursa per akhir bulan', 'total shares');
   const free_float_shares = floatValue('Jumlah saham Free Float', 'free float shares');
+  let unlisted_shares: number | null = null;
+  for (const cells of pages) {
+    const label = cells.find((c) => c.text === 'Jumlah saham tidak tercatat');
+    if (!label) continue;
+    const current = cells.find(
+      (c) => c.text === 'Bulan Ini' && c.y < label.y && c.y > label.y - 50,
+    );
+    if (!current) continue;
+    const values = cells.filter(
+      (c) => Math.abs(c.y - label.y) < 4 && Math.abs(center(c) - center(current)) < 40,
+    );
+    if (values.length === 1 && values[0]) unlisted_shares = integer(values[0].text);
+  }
+  if (unlisted_shares === null) gap('unlisted shares');
   let sid_count: number | null = null;
   for (const cells of pages) {
     const title = cells.find((c) => c.text === 'Jumlah Pemegang Saham Nasabah Pemilik SID');
@@ -230,6 +244,7 @@ export async function parseRegistryLayout(bytes: Uint8Array) {
             c.y < end,
         )
         .sort((a, b) => a.y - b.y);
+      const table: typeof holders = new Map();
       for (const [i, stake] of stakes.entries()) {
         const next = stakes[i + 1]?.y ?? end;
         const row = cells.filter((c) => c.y >= stake.y - 2 && c.y < next - 2);
@@ -249,12 +264,12 @@ export async function parseRegistryLayout(bytes: Uint8Array) {
           gap(`holder ${investor} ${field}`);
           return null;
         };
-        const existing = holders.get(investor);
+        const existing = table.get(investor);
         const isController = flag(controller, 'controller');
         const isAffiliate = flag(affiliate, 'controller affiliate');
-        holders.set(investor, {
+        table.set(investor, {
           investor,
-          pct: Math.max(existing?.pct ?? pct, pct),
+          pct: (existing?.pct ?? 0) + pct,
           controller:
             existing?.controller === true || isController === true
               ? true
@@ -266,12 +281,17 @@ export async function parseRegistryLayout(bytes: Uint8Array) {
           page: Math.min(existing?.page ?? index + 1, index + 1),
         });
       }
+      for (const [investor, holder] of table) {
+        const existing = holders.get(investor);
+        if (!existing || holder.pct > existing.pct) holders.set(investor, holder);
+      }
     }
   }
   if (!holders.size) gap('holder flags');
   return {
     free_float_pct,
     total_shares,
+    unlisted_shares,
     free_float_shares,
     sid_count,
     investor_types,

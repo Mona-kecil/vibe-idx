@@ -52,7 +52,7 @@ CREATE TABLE insiders (
 );
 CREATE TABLE registry (
   date DATE, id VARCHAR, ticker VARCHAR, free_float_pct DOUBLE,
-  total_shares DOUBLE, sid_count DOUBLE, url VARCHAR, free_float_shares DOUBLE,
+  total_shares DOUBLE, sid_count DOUBLE, url VARCHAR, free_float_shares DOUBLE, unlisted_shares DOUBLE,
   PRIMARY KEY(date, ticker)
 );
 CREATE TABLE registry_investors (
@@ -163,6 +163,10 @@ FROM (
 ) s`;
 
 export const analytics = `
+CREATE MACRO ownership_key(name) AS coalesce(array_to_string(list_filter(regexp_split_to_array(
+  regexp_replace(upper(name), '[^A-Z0-9]+', ' ', 'g'), ' +'),
+  token -> token NOT IN ('', 'PT', 'TBK', 'PTE', 'LTD', 'LIMITED', 'PERSERO', 'PERUSAHAAN', 'PERSEROAN', 'INC', 'LLC')), ''), upper(trim(name)));
+
 ${marketCalendar}
 ${marketSummaryView}
 CREATE VIEW latest AS SELECT max(date) date FROM prices;
@@ -179,39 +183,36 @@ FROM prices WINDOW w AS (
 );
 CREATE VIEW investor_snapshots AS
 WITH keyed AS (
-  SELECT *, array_to_string(list_filter(regexp_split_to_array(
-    regexp_replace(upper(investor), '[[:punct:]]', '', 'g'), '[[:space:]]+'),
-    token -> token NOT IN ('', 'PT', 'TBK', 'PTE', 'LTD', 'LIMITED')), ' ') investor_key
-  FROM five_pct
+  SELECT *, ownership_key(investor) holder_key FROM five_pct
 ), snapshots AS (
-  SELECT date, ticker, investor_key, max(investor) investor,
+  SELECT date, ticker, holder_key, max(investor) investor,
     max(combined_shares) shares, max(previous_combined) previous_shares,
     max(pct_before) pct_before, max(pct_after) pct_after, max(previous_date) previous_date
-  FROM keyed GROUP BY date, ticker, investor_key
+  FROM keyed GROUP BY date, ticker, holder_key
 )
 SELECT * EXCLUDE(investor), first_value(investor) OVER (
-  PARTITION BY ticker, investor_key ORDER BY date DESC, investor) investor
+  PARTITION BY ticker, holder_key ORDER BY date DESC, investor) investor
 FROM snapshots;
 CREATE VIEW investor_changes AS
 WITH compared AS (
-  SELECT c.date, c.ticker, c.investor, c.shares,
+  SELECT c.date, c.ticker, c.investor, c.holder_key, c.shares,
     coalesce(p.shares, CASE WHEN d.date IS NOT NULL THEN 0 ELSE c.previous_shares END, 0) previous_shares,
     coalesce(p.pct_after, CASE WHEN d.date IS NOT NULL THEN 0 ELSE c.pct_before END, 0) pct_before,
     c.pct_after, c.previous_date
   FROM investor_snapshots c
   LEFT JOIN investor_snapshots p ON p.date = c.previous_date
-    AND p.ticker = c.ticker AND p.investor_key = c.investor_key
+    AND p.ticker = c.ticker AND p.holder_key = c.holder_key
   LEFT JOIN (SELECT DISTINCT date FROM five_pct) d ON d.date = c.previous_date
 )
 SELECT *, shares - previous_shares net_shares, false exited
 FROM compared WHERE shares - previous_shares <> 0
 UNION ALL
 -- IDX drops an investor from the file once they fall below 5%, so an exit is a prior-day holder missing today.
-SELECT d.date, p.ticker, p.investor, NULL, p.shares, p.pct_after, NULL, d.previous_date, NULL, true
+SELECT d.date, p.ticker, p.investor, p.holder_key, NULL, p.shares, p.pct_after, NULL, d.previous_date, NULL, true
 FROM (SELECT DISTINCT date, previous_date FROM five_pct) d
 JOIN investor_snapshots p ON p.date = d.previous_date
 WHERE NOT EXISTS (SELECT 1 FROM investor_snapshots c
-  WHERE c.date = d.date AND c.ticker = p.ticker AND c.investor_key = p.investor_key);
+  WHERE c.date = d.date AND c.ticker = p.ticker AND c.holder_key = p.holder_key);
 CREATE VIEW foreign_runs AS
 WITH calendar AS (SELECT date, dense_rank() OVER (ORDER BY date) trading_day FROM prices GROUP BY date),
 buys AS (
@@ -278,21 +279,21 @@ history AS (
   FROM (SELECT *, row_number() OVER (PARTITION BY ticker ORDER BY date DESC) n FROM features)
   WHERE n <= ${thresholds.tickerDays} GROUP BY ticker
 ), holders AS (
-  SELECT ticker, list(struct_pack(investor := investor, shares := shares, pct := pct_after) ORDER BY investor) holders
+  SELECT ticker, list(struct_pack(investor := investor, holder_key := holder_key, shares := shares, pct := pct_after) ORDER BY investor) holders
   FROM investor_snapshots WHERE date = (SELECT max(date) FROM five_pct) AND shares > 0 GROUP BY ticker
 ), changes AS (
-  SELECT c.ticker, list(struct_pack(date := date, investor := investor, net_shares := net_shares,
+  SELECT c.ticker, list(struct_pack(date := date, investor := investor, holder_key := holder_key, net_shares := net_shares,
     shares_before := previous_shares, shares_after := shares,
     pct_before := pct_before, pct_after := pct_after, exited := exited) ORDER BY date DESC, investor) changes
   FROM investor_changes c LEFT JOIN history h USING(ticker)
   WHERE h.first_date IS NULL OR date >= h.first_date
   GROUP BY c.ticker
 ), monthly AS (
-  SELECT ticker, list(struct_pack(investor := investor, shares := shares, pct := pct,
+  SELECT ticker, list(struct_pack(investor := investor, holder_key := ownership_key(investor), shares := shares, pct := pct,
     classification := classification, local_foreign := local_foreign) ORDER BY investor, seq) holders
   FROM one_pct WHERE date = (SELECT max(date) FROM one_pct) GROUP BY ticker
 ), monthly_snapshots AS (
-  SELECT date, ticker, list(struct_pack(investor := investor, shares := shares, pct := pct,
+  SELECT date, ticker, list(struct_pack(investor := investor, holder_key := ownership_key(investor), shares := shares, pct := pct,
     classification := classification, local_foreign := local_foreign) ORDER BY investor, seq) holders
   FROM one_pct GROUP BY date, ticker
 ), one_pct_history AS (
@@ -303,19 +304,20 @@ history AS (
     url := url, kind := kind, attachments := attachments) ORDER BY published_at DESC, id) disclosures
   FROM disclosures GROUP BY ticker
 ), trades AS (
-  SELECT ticker, list(struct_pack(date := date, reporter := reporter,
+  SELECT ticker, list(struct_pack(date := date, reporter := reporter, holder_key := ownership_key(reporter),
     shares_before := shares_before, shares_after := shares_after, net_shares := net_shares,
     url := url) ORDER BY date DESC, id, url) insiders FROM insiders GROUP BY ticker
 ), registry_types AS (
   SELECT date, ticker, list(struct_pack(label := label, shares := shares, page := page) ORDER BY label) investor_types
   FROM registry_investors GROUP BY date, ticker
 ), registry_flags AS (
-  SELECT date, ticker, list(struct_pack(investor := investor, pct := pct, controller := controller,
+  SELECT date, ticker, list(struct_pack(investor := investor, holder_key := ownership_key(investor), pct := pct, controller := controller,
     controller_affiliate := controller_affiliate, page := page) ORDER BY investor) holders
   FROM registry_holders GROUP BY date, ticker
 ), registers AS (
   SELECT r.*, struct_pack(date := r.date, free_float_pct := r.free_float_pct,
-    total_shares := r.total_shares, sid_count := r.sid_count, url := r.url,
+    issued_shares := r.total_shares + coalesce(r.unlisted_shares, 0),
+    sid_count := r.sid_count, url := r.url,
     free_float_shares := r.free_float_shares, investor_types := coalesce(t.investor_types, []),
     holders := coalesce(f.holders, [])) record
   FROM registry r LEFT JOIN registry_types t USING(date, ticker)

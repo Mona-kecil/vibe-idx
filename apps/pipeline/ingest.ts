@@ -16,6 +16,8 @@ import { idxUrl, parseOwnershipList } from './lib/ownershipList';
 import { date } from './lib/rows';
 import { labelAttachments, orderAttachments, parseAnnouncements, parseReport } from './reports';
 import { registryParserVersion } from './registry';
+import { tickerSchema } from '../web/src/data';
+import { ownershipQuality, reconcileOwnership, resolveHolderKeys } from './ownership';
 import { analytics, health, market, marketSummary, schema, stockTable, tickers } from './sql';
 
 const archivedDisclosure = z.object({
@@ -216,8 +218,10 @@ export async function ingest({
         if (table === 'registry') {
           const columns = await query(`DESCRIBE SELECT * FROM ${source}`);
           const hasFloatShares = columns.some((c) => c.column_name === 'free_float_shares');
+          const hasUnlistedShares = columns.some((c) => c.column_name === 'unlisted_shares');
           await db.run(`INSERT INTO registry SELECT r.date, r.id, r.ticker, r.free_float_pct,
-            r.total_shares, r.sid_count, r.url, ${hasFloatShares ? 'r.free_float_shares' : 'NULL'}
+            r.total_shares, r.sid_count, r.url, ${hasFloatShares ? 'r.free_float_shares' : 'NULL'},
+            ${hasUnlistedShares ? 'r.unlisted_shares' : 'NULL'}
             FROM ${source} r LEFT JOIN disclosures d USING(id)
             QUALIFY row_number() OVER (PARTITION BY r.date, r.ticker
               ORDER BY d.published_at DESC NULLS LAST, r.id DESC, r.url DESC) = 1`);
@@ -713,6 +717,7 @@ export async function ingest({
                   r.sid_count,
                   url,
                   r.free_float_shares,
+                  r.unlisted_shares,
                 ],
               ]);
               await append(
@@ -806,18 +811,24 @@ export async function ingest({
     await writeFile(join(out, 'market.json'), `${(await output(market))[0]}\n`);
     await writeFile(join(out, 'tickers.json'), `[${(await output(stockTable)).join(',')}]\n`);
     await writeFile(join(out, 'health.json'), `${(await output(health))[0]}\n`);
-    for (const row of await output(tickers)) {
-      const parsed: unknown = JSON.parse(row);
-      if (
-        typeof parsed !== 'object' ||
-        parsed === null ||
-        !('ticker' in parsed) ||
-        typeof parsed.ticker !== 'string' ||
-        !/^[A-Z0-9-]+$/.test(parsed.ticker)
-      )
-        throw new Error('Invalid output ticker');
-      await writeFile(join(out, 'ticker', `${parsed.ticker}.json`), `${row}\n`);
+    const monthlySources = new Map<string, string[]>();
+    for (const row of await query(
+      "SELECT DISTINCT strftime(date, '%Y-%m') AS month_key, url FROM one_pct ORDER BY month_key, url",
+    )) {
+      const source = z.object({ month_key: z.string(), url: z.string().nullable() }).parse(row);
+      const urls = monthlySources.get(source.month_key) ?? [];
+      if (source.url) urls.push(source.url);
+      monthlySources.set(source.month_key, urls);
     }
+    const quality = ownershipQuality([...monthlySources.keys()]);
+    for (const row of await output(tickers)) {
+      const resolved = resolveHolderKeys(tickerSchema.parse(JSON.parse(row)));
+      const { data: parsed } = resolved;
+      reconcileOwnership(quality, resolved, monthlySources);
+      if (!/^[A-Z0-9-]+$/.test(parsed.ticker)) throw new Error('Invalid output ticker');
+      await writeFile(join(out, 'ticker', `${parsed.ticker}.json`), `${JSON.stringify(parsed)}\n`);
+    }
+    await writeFile(join(out, 'ownership-quality.json'), `${JSON.stringify(quality)}\n`);
     const counts = Object.fromEntries(
       await Promise.all(
         tables.map(async (table) => [
