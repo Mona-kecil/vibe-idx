@@ -316,7 +316,11 @@ history AS (
   FROM registry_holders GROUP BY date, ticker
 ), registers AS (
   SELECT r.*, struct_pack(date := r.date, free_float_pct := r.free_float_pct,
-    issued_shares := r.total_shares + coalesce(r.unlisted_shares, 0),
+    issued_shares := r.total_shares + coalesce(r.unlisted_shares,
+      (SELECT CASE WHEN n.total_shares = r.total_shares THEN n.unlisted_shares END
+       FROM registry n
+       WHERE n.ticker = r.ticker AND n.date > r.date AND n.unlisted_shares IS NOT NULL
+       ORDER BY n.date LIMIT 1), 0),
     sid_count := r.sid_count, url := r.url,
     free_float_shares := r.free_float_shares, investor_types := coalesce(t.investor_types, []),
     holders := coalesce(f.holders, [])) record

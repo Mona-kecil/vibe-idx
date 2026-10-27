@@ -1484,7 +1484,7 @@ it('keeps exact issued shares and null fallback despite rounded monthly stakes',
       ('2026-10-30', 'BBCA', 'PT DWIMURIA INVESTAMA ANDALAN', 1, 67729950000, 50)`);
     await db.run(analytics);
     const data = tickerSchema.parse((await db.runAndReadAll(tickers)).getRowObjectsJson()[0]);
-    expect(data.registry_history[0]?.issued_shares).toBe(122042299500);
+    expect(data.registry_history[0]?.issued_shares).toBe(123275050000);
     expect(data.registry_history[1]?.issued_shares).toBe(123275050000);
     expect(data.registry_history[2]?.issued_shares).toBe(data.registry_history[1]?.issued_shares);
     const holder = holdingSeries(data, null)[0];
@@ -1492,8 +1492,28 @@ it('keeps exact issued shares and null fallback despite rounded monthly stakes',
     expect(sharesAt(holder, '2026-08-31')).toBe(67729950000);
     expect(sharesAt(holder, '2026-09-30')).toBe(67729950000);
     expect(pctAt(data, holder, '2026-09-30')).toBeCloseTo(54.94, 2);
-    expect(pctAt(data, holder, '2026-08-28')).toBeCloseTo(55.5, 1);
+    expect(pctAt(data, holder, '2026-08-28')).toBeCloseTo(54.94, 2);
     expect(pctAt(data, holder, '2026-10-30')).toBeCloseTo(54.942, 3);
+  } finally {
+    db.closeSync();
+    instance.closeSync();
+  }
+});
+
+it('does not carry unlisted shares past a change in listed shares or without a later known count', async () => {
+  const instance = await DuckDBInstance.create(':memory:');
+  const db = await instance.connect();
+  try {
+    await db.run(schema);
+    await db.run(`INSERT INTO issuers (ticker) VALUES ('BBCA');
+      INSERT INTO registry (date, ticker, total_shares, unlisted_shares, url) VALUES
+      ('2026-01-31', 'BBCA', 100, NULL, 'https://example.com/jan.pdf'),
+      ('2026-02-28', 'BBCA', 200, 20, 'https://example.com/feb.pdf'),
+      ('2026-03-31', 'BBCA', 100, 30, 'https://example.com/mar.pdf'),
+      ('2026-04-30', 'BBCA', 100, NULL, 'https://example.com/apr.pdf')`);
+    await db.run(analytics);
+    const data = tickerSchema.parse((await db.runAndReadAll(tickers)).getRowObjectsJson()[0]);
+    expect(data.registry_history.map((r) => r.issued_shares)).toEqual([100, 220, 130, 100]);
   } finally {
     db.closeSync();
     instance.closeSync();
