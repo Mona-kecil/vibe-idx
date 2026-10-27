@@ -373,10 +373,7 @@ describe('month-end anchored TPIA holdings', () => {
               }
             : m,
         ),
-        holders: [
-          ...tpia.holders,
-          { investor: 'NEW HOLDER', shares: 5_000_000_000, pct: 5.78, local_foreign: null },
-        ],
+        holders: [...tpia.holders, { investor: 'NEW HOLDER', shares: 5_000_000_000, pct: 5.78 }],
       },
       end,
     );
