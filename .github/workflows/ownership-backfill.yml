@@ -50,6 +50,8 @@ jobs:
             aws s3 sync "s3://vibe-idx-private/raw/$prefix" "$DATA/raw/$prefix" --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
           done
       - name: Backfill both IDX ownership sources
+        # An explicit bash shell adds pipefail, so an ingest failure fails this step despite tee.
+        shell: bash
         run: |
           pnpm --filter @vibe-idx/pipeline ingest -- --ownership-only --since "$SINCE" --until "$UNTIL" --data "$DATA" --out "$OUT" | tee "$RUNNER_TEMP/ownership-summary.json"
       - name: Record snapshot coverage
