@@ -5,6 +5,71 @@ import { DuckDBInstance } from '@duckdb/node-api';
 import { describe, expect, it } from 'vite-plus/test';
 import { ingest } from './ingest';
 import { analytics, schema, tickers } from './sql';
+import { tickerSchema } from '../web/src/data';
+import tpiaFixture from '../web/src/ticker/fixtures/TPIA-history.json';
+
+it('exports every stored TPIA 1% month oldest first without changing the latest snapshot', async () => {
+  const tpia = tickerSchema.parse(tpiaFixture);
+  const instance = await DuckDBInstance.create(':memory:');
+  const db = await instance.connect();
+  try {
+    await db.run(schema);
+    for (const m of [...tpia.one_pct_history].reverse())
+      for (const [seq, h] of m.holders.entries())
+        await db.run(
+          `INSERT INTO one_pct
+          (date, ticker, investor, seq, shares, pct, classification, local_foreign)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            m.date,
+            tpia.ticker,
+            h.investor,
+            seq,
+            String(h.shares),
+            h.pct,
+            h.classification,
+            h.local_foreign,
+          ],
+        );
+    await db.run(
+      "INSERT INTO one_pct (date, ticker, investor, seq, shares, pct) VALUES ('2026-09-30', 'OTHER', 'OTHER HOLDER', 0, 100, 1)",
+    );
+    await db.run(analytics);
+    const rows = (await db.runAndReadAll(tickers))
+      .getRowObjectsJson()
+      .map((r) => tickerSchema.parse(r));
+    const published = rows.find((r) => r.ticker === 'TPIA');
+    expect(published?.one_pct_history.map((m) => m.date)).toEqual([
+      '2026-02-27',
+      '2026-03-31',
+      '2026-04-30',
+      '2026-05-29',
+      '2026-06-30',
+      '2026-07-31',
+      '2026-08-31',
+      '2026-09-30',
+    ]);
+    expect(published?.one_pct_history).toEqual(
+      tpia.one_pct_history.map((m) => ({
+        ...m,
+        holders: [...m.holders].sort((a, b) => a.investor.localeCompare(b.investor)),
+      })),
+    );
+    expect(published?.one_pct).toEqual({
+      date: '2026-09-30',
+      holders: published?.one_pct_history.at(-1)?.holders,
+    });
+    expect(rows.find((r) => r.ticker === 'OTHER')?.one_pct_history).toHaveLength(1);
+    await db.run('DELETE FROM one_pct');
+    await db.run("INSERT INTO issuers (ticker, name) VALUES ('EMPTY', 'Empty issuer')");
+    expect(
+      tickerSchema.parse((await db.runAndReadAll(tickers)).getRowObjectsJson()[0]).one_pct_history,
+    ).toEqual([]);
+  } finally {
+    db.closeSync();
+    instance.closeSync();
+  }
+});
 
 const fixture = (name: string) => readFile(new URL(`./fixtures/${name}`, import.meta.url));
 

@@ -330,12 +330,13 @@ function HoldingsChart({
     return () => document.removeEventListener('keydown', escape);
   }, []);
   const firstDate = series
-    .flatMap((s) => s.points)
+    .flatMap((s) => [...s.points, ...s.events])
     .map((p) => p.date)
     .sort()[0];
   const lastDate = [
+    end,
     data.prices.at(-1)?.date ?? '',
-    ...series.flatMap((s) => s.points).map((p) => p.date),
+    ...series.flatMap((s) => [...s.points, ...s.events]).map((p) => p.date),
   ]
     .sort()
     .at(-1);
@@ -355,7 +356,12 @@ function HoldingsChart({
     1,
     ...series
       .filter((s) => !hidden.includes(s.name))
-      .flatMap((s) => s.points.map((p) => amount(p.shares ?? 0, p.date))),
+      .flatMap((s) => [
+        ...s.points.map((p) => amount(p.shares ?? 0, p.date)),
+        ...s.events.map((e) =>
+          amount(sharesAt(s, e.date) ?? e.shares_after ?? e.shares_before ?? 0, e.date),
+        ),
+      ]),
   );
   const magnitude = 10 ** Math.floor(Math.log10(peak));
   const yMax = Math.ceil((peak * 1.03) / (magnitude / 2)) * (magnitude / 2),
@@ -378,7 +384,7 @@ function HoldingsChart({
   }
   const labels = series
     .map((s, i) => ({ s, i, y: y(amount(sharesAt(s, lastDate) ?? 0, lastDate)), labelY: 0 }))
-    .filter((l) => !hidden.includes(l.s.name))
+    .filter((l) => !hidden.includes(l.s.name) && l.s.points.at(-1)?.shares != null)
     .sort((a, b) => a.y - b.y);
   labels.forEach((l, i) => {
     l.labelY = Math.max(l.y, i ? (labels[i - 1]?.labelY ?? T) + 14 : T);
@@ -493,9 +499,10 @@ function HoldingsChart({
               const color = palette[i % palette.length],
                 last = s.points.at(-1),
                 label = labels.find((l) => l.s === s);
-              const points = last
-                ? [...s.points, { ...last, date: lastDate, event: false }]
-                : s.points;
+              const points =
+                last && last.shares !== null
+                  ? [...s.points, { ...last, date: lastDate, event: false }]
+                  : s.points;
               const lineY = (p: { shares: number | null; date: string }) => {
                 const value = amount(p.shares ?? 0, p.date),
                   peers = series.filter(
@@ -526,8 +533,20 @@ function HoldingsChart({
                 >
                   {points.map((p, j) => {
                     const prior = points[j - 1];
-                    if (!prior || p.shares === null || prior.shares === null) return null;
-                    const event = s.events.some((e) => e.date === p.date),
+                    if (p.shares === null) return null;
+                    if ((!prior || prior.shares === null) && points[j + 1]?.shares == null)
+                      return (
+                        <circle
+                          className="holding-anchor"
+                          key={j}
+                          cx={x(p.date)}
+                          cy={lineY(p)}
+                          r={2}
+                          fill={color}
+                        />
+                      );
+                    if (!prior || prior.shares === null) return null;
+                    const event = p.event,
                       dotted =
                         !event && amount(prior.shares, prior.date) !== amount(p.shares, p.date);
                     return (
@@ -548,45 +567,46 @@ function HoldingsChart({
                       />
                     );
                   })}
-                  {s.events
-                    .filter((e) => e.shares_after !== null)
-                    .map((e) => {
-                      const cx = x(e.date),
-                        cy = lineY({ date: e.date, shares: e.shares_after });
-                      const show = () => {
-                        setFocus(s.name);
-                        setTooltip({
-                          event: e,
-                          x: Math.max(0, Math.min(W - 340, cx > W / 2 ? cx - 356 : cx + 16)),
-                          y: Math.max(34, Math.min(180, cy - 40)),
-                        });
-                      };
-                      return (
-                        <circle
-                          className="holding-event"
-                          key={e.date}
-                          data-date={e.date}
-                          cx={cx}
-                          cy={cy}
-                          r={4.5}
-                          fill={color}
-                          stroke="var(--paper)"
-                          strokeWidth={1.5}
-                          tabIndex={0}
-                          role="button"
-                          aria-label={`${s.name} ${dateText(e.date)} ${nf(e.shares_before ?? 0)} → ${nf(e.shares_after ?? 0)} shares`}
-                          onPointerEnter={show}
-                          onFocus={show}
-                          onClick={show}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter' || e.key === ' ') {
-                              e.preventDefault();
-                              show();
-                            }
-                          }}
-                        />
-                      );
-                    })}
+                  {s.events.map((e) => {
+                    const cx = x(e.date),
+                      cy = lineY({
+                        date: e.date,
+                        shares: sharesAt(s, e.date) ?? e.shares_after ?? e.shares_before,
+                      });
+                    const show = () => {
+                      setFocus(s.name);
+                      setTooltip({
+                        event: e,
+                        x: Math.max(0, Math.min(W - 340, cx > W / 2 ? cx - 356 : cx + 16)),
+                        y: Math.max(34, Math.min(180, cy - 40)),
+                      });
+                    };
+                    return (
+                      <circle
+                        className="holding-event"
+                        key={e.date}
+                        data-date={e.date}
+                        cx={cx}
+                        cy={cy}
+                        r={4.5}
+                        fill={color}
+                        stroke="var(--paper)"
+                        strokeWidth={1.5}
+                        tabIndex={0}
+                        role="button"
+                        aria-label={`${s.name} ${dateText(e.date)} ${e.shares_before === null ? 'Unknown' : nf(e.shares_before)} → ${e.shares_after === null ? 'No longer on the 5% list' : nf(e.shares_after) + ' shares'}`}
+                        onPointerEnter={show}
+                        onFocus={show}
+                        onClick={show}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            show();
+                          }
+                        }}
+                      />
+                    );
+                  })}
                   {last && label && (
                     <>
                       <path

@@ -3,7 +3,8 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { App } from './App';
-import type { Feed, Ticker } from './data';
+import { tickerSchema, type Feed, type Ticker } from './data';
+import tpiaFixture from './ticker/fixtures/TPIA-history.json';
 
 const auth = vi.hoisted(() => ({
   user: null as { id: string; email: string } | null,
@@ -43,6 +44,7 @@ function ticker(symbol: string): Ticker {
     holders: [{ investor: 'Synthetic holder', shares: 100, pct: 10 }],
     changes: [],
     one_pct: { date: '2026-09-30', holders: [] },
+    one_pct_history: [],
     insiders: [],
     disclosures: [],
     registry_history: [],
@@ -439,6 +441,39 @@ describe('ticker research regressions', () => {
     });
     expect(auth.signIn).toHaveBeenCalled();
     auth.signIn.mockClear();
+  });
+  it('renders anchored TPIA values, all change markers and uncertain month-end moves without extending HSBC', async () => {
+    history = tickerSchema.parse(tpiaFixture);
+    window.history.replaceState(null, '', '/t/TPIA');
+    await render();
+    const keys = [...host.querySelectorAll('.holder-key')];
+    const barito = keys.find((el) => el.textContent?.includes('BARITO PACIFIC'));
+    expect(barito?.querySelector('strong')?.getAttribute('title')).toBe('29,957,670,400 shares');
+    expect(barito?.querySelector('small')?.textContent).toBe('34.63%');
+    expect(
+      [...host.querySelectorAll('.composition-item')]
+        .find((el) => el.textContent?.includes('BARITO PACIFIC'))
+        ?.querySelector('strong')?.textContent,
+    ).toBe('34.63%');
+    const scg = keys.find((el) => el.textContent?.includes('SCG CHEMICALS'));
+    const scgLine = host.querySelector(
+      `.holdings-series[data-holder="${scg?.getAttribute('data-holder')}"]`,
+    );
+    expect(scgLine?.querySelectorAll('.holding-event')).toHaveLength(7);
+    expect(scgLine?.querySelector('.holding-uncertain')).not.toBeNull();
+    const marker = scgLine?.querySelector('[data-date="2026-06-08"]');
+    if (!marker) throw new Error('Missing SCG exit marker');
+    await act(async () => marker.dispatchEvent(new Event('click', { bubbles: true })));
+    expect(host.querySelector('#holdings-tooltip')?.textContent).toContain('SCG CHEMICALS');
+    expect(host.querySelector('#holdings-tooltip')?.textContent).toContain('Below 5%');
+    const hsbc = keys.find((el) => el.textContent?.includes('HSBC'));
+    const hsbcLine = host.querySelector(
+      `.holdings-series[data-holder="${hsbc?.getAttribute('data-holder')}"]`,
+    );
+    expect(hsbcLine?.querySelectorAll('.holding-line')).toHaveLength(0);
+    expect(hsbcLine?.querySelectorAll('.holding-anchor')).toHaveLength(1);
+    expect(hsbcLine?.querySelector('.holding-label')).toBeNull();
+    expect(hsbc?.querySelector('strong')?.textContent).toBe('—');
   });
   it('loads signed-in ticker brokers through the bearer API and tolerates unavailable news', async () => {
     auth.user = { id: 'fixture-user', email: 'fixture@example.test' };

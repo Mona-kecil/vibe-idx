@@ -1,0 +1,1284 @@
+{
+  "ticker": "TPIA",
+  "name": "PT Chandra Asri Pacific Tbk",
+  "prices": [
+    {
+      "date": "2026-01-02",
+      "close": 7125,
+      "volume": 5625500,
+      "value": 39750122500,
+      "net_foreign": 9694275000
+    },
+    {
+      "date": "2026-10-26",
+      "close": 1445,
+      "volume": 448969700,
+      "value": 650848202000,
+      "net_foreign": -1578373500
+    }
+  ],
+  "holders": [
+    {
+      "investor": "PT BARITO PACIFIC TBK",
+      "shares": 11825453500,
+      "pct": 13.67
+    }
+  ],
+  "changes": [
+    {
+      "date": "2026-07-06",
+      "investor": "PRAJOGO PANGESTU",
+      "net_shares": null,
+      "shares_before": 4354382164,
+      "shares_after": null,
+      "pct_before": 5.03,
+      "pct_after": null,
+      "exited": true
+    },
+    {
+      "date": "2026-06-08",
+      "investor": "SCG CHEMICALS PUBLIC COMPANY LIMITED",
+      "net_shares": null,
+      "shares_before": 13063600309,
+      "shares_after": null,
+      "pct_before": 15.1,
+      "pct_after": null,
+      "exited": true
+    },
+    {
+      "date": "2026-06-05",
+      "investor": "SCG CHEMICALS PUBLIC COMPANY LIMITED",
+      "net_shares": 2295876200,
+      "shares_before": 10767724109,
+      "shares_after": 13063600309,
+      "pct_before": 12.45,
+      "pct_after": 15.1,
+      "exited": false
+    },
+    {
+      "date": "2026-06-04",
+      "investor": "SCG CHEMICALS PUBLIC COMPANY LIMITED",
+      "net_shares": 676251100,
+      "shares_before": 10091473009,
+      "shares_after": 10767724109,
+      "pct_before": 11.66,
+      "pct_after": 12.45,
+      "exited": false
+    },
+    {
+      "date": "2026-06-03",
+      "investor": "SCG CHEMICALS PUBLIC COMPANY LIMITED",
+      "net_shares": 947202693,
+      "shares_before": 9144270316,
+      "shares_after": 10091473009,
+      "pct_before": 10.57,
+      "pct_after": 11.66,
+      "exited": false
+    },
+    {
+      "date": "2026-06-02",
+      "investor": "SCG CHEMICALS PUBLIC COMPANY LIMITED",
+      "net_shares": 9144270316,
+      "shares_before": 0,
+      "shares_after": 9144270316,
+      "pct_before": 0,
+      "pct_after": 10.57,
+      "exited": false
+    },
+    {
+      "date": "2026-03-16",
+      "investor": "PRAJOGO PANGESTU",
+      "net_shares": -800000000,
+      "shares_before": 5154382164,
+      "shares_after": 4354382164,
+      "pct_before": 5.96,
+      "pct_after": 5.03,
+      "exited": false
+    },
+    {
+      "date": "2026-03-12",
+      "investor": "PRAJOGO PANGESTU",
+      "net_shares": 800000000,
+      "shares_before": 4354382164,
+      "shares_after": 5154382164,
+      "pct_before": 5.03,
+      "pct_after": 5.96,
+      "exited": false
+    },
+    {
+      "date": "2026-02-24",
+      "investor": "SCG CHEMICALS PUBLIC COMPANY LIMITED",
+      "net_shares": null,
+      "shares_before": 9144270316,
+      "shares_after": null,
+      "pct_before": 10.57,
+      "pct_after": null,
+      "exited": true
+    },
+    {
+      "date": "2026-01-13",
+      "investor": "SCG CHEMICALS PUBLIC COMPANY LIMITED",
+      "net_shares": 9144270316,
+      "shares_before": 0,
+      "shares_after": 9144270316,
+      "pct_before": 0,
+      "pct_after": 10.57,
+      "exited": false
+    }
+  ],
+  "one_pct": {
+    "date": "2026-09-30",
+    "holders": [
+      {
+        "investor": "Bangkok Bank Public Company Limited",
+        "shares": 4317648400,
+        "pct": 4.99,
+        "classification": "Bank",
+        "local_foreign": "F"
+      },
+      {
+        "investor": "MARIGOLD RESOURCES PTE. LTD.",
+        "shares": 3387243720,
+        "pct": 3.92,
+        "classification": "Corporate",
+        "local_foreign": "F"
+      },
+      {
+        "investor": "PRAJOGO PANGESTU",
+        "shares": 4354382164,
+        "pct": 5.03,
+        "classification": "Individual",
+        "local_foreign": "L"
+      },
+      {
+        "investor": "PT BARITO PACIFIC TBK",
+        "shares": 29957670400,
+        "pct": 34.63,
+        "classification": "Corporate",
+        "local_foreign": "L"
+      },
+      {
+        "investor": "PT TOP INVESTMENT INDONESIA",
+        "shares": 12976731760,
+        "pct": 15,
+        "classification": "Corporate",
+        "local_foreign": "L"
+      },
+      {
+        "investor": "SCG CHEMICALS PUBLIC COMPANY LIMITED",
+        "shares": 13589972562,
+        "pct": 15.71,
+        "classification": "Corporate",
+        "local_foreign": "F"
+      }
+    ]
+  },
+  "disclosures": [],
+  "insiders": [
+    {
+      "date": "2026-10-20",
+      "reporter": "RAYMOND",
+      "shares_before": 9621800,
+      "shares_after": 10621800,
+      "net_shares": 1000000,
+      "url": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_KSEI/LK-20102026-8988-00.pdf-0.pdf"
+    }
+  ],
+  "registry_history": [
+    {
+      "date": "2025-12-31",
+      "free_float_pct": 10.66,
+      "total_shares": 86511545092,
+      "sid_count": null,
+      "url": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202601/27f9eac276_7e5051e4c8.pdf",
+      "free_float_shares": 9225602772,
+      "holders": [
+        {
+          "investor": "Andre Khor Kah Hin",
+          "pct": 0,
+          "controller": null,
+          "controller_affiliate": null,
+          "page": 3
+        },
+        {
+          "investor": "Baritono Prajogo",
+          "pct": 0,
+          "controller": null,
+          "controller_affiliate": true,
+          "page": 2
+        },
+        {
+          "investor": "Edi Riva'i",
+          "pct": 0,
+          "controller": null,
+          "controller_affiliate": null,
+          "page": 2
+        },
+        {
+          "investor": "Erwin Ciputra",
+          "pct": 0.16,
+          "controller": null,
+          "controller_affiliate": null,
+          "page": 1
+        },
+        {
+          "investor": "Fransiskus Ruly Aryawan",
+          "pct": 0,
+          "controller": null,
+          "controller_affiliate": null,
+          "page": 2
+        },
+        {
+          "investor": "Lim Chong Thian",
+          "pct": 0,
+          "controller": null,
+          "controller_affiliate": true,
+          "page": 2
+        },
+        {
+          "investor": "Marigold Resources Pte",
+          "pct": 3.92,
+          "controller": true,
+          "controller_affiliate": null,
+          "page": 3
+        },
+        {
+          "investor": "PT Barito Pacific Tbk",
+          "pct": 34.63,
+          "controller": true,
+          "controller_affiliate": null,
+          "page": 3
+        },
+        {
+          "investor": "PT Top Investment",
+          "pct": 15,
+          "controller": null,
+          "controller_affiliate": null,
+          "page": 1
+        },
+        {
+          "investor": "Prajogo Pangestu",
+          "pct": 5.03,
+          "controller": true,
+          "controller_affiliate": null,
+          "page": 3
+        },
+        {
+          "investor": "Raymond",
+          "pct": 0,
+          "controller": null,
+          "controller_affiliate": null,
+          "page": 3
+        },
+        {
+          "investor": "SCG Chemicals",
+          "pct": 30.57,
+          "controller": null,
+          "controller_affiliate": null,
+          "page": 3
+        }
+      ]
+    },
+    {
+      "date": "2026-01-31",
+      "free_float_pct": 10.66,
+      "total_shares": 86511545092,
+      "sid_count": null,
+      "url": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202602/03d2c6da89_557957a589.pdf",
+      "free_float_shares": 9225602772,
+      "holders": [
+        {
+          "investor": "Andre Khor Kah Hin",
+          "pct": 0,
+          "controller": null,
+          "controller_affiliate": null,
+          "page": 3
+        },
+        {
+          "investor": "Baritono Prajogo",
+          "pct": 0,
+          "controller": null,
+          "controller_affiliate": true,
+          "page": 2
+        },
+        {
+          "investor": "Edi Riva'i",
+          "pct": 0,
+          "controller": null,
+          "controller_affiliate": null,
+          "page": 2
+        },
+        {
+          "investor": "Erwin Ciputra",
+          "pct": 0.16,
+          "controller": null,
+          "controller_affiliate": null,
+          "page": 1
+        },
+        {
+          "investor": "Fransiskus Ruly Aryawan",
+          "pct": 0,
+          "controller": null,
+          "controller_affiliate": null,
+          "page": 2
+        },
+        {
+          "investor": "Lim Chong Thian",
+          "pct": 0,
+          "controller": null,
+          "controller_affiliate": true,
+          "page": 2
+        },
+        {
+          "investor": "Marigold Resources Pte",
+          "pct": 3.92,
+          "controller": true,
+          "controller_affiliate": null,
+          "page": 3
+        },
+        {
+          "investor": "PT Barito Pacific Tbk",
+          "pct": 34.63,
+          "controller": true,
+          "controller_affiliate": null,
+          "page": 3
+        },
+        {
+          "investor": "PT Top Investment",
+          "pct": 15,
+          "controller": null,
+          "controller_affiliate": null,
+          "page": 1
+        },
+        {
+          "investor": "Prajogo Pangestu",
+          "pct": 5.03,
+          "controller": true,
+          "controller_affiliate": null,
+          "page": 3
+        },
+        {
+          "investor": "Raymond",
+          "pct": 0,
+          "controller": null,
+          "controller_affiliate": null,
+          "page": 3
+        },
+        {
+          "investor": "SCG Chemicals",
+          "pct": 30.57,
+          "controller": null,
+          "controller_affiliate": null,
+          "page": 3
+        }
+      ]
+    },
+    {
+      "date": "2026-04-30",
+      "free_float_pct": 9.91,
+      "total_shares": 86511545092,
+      "sid_count": 26987,
+      "url": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202605/e80f842531_812fdc5dc5.pdf",
+      "free_float_shares": 8571584548,
+      "holders": [
+        {
+          "investor": "Andre Khor Kah Hin",
+          "pct": 0,
+          "controller": null,
+          "controller_affiliate": null,
+          "page": 2
+        },
+        {
+          "investor": "Baritono Prajogo",
+          "pct": 0,
+          "controller": null,
+          "controller_affiliate": true,
+          "page": 3
+        },
+        {
+          "investor": "Edi Riva'i",
+          "pct": 0,
+          "controller": null,
+          "controller_affiliate": null,
+          "page": 4
+        },
+        {
+          "investor": "Erwin Ciputra",
+          "pct": 0.16,
+          "controller": null,
+          "controller_affiliate": null,
+          "page": 2
+        },
+        {
+          "investor": "Fransiskus Ruly Aryawan",
+          "pct": 0,
+          "controller": null,
+          "controller_affiliate": null,
+          "page": 3
+        },
+        {
+          "investor": "Lim Chong Thian",
+          "pct": 0,
+          "controller": null,
+          "controller_affiliate": true,
+          "page": 3
+        },
+        {
+          "investor": "PT Barito Pacific Tbk",
+          "pct": 34.63,
+          "controller": true,
+          "controller_affiliate": null,
+          "page": 4
+        },
+        {
+          "investor": "PT Top Investment",
+          "pct": 15,
+          "controller": null,
+          "controller_affiliate": null,
+          "page": 4
+        },
+        {
+          "investor": "Prajogo Pangestu",
+          "pct": 5.03,
+          "controller": true,
+          "controller_affiliate": null,
+          "page": 4
+        },
+        {
+          "investor": "Raymond",
+          "pct": 0,
+          "controller": null,
+          "controller_affiliate": null,
+          "page": 2
+        },
+        {
+          "investor": "SCG Chemicals",
+          "pct": 30.57,
+          "controller": null,
+          "controller_affiliate": null,
+          "page": 4
+        }
+      ]
+    },
+    {
+      "date": "2026-05-31",
+      "free_float_pct": 10.56,
+      "total_shares": 86511545092,
+      "sid_count": 38456,
+      "url": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202606/dcd67eec5b_1c6bf42f28.pdf",
+      "free_float_shares": 9133336275,
+      "holders": [
+        {
+          "investor": "Andre Khor Kah Hin",
+          "pct": 0,
+          "controller": null,
+          "controller_affiliate": null,
+          "page": 2
+        },
+        {
+          "investor": "Baritono Prajogo",
+          "pct": 0,
+          "controller": null,
+          "controller_affiliate": true,
+          "page": 3
+        },
+        {
+          "investor": "Edi Riva'i",
+          "pct": 0,
+          "controller": null,
+          "controller_affiliate": null,
+          "page": 4
+        },
+        {
+          "investor": "Erwin Ciputra",
+          "pct": 0.16,
+          "controller": null,
+          "controller_affiliate": null,
+          "page": 2
+        },
+        {
+          "investor": "Fransiskus Ruly Aryawan",
+          "pct": 0,
+          "controller": null,
+          "controller_affiliate": null,
+          "page": 3
+        },
+        {
+          "investor": "Lim Chong Thian",
+          "pct": 0,
+          "controller": null,
+          "controller_affiliate": true,
+          "page": 3
+        },
+        {
+          "investor": "PT Barito Pacific Tbk",
+          "pct": 34.63,
+          "controller": true,
+          "controller_affiliate": null,
+          "page": 4
+        },
+        {
+          "investor": "PT Top Investment",
+          "pct": 15,
+          "controller": null,
+          "controller_affiliate": null,
+          "page": 4
+        },
+        {
+          "investor": "Prajogo Pangestu",
+          "pct": 5.03,
+          "controller": true,
+          "controller_affiliate": null,
+          "page": 4
+        },
+        {
+          "investor": "Raymond",
+          "pct": 0,
+          "controller": null,
+          "controller_affiliate": null,
+          "page": 2
+        },
+        {
+          "investor": "SCG Chemicals",
+          "pct": 30.57,
+          "controller": null,
+          "controller_affiliate": null,
+          "page": 4
+        }
+      ]
+    },
+    {
+      "date": "2026-06-30",
+      "free_float_pct": 25.41,
+      "total_shares": 86511545092,
+      "sid_count": 110840,
+      "url": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202607/e2cac25d2d_6c67e315e8.pdf",
+      "free_float_shares": 21980220234,
+      "holders": [
+        {
+          "investor": "Andre Khor Kah Hin",
+          "pct": 0,
+          "controller": null,
+          "controller_affiliate": null,
+          "page": 2
+        },
+        {
+          "investor": "Baritono Prajogo",
+          "pct": 0,
+          "controller": null,
+          "controller_affiliate": true,
+          "page": 3
+        },
+        {
+          "investor": "Edi Riva'i",
+          "pct": 0,
+          "controller": null,
+          "controller_affiliate": null,
+          "page": 4
+        },
+        {
+          "investor": "Erwin Ciputra",
+          "pct": 0.16,
+          "controller": null,
+          "controller_affiliate": null,
+          "page": 2
+        },
+        {
+          "investor": "Fransiskus Ruly Aryawan",
+          "pct": 0,
+          "controller": null,
+          "controller_affiliate": null,
+          "page": 3
+        },
+        {
+          "investor": "Lim Chong Thian",
+          "pct": 0,
+          "controller": null,
+          "controller_affiliate": true,
+          "page": 3
+        },
+        {
+          "investor": "PT Barito Pacific Tbk",
+          "pct": 34.63,
+          "controller": true,
+          "controller_affiliate": null,
+          "page": 4
+        },
+        {
+          "investor": "PT Top Investment",
+          "pct": 15,
+          "controller": null,
+          "controller_affiliate": null,
+          "page": 4
+        },
+        {
+          "investor": "Prajogo Pangestu",
+          "pct": 5.03,
+          "controller": true,
+          "controller_affiliate": null,
+          "page": 4
+        },
+        {
+          "investor": "Raymond",
+          "pct": 0.01,
+          "controller": null,
+          "controller_affiliate": null,
+          "page": 2
+        },
+        {
+          "investor": "SCG Chemicals",
+          "pct": 15.71,
+          "controller": null,
+          "controller_affiliate": null,
+          "page": 4
+        }
+      ]
+    },
+    {
+      "date": "2026-07-31",
+      "free_float_pct": 25.38,
+      "total_shares": 86511545092,
+      "sid_count": 100597,
+      "url": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202608/c72dcbec4e_28a5f5c666.pdf",
+      "free_float_shares": 21960695634,
+      "holders": [
+        {
+          "investor": "Andre Khor Kah Hin",
+          "pct": 0,
+          "controller": null,
+          "controller_affiliate": null,
+          "page": 2
+        },
+        {
+          "investor": "Baritono Prajogo",
+          "pct": 0,
+          "controller": null,
+          "controller_affiliate": true,
+          "page": 3
+        },
+        {
+          "investor": "Edi Riva'i",
+          "pct": 0,
+          "controller": null,
+          "controller_affiliate": null,
+          "page": 4
+        },
+        {
+          "investor": "Erwin Ciputra",
+          "pct": 0.16,
+          "controller": null,
+          "controller_affiliate": null,
+          "page": 2
+        },
+        {
+          "investor": "Fransiskus Ruly Aryawan",
+          "pct": 0,
+          "controller": null,
+          "controller_affiliate": null,
+          "page": 3
+        },
+        {
+          "investor": "Lim Chong Thian",
+          "pct": 0,
+          "controller": null,
+          "controller_affiliate": true,
+          "page": 3
+        },
+        {
+          "investor": "PT Barito Pacific Tbk",
+          "pct": 34.63,
+          "controller": true,
+          "controller_affiliate": null,
+          "page": 4
+        },
+        {
+          "investor": "PT Top Investment",
+          "pct": 15,
+          "controller": null,
+          "controller_affiliate": null,
+          "page": 4
+        },
+        {
+          "investor": "Prajogo Pangestu",
+          "pct": 5.03,
+          "controller": true,
+          "controller_affiliate": null,
+          "page": 4
+        },
+        {
+          "investor": "Raymond",
+          "pct": 0.01,
+          "controller": null,
+          "controller_affiliate": null,
+          "page": 2
+        },
+        {
+          "investor": "SCG Chemicals",
+          "pct": 15.71,
+          "controller": null,
+          "controller_affiliate": null,
+          "page": 4
+        }
+      ]
+    },
+    {
+      "date": "2026-08-31",
+      "free_float_pct": 25.42,
+      "total_shares": 86511545092,
+      "sid_count": 135611,
+      "url": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202609/903cbca926_6ef1378b55.pdf",
+      "free_float_shares": 21993774134,
+      "holders": [
+        {
+          "investor": "Andre Khor Kah Hin",
+          "pct": 0,
+          "controller": null,
+          "controller_affiliate": null,
+          "page": 2
+        },
+        {
+          "investor": "Baritono Prajogo",
+          "pct": 0,
+          "controller": null,
+          "controller_affiliate": true,
+          "page": 3
+        },
+        {
+          "investor": "Edi Riva'i",
+          "pct": 0,
+          "controller": null,
+          "controller_affiliate": null,
+          "page": 4
+        },
+        {
+          "investor": "Erwin Ciputra",
+          "pct": 0.16,
+          "controller": null,
+          "controller_affiliate": null,
+          "page": 2
+        },
+        {
+          "investor": "Fransiskus Ruly Aryawan",
+          "pct": 0,
+          "controller": null,
+          "controller_affiliate": null,
+          "page": 3
+        },
+        {
+          "investor": "Lim Chong Thian",
+          "pct": 0,
+          "controller": null,
+          "controller_affiliate": true,
+          "page": 3
+        },
+        {
+          "investor": "PT Barito Pacific Tbk",
+          "pct": 34.63,
+          "controller": true,
+          "controller_affiliate": null,
+          "page": 4
+        },
+        {
+          "investor": "PT Top Investment",
+          "pct": 15,
+          "controller": null,
+          "controller_affiliate": null,
+          "page": 4
+        },
+        {
+          "investor": "Prajogo Pangestu",
+          "pct": 5.03,
+          "controller": true,
+          "controller_affiliate": null,
+          "page": 4
+        },
+        {
+          "investor": "Raymond",
+          "pct": 0.01,
+          "controller": null,
+          "controller_affiliate": null,
+          "page": 2
+        },
+        {
+          "investor": "SCG Chemicals",
+          "pct": 15.71,
+          "controller": null,
+          "controller_affiliate": null,
+          "page": 4
+        }
+      ]
+    },
+    {
+      "date": "2026-09-30",
+      "free_float_pct": 25.42,
+      "total_shares": 86511545092,
+      "sid_count": 130081,
+      "url": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202610/8efd99278a_1ac5839046.pdf",
+      "free_float_shares": 21994208534,
+      "holders": [
+        {
+          "investor": "Andre Khor Kah Hin",
+          "pct": 0,
+          "controller": null,
+          "controller_affiliate": null,
+          "page": 2
+        },
+        {
+          "investor": "Baritono Prajogo",
+          "pct": 0,
+          "controller": null,
+          "controller_affiliate": true,
+          "page": 3
+        },
+        {
+          "investor": "Edi Riva'i",
+          "pct": 0,
+          "controller": null,
+          "controller_affiliate": null,
+          "page": 4
+        },
+        {
+          "investor": "Erwin Ciputra",
+          "pct": 0.16,
+          "controller": null,
+          "controller_affiliate": null,
+          "page": 2
+        },
+        {
+          "investor": "Fransiskus Ruly Aryawan",
+          "pct": 0,
+          "controller": null,
+          "controller_affiliate": null,
+          "page": 3
+        },
+        {
+          "investor": "Lim Chong Thian",
+          "pct": 0,
+          "controller": null,
+          "controller_affiliate": true,
+          "page": 3
+        },
+        {
+          "investor": "PT Barito Pacific Tbk",
+          "pct": 34.63,
+          "controller": true,
+          "controller_affiliate": null,
+          "page": 4
+        },
+        {
+          "investor": "PT Top Investment",
+          "pct": 15,
+          "controller": null,
+          "controller_affiliate": null,
+          "page": 4
+        },
+        {
+          "investor": "Prajogo Pangestu",
+          "pct": 5.03,
+          "controller": true,
+          "controller_affiliate": null,
+          "page": 4
+        },
+        {
+          "investor": "Raymond",
+          "pct": 0.01,
+          "controller": null,
+          "controller_affiliate": null,
+          "page": 2
+        },
+        {
+          "investor": "SCG Chemicals",
+          "pct": 15.71,
+          "controller": null,
+          "controller_affiliate": null,
+          "page": 4
+        }
+      ]
+    }
+  ],
+  "one_pct_history": [
+    {
+      "date": "2026-02-27",
+      "holders": [
+        {
+          "investor": "BANGKOK BANK PUBLIC COMPANY LIMITED",
+          "shares": 1472648400,
+          "pct": 1.7,
+          "classification": "IB",
+          "local_foreign": null
+        },
+        {
+          "investor": "BARITO PACIFIC TBK",
+          "shares": 29957670400,
+          "pct": 34.63,
+          "classification": "CP",
+          "local_foreign": null
+        },
+        {
+          "investor": "HSBC LTD-SINGAPORE BRANCH PRIVATE BANKING DIVISION ACCOUNT CLIENTS",
+          "shares": 2567057927,
+          "pct": 2.97,
+          "classification": "CP",
+          "local_foreign": null
+        },
+        {
+          "investor": "MARIGOLD RESOURCES PTE. LTD.",
+          "shares": 3387243720,
+          "pct": 3.92,
+          "classification": "CP",
+          "local_foreign": null
+        },
+        {
+          "investor": "PRAJOGO PANGESTU",
+          "shares": 4354382164,
+          "pct": 5.03,
+          "classification": "ID",
+          "local_foreign": null
+        },
+        {
+          "investor": "PT TOP INVESTMENT INDONESIA",
+          "shares": 12976731760,
+          "pct": 15,
+          "classification": "CP",
+          "local_foreign": null
+        },
+        {
+          "investor": "SCG CHEMICALS PUBLIC COMPANY LIMITED",
+          "shares": 26446618924,
+          "pct": 30.57,
+          "classification": null,
+          "local_foreign": null
+        }
+      ]
+    },
+    {
+      "date": "2026-03-31",
+      "holders": [
+        {
+          "investor": "BANGKOK BANK PUBLIC COMPANY LIMITED",
+          "shares": 1472648400,
+          "pct": 1.7,
+          "classification": "IB",
+          "local_foreign": null
+        },
+        {
+          "investor": "BARITO PACIFIC TBK",
+          "shares": 29957670400,
+          "pct": 34.63,
+          "classification": "CP",
+          "local_foreign": null
+        },
+        {
+          "investor": "MARIGOLD RESOURCES PTE. LTD.",
+          "shares": 3387243720,
+          "pct": 3.92,
+          "classification": "CP",
+          "local_foreign": null
+        },
+        {
+          "investor": "PRAJOGO PANGESTU",
+          "shares": 4354382164,
+          "pct": 5.03,
+          "classification": "ID",
+          "local_foreign": null
+        },
+        {
+          "investor": "PT TOP INVESTMENT INDONESIA",
+          "shares": 12976731760,
+          "pct": 15,
+          "classification": "CP",
+          "local_foreign": null
+        },
+        {
+          "investor": "SCG CHEMICALS PUBLIC COMPANY LIMITED",
+          "shares": 26446618924,
+          "pct": 30.57,
+          "classification": null,
+          "local_foreign": null
+        }
+      ]
+    },
+    {
+      "date": "2026-04-30",
+      "holders": [
+        {
+          "investor": "BANGKOK BANK PUBLIC COMPANY LIMITED",
+          "shares": 1472648400,
+          "pct": 1.7,
+          "classification": "Bank",
+          "local_foreign": null
+        },
+        {
+          "investor": "BARITO PACIFIC TBK",
+          "shares": 29957670400,
+          "pct": 34.63,
+          "classification": "Corporate",
+          "local_foreign": null
+        },
+        {
+          "investor": "MARIGOLD RESOURCES PTE. LTD.",
+          "shares": 3387243720,
+          "pct": 3.92,
+          "classification": "Corporate",
+          "local_foreign": null
+        },
+        {
+          "investor": "PRAJOGO PANGESTU",
+          "shares": 4354382164,
+          "pct": 5.03,
+          "classification": "Individual",
+          "local_foreign": null
+        },
+        {
+          "investor": "PT TOP INVESTMENT INDONESIA",
+          "shares": 12976731760,
+          "pct": 15,
+          "classification": null,
+          "local_foreign": null
+        },
+        {
+          "investor": "SCG CHEMICALS PUBLIC COMPANY LIMITED",
+          "shares": 26446618924,
+          "pct": 30.57004576195646,
+          "classification": null,
+          "local_foreign": null
+        }
+      ]
+    },
+    {
+      "date": "2026-05-29",
+      "holders": [
+        {
+          "investor": "SCG CHEMICALS PUBLIC COMPANY LIMITED",
+          "shares": 26446618924,
+          "pct": 30.57,
+          "classification": "Corporate",
+          "local_foreign": null
+        },
+        {
+          "investor": "BARITO PACIFIC TBK",
+          "shares": 29957670400,
+          "pct": 34.63,
+          "classification": "Corporate",
+          "local_foreign": null
+        },
+        {
+          "investor": "MARIGOLD RESOURCES PTE. LTD.",
+          "shares": 3387243720,
+          "pct": 3.92,
+          "classification": "Corporate",
+          "local_foreign": null
+        },
+        {
+          "investor": "PRAJOGO PANGESTU",
+          "shares": 4354382164,
+          "pct": 5.03,
+          "classification": "Individual",
+          "local_foreign": null
+        },
+        {
+          "investor": "PT TOP INVESTMENT INDONESIA",
+          "shares": 12976731760,
+          "pct": 15,
+          "classification": "Corporate",
+          "local_foreign": null
+        },
+        {
+          "investor": "BANGKOK BANK PUBLIC COMPANY LIMITED",
+          "shares": 1472648400,
+          "pct": 1.7,
+          "classification": "Bank",
+          "local_foreign": null
+        }
+      ]
+    },
+    {
+      "date": "2026-06-30",
+      "holders": [
+        {
+          "investor": "BANGKOK BANK PUBLIC COMPANY LIMITED",
+          "shares": 4317648400,
+          "pct": 4.99,
+          "classification": "Bank",
+          "local_foreign": null
+        },
+        {
+          "investor": "BARITO PACIFIC TBK",
+          "shares": 29957670400,
+          "pct": 34.63,
+          "classification": "Corporate",
+          "local_foreign": null
+        },
+        {
+          "investor": "MARIGOLD RESOURCES PTE. LTD.",
+          "shares": 3387243720,
+          "pct": 3.92,
+          "classification": "Corporate",
+          "local_foreign": null
+        },
+        {
+          "investor": "PRAJOGO PANGESTU",
+          "shares": 4354382164,
+          "pct": 5.03,
+          "classification": "Individual",
+          "local_foreign": null
+        },
+        {
+          "investor": "PT TOP INVESTMENT INDONESIA",
+          "shares": 12976731760,
+          "pct": 15,
+          "classification": "Corporate",
+          "local_foreign": null
+        },
+        {
+          "investor": "SCG CHEMICALS PUBLIC COMPANY LIMITED",
+          "shares": 13589972562,
+          "pct": 15.71,
+          "classification": "Corporate",
+          "local_foreign": null
+        }
+      ]
+    },
+    {
+      "date": "2026-07-31",
+      "holders": [
+        {
+          "investor": "PT BARITO PACIFIC TBK",
+          "shares": 29957670400,
+          "pct": 34.63,
+          "classification": "Corporate",
+          "local_foreign": null
+        },
+        {
+          "investor": "MARIGOLD RESOURCES PTE. LTD.",
+          "shares": 3387243720,
+          "pct": 3.92,
+          "classification": "Corporate",
+          "local_foreign": null
+        },
+        {
+          "investor": "PRAJOGO PANGESTU",
+          "shares": 4354382164,
+          "pct": 5.03,
+          "classification": "Individual",
+          "local_foreign": null
+        },
+        {
+          "investor": "Bangkok Bank Public Company Limited",
+          "shares": 4317648400,
+          "pct": 4.99,
+          "classification": "Bank",
+          "local_foreign": null
+        },
+        {
+          "investor": "PT TOP INVESTMENT INDONESIA",
+          "shares": 12976731760,
+          "pct": 15,
+          "classification": "Corporate",
+          "local_foreign": null
+        },
+        {
+          "investor": "SCG CHEMICALS PUBLIC COMPANY LIMITED",
+          "shares": 13589972562,
+          "pct": 15.71,
+          "classification": "Corporate",
+          "local_foreign": null
+        }
+      ]
+    },
+    {
+      "date": "2026-08-31",
+      "holders": [
+        {
+          "investor": "Bangkok Bank Public Company Limited",
+          "shares": 4317648400,
+          "pct": 4.99,
+          "classification": "Bank",
+          "local_foreign": null
+        },
+        {
+          "investor": "MARIGOLD RESOURCES PTE. LTD.",
+          "shares": 3387243720,
+          "pct": 3.92,
+          "classification": "Corporate",
+          "local_foreign": null
+        },
+        {
+          "investor": "PRAJOGO PANGESTU",
+          "shares": 4354382164,
+          "pct": 5.03,
+          "classification": "Individual",
+          "local_foreign": null
+        },
+        {
+          "investor": "PT BARITO PACIFIC TBK",
+          "shares": 29957670400,
+          "pct": 34.63,
+          "classification": "Corporate",
+          "local_foreign": null
+        },
+        {
+          "investor": "PT TOP INVESTMENT INDONESIA",
+          "shares": 12976731760,
+          "pct": 15,
+          "classification": "Corporate",
+          "local_foreign": null
+        },
+        {
+          "investor": "SCG CHEMICALS PUBLIC COMPANY LIMITED",
+          "shares": 13589972562,
+          "pct": 15.71,
+          "classification": "Corporate",
+          "local_foreign": null
+        }
+      ]
+    },
+    {
+      "date": "2026-09-30",
+      "holders": [
+        {
+          "investor": "Bangkok Bank Public Company Limited",
+          "shares": 4317648400,
+          "pct": 4.99,
+          "classification": "Bank",
+          "local_foreign": null
+        },
+        {
+          "investor": "MARIGOLD RESOURCES PTE. LTD.",
+          "shares": 3387243720,
+          "pct": 3.92,
+          "classification": "Corporate",
+          "local_foreign": null
+        },
+        {
+          "investor": "PRAJOGO PANGESTU",
+          "shares": 4354382164,
+          "pct": 5.03,
+          "classification": "Individual",
+          "local_foreign": null
+        },
+        {
+          "investor": "PT BARITO PACIFIC TBK",
+          "shares": 29957670400,
+          "pct": 34.63,
+          "classification": "Corporate",
+          "local_foreign": null
+        },
+        {
+          "investor": "PT TOP INVESTMENT INDONESIA",
+          "shares": 12976731760,
+          "pct": 15,
+          "classification": "Corporate",
+          "local_foreign": null
+        },
+        {
+          "investor": "SCG CHEMICALS PUBLIC COMPANY LIMITED",
+          "shares": 13589972562,
+          "pct": 15.71,
+          "classification": "Corporate",
+          "local_foreign": null
+        }
+      ]
+    }
+  ]
+}

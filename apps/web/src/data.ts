@@ -141,6 +141,14 @@ const registrySchema = z.object({
     .default([]),
 });
 
+const onePctHolderSchema = z.object({
+  investor: z.string(),
+  shares: z.number(),
+  pct: z.number(),
+  classification: z.string().nullable(),
+  local_foreign: z.string().nullable(),
+});
+
 export const tickerSchema = z.object({
   ticker: z.string(),
   name: z.string(),
@@ -158,17 +166,17 @@ export const tickerSchema = z.object({
   one_pct: z
     .object({
       date: z.string().nullable(),
-      holders: z.array(
-        z.object({
-          investor: z.string(),
-          shares: z.number(),
-          pct: z.number(),
-          classification: z.string().nullable(),
-          local_foreign: z.string().nullable(),
-        }),
-      ),
+      holders: z.array(onePctHolderSchema),
     })
     .default({ date: null, holders: [] }),
+  one_pct_history: z
+    .array(
+      z.object({
+        date: z.string(),
+        holders: z.array(onePctHolderSchema),
+      }),
+    )
+    .default([]),
   disclosures: z
     .array(
       z.object({

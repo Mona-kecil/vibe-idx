@@ -291,6 +291,13 @@ history AS (
   SELECT ticker, list(struct_pack(investor := investor, shares := shares, pct := pct,
     classification := classification, local_foreign := local_foreign) ORDER BY investor, seq) holders
   FROM one_pct WHERE date = (SELECT max(date) FROM one_pct) GROUP BY ticker
+), monthly_snapshots AS (
+  SELECT date, ticker, list(struct_pack(investor := investor, shares := shares, pct := pct,
+    classification := classification, local_foreign := local_foreign) ORDER BY investor, seq) holders
+  FROM one_pct GROUP BY date, ticker
+), one_pct_history AS (
+  SELECT ticker, list(struct_pack(date := date, holders := holders) ORDER BY date) snapshots
+  FROM monthly_snapshots GROUP BY ticker
 ), announcements AS (
   SELECT ticker, list(struct_pack(id := id, title := title, published_at := published_at,
     url := url, kind := kind, attachments := attachments) ORDER BY published_at DESC, id) disclosures
@@ -321,11 +328,12 @@ SELECT u.ticker, coalesce(i.name, p.name, u.ticker) AS name,
   coalesce(h.prices, []) prices, coalesce(o.holders, []) holders, coalesce(c.changes, []) changes,
   struct_pack(date := (SELECT max(date) FROM one_pct), holders := coalesce(m.holders, [])) one_pct,
   coalesce(a.disclosures, []) disclosures, coalesce(t.insiders, []) insiders,
-  coalesce(r.snapshots, []) registry_history
+  coalesce(r.snapshots, []) registry_history, coalesce(mh.snapshots, []) one_pct_history
 FROM universe u LEFT JOIN issuers i USING(ticker)
 LEFT JOIN (SELECT ticker, arg_max(name, date) AS name FROM prices GROUP BY ticker) p USING(ticker)
 LEFT JOIN history h USING(ticker) LEFT JOIN holders o USING(ticker) LEFT JOIN changes c USING(ticker)
-LEFT JOIN monthly m USING(ticker) LEFT JOIN announcements a USING(ticker)
+LEFT JOIN monthly m USING(ticker) LEFT JOIN one_pct_history mh USING(ticker)
+LEFT JOIN announcements a USING(ticker)
 LEFT JOIN trades t USING(ticker) LEFT JOIN registry_history r USING(ticker)
 ORDER BY u.ticker`;
 
