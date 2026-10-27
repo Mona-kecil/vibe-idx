@@ -123,8 +123,15 @@ export type HoldingEvent = {
 };
 export function ownershipEvents(data: Ticker): HoldingEvent[] {
   const events: HoldingEvent[] = [];
+  const changes = data.changes.filter(
+    (e) =>
+      !(
+        e.shares_after === null &&
+        data.holders.some((h) => sameHolder(h.investor, e.investor) && h.shares === e.shares_before)
+      ),
+  );
   for (const e of [
-    ...data.changes.map((e) => ({ ...e, name: e.investor, url: null })),
+    ...changes.map((e) => ({ ...e, name: e.investor, url: null })),
     ...data.insiders.filter((e) => e.reporter).map((e) => ({ ...e, name: e.reporter ?? '' })),
   ]) {
     const url =
