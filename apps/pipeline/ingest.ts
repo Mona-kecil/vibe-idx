@@ -218,8 +218,10 @@ export async function ingest({
         if (table === 'registry') {
           const columns = await query(`DESCRIBE SELECT * FROM ${source}`);
           const hasFloatShares = columns.some((c) => c.column_name === 'free_float_shares');
+          const hasUnlistedShares = columns.some((c) => c.column_name === 'unlisted_shares');
           await db.run(`INSERT INTO registry SELECT r.date, r.id, r.ticker, r.free_float_pct,
-            r.total_shares, r.sid_count, r.url, ${hasFloatShares ? 'r.free_float_shares' : 'NULL'}
+            r.total_shares, r.sid_count, r.url, ${hasFloatShares ? 'r.free_float_shares' : 'NULL'},
+            ${hasUnlistedShares ? 'r.unlisted_shares' : 'NULL'}
             FROM ${source} r LEFT JOIN disclosures d USING(id)
             QUALIFY row_number() OVER (PARTITION BY r.date, r.ticker
               ORDER BY d.published_at DESC NULLS LAST, r.id DESC, r.url DESC) = 1`);
@@ -715,6 +717,7 @@ export async function ingest({
                   r.sid_count,
                   url,
                   r.free_float_shares,
+                  r.unlisted_shares,
                 ],
               ]);
               await append(

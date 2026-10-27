@@ -131,6 +131,20 @@ export async function parseRegistryLayout(bytes: Uint8Array) {
   const free_float_pct = floatValue('% Saham Free Float', 'free float percentage', true);
   const total_shares = floatValue('Jumlah saham tercatat di Bursa per akhir bulan', 'total shares');
   const free_float_shares = floatValue('Jumlah saham Free Float', 'free float shares');
+  let unlisted_shares: number | null = null;
+  for (const cells of pages) {
+    const label = cells.find((c) => c.text === 'Jumlah saham tidak tercatat');
+    if (!label) continue;
+    const current = cells.find(
+      (c) => c.text === 'Bulan Ini' && c.y < label.y && c.y > label.y - 50,
+    );
+    if (!current) continue;
+    const values = cells.filter(
+      (c) => Math.abs(c.y - label.y) < 4 && Math.abs(center(c) - center(current)) < 40,
+    );
+    if (values.length === 1 && values[0]) unlisted_shares = integer(values[0].text);
+  }
+  if (unlisted_shares === null) gap('unlisted shares');
   let sid_count: number | null = null;
   for (const cells of pages) {
     const title = cells.find((c) => c.text === 'Jumlah Pemegang Saham Nasabah Pemilik SID');
@@ -277,6 +291,7 @@ export async function parseRegistryLayout(bytes: Uint8Array) {
   return {
     free_float_pct,
     total_shares,
+    unlisted_shares,
     free_float_shares,
     sid_count,
     investor_types,

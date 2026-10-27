@@ -146,17 +146,7 @@ export function registryAt(data: Ticker, date: string) {
     .sort((a, b) => b.date.localeCompare(a.date))[0];
 }
 export function totalAt(data: Ticker, date: string) {
-  const registry = registryAt(data, date);
-  const monthly = [...data.one_pct_history];
-  if (data.one_pct.date) monthly.push({ date: data.one_pct.date, holders: data.one_pct.holders });
-  const latest = monthly
-    .filter((s) => s.date <= date && (!registry || s.date.slice(0, 7) > registry.date.slice(0, 7)))
-    .sort((a, b) => b.date.localeCompare(a.date))
-    .find((s) => s.holders.some((h) => h.shares > 0 && h.pct > 0));
-  const largest = latest?.holders
-    .filter((h) => h.shares > 0 && h.pct > 0)
-    .sort((a, b) => b.shares - a.shares)[0];
-  return largest ? (largest.shares * 100) / largest.pct : (registry?.issued_shares ?? null);
+  return registryAt(data, date)?.issued_shares ?? null;
 }
 export type HoldingPoint = {
   date: string;
@@ -207,9 +197,8 @@ export function holdingSeries(
       { holder_key: string; investor: string; shares: number; pct: number }
     >();
     for (const h of snap.holders) {
-      const name = h.holder_key;
-      const combined = accounts.get(name);
-      accounts.set(name, {
+      const combined = accounts.get(h.holder_key);
+      accounts.set(h.holder_key, {
         holder_key: h.holder_key,
         investor: h.investor,
         shares: (combined?.shares ?? 0) + h.shares,

@@ -14,6 +14,7 @@ import {
   selectionKey,
   sharesAt,
   summaryEvents,
+  totalAt,
 } from './logic';
 
 const dates = ['2026-08-10', '2026-08-11', '2026-08-12', '2026-08-21', '2026-08-24'];
@@ -443,4 +444,27 @@ it('sums Gesit accounts instead of keeping the last ALKA September row', () => {
   expect(holdingSeries(alka, null)[0]?.points).toEqual([
     { date: '2026-09-30', shares: 425_393_555, pct: 83.8, priority: 4 },
   ]);
+});
+
+it('keeps the registry issued base when a newer monthly stake rounds to a different implied total', () => {
+  const monthly = {
+    date: '2026-09-30',
+    holders: [
+      {
+        investor: 'PT Alpha',
+        holder_key: 'ALPHA',
+        shares: 300,
+        pct: 29.99,
+        classification: null,
+        local_foreign: null,
+      },
+    ],
+  };
+  const ticker = { ...data, one_pct: monthly, one_pct_history: [monthly] };
+  expect(totalAt(ticker, '2026-07-30')).toBeNull();
+  expect(totalAt(ticker, '2026-09-30')).toBe(1000);
+  expect(totalAt({ ...ticker, registry_history: [] }, '2026-09-30')).toBeNull();
+  const holder = holdingSeries(ticker, null)[0];
+  if (!holder) throw new Error('Missing Alpha');
+  expect(pctAt(ticker, holder, '2026-09-30')).toBe(30);
 });

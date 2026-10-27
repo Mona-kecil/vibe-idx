@@ -52,7 +52,7 @@ CREATE TABLE insiders (
 );
 CREATE TABLE registry (
   date DATE, id VARCHAR, ticker VARCHAR, free_float_pct DOUBLE,
-  total_shares DOUBLE, sid_count DOUBLE, url VARCHAR, free_float_shares DOUBLE,
+  total_shares DOUBLE, sid_count DOUBLE, url VARCHAR, free_float_shares DOUBLE, unlisted_shares DOUBLE,
   PRIMARY KEY(date, ticker)
 );
 CREATE TABLE registry_investors (
@@ -165,7 +165,7 @@ FROM (
 export const analytics = `
 CREATE MACRO ownership_key(name) AS coalesce(array_to_string(list_filter(regexp_split_to_array(
   regexp_replace(upper(name), '[^A-Z0-9]+', ' ', 'g'), ' +'),
-  token -> token NOT IN ('', 'PT', 'TBK', 'PTE', 'LTD', 'LIMITED', 'PERSERO', 'PERUSAHAAN', 'PERSEROAN', 'INC', 'LLC')), ' '), upper(trim(name)));
+  token -> token NOT IN ('', 'PT', 'TBK', 'PTE', 'LTD', 'LIMITED', 'PERSERO', 'PERUSAHAAN', 'PERSEROAN', 'INC', 'LLC')), ''), upper(trim(name)));
 
 ${marketCalendar}
 ${marketSummaryView}
@@ -316,10 +316,7 @@ history AS (
   FROM registry_holders GROUP BY date, ticker
 ), registers AS (
   SELECT r.*, struct_pack(date := r.date, free_float_pct := r.free_float_pct,
-    issued_shares := coalesce((SELECT o.shares * 100 / o.pct FROM one_pct o
-      WHERE o.ticker = r.ticker AND date_trunc('month', o.date) = date_trunc('month', r.date)
-        AND o.shares > 0 AND o.pct > 0
-      ORDER BY o.shares DESC, o.investor, o.seq LIMIT 1), r.total_shares),
+    issued_shares := r.total_shares + coalesce(r.unlisted_shares, 0),
     sid_count := r.sid_count, url := r.url,
     free_float_shares := r.free_float_shares, investor_types := coalesce(t.investor_types, []),
     holders := coalesce(f.holders, [])) record
