@@ -360,6 +360,22 @@ describe('batch pipeline', () => {
         },
       ],
     };
+    const legacyPdf = {
+      ...bulk,
+      pengumuman: { ...bulk.pengumuman, Id2: 'legacy-onepct-pdf' },
+      attachments: [
+        {
+          OriginalFilename: 'announcement.pdf',
+          FullSavePath: '/StaticData/announcement.pdf',
+          IsAttachment: false,
+        },
+        {
+          OriginalFilename: 'ownership.pdf',
+          FullSavePath: '/StaticData/ownership-1pct.pdf',
+          IsAttachment: true,
+        },
+      ],
+    };
     const options = {
       data: join(root, 'data'),
       out: join(root, 'out'),
@@ -372,7 +388,7 @@ describe('batch pipeline', () => {
         if (u.pathname.includes('data-kepemilikan-saham')) return Response.json({ items: [] });
         if (u.pathname.includes('GetAnnouncement')) {
           const page = Number(u.searchParams.get('indexFrom'));
-          return Response.json({ ResultCount: 2, Replies: page === 0 ? [bulk] : [company] });
+          return Response.json({ ResultCount: 3, Replies: [[bulk], [company], [legacyPdf]][page] });
         }
         if (u.pathname === '/StaticData/ownership.xlsx')
           return new Response(new Uint8Array(await fixture('ownership-1pct-2026-02.xlsx')));
@@ -383,6 +399,9 @@ describe('batch pipeline', () => {
       const result = await ingest(options);
       expect(result.counts.one_pct).toBe(7257);
       expect(result.ownership?.one_pct_dates).toEqual(['2026-02-27']);
+      expect(result.ownership?.skipped_one_pct_pdfs).toEqual([
+        'https://www.idx.id/StaticData/ownership-1pct.pdf',
+      ]);
       const ticker = JSON.parse(await readFile(join(options.out, 'ticker/ICON.json'), 'utf8'));
       expect(
         ticker.one_pct.holders.filter(

@@ -21,7 +21,7 @@ Publication dates differ from snapshot dates. The announcement published on 30 J
 
 XLSX files are considered before legacy PDFs. A snapshot already in the restored ledger is preserved; this is a missing-date backfill, not an automatic rewrite of existing snapshots. Duplicate source URLs and snapshot dates do not append duplicate holdings. Covers and ticker-specific filings are excluded. Unsupported or ambiguous attachments fail the run.
 
-The 1% XLSX parser works for either listing route, including a primary XLSX attachment. **Legacy 1% PDFs are not supported without source evidence and a regression fixture.** January 1% source availability remains unresolved. An empty result must not be converted into invented holdings or called complete.
+The 1% XLSX parser works for either listing route, including a primary XLSX attachment. **Legacy 1% PDFs are not parsed.** The XLSX list republishes the same month-end snapshots, so the run skips each legacy 1% PDF and lists it in `skipped_one_pct_pdfs`. January 1% source availability remains unresolved. An empty result must not be converted into invented holdings or called complete.
 
 The workflow archives only ownership raw prefixes and uploads only `five_pct`, `one_pct`, and `ownership_files` Parquet partitions. It regenerates public JSON from the restored IDX ledger. The workflow has no schedule and uses the existing `idx-batch-ingest` concurrency group.
 
