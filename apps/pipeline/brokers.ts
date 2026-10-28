@@ -204,7 +204,14 @@ export class BrokerRunError extends Error {
   }
 }
 
-class StockbitError extends Error {}
+class StockbitError extends Error {
+  readonly status: number | undefined;
+
+  constructor(message: string, options?: ErrorOptions & { status?: number }) {
+    super(message, options);
+    this.status = options?.status;
+  }
+}
 
 export async function brokers({
   data,
@@ -269,7 +276,14 @@ export async function brokers({
     try {
       return await collect();
     } catch (error) {
-      if (!(error instanceof BrokerRunError && error.cause instanceof StockbitError)) throw error;
+      if (
+        !(
+          error instanceof BrokerRunError &&
+          error.cause instanceof StockbitError &&
+          error.cause.status === 429
+        )
+      )
+        throw error;
       const nextRpm = rpm === 30 ? 20 : rpm === 20 ? 15 : 12;
       if (nextRpm !== rpm) {
         console.error(
@@ -323,7 +337,8 @@ export async function brokers({
         headers: { ...headers, Authorization: `Bearer ${current.refresh}` },
       });
       if (!auth) return false;
-      if (!auth.ok) throw new StockbitError(`Stockbit auth HTTP ${auth.status}`);
+      if (!auth.ok)
+        throw new StockbitError(`Stockbit auth HTTP ${auth.status}`, { status: auth.status });
       const rotated = tokens(JSON.parse(new TextDecoder().decode(auth.bytes)));
       if (!rotated) throw new Error(`Invalid Stockbit auth HTTP ${auth.status}`);
       await mkdir(dirname(token), { recursive: true });
@@ -351,7 +366,8 @@ export async function brokers({
         headers: { ...headers, Authorization: `Bearer ${access}` },
       });
       if (!response) return;
-      if (!response.ok) throw new StockbitError(`Stockbit HTTP ${response.status}`);
+      if (!response.ok)
+        throw new StockbitError(`Stockbit HTTP ${response.status}`, { status: response.status });
       const bytes = Buffer.from(response.bytes);
       fetched++;
       await archive(key, bytes);

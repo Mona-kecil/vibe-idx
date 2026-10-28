@@ -618,7 +618,7 @@ describe('private broker pipeline', () => {
     }
   });
 
-  it('stops on Stockbit HTTP, timeout, and network errors, saves completed pairs, and steps down across runs', async () => {
+  it('stops on Stockbit failures, saves completed pairs, and lowers the rate only for HTTP 429', async () => {
     for (const failure of ['401', '429', '503', 'timeout', 'network', 'body']) {
       const f = await fixture();
       await prices(
@@ -645,7 +645,7 @@ describe('private broker pipeline', () => {
       ]);
       expect(f.objects.has('site/market-accumulation.json')).toBe(true);
       expect(f.objects.has('broker-run.json')).toBe(false);
-      for (const rpm of [20, 15, 12, 12]) {
+      for (const rpm of failure === '429' ? [20, 15, 12, 12] : [30, 30, 30, 30]) {
         expect(JSON.parse(f.load('broker-rpm.json').toString())).toBe(rpm);
         await f.restart();
         await expect(brokers(options)).rejects.toBeInstanceOf(BrokerRunError);
@@ -692,6 +692,10 @@ describe('private broker pipeline', () => {
         return net.fetcher(input, init);
       };
       await expect(brokers({ ...f.options, fetcher })).rejects.toThrow();
+      if (cut.startsWith('auth'))
+        expect(JSON.parse(f.load('broker-rpm.json').toString())).toBe(
+          cut === 'auth-http' ? 20 : 30,
+        );
       expect(f.objects.has('broker-run.json')).toBe(
         cut === 'existing-marker' || cut === 'marker-cas',
       );
