@@ -320,7 +320,11 @@ export async function brokers({
           redirect: 'error',
           signal: AbortSignal.timeout(60000),
         });
-        return { ok: response.ok, status: response.status, bytes: await response.bytes() };
+        return {
+          ok: response.ok,
+          status: response.status,
+          bytes: response.ok ? await response.bytes() : new Uint8Array(),
+        };
       } catch (error) {
         throw new StockbitError(String(error), { cause: error });
       }
