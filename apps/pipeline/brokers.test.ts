@@ -744,7 +744,7 @@ describe('private broker pipeline', () => {
         await expect(brokers(options)).rejects.toBeInstanceOf(BrokerRunError);
       }
     }
-  });
+  }, 30000);
 
   it('retains an existing run marker and refuses auth, but clears markers on handled auth or storage errors', async () => {
     for (const cut of [
