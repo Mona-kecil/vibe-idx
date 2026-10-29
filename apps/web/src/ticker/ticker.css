@@ -1110,9 +1110,12 @@
   padding: 5px 10px;
   font-size: 11px;
 }
+.ticker-page .broker-flow {
+  max-width: 560px;
+}
 .ticker-page .broker-unit {
   width: fit-content;
-  margin: 0 0 10px auto;
+  margin: 0 0 10px;
 }
 .ticker-page .broker-ledgers {
   position: relative;
