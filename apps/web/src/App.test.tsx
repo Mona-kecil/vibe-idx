@@ -567,6 +567,11 @@ describe('ticker research regressions', () => {
     expect(rows).toHaveLength(4);
     expect(rows[0]?.textContent).toContain('AK');
     expect(rows[0]?.textContent).toContain('+200.0K');
+    const net = (side: string) =>
+      host.querySelector(`.broker-ledger.${side} tbody td:nth-child(2)`)?.textContent;
+    expect(net('sell')).toBe('−160.0K');
+    await click('.broker-unit button:nth-child(2)');
+    expect([net('buy'), net('sell')]).toEqual(['200.0K', '160.0K']);
     expect(host.querySelector('#news')?.textContent).not.toContain('No news');
     await act(() => new Promise((resolve) => setTimeout(resolve, 350)));
     expect(fetcher.mock.calls.some(([url]) => String(url).includes('/api/news?ticker=BBCA'))).toBe(
