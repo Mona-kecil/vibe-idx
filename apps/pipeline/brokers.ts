@@ -306,27 +306,39 @@ export async function brokers({
   async function collect() {
     let lastStart: number | undefined;
     const bounded = () => Date.now() >= deadline;
-    async function stockbit(url: string, init: RequestInit) {
-      if (bounded()) return;
-      const interval = 60000 / rpm;
-      await setTimeout(
-        lastStart === undefined ? interval : Math.max(0, lastStart + interval - Date.now()),
-      );
-      if (bounded()) return;
-      lastStart = Date.now();
-      try {
-        const response = await fetcher(url, {
-          ...init,
-          redirect: 'error',
-          signal: AbortSignal.timeout(60000),
-        });
-        return {
-          ok: response.ok,
-          status: response.status,
-          bytes: response.ok ? await response.bytes() : new Uint8Array(),
-        };
-      } catch (error) {
-        throw new StockbitError(String(error), { cause: error });
+    async function stockbit(url: string, init: RequestInit, attempts = 1) {
+      for (let attempt = 1; ; attempt++) {
+        if (bounded()) return;
+        const interval = 60000 / rpm;
+        await setTimeout(
+          Math.min(
+            lastStart === undefined ? interval : Math.max(0, lastStart + interval - Date.now()),
+            deadline - Date.now(),
+          ),
+        );
+        if (bounded()) return;
+        lastStart = Date.now();
+        let error: string;
+        try {
+          const response = await fetcher(url, {
+            ...init,
+            redirect: 'error',
+            signal: AbortSignal.timeout(60000),
+          });
+          const result = {
+            ok: response.ok,
+            status: response.status,
+            bytes: response.ok ? await response.bytes() : new Uint8Array(),
+          };
+          if (![500, 502, 503, 504].includes(result.status) || attempt >= attempts) return result;
+          error = `Stockbit HTTP ${result.status}`;
+        } catch (cause) {
+          if (attempt >= attempts) throw new StockbitError(String(cause), { cause });
+          error = String(cause);
+        }
+        if (bounded()) return;
+        console.error(JSON.stringify({ url, attempt: attempt + 1, error }));
+        await setTimeout(Math.min(5000 * 2 ** (attempt - 1), deadline - Date.now()));
       }
     }
     let access: string | undefined;
@@ -366,9 +378,11 @@ export async function brokers({
         return { bytes: saved.bytes, cached: true };
       }
       if (!access && !(await authenticate())) return;
-      const response = await stockbit(url, {
-        headers: { ...headers, Authorization: `Bearer ${access}` },
-      });
+      const response = await stockbit(
+        url,
+        { headers: { ...headers, Authorization: `Bearer ${access}` } },
+        5,
+      );
       if (!response) return;
       if (!response.ok)
         throw new StockbitError(`Stockbit HTTP ${response.status}`, { status: response.status });
