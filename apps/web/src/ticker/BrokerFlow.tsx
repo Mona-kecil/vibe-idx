@@ -182,7 +182,7 @@ function BrokerData({
     </table>
   );
   return (
-    <>
+    <div className="broker-flow">
       <div className="ranges broker-unit" aria-label="Broker flow mode">
         {(['net', 'gross'] as const).map((m) => (
           <button key={m} aria-pressed={m === mode} onClick={() => setMode(m)}>
@@ -209,7 +209,7 @@ function BrokerData({
           {showAll ? 'Show top 10' : 'Show all'}
         </button>
       )}
-    </>
+    </div>
   );
 }
 
