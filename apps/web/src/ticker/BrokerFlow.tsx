@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState, type FocusEvent, type PointerEvent } from 'react';
 import { useAuth } from '@workos-inc/authkit-react';
 import { AccountControls } from '../BrokerPanel';
 import { aggregateBrokers, brokerName } from '../broker-data';
@@ -69,6 +69,7 @@ function BrokerData({
   const [attempt, retry] = useState(0);
   const [mode, setMode] = useState<'net' | 'gross'>('net');
   const [showAll, setShowAll] = useState(false);
+  const tip = useBrokerTip();
   useEffect(() => {
     const controller = new AbortController();
     setState({ kind: 'loading' });
@@ -122,11 +123,14 @@ function BrokerData({
   const side = (type: 'buy' | 'sell') =>
     rows
       .map((b) => {
-        const [value, shares, other] =
-          type === 'buy' ? [b.buyValue, b.buy, b.sellValue] : [b.sellValue, b.sell, b.buyValue];
+        const [value, shares, otherValue, otherShares] =
+          type === 'buy'
+            ? [b.buyValue, b.buy, b.sellValue, b.sell]
+            : [b.sellValue, b.sell, b.buyValue, b.buy];
         return {
           code: b.code,
-          amount: mode === 'net' ? value - other : value,
+          amount: mode === 'net' ? value - otherValue : value,
+          volume: mode === 'net' ? shares - otherShares : shares,
           avg: value / shares,
         };
       })
@@ -143,30 +147,30 @@ function BrokerData({
           <th className="num">
             {mode === 'net' ? 'Net' : 'Value'} <small className="unit-suffix">IDR</small>
           </th>
-          <th className="num">
-            Avg <small className="unit-suffix">IDR</small>
-          </th>
+          <th className="num">Vol</th>
+          <th className="num">Avg</th>
         </tr>
       </thead>
       <tbody>
         {list.slice(0, limit).map((row) => {
-          const amount = mode === 'net' && type === 'sell' ? -row.amount : row.amount,
-            format = (f: typeof nf) => (mode === 'net' ? signed(amount, f) : f(amount));
+          const flip = mode === 'net' && type === 'sell' ? -1 : 1,
+            amount = flip * row.amount,
+            volume = flip * row.volume,
+            format = (v: number, f: typeof nf) => (mode === 'net' ? signed(v, f) : f(v));
           return (
             <tr key={row.code}>
-              <td title={brokerName(row.code)}>
-                <strong>{row.code}</strong>
-                <span>
-                  {brokerName(row.code)
-                    .replace(/^PT /, '')
-                    .replace(/ (and )?Sekuritas.*$/, '')}
-                </span>
+              <td tabIndex={0} {...tip.bind(row.code)}>
+                {row.code}
+                <span className="sr-only"> {brokerName(row.code)}</span>
               </td>
               <td
                 className={`num ${mode === 'net' ? direction(amount) : ''}`}
-                title={`${format(nf)} IDR`}
+                title={`${format(amount, nf)} IDR`}
               >
-                {format(short)}
+                {format(amount, short)}
+              </td>
+              <td className="num" title={`${format(volume, nf)} shares`}>
+                {format(volume, short)}
               </td>
               <td className="num" title={`${nf(row.avg, 2)} IDR`}>
                 {nf(row.avg)}
@@ -186,9 +190,19 @@ function BrokerData({
           </button>
         ))}
       </div>
-      <div className="broker-ledgers">
+      <div className="broker-ledgers" ref={tip.box}>
         {ledger('buy', buyers)}
         {ledger('sell', sellers)}
+        {tip.open && (
+          <div
+            className="broker-tip"
+            aria-hidden="true"
+            data-instant={tip.open.instant || undefined}
+            style={{ left: tip.open.x, top: tip.open.y, maxWidth: tip.open.room }}
+          >
+            {brokerName(tip.open.code)}
+          </div>
+        )}
       </div>
       {Math.max(buyers.length, sellers.length) > 10 && (
         <button className="broker-more" onClick={() => setShowAll(!showAll)}>
@@ -197,4 +211,70 @@ function BrokerData({
       )}
     </>
   );
+}
+
+function useBrokerTip() {
+  const box = useRef<HTMLDivElement>(null),
+    timer = useRef(0),
+    closedAt = useRef(0),
+    touch = useRef(false);
+  const [open, setOpen] = useState<{
+    code: string;
+    x: number;
+    y: number;
+    room: number;
+    instant: boolean;
+  } | null>(null);
+  const shown = open !== null;
+  useEffect(() => {
+    if (!shown) return;
+    const escape = (e: KeyboardEvent) => e.key === 'Escape' && hide();
+    document.addEventListener('keydown', escape);
+    return () => document.removeEventListener('keydown', escape);
+  }, [shown]);
+  useEffect(() => () => clearTimeout(timer.current), []);
+  function show(code: string, cell: HTMLElement, instant: boolean) {
+    const outer = box.current?.getBoundingClientRect();
+    if (!outer) return;
+    const rect = cell.getBoundingClientRect(),
+      x = rect.left - outer.left;
+    setOpen({ code, x, y: rect.top - outer.top, room: outer.width - x, instant });
+  }
+  function hide() {
+    clearTimeout(timer.current);
+    setOpen((current) => {
+      if (current) closedAt.current = performance.now();
+      return null;
+    });
+  }
+  function later(code: string, cell: HTMLElement, delay: number) {
+    clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => show(code, cell, false), delay);
+  }
+  const bind = (code: string) => ({
+    onPointerEnter(e: PointerEvent<HTMLElement>) {
+      if (e.pointerType !== 'mouse') return;
+      if (shown || performance.now() - closedAt.current < 300) {
+        clearTimeout(timer.current);
+        show(code, e.currentTarget, true);
+      } else later(code, e.currentTarget, 400);
+    },
+    onPointerDown(e: PointerEvent<HTMLElement>) {
+      touch.current = e.pointerType !== 'mouse';
+      if (touch.current) later(code, e.currentTarget, 350);
+    },
+    onPointerLeave: hide,
+    onPointerUp(e: PointerEvent<HTMLElement>) {
+      if (e.pointerType !== 'mouse') hide();
+    },
+    onPointerCancel: hide,
+    onContextMenu(e: { preventDefault(): void }) {
+      if (touch.current) e.preventDefault();
+    },
+    onFocus(e: FocusEvent<HTMLElement>) {
+      if (e.currentTarget.matches(':focus-visible')) show(code, e.currentTarget, shown);
+    },
+    onBlur: hide,
+  });
+  return { box, open, bind };
 }

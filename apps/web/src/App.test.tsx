@@ -567,11 +567,17 @@ describe('ticker research regressions', () => {
     expect(rows).toHaveLength(4);
     expect(rows[0]?.textContent).toContain('AK');
     expect(rows[0]?.textContent).toContain('+200.0K');
-    const net = (side: string) =>
-      host.querySelector(`.broker-ledger.${side} tbody td:nth-child(2)`)?.textContent;
-    expect(net('sell')).toBe('−160.0K');
+    const cells = (side: string) =>
+      [...host.querySelectorAll(`.broker-ledger.${side} tbody tr:first-child td`)].map(
+        (td) => td.textContent,
+      );
+    expect(cells('sell').slice(1)).toEqual(['−160.0K', '−1.6K', '100']);
+    expect(cells('buy')[0]).toContain('UBS Sekuritas Indonesia');
     await click('.broker-unit button:nth-child(2)');
-    expect([net('buy'), net('sell')]).toEqual(['200.0K', '160.0K']);
+    expect([cells('buy').slice(1, 3), cells('sell').slice(1, 3)]).toEqual([
+      ['200.0K', '2.0K'],
+      ['160.0K', '1.6K'],
+    ]);
     expect(host.querySelector('#news')?.textContent).not.toContain('No news');
     await act(() => new Promise((resolve) => setTimeout(resolve, 350)));
     expect(fetcher.mock.calls.some(([url]) => String(url).includes('/api/news?ticker=BBCA'))).toBe(
@@ -579,6 +585,16 @@ describe('ticker research regressions', () => {
     );
     expect(host.querySelector('#news')?.textContent).toContain('No news');
     expect(host.querySelector('[role="alert"]')).toBeNull();
+    const code = host.querySelector<HTMLElement>('.broker-ledger.buy tbody td')!;
+    await act(async () => {
+      code.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'touch' }));
+      await new Promise((resolve) => setTimeout(resolve, 400));
+    });
+    expect(host.querySelector('.broker-tip')?.textContent).toBe('PT UBS Sekuritas Indonesia');
+    await act(async () => {
+      code.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerType: 'touch' }));
+    });
+    expect(host.querySelector('.broker-tip')).toBeNull();
     fetcher.mockImplementation(baseFetch ?? (async () => Response.json([])));
   });
 });

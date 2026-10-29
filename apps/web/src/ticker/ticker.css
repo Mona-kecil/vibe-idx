@@ -1112,18 +1112,35 @@
 }
 .ticker-page .broker-unit {
   width: fit-content;
-  margin: 0 0 16px auto;
+  margin: 0 0 10px auto;
 }
 .ticker-page .broker-ledgers {
+  position: relative;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 24px;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
   align-items: start;
+}
+.ticker-page .broker-ledger {
+  table-layout: fixed;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.ticker-page .broker-ledger th:first-child {
+  width: 24%;
+}
+.ticker-page .broker-ledger th:nth-child(2) {
+  width: 28%;
+}
+.ticker-page .broker-ledger th:nth-child(3) {
+  width: 26%;
 }
 .ticker-page .broker-ledger th,
 .ticker-page .broker-ledger td {
-  padding-left: 11px;
-  padding-right: 11px;
+  padding: 5px 8px;
+}
+.ticker-page .broker-ledger th {
+  font-size: 11px;
 }
 .ticker-page .broker-ledger.buy th:first-child {
   color: var(--up);
@@ -1132,19 +1149,11 @@
   color: var(--down);
 }
 .ticker-page .broker-ledger td:first-child {
-  white-space: nowrap;
-}
-.ticker-page .broker-ledger td:first-child strong {
   font-weight: 750;
-  margin-right: 8px;
-}
-.ticker-page .broker-ledger td:first-child span {
-  display: inline-block;
-  max-width: 150px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  vertical-align: bottom;
-  color: var(--muted);
+  cursor: default;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 .ticker-page .broker-ledger td:nth-child(2) {
   font-weight: 700;
@@ -1152,8 +1161,54 @@
 .ticker-page .broker-ledger tr:last-child td {
   border-bottom: 0;
 }
+.ticker-page .sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.ticker-page .broker-tip {
+  position: absolute;
+  z-index: 5;
+  pointer-events: none;
+  width: max-content;
+  padding: 5px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid #b6b8ac;
+  border-radius: 6px;
+  transform: translateY(calc(-100% - 4px));
+  transform-origin: bottom left;
+  transition:
+    opacity 125ms ease-out,
+    transform 125ms ease-out;
+}
+.ticker-page .broker-tip[data-instant] {
+  transition-duration: 0ms;
+}
+@starting-style {
+  .ticker-page .broker-tip {
+    opacity: 0;
+    transform: translateY(calc(-100% - 4px)) scale(0.97);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  @starting-style {
+    .ticker-page .broker-tip {
+      transform: translateY(calc(-100% - 4px));
+    }
+  }
+}
 .ticker-page .broker-more {
-  margin-top: 14px;
+  margin-top: 10px;
   font-size: 12px;
   font-weight: 700;
   color: var(--muted);
@@ -1467,16 +1522,9 @@
   .ticker-page .holdings-legend {
     grid-template-columns: 1fr;
   }
-  .ticker-page .broker-ledgers {
-    gap: 16px;
-  }
   .ticker-page .broker-ledger th,
   .ticker-page .broker-ledger td {
-    padding: 9px 5px;
-    font-size: 12px;
-  }
-  .ticker-page .broker-ledger td:first-child span {
-    display: none;
+    padding: 5px 6px;
   }
   .ticker-page .broker-heading-date {
     display: block;
