@@ -618,8 +618,72 @@ describe('private broker pipeline', () => {
     }
   });
 
+  it('retries dropped data connections so the pair is archived and saved', async () => {
+    for (const failures of [1, 2]) {
+      const f = await fixture();
+      await prices(f.data, [{ ticker: 'AAA', date: day, volume: 1 }]);
+      let attempts = 0;
+      const net = network(f.token, (ticker, date) => {
+        if (++attempts <= failures) throw new TypeError('fetch failed');
+        return Response.json(summary(ticker, date));
+      });
+      const start = Date.now();
+      const result = await brokers({ ...f.options, fetcher: net.fetcher });
+      expect(result).toEqual({ fetched: 1, replayed: 0, completed: 1, pending: 0, failed: [] });
+      expect(net.calls).toEqual(['/login/refresh', ...Array(failures + 1).fill(`AAA/${day}`)]);
+      expect(net.starts).toEqual(
+        [2000, 4000, 9000, 19000].slice(0, failures + 2).map((ms) => start + ms),
+      );
+      expect(JSON.parse(f.load(`raw/broker/${day}/AAA.json`).toString())).toEqual(
+        summary('AAA', day),
+      );
+      expect(await f.coverage()).toEqual([{ ticker: 'AAA', date: day, complete: true }]);
+      expect(JSON.parse(f.load('broker-rpm.json').toString())).toBe(30);
+    }
+  });
+
+  it('stops retries at the deadline during backoff and saves completed pairs', async () => {
+    const f = await fixture();
+    await prices(
+      f.data,
+      [day, previous].map((date) => ({ ticker: 'AAA', date, volume: 1 })),
+    );
+    const net = network(f.token, (ticker, date) => {
+      if (date === previous) throw new TypeError('fetch failed');
+      return Response.json(summary(ticker, date));
+    });
+    const start = Date.now();
+    const deadline = start + 14000;
+    expect(await brokers({ ...f.options, deadline, fetcher: net.fetcher })).toEqual({
+      fetched: 1,
+      replayed: 0,
+      completed: 1,
+      pending: 1,
+      failed: [],
+    });
+    expect(Date.now()).toBe(deadline);
+    expect(net.starts).toEqual([2000, 4000, 6000, 11000].map((ms) => start + ms));
+    expect(await f.coverage()).toEqual([
+      { ticker: 'AAA', date: day, complete: true },
+      { ticker: 'AAA', date: previous, complete: false },
+    ]);
+    expect(f.objects.has('site/broker/AAA.json')).toBe(true);
+    expect(f.objects.has('broker-run.json')).toBe(false);
+    expect(JSON.parse(f.load('broker-rpm.json').toString())).toBe(30);
+  });
+
   it('stops on Stockbit failures, saves completed pairs, and lowers the rate only for HTTP 429', async () => {
-    for (const failure of ['401', '429', '503', 'timeout', 'network', 'body']) {
+    for (const failure of [
+      '401',
+      '429',
+      '500',
+      '502',
+      '503',
+      '504',
+      'timeout',
+      'network',
+      'body',
+    ]) {
       const f = await fixture();
       await prices(
         f.data,
@@ -638,8 +702,37 @@ describe('private broker pipeline', () => {
         return Response.json(summary(ticker, date));
       });
       const options = { ...f.options, fetcher: net.fetcher };
+      const start = Date.now();
+      const log = vi.spyOn(console, 'error').mockImplementation(() => {});
       await expect(brokers(options)).rejects.toBeInstanceOf(BrokerRunError);
-      expect(net.calls).toEqual(['/login/refresh', `AAA/${day}`, `AAA/${previous}`]);
+      const attempts = ['401', '429'].includes(failure) ? 1 : 5;
+      expect(net.calls).toEqual([
+        '/login/refresh',
+        `AAA/${day}`,
+        ...Array(attempts).fill(`AAA/${previous}`),
+      ]);
+      expect(net.starts).toEqual(
+        [2000, 4000, 6000, 11000, 21000, 41000, 81000]
+          .slice(0, attempts + 2)
+          .map((ms) => start + ms),
+      );
+      const retries = log.mock.calls
+        .map(([line]) => JSON.parse(line))
+        .filter((line) => line.attempt !== undefined);
+      expect(retries).toEqual(
+        Array.from({ length: attempts - 1 }, (_, i) => ({
+          url: expect.stringContaining(`/marketdetectors/AAA?from=${previous}`),
+          attempt: i + 2,
+          error: expect.stringContaining(
+            failure === 'timeout'
+              ? 'timed out'
+              : failure === 'network' || failure === 'body'
+                ? `${failure} failed`
+                : `HTTP ${failure}`,
+          ),
+        })),
+      );
+      log.mockRestore();
       expect(JSON.parse(f.load('site/broker/AAA.json').toString())).toEqual([
         { date: day, buy: [buy], sell: [sell] },
       ]);
@@ -658,6 +751,10 @@ describe('private broker pipeline', () => {
       'existing-marker',
       'marker-cas',
       'auth-http',
+      'auth-503',
+      'auth-network',
+      'auth-timeout',
+      'auth-body',
       'auth-invalid',
       'auth-cas',
       'list',
@@ -686,16 +783,27 @@ describe('private broker pipeline', () => {
           throw new Error('storage failed');
       };
       const net = network(f.token, (ticker, date) => Response.json(summary(ticker, date)));
-      const fetcher: typeof fetch = (input, init) => {
+      const fetcher = vi.fn<typeof fetch>((input, init) => {
         if (cut === 'auth-http') return Promise.resolve(new Response('', { status: 429 }));
+        if (cut === 'auth-503') return Promise.resolve(new Response('', { status: 503 }));
+        if (cut === 'auth-network') throw new TypeError('fetch failed');
+        if (cut === 'auth-timeout') throw new DOMException('timed out', 'TimeoutError');
+        if (cut === 'auth-body')
+          return Promise.resolve(
+            new Response(
+              new ReadableStream({ pull: (c) => c.error(new TypeError('body failed')) }),
+            ),
+          );
         if (cut === 'auth-invalid') return Promise.resolve(Response.json({ data: {} }));
         return net.fetcher(input, init);
-      };
+      });
       await expect(brokers({ ...f.options, fetcher })).rejects.toThrow();
-      if (cut.startsWith('auth'))
+      if (cut.startsWith('auth')) {
+        expect(fetcher).toHaveBeenCalledTimes(1);
         expect(JSON.parse(f.load('broker-rpm.json').toString())).toBe(
           cut === 'auth-http' ? 20 : 30,
         );
+      }
       expect(f.objects.has('broker-run.json')).toBe(
         cut === 'existing-marker' || cut === 'marker-cas',
       );
