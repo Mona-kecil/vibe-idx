@@ -579,6 +579,26 @@ describe('ticker research regressions', () => {
       ['200.0K', '2.0K'],
       ['160.0K', '1.6K'],
     ]);
+    const dimmed = () =>
+      [...host.querySelectorAll('#broker-section tbody tr')].map(
+        (tr) =>
+          `${tr.querySelector('td')?.firstChild?.textContent}${tr.classList.contains('dim') ? '-' : ''}`,
+      );
+    const tap = (side: string) =>
+      act(async () =>
+        element(`.broker-ledger.${side} tbody tr:first-child td`, HTMLElement).click(),
+      );
+    await tap('buy');
+    expect(dimmed()).toEqual(['AK', 'SQ-', 'PD-', 'CC-']);
+    await tap('buy');
+    expect(dimmed()).toEqual(['AK', 'SQ', 'PD', 'CC']);
+    await tap('sell');
+    expect(dimmed()).toEqual(['AK-', 'SQ-', 'PD', 'CC-']);
+    await click('.broker-unit button:nth-child(1)');
+    expect(dimmed()).toEqual(['AK', 'SQ', 'PD', 'CC']);
+    await tap('buy');
+    expect(dimmed()).toEqual(['AK', 'SQ', 'PD', 'CC']);
+    await click('.broker-unit button:nth-child(2)');
     expect(host.querySelector('#news')?.textContent).not.toContain('No news');
     await act(() => new Promise((resolve) => setTimeout(resolve, 350)));
     expect(fetcher.mock.calls.some(([url]) => String(url).includes('/api/news?ticker=BBCA'))).toBe(

@@ -1172,6 +1172,12 @@
 .ticker-page .broker-ledger.sell td.edge {
   background: color-mix(in srgb, var(--down) 14%, transparent);
 }
+.ticker-page .pairable .broker-ledger td:first-child {
+  cursor: pointer;
+}
+.ticker-page .broker-ledger tr.dim {
+  opacity: 0.35;
+}
 .ticker-page .broker-ledger tr:last-child td {
   border-bottom: 0;
 }

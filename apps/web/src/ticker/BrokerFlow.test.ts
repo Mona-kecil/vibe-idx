@@ -1,31 +1,23 @@
 import { describe, expect, it } from 'vite-plus/test';
 import { edgeFills } from './BrokerFlow';
 
-const fill = (code: string, avg: number, volume: number) => ({ code, avg, volume });
+const fill = (code: string, avg: number, amount: number) => ({ code, avg, amount });
+const small = (prefix: string, avg: number) =>
+  Array.from({ length: 18 }, (_, i) => fill(`${prefix}${i}`, avg, 10));
 const codes = (set: Set<{ code: string }>) => [...set].map((f) => f.code).sort();
 
 describe('edgeFills', () => {
-  it('flags buyers in the bottom quarter and sellers in the top quarter of the traded range', () => {
-    const buyers = [fill('DH', 650, 100), fill('AK', 670, 100), fill('BK', 659, 100)];
-    const sellers = [fill('KI', 690, 100), fill('YU', 660, 100), fill('DX', 681, 100)];
-    expect(codes(edgeFills(buyers, sellers))).toEqual(['BK', 'DH', 'DX', 'KI']);
+  it('flags leading buyers in the bottom quarter and leading sellers in the top quarter', () => {
+    const buyers = [fill('DH', 650, 900), fill('AK', 670, 800), ...small('b', 600)];
+    const sellers = [fill('KI', 690, 900), fill('DX', 681, 800), ...small('s', 760)];
+    expect(codes(edgeFills(buyers, sellers))).toEqual(['DH', 'DX', 'KI']);
   });
-  it('ignores a thin trade outside where the volume traded', () => {
-    const buyers = [fill('DH', 650, 1000), fill('AK', 740, 1), fill('BK', 659, 1000)];
-    const sellers = [fill('KI', 690, 1000), fill('DX', 681, 1000), fill('CC', 670, 1000)];
-    expect(codes(edgeFills(buyers, sellers))).toEqual(['BK', 'DH', 'DX', 'KI']);
+  it('ignores brokers outside the top 10% by value however extreme their price', () => {
+    const buyers = [fill('DH', 720, 34800), fill('XL', 725, 18100), ...small('b', 690)];
+    const sellers = [fill('AK', 731, 20600), fill('CC', 721, 19300), ...small('s', 750)];
+    expect(codes(edgeFills(buyers, sellers))).toEqual(['AK', 'DH']);
   });
-  it('keeps a large trade at the edge of the range', () => {
-    const buyers = [fill('YJ', 690, 5000), fill('DH', 720, 90000)];
-    const sellers = [fill('YU', 737, 8000), fill('CC', 720, 87000)];
-    expect(codes(edgeFills(buyers, sellers))).toEqual(['YJ', 'YU']);
-  });
-  it('lets a near-flat net buyer count only by its net volume', () => {
-    const buyers = [fill('DH', 650, 1000), fill('AK', 640, 10)];
-    const sellers = [fill('KI', 690, 1000), fill('CC', 670, 1000)];
-    expect(codes(edgeFills(buyers, sellers))).toEqual(['DH', 'KI']);
-  });
-  it('flags nothing when every fill shares one price', () => {
+  it('flags nothing when every leader shares one price', () => {
     expect(edgeFills([fill('DH', 100, 5)], [fill('KI', 100, 5)]).size).toBe(0);
   });
 });
