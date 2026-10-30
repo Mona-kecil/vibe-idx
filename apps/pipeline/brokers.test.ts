@@ -334,6 +334,30 @@ describe('private broker pipeline', () => {
     expect(firstCalls.at(-1)).toBe(`T47/${day}/cash`);
   });
 
+  it('uploads changed tickers at once', async () => {
+    const f = await fixture();
+    const tickers = ['AAA', 'BBB', 'CCC'];
+    await prices(
+      f.data,
+      tickers.map((ticker) => ({ ticker, date: day, volume: 1 })),
+    );
+    let release = () => {};
+    const allStarted = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let started = 0;
+    f.hooks.before = async (operation, key) => {
+      if (operation !== 'put' || !key.startsWith('site/broker/')) return;
+      if (++started === tickers.length) release();
+      await allStarted;
+    };
+    const net = network(f.token, (ticker, date) => Response.json(summary(ticker, date, true)));
+    await brokers({ ...f.options, fetcher: net.fetcher });
+    expect(tickers.filter((ticker) => f.objects.has(`site/broker/${ticker}.json.gz`))).toEqual(
+      tickers,
+    );
+  });
+
   it('holds each ticker to eight requests a second', async () => {
     const f = await fixture();
     await prices(
