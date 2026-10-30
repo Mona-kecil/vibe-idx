@@ -92,7 +92,9 @@ export function createBrokerHandler({
         region: 'auto',
       });
       const key =
-        target === 'market' ? 'site/market-accumulation.json' : `site/broker/${target.ticker}.json`;
+        target === 'market'
+          ? 'site/market-accumulation.json'
+          : `site/broker/${target.ticker}.json.gz`;
       const signed = await aws.sign(
         `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com/vibe-idx-private/${key}`,
         { method: 'GET', cache: 'no-store', redirect: 'error', signal: AbortSignal.timeout(10000) },
@@ -100,9 +102,9 @@ export function createBrokerHandler({
       const response = await fetcher(signed);
       if (response.status === 404) return json({ error: 'not_found' }, 404);
       if (!response.ok) return json({ error: 'unavailable' }, 503);
-      const body: unknown = await response.json();
-      if (target === 'market') return json(accumulationSchema.parse(body), 200);
-      const days = sourceSchema.parse(body);
+      if (target === 'market') return json(accumulationSchema.parse(await response.json()), 200);
+      const source = new Response(response.body?.pipeThrough(new DecompressionStream('gzip')));
+      const days = sourceSchema.parse(await source.json());
       days.sort((a, b) => b.date.localeCompare(a.date));
       return json({ ticker: target.ticker, days }, 200);
     } catch {
