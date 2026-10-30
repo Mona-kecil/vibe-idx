@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { gunzipSync } from 'node:zlib';
 import { DuckDBInstance } from '@duckdb/node-api';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { BrokerRunError, brokers, createR2 } from './brokers';
@@ -298,7 +299,7 @@ describe('private broker pipeline', () => {
         )
         .sort(),
     );
-    expect(JSON.parse(f.load('site/broker/AAA.json').toString())).toEqual([
+    expect(JSON.parse(gunzipSync(f.load('site/broker/AAA.json.gz')).toString())).toEqual([
       { date: day, board: 'negotiation', buy: [buy], sell: [sell] },
       { date: day, board: 'regular', buy: [buy], sell: [sell] },
       { date: previous, board: 'regular', buy: [buy], sell: [sell] },
@@ -315,21 +316,22 @@ describe('private broker pipeline', () => {
     expect(f.events.filter((e) => e.startsWith('put site/broker/'))).toEqual([]);
   });
 
-  it('starts with the busiest ticker and walks its days newest first', async () => {
+  it('walks each ticker newest first and leaves the quietest ticker for a free worker', async () => {
     const f = await fixture();
+    const tickers = Array.from({ length: 48 }, (_, i) => `T${String(i).padStart(2, '0')}`);
     await prices(f.data, [
-      { ticker: 'AAA', date: day, volume: 1 },
-      { ticker: 'BBB', date: day, volume: 1 },
-      { ticker: 'BBB', date: previous, volume: 1, frequency: 30 },
+      ...tickers.map((ticker, i) => ({ ticker, date: day, volume: 1, frequency: 1000 - i })),
+      { ticker: 'T00', date: previous, volume: 1 },
     ]);
     const net = network(f.token, (ticker, date) => Response.json(summary(ticker, date, true)));
     await brokers({ ...f.options, fetcher: net.fetcher });
-    expect(net.calls[1]).toBe(`BBB/${day}/cash`);
-    expect(net.calls.filter((call) => call.startsWith('BBB'))).toEqual(
+    expect(net.calls.filter((call) => call.startsWith('T00'))).toEqual(
       [day, previous].flatMap((date) =>
-        ['cash', 'negotiation', 'regular'].map((board) => `BBB/${date}/${board}`),
+        ['cash', 'negotiation', 'regular'].map((board) => `T00/${date}/${board}`),
       ),
     );
+    const firstCalls = net.calls.filter((call) => call.endsWith(`${day}/cash`));
+    expect(firstCalls.at(-1)).toBe(`T47/${day}/cash`);
   });
 
   it('holds each ticker to eight requests a second', async () => {
@@ -403,7 +405,7 @@ describe('private broker pipeline', () => {
       { ticker: 'AAA', date: day, board: 'negotiation', complete: true },
     ]);
     expect(f.events.filter((e) => e.startsWith('put site/broker/'))).toEqual([
-      'put site/broker/AAA.json',
+      'put site/broker/AAA.json.gz',
     ]);
     expect(f.objects.has('site/market-accumulation.json')).toBe(true);
     expect(f.objects.has('broker-run.json')).toBe(false);
@@ -459,7 +461,7 @@ describe('private broker pipeline', () => {
       { ticker: 'AAA', date: previous, board: 'negotiation', complete: true },
       { ticker: 'AAA', date: previous, board: 'regular', complete: false },
     ]);
-    expect(f.objects.has('site/broker/AAA.json')).toBe(true);
+    expect(f.objects.has('site/broker/AAA.json.gz')).toBe(true);
     expect(f.objects.has('broker-run.json')).toBe(false);
   });
 
@@ -570,7 +572,7 @@ describe('private broker pipeline', () => {
         .filter((line) => line.attempt !== undefined);
       expect(retries).toHaveLength(attempts - 1);
       log.mockRestore();
-      expect(JSON.parse(f.load('site/broker/AAA.json').toString())).toEqual([
+      expect(JSON.parse(gunzipSync(f.load('site/broker/AAA.json.gz')).toString())).toEqual([
         { date: day, board: 'regular', buy: [buy], sell: [sell] },
       ]);
       expect(f.objects.has('site/market-accumulation.json')).toBe(true);
@@ -626,7 +628,7 @@ describe('private broker pipeline', () => {
             {
               year: `parquet/brokers/${year}.parquet`,
               coverage: 'parquet/broker-coverage.parquet',
-              site: 'site/broker/AAA.json',
+              site: 'site/broker/AAA.json.gz',
             }[cut]
         )
           throw new Error('storage failed');

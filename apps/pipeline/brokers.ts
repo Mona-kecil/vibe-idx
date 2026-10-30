@@ -4,6 +4,7 @@ import { chmod, mkdir, readFile, readdir, rename, writeFile } from 'node:fs/prom
 import { dirname, join, resolve } from 'node:path';
 import { setTimeout } from 'node:timers/promises';
 import { pathToFileURL } from 'node:url';
+import { gzipSync } from 'node:zlib';
 import { parseArgs } from 'node:util';
 import { dateValue, DuckDBInstance } from '@duckdb/node-api';
 import type { DuckDBValue } from '@duckdb/node-api';
@@ -473,7 +474,7 @@ export async function brokers({
         const file = join(out, 'broker', `${ticker}.json`);
         await writeFile(file + '.tmp', `[${rows.join(',')}]\n`);
         await rename(file + '.tmp', file);
-        await r2.put(`site/broker/${ticker}.json`, await readFile(file));
+        await r2.put(`site/broker/${ticker}.json.gz`, gzipSync(await readFile(file)));
       }
       const groups = new Map<string, typeof entries>();
       for (const entry of entries) {

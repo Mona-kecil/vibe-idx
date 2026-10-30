@@ -4,6 +4,7 @@ import { createServer } from 'node:http';
 import { once } from 'node:events';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { gzipSync } from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { exportJWK, generateKeyPair, SignJWT } from 'jose';
 import ts from 'typescript';
@@ -54,7 +55,7 @@ const server = createServer((request, response) => {
     authorization: request.headers.authorization ?? '',
   });
   response.writeHead(storageStatus, { 'Content-Type': 'application/json' });
-  response.end(storageBody);
+  response.end(request.url?.endsWith('.gz') ? gzipSync(storageBody) : storageBody);
 });
 
 const fetcher: typeof fetch = (input, init) => {
@@ -320,15 +321,15 @@ describe('private broker API', () => {
     expect(jwksPaths).toEqual([`/sso/jwks/${clientId}`]);
     expect(storageReads).toHaveLength(2);
     for (const read of storageReads) {
-      expect(read.path).toBe('/vibe-idx-private/site/broker/BBCA-W2.json');
+      expect(read.path).toBe('/vibe-idx-private/site/broker/BBCA-W2.json.gz');
       expect(read.authorization).toMatch(
         /^AWS4-HMAC-SHA256 Credential=fixture-access-key\/\d{8}\/auto\/s3\/aws4_request, SignedHeaders=.+, Signature=[a-f0-9]{64}$/,
       );
     }
     expect(outboundUrls).toEqual([
       `https://api.workos.com/sso/jwks/${clientId}`,
-      `https://${accountId}.r2.cloudflarestorage.com/vibe-idx-private/site/broker/BBCA-W2.json`,
-      `https://${accountId}.r2.cloudflarestorage.com/vibe-idx-private/site/broker/BBCA-W2.json`,
+      `https://${accountId}.r2.cloudflarestorage.com/vibe-idx-private/site/broker/BBCA-W2.json.gz`,
+      `https://${accountId}.r2.cloudflarestorage.com/vibe-idx-private/site/broker/BBCA-W2.json.gz`,
     ]);
   });
 
