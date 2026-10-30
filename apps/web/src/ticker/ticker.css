@@ -1106,6 +1106,7 @@
   transition: opacity 0.1s;
 }
 .ticker-page .holdings-mode button,
+.ticker-page .broker-board button,
 .ticker-page .broker-unit button {
   padding: 5px 10px;
   font-size: 11px;
@@ -1115,10 +1116,12 @@
 }
 .ticker-page .broker-controls {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 16px;
+  gap: 8px 16px;
   margin: 0 0 10px;
 }
+.ticker-page .broker-board,
 .ticker-page .broker-unit {
   width: fit-content;
 }

@@ -18,10 +18,10 @@ it('rejects gross or incomplete accumulation and computes buy size from window t
       DELETE FROM prices WHERE ticker = 'NEW' AND date = DATE '2026-09-01' + 46;
       UPDATE prices SET volume = 0 WHERE ticker = 'IDLE' OR (ticker = 'ZERO' AND date = DATE '2026-09-01' + 44);
       UPDATE prices SET frequency = CASE WHEN date = DATE '2026-10-19' THEN 10 ELSE 20 END;
-      CREATE TABLE brokers (date DATE, ticker VARCHAR, side VARCHAR, broker VARCHAR, shares DOUBLE, freq DOUBLE);
-      CREATE TABLE broker_pairs (date DATE, ticker VARCHAR, complete BOOLEAN);
-      INSERT INTO broker_pairs SELECT date, ticker, true FROM prices WHERE volume > 0;
-      INSERT INTO brokers
+      CREATE TABLE brokers (date DATE, ticker VARCHAR, board VARCHAR DEFAULT 'regular', side VARCHAR, broker VARCHAR, shares DOUBLE, freq DOUBLE);
+      CREATE TABLE broker_pairs (date DATE, ticker VARCHAR, board VARCHAR, complete BOOLEAN);
+      INSERT INTO broker_pairs SELECT date, ticker, 'regular', true FROM prices WHERE volume > 0;
+      INSERT INTO brokers (date, ticker, side, broker, shares, freq)
       SELECT date, ticker, side, broker, shares,
         CASE WHEN broker = 'AA' THEN CASE WHEN date = DATE '2026-10-19' THEN 2 ELSE 6 END
           ELSE CASE WHEN date = DATE '2026-10-19' THEN 5 ELSE 2 END END FROM prices
@@ -31,7 +31,8 @@ it('rejects gross or incomplete accumulation and computes buy size from window t
       UPDATE brokers SET shares = 180 WHERE ticker = 'AAA' AND date = DATE '2026-10-19' AND side = 'sell' AND broker = 'AA';
       UPDATE brokers SET shares = 40 WHERE ticker = 'AAA' AND date = DATE '2026-10-17' AND side = 'sell' AND broker = 'AA';
       UPDATE brokers SET freq = 0 WHERE ticker = 'BBB' AND broker = 'BB' AND side = 'buy';
-      UPDATE broker_pairs SET complete = false WHERE ticker = 'BBB' AND date = DATE '2026-09-01' + 44;`);
+      UPDATE broker_pairs SET complete = false WHERE ticker = 'BBB' AND date = DATE '2026-09-01' + 44;
+      INSERT INTO brokers SELECT date, ticker, 'negotiation', 'buy', 'XX', 1e9, 1 FROM prices WHERE volume > 0;`);
     await db.run(analytics);
     const publicJson = await output(marketSummary);
     expect(typeof publicJson).toBe('string');

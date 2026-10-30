@@ -25,11 +25,15 @@ const row = (broker: string, shares: number) => ({
   avg_price: 100,
   freq: 1,
 });
-const days = dates.map((date) => ({
-  date,
-  buy: [row('AK', 500), row('SQ', 200)],
-  sell: [row('PD', 400), row('CC', 300)],
-}));
+const days = [
+  ...dates.map((date) => ({
+    date,
+    board: 'regular',
+    buy: [row('AK', 500), row('SQ', 200)],
+    sell: [row('PD', 400), row('CC', 300)],
+  })),
+  { date: dates[3], board: 'negotiation', buy: [row('AK', 900)], sell: [row('YP', 900)] },
+];
 function ticker(symbol: string): Ticker {
   return {
     ticker: symbol,
@@ -574,6 +578,33 @@ describe('ticker research regressions', () => {
       );
     expect(cells('sell').slice(1)).toEqual(['160.0K', '1.6K', '100.0']);
     expect(cells('buy')[0]).toContain('UBS Sekuritas Indonesia');
+    const board = (label: string) =>
+      click(
+        `.broker-board button:nth-child(${['Regular', 'Negotiation', 'Cash', 'All'].indexOf(label) + 1})`,
+      );
+    expect(
+      [...host.querySelectorAll('.broker-board button')].map((b) => [
+        b.textContent,
+        b.getAttribute('aria-pressed'),
+      ]),
+    ).toEqual([
+      ['Regular', 'true'],
+      ['Negotiation', 'false'],
+      ['Cash', 'false'],
+      ['All', 'false'],
+    ]);
+    await board('Negotiation');
+    expect(host.querySelectorAll('#broker-section tbody tr')).toHaveLength(2);
+    expect(cells('buy').slice(1)).toEqual(['90.0K', '900', '100.0']);
+    await board('Cash');
+    expect(host.querySelector('#broker-section .empty-state')?.textContent).toBe(
+      'No trades reported in this period',
+    );
+    expect(host.querySelector('.broker-board')).not.toBeNull();
+    await board('All');
+    expect(host.querySelectorAll('#broker-section tbody tr')).toHaveLength(5);
+    expect(cells('buy').slice(1, 3)).toEqual(['290.0K', '2.9K']);
+    await board('Regular');
     await click('.broker-unit button:nth-child(2)');
     expect([cells('buy').slice(1, 3), cells('sell').slice(1, 3)]).toEqual([
       ['200.0K', '2.0K'],

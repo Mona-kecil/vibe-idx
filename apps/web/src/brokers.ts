@@ -2,6 +2,9 @@ import { z } from 'zod';
 
 export const brokerTickerSchema = z.string().regex(/^[A-Z0-9-]{1,12}$/);
 
+export const brokerBoards = ['regular', 'negotiation', 'cash'] as const;
+export type BrokerBoard = (typeof brokerBoards)[number];
+
 export const brokerRowSchema = z.object({
   broker: z.string(),
   investor_type: z.string(),
@@ -13,6 +16,7 @@ export const brokerRowSchema = z.object({
 
 export const brokerDaySchema = z.object({
   date: z.iso.date(),
+  board: z.enum(brokerBoards),
   buy: z.array(brokerRowSchema),
   sell: z.array(brokerRowSchema),
 });
