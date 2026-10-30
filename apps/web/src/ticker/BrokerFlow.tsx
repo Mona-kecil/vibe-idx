@@ -69,6 +69,7 @@ function BrokerData({
   const [attempt, retry] = useState(0);
   const [mode, setMode] = useState<'net' | 'gross'>('net');
   const [showAll, setShowAll] = useState(false);
+  const [picked, setPicked] = useState<string | null>(null);
   const tip = useBrokerTip();
   useEffect(() => {
     const controller = new AbortController();
@@ -139,7 +140,20 @@ function BrokerData({
   const buyers = side('buy'),
     sellers = side('sell'),
     edge = edgeFills(buyers, sellers),
-    limit = showAll ? Infinity : 10;
+    limit = showAll ? Infinity : 10,
+    pair =
+      mode === 'gross' && [...buyers, ...sellers].some((row) => row.code === picked)
+        ? picked
+        : null;
+  const pick = (code: string) => {
+    if (mode === 'gross' && !tip.held.current) setPicked(pair === code ? null : code);
+  };
+  // A paired broker ranked past the top 10 on the other side still shows, at the bottom.
+  const visible = (list: typeof buyers) => {
+    const top = list.slice(0, limit),
+      extra = list.find((row) => row.code === pair && !top.includes(row));
+    return extra ? [...top, extra] : top;
+  };
   const ledger = (type: 'buy' | 'sell', list: typeof buyers) => (
     <table className={`broker-ledger ${type}`}>
       <thead>
@@ -153,9 +167,19 @@ function BrokerData({
         </tr>
       </thead>
       <tbody>
-        {list.slice(0, limit).map((row) => (
-          <tr key={row.code}>
-            <td tabIndex={0} {...tip.bind(row.code)}>
+        {visible(list).map((row) => (
+          <tr key={row.code} className={pair && row.code !== pair ? 'dim' : undefined}>
+            <td
+              tabIndex={0}
+              {...tip.bind(row.code)}
+              onClick={() => pick(row.code)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  pick(row.code);
+                }
+              }}
+            >
               {row.code}
               <span className="sr-only"> {brokerName(row.code)}</span>
             </td>
@@ -183,7 +207,14 @@ function BrokerData({
       <div className="broker-controls">
         <div className="ranges broker-unit" aria-label="Broker flow mode">
           {(['net', 'gross'] as const).map((m) => (
-            <button key={m} aria-pressed={m === mode} onClick={() => setMode(m)}>
+            <button
+              key={m}
+              aria-pressed={m === mode}
+              onClick={() => {
+                setMode(m);
+                setPicked(null);
+              }}
+            >
               {m === 'net' ? 'Net' : 'Gross'}
             </button>
           ))}
@@ -194,7 +225,7 @@ function BrokerData({
           </button>
         )}
       </div>
-      <div className="broker-ledgers" ref={tip.box}>
+      <div className={`broker-ledgers${mode === 'gross' ? ' pairable' : ''}`} ref={tip.box}>
         {ledger('buy', buyers)}
         {ledger('sell', sellers)}
         {tip.open && (
@@ -234,7 +265,8 @@ function useBrokerTip() {
   const box = useRef<HTMLDivElement>(null),
     timer = useRef(0),
     closedAt = useRef(0),
-    touch = useRef(false);
+    touch = useRef(false),
+    held = useRef(false);
   const [open, setOpen] = useState<{
     code: string;
     x: number;
@@ -266,7 +298,10 @@ function useBrokerTip() {
   }
   function later(code: string, cell: HTMLElement, delay: number) {
     clearTimeout(timer.current);
-    timer.current = window.setTimeout(() => show(code, cell, false), delay);
+    timer.current = window.setTimeout(() => {
+      held.current = touch.current;
+      show(code, cell, false);
+    }, delay);
   }
   const bind = (code: string) => ({
     onPointerEnter(e: PointerEvent<HTMLElement>) {
@@ -278,6 +313,7 @@ function useBrokerTip() {
     },
     onPointerDown(e: PointerEvent<HTMLElement>) {
       touch.current = e.pointerType !== 'mouse';
+      held.current = false;
       if (touch.current) later(code, e.currentTarget, 350);
     },
     onPointerLeave: hide,
@@ -293,5 +329,5 @@ function useBrokerTip() {
     },
     onBlur: hide,
   });
-  return { box, open, bind };
+  return { box, open, bind, held };
 }

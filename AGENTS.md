@@ -2,7 +2,7 @@
 
 ## UI/UX
 
-- Avoid unnecessary secondary labels and descriptions. Let the layout do the explaining.
+- Avoid unnecessary secondary labels and descriptions. Avoid UI separators such as the dot or slash or any other separator. Let the layout do the explaining.
 - Every element must serve a clear user purpose; no slogans, decoration, nested cards, or repeated info.
 - Show explanations only for abnormal states or required actions; put secondary details behind progressive disclosure.
 
