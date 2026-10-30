@@ -576,7 +576,10 @@ describe('ticker research regressions', () => {
       [...host.querySelectorAll(`.broker-ledger.${side} tbody tr:first-child td`)].map(
         (td) => td.textContent,
       );
-    expect(cells('sell').slice(1)).toEqual(['160.0K', '1.6K', '100.0']);
+    expect(cells('sell').slice(1)).toEqual(['160.0K', '16', '100.0']);
+    const volume = host.querySelector('.broker-ledger.sell tbody tr:first-child td:nth-child(3)');
+    expect(volume?.getAttribute('title')).toBe('1,600 shares');
+    expect(host.querySelector('.broker-ledger th:nth-child(3)')?.textContent).toBe('Vol lot');
     expect(cells('buy')[0]).toContain('UBS Sekuritas Indonesia');
     const board = (label: string) =>
       click(
@@ -595,7 +598,7 @@ describe('ticker research regressions', () => {
     ]);
     await board('Negotiation');
     expect(host.querySelectorAll('#broker-section tbody tr')).toHaveLength(2);
-    expect(cells('buy').slice(1)).toEqual(['90.0K', '900', '100.0']);
+    expect(cells('buy').slice(1)).toEqual(['90.0K', '9', '100.0']);
     await board('Cash');
     expect(host.querySelector('#broker-section .empty-state')?.textContent).toBe(
       'No trades reported in this period',
@@ -603,12 +606,12 @@ describe('ticker research regressions', () => {
     expect(host.querySelector('.broker-board')).not.toBeNull();
     await board('All');
     expect(host.querySelectorAll('#broker-section tbody tr')).toHaveLength(5);
-    expect(cells('buy').slice(1, 3)).toEqual(['290.0K', '2.9K']);
+    expect(cells('buy').slice(1, 3)).toEqual(['290.0K', '29']);
     await board('Regular');
     await click('.broker-unit button:nth-child(2)');
     expect([cells('buy').slice(1, 3), cells('sell').slice(1, 3)]).toEqual([
-      ['200.0K', '2.0K'],
-      ['160.0K', '1.6K'],
+      ['200.0K', '20'],
+      ['160.0K', '16'],
     ]);
     const dimmed = () =>
       [...host.querySelectorAll('#broker-section tbody tr')].map(
