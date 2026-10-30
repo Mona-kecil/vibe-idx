@@ -3,6 +3,12 @@
   "framework": "vite",
   "buildCommand": "pnpm run build:client",
   "outputDirectory": "dist",
+  "git": {
+    "deploymentEnabled": {
+      "**": false,
+      "master": true
+    }
+  },
   "rewrites": [
     {
       "source": "/data/:path*",
