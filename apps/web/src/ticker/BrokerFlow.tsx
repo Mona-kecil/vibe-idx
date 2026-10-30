@@ -243,14 +243,14 @@ function BrokerData({
   );
 }
 
-type Fill = { avg: number; volume: number };
-// Only brokers with at least 1% of the shares bought set the range, so a 1-lot trade at an odd
-// price can't stretch it, while a large trade at the day's extreme still counts.
+type Fill = { amount: number; avg: number };
+// Only the top 10% of brokers by value on each side set the range, so small trades at odd prices
+// can't stretch it.
 export function edgeFills<T extends Fill>(buyers: T[], sellers: T[]) {
-  const min = 0.01 * buyers.reduce((sum, fill) => sum + Math.max(fill.volume, 0), 0),
-    sized = (list: T[]) => list.filter((fill) => fill.volume > 0 && fill.volume >= min),
-    buys = sized(buyers),
-    sells = sized(sellers),
+  const leaders = (list: T[]) =>
+      [...list].sort((a, b) => b.amount - a.amount).slice(0, Math.ceil(list.length * 0.1)),
+    buys = leaders(buyers),
+    sells = leaders(sellers),
     avgs = [...buys, ...sells].map((fill) => fill.avg),
     low = Math.min(...avgs),
     band = (Math.max(...avgs) - low) * 0.25;
