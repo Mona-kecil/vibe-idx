@@ -85,9 +85,15 @@ async function prices(
   }
 }
 
+const boards: Record<string, string> = {
+  MARKET_BOARD_REGULER: 'regular',
+  MARKET_BOARD_NEGO: 'negotiation',
+  MARKET_BOARD_TUNAI: 'cash',
+};
+
 function network(
   token: string,
-  respond: (ticker: string, day: string) => Response | Promise<Response>,
+  respond: (ticker: string, day: string, board: string) => Response | Promise<Response>,
 ) {
   const calls: string[] = [];
   let refreshes = 0;
@@ -127,16 +133,18 @@ function network(
     const ticker = url.pathname.slice('/marketdetectors/'.length);
     const day = url.searchParams.get('from');
     if (!day) throw new Error('Missing broker date');
+    const board = boards[url.searchParams.get('market_board') ?? ''];
+    if (!board) throw new Error('Unexpected broker board');
     expect(Object.fromEntries(url.searchParams)).toEqual({
       from: day,
       to: day,
       transaction_type: 'TRANSACTION_TYPE_GROSS',
-      market_board: 'MARKET_BOARD_ALL',
+      market_board: url.searchParams.get('market_board'),
       investor_type: 'INVESTOR_TYPE_ALL',
       limit: '200',
     });
-    calls.push(`${ticker}/${day}`);
-    return respond(ticker, day);
+    calls.push(`${ticker}/${day}/${board}`);
+    return respond(ticker, day, board);
   };
   return { calls, starts, fetcher };
 }
@@ -193,11 +201,6 @@ async function fixture() {
       await hooks.before?.('delete', key);
       objects.delete(key);
     },
-    async list(prefix) {
-      events.push(`list ${prefix}`);
-      await hooks.before?.('list', prefix);
-      return [...objects.keys()].filter((key) => key.startsWith(prefix));
-    },
   };
   save('auth/stockbit.json', JSON.stringify({ refresh: 'synthetic-refresh-0' }));
   async function restart() {
@@ -213,7 +216,7 @@ async function fixture() {
   }
   async function coverage() {
     return query(
-      `SELECT date::VARCHAR date, ticker, complete FROM read_parquet('${join(data, 'parquet', 'broker-coverage.parquet')}') ORDER BY ticker, date DESC`,
+      `SELECT date::VARCHAR date, ticker, board, complete FROM read_parquet('${join(data, 'parquet', 'broker-coverage.parquet')}') ORDER BY ticker, date DESC, board`,
     );
   }
   return {
@@ -259,110 +262,106 @@ const sell = {
 };
 
 describe('private broker pipeline', () => {
-  it('finishes each ticker newest first, ranks by total 2026 frequency, and leaves untouched history unpublished', async () => {
+  it('fetches every board once authenticated and publishes only the boards that traded', async () => {
     const f = await fixture();
     await prices(f.data, [
       { ticker: 'AAA', date: day, volume: 1 },
       { ticker: 'AAA', date: previous, volume: 1 },
       { ticker: 'BBB', date: day, volume: 1 },
-      { ticker: 'BBB', date: '2026-01-01', volume: 1, frequency: 30 },
-      { ticker: 'CCC', date: day, volume: 1 },
-      { ticker: 'CCC', date: previous, volume: 1 },
       { ticker: 'AAA', date: '2025-12-31', volume: 1, frequency: 10000 },
       { ticker: 'ZERO', date: day, volume: 0 },
       { ticker: 'FUTURE', date: '2026-10-28', volume: 1 },
-      { ticker: 'KEPT', date: day, volume: 1 },
     ]);
     const ledger = join(f.data, 'parquet', 'brokers');
     await mkdir(ledger);
-    for (const [date, ticker] of [
-      ['2024-01-02', 'HISTORY'],
-      [day, 'KEPT'],
-    ])
-      await query(`COPY (SELECT DATE '${date}' date, '${ticker}' ticker, 'buy' side, 'AA' broker,
-        'Asing' investor_type, 1250::DOUBLE shares, 625000::DOUBLE AS value, 500::DOUBLE avg_price, 3::DOUBLE freq)
-        TO '${join(ledger, date.slice(0, 4) + '.parquet')}' (FORMAT PARQUET)`);
+    await query(`COPY (SELECT DATE '2024-01-02' date, 'HISTORY' ticker, 'regular' board, 'buy' side,
+      'AA' broker, 'Asing' investor_type, 1250::DOUBLE shares, 625000::DOUBLE AS value,
+      500::DOUBLE avg_price, 3::DOUBLE freq)
+      TO '${join(ledger, '2024.parquet')}' (FORMAT PARQUET)`);
     const history = await readFile(join(ledger, '2024.parquet'));
-    f.save(`raw/broker/${day}/CCC.json`, JSON.stringify(summary('CCC', day, true)));
-    f.save(`raw/broker/${previous}/CCC.json`, JSON.stringify(summary('CCC', previous)));
-    const net = network(f.token, (ticker, date) => Response.json(summary(ticker, date)));
+    const net = network(f.token, (ticker, date, board) =>
+      Response.json(
+        summary(
+          ticker,
+          date,
+          !(board === 'regular' || (ticker === 'AAA' && date === day && board === 'negotiation')),
+        ),
+      ),
+    );
     const options = { ...f.options, fetcher: net.fetcher };
-    expect(await brokers(options)).toEqual({
-      fetched: 4,
-      replayed: 2,
-      completed: 6,
-      pending: 0,
-      failed: [],
-    });
-    expect(net.calls).toEqual([
-      '/login/refresh',
-      `BBB/${day}`,
-      'BBB/2026-01-01',
-      `AAA/${day}`,
-      `AAA/${previous}`,
-    ]);
-    expect(f.events.filter((e) => e.startsWith('list '))).toEqual([
-      `list raw/broker/${day}/`,
-      'list raw/broker/2026-01-01/',
-      `list raw/broker/${previous}/`,
-    ]);
-    expect(f.events.filter((e) => e.startsWith('get raw/'))).toEqual([
-      `get raw/broker/${day}/CCC.json`,
-      `get raw/broker/${previous}/CCC.json`,
-    ]);
-    expect(f.events.filter((e) => e.startsWith('put site/broker/'))).toEqual([
-      'put site/broker/BBB.json',
-      'put site/broker/AAA.json',
-      'put site/broker/CCC.json',
-    ]);
+    expect(await brokers(options)).toEqual({ fetched: 9, completed: 9, pending: 0, failed: [] });
+    expect(net.calls.filter((call) => call === '/login/refresh')).toHaveLength(1);
+    expect(net.calls.slice(1).sort()).toEqual(
+      [...['AAA', 'BBB'].map((ticker) => [ticker, day] as const), ['AAA', previous] as const]
+        .flatMap(([ticker, date]) =>
+          ['cash', 'negotiation', 'regular'].map((board) => `${ticker}/${date}/${board}`),
+        )
+        .sort(),
+    );
     expect(JSON.parse(f.load('site/broker/AAA.json').toString())).toEqual([
-      { date: day, buy: [buy], sell: [sell] },
-      { date: previous, buy: [buy], sell: [sell] },
+      { date: day, board: 'negotiation', buy: [buy], sell: [sell] },
+      { date: day, board: 'regular', buy: [buy], sell: [sell] },
+      { date: previous, board: 'regular', buy: [buy], sell: [sell] },
     ]);
-    expect(JSON.parse(f.load('site/broker/CCC.json').toString())[0]).toEqual({
-      date: day,
-      buy: [],
-      sell: [],
-    });
     expect(f.load('parquet/brokers/2024.parquet')).toEqual(history);
     expect(f.objects.has('broker-run.json')).toBe(false);
     expect(f.objects.has('site/market-accumulation.json')).toBe(true);
+    expect([...f.objects.keys()].filter((key) => key.startsWith('raw/'))).toEqual([]);
     await f.restart();
     f.events.length = 0;
     net.calls.length = 0;
-    expect(await brokers(options)).toEqual({
-      fetched: 0,
-      replayed: 0,
-      completed: 0,
-      pending: 0,
-      failed: [],
-    });
+    expect(await brokers(options)).toEqual({ fetched: 0, completed: 0, pending: 0, failed: [] });
     expect(net.calls).toEqual([]);
-    expect(
-      f.events.filter((e) => e.startsWith('list ') || e.startsWith('put site/broker/')),
-    ).toEqual([]);
+    expect(f.events.filter((e) => e.startsWith('put site/broker/'))).toEqual([]);
   });
 
-  it('replays an archived empty summary without authenticating or issuing a Stockbit request', async () => {
+  it('starts with the busiest ticker and walks its days newest first', async () => {
     const f = await fixture();
-    await prices(f.data, [{ ticker: 'AAA', date: day, volume: 1 }]);
-    f.objects.delete('auth/stockbit.json');
-    const raw = JSON.stringify(summary('AAA', day, true));
-    f.save(`raw/broker/${day}/AAA.json`, raw);
-    const fetcher = vi.fn<typeof fetch>();
-    expect(await brokers({ ...f.options, fetcher })).toEqual({
-      fetched: 0,
-      replayed: 1,
-      completed: 1,
-      pending: 0,
-      failed: [],
-    });
-    expect(fetcher).not.toHaveBeenCalled();
-    expect(f.load(`raw/broker/${day}/AAA.json`).toString()).toBe(raw);
-    expect(await f.coverage()).toEqual([{ date: day, ticker: 'AAA', complete: true }]);
-    expect(JSON.parse(f.load('site/broker/AAA.json').toString())).toEqual([
-      { date: day, buy: [], sell: [] },
+    await prices(f.data, [
+      { ticker: 'AAA', date: day, volume: 1 },
+      { ticker: 'BBB', date: day, volume: 1 },
+      { ticker: 'BBB', date: previous, volume: 1, frequency: 30 },
     ]);
+    const net = network(f.token, (ticker, date) => Response.json(summary(ticker, date, true)));
+    await brokers({ ...f.options, fetcher: net.fetcher });
+    expect(net.calls[1]).toBe(`BBB/${day}/cash`);
+    expect(net.calls.filter((call) => call.startsWith('BBB'))).toEqual(
+      [day, previous].flatMap((date) =>
+        ['cash', 'negotiation', 'regular'].map((board) => `BBB/${date}/${board}`),
+      ),
+    );
+  });
+
+  it('holds each ticker to eight requests a second', async () => {
+    const f = await fixture();
+    await prices(
+      f.data,
+      [day, previous].map((date) => ({ ticker: 'AAA', date, volume: 1 })),
+    );
+    const net = network(f.token, (ticker, date) => Response.json(summary(ticker, date, true)));
+    await brokers({ ...f.options, fetcher: net.fetcher });
+    const gaps = net.starts.slice(2).map((start, i) => start - net.starts[i + 1]);
+    expect(gaps).toEqual(Array(5).fill(125));
+  });
+
+  it('runs at most 47 tickers at once, keeping total requests under 380 a second', async () => {
+    const f = await fixture();
+    const tickers = Array.from({ length: 60 }, (_, i) => `T${String(i).padStart(2, '0')}`);
+    await prices(
+      f.data,
+      tickers.map((ticker) => ({ ticker, date: day, volume: 1 })),
+    );
+    let active = 0;
+    let peak = 0;
+    const net = network(f.token, async (ticker, date) => {
+      peak = Math.max(peak, ++active);
+      await new Promise((resolve) => setImmediate(resolve));
+      active--;
+      return Response.json(summary(ticker, date, true));
+    });
+    await brokers({ ...f.options, fetcher: net.fetcher });
+    expect(peak).toBeGreaterThan(1);
+    expect(peak).toBeLessThanOrEqual(47);
   });
 
   it('keeps the completedThrough cutoff at 17:17 Jakarta', async () => {
@@ -373,177 +372,98 @@ describe('private broker pipeline', () => {
     );
     const net = network(f.token, (ticker, date) => Response.json(summary(ticker, date)));
     vi.setSystemTime(new Date(`${day}T10:16:00Z`));
-    expect((await brokers({ ...f.options, fetcher: net.fetcher })).completed).toBe(1);
-    expect(net.calls).toEqual(['/login/refresh', `AAA/${previous}`]);
+    expect((await brokers({ ...f.options, fetcher: net.fetcher })).completed).toBe(3);
+    expect(net.calls[1]).toBe(`AAA/${previous}/cash`);
+    expect(net.calls).toHaveLength(4);
     vi.setSystemTime(new Date(`${day}T10:17:00Z`));
-    expect((await brokers({ ...f.options, fetcher: net.fetcher })).completed).toBe(1);
-    expect(net.calls.slice(2)).toEqual(['/login/refresh', `AAA/${day}`]);
+    net.calls.length = 0;
+    expect((await brokers({ ...f.options, fetcher: net.fetcher })).completed).toBe(3);
+    expect(net.calls[1]).toBe(`AAA/${day}/cash`);
+    expect(net.calls).toHaveLength(4);
   });
 
   it('stops new requests at the deadline and checkpoints and publishes the partial ticker', async () => {
-    for (const rpm of [30, 20, 15, 12]) {
-      const f = await fixture();
-      f.save('broker-rpm.json', JSON.stringify(rpm));
-      await prices(
-        f.data,
-        [day, previous, '2026-01-01'].map((date) => ({ ticker: 'AAA', date, volume: 1 })),
-      );
-      const interval = 60000 / rpm;
-      const start = Date.now();
-      const net = network(f.token, (ticker, date) => Response.json(summary(ticker, date)));
-      const result = await brokers({
-        ...f.options,
-        deadline: start + 3 * interval,
-        fetcher: net.fetcher,
-      });
-      expect(result).toEqual({ fetched: 1, replayed: 0, completed: 1, pending: 2, failed: [] });
-      expect(net.starts).toEqual([start + interval, start + 2 * interval]);
-      expect(net.calls).toEqual(['/login/refresh', `AAA/${day}`]);
-      expect(await f.coverage()).toEqual([
-        { ticker: 'AAA', date: day, complete: true },
-        { ticker: 'AAA', date: previous, complete: false },
-        { ticker: 'AAA', date: '2026-01-01', complete: false },
-      ]);
-      expect(f.events.filter((e) => e.startsWith('put site/broker/'))).toEqual([
-        'put site/broker/AAA.json',
-      ]);
-      expect(f.objects.has('site/market-accumulation.json')).toBe(true);
-      expect(f.objects.has('broker-run.json')).toBe(false);
-    }
-  });
-
-  it('continues past 500 requests and 50 minutes while the configured deadline permits work', async () => {
     const f = await fixture();
-    const dates = Array.from({ length: 251 }, (_, i) =>
-      new Date(Date.UTC(2026, 0, i + 1)).toISOString().slice(0, 10),
-    );
     await prices(
       f.data,
-      ['AAA', 'BBB'].flatMap((ticker) => dates.map((date) => ({ ticker, date, volume: 1 }))),
+      [day, previous, '2026-01-01'].map((date) => ({ ticker: 'AAA', date, volume: 1 })),
     );
-    const net = network(f.token, (ticker, date) => {
-      vi.setSystemTime(Date.now() + 7000);
-      return Response.json(summary(ticker, date, true));
+    const net = network(f.token, (ticker, date, board) =>
+      Response.json(summary(ticker, date, board !== 'cash')),
+    );
+    const result = await brokers({
+      ...f.options,
+      deadline: Date.now() + 200,
+      fetcher: net.fetcher,
     });
-    const start = Date.now();
-    expect((await brokers({ ...f.options, fetcher: net.fetcher })).completed).toBe(502);
-    expect(net.starts).toHaveLength(503);
-    expect(net.starts[502] - start).toBeGreaterThan(50 * 60000);
-  });
-
-  it('overlaps at most eight raw puts with requests and drains before ticker checkpoints or publication', async () => {
-    const f = await fixture();
-    const dates = Array.from(
-      { length: 10 },
-      (_, i) => `2026-10-${String(27 - i).padStart(2, '0')}`,
-    );
-    await prices(f.data, [
-      ...dates.map((date) => ({ ticker: 'AAA', date, volume: 1 })),
-      { ticker: 'ZZZ', date: day, volume: 1 },
+    expect(result).toEqual({ fetched: 2, completed: 2, pending: 7, failed: [] });
+    expect(net.calls).toEqual(['/login/refresh', `AAA/${day}/cash`, `AAA/${day}/negotiation`]);
+    expect((await f.coverage()).filter((row) => row.complete)).toEqual([
+      { ticker: 'AAA', date: day, board: 'cash', complete: true },
+      { ticker: 'AAA', date: day, board: 'negotiation', complete: true },
     ]);
-    let release: () => void = () => {
-      throw new Error('Raw upload not started');
-    };
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    let signalLastUpload = () => {};
-    const lastUpload = new Promise<void>((resolve) => {
-      signalLastUpload = resolve;
-    });
-    let finishUpload = () => {};
-    const finish = new Promise<void>((resolve) => {
-      finishUpload = resolve;
-    });
-    let uploading = 0;
-    let peak = 0;
-    let started = 0;
-    f.hooks.before = async (operation, key) => {
-      if (operation !== 'put') return;
-      if (key.startsWith('raw/')) {
-        uploading++;
-        started++;
-        peak = Math.max(peak, uploading);
-        if (started === 8) release();
-        await gate;
-        if (key === `raw/broker/${dates[9]}/AAA.json`) {
-          signalLastUpload();
-          await finish;
-        }
-      } else if (key.startsWith('parquet/') || key.startsWith('site/')) {
-        expect(uploading).toBe(0);
-      }
-    };
-    f.hooks.after = async (operation, key) => {
-      if (operation === 'put' && key.startsWith('raw/')) uploading--;
-    };
-    let requests = 0;
-    const net = network(f.token, async (ticker, date) => {
-      requests++;
-      if (requests === 2) expect(uploading).toBe(1);
-      if (ticker === 'ZZZ') {
-        expect(f.events).toContain('put parquet/broker-coverage.parquet');
-        expect(f.events).toContain('put site/broker/AAA.json');
-      }
-      vi.setSystemTime(Date.now() + 61000);
-      return Response.json(summary(ticker, date));
-    });
-    const running = brokers({ ...f.options, fetcher: net.fetcher });
-    await lastUpload;
-    try {
-      await new Promise((resolve) => globalThis.setTimeout(resolve, 50));
-      expect(
-        f.events.filter((e) => e.startsWith('put parquet/') || e.startsWith('put site/')),
-      ).toEqual([]);
-      expect(f.objects.has('broker-run.json')).toBe(true);
-    } finally {
-      finishUpload();
-    }
-    expect((await running).completed).toBe(11);
-    expect(peak).toBe(8);
-    const checkpoints = f.events.filter((e) => e === 'put parquet/broker-coverage.parquet');
-    expect(checkpoints).toHaveLength(2);
-    expect(net.starts[2] - net.starts[1]).toBe(61000);
     expect(f.events.filter((e) => e.startsWith('put site/broker/'))).toEqual([
       'put site/broker/AAA.json',
-      'put site/broker/ZZZ.json',
     ]);
+    expect(f.objects.has('site/market-accumulation.json')).toBe(true);
+    expect(f.objects.has('broker-run.json')).toBe(false);
   });
 
-  it('never checkpoints or publishes a pair whose raw put failed and still deletes its marker', async () => {
+  it('retries dropped data connections so the pair is saved', async () => {
+    for (const failures of [1, 2]) {
+      const f = await fixture();
+      await prices(f.data, [{ ticker: 'AAA', date: day, volume: 1 }]);
+      let attempts = 0;
+      const net = network(f.token, (ticker, date, board) => {
+        if (board === 'cash' && ++attempts <= failures) throw new TypeError('fetch failed');
+        return Response.json(summary(ticker, date, board !== 'regular'));
+      });
+      const start = Date.now();
+      const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const result = await brokers({ ...f.options, fetcher: net.fetcher });
+      log.mockRestore();
+      expect(result).toEqual({ fetched: 3, completed: 3, pending: 0, failed: [] });
+      expect(net.calls.filter((call) => call === `AAA/${day}/cash`)).toHaveLength(failures + 1);
+      expect(net.starts.slice(1, failures + 2)).toEqual(
+        [0, 1000, 3000].slice(0, failures + 1).map((ms) => start + ms),
+      );
+      expect((await f.coverage()).every((row) => row.complete)).toBe(true);
+    }
+  });
+
+  it('stops retries at the deadline during backoff and saves completed pairs', async () => {
     const f = await fixture();
     await prices(
       f.data,
       [day, previous].map((date) => ({ ticker: 'AAA', date, volume: 1 })),
     );
-    let release: () => void = () => {
-      throw new Error('Raw upload not started');
-    };
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    f.hooks.before = async (operation, key) => {
-      if (operation === 'put' && key.startsWith('raw/')) {
-        await gate;
-        throw new Error('raw upload failed');
-      }
-    };
-    let requests = 0;
-    const net = network(f.token, (ticker, date) => {
-      if (++requests === 2) release();
+    const net = network(f.token, (ticker, date, board) => {
+      if (date === previous && board === 'regular') throw new TypeError('fetch failed');
       return Response.json(summary(ticker, date));
     });
-    await expect(brokers({ ...f.options, fetcher: net.fetcher })).rejects.toThrow(
-      'raw upload failed',
-    );
-    expect(
-      f.events.filter((e) => e.startsWith('put parquet/') || e.startsWith('put site/')),
-    ).toEqual([]);
+    const deadline = Date.now() + 2000;
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    expect(await brokers({ ...f.options, deadline, fetcher: net.fetcher })).toEqual({
+      fetched: 5,
+      completed: 5,
+      pending: 1,
+      failed: [],
+    });
+    log.mockRestore();
+    expect(Date.now()).toBe(deadline);
+    expect(await f.coverage()).toEqual([
+      { ticker: 'AAA', date: day, board: 'cash', complete: true },
+      { ticker: 'AAA', date: day, board: 'negotiation', complete: true },
+      { ticker: 'AAA', date: day, board: 'regular', complete: true },
+      { ticker: 'AAA', date: previous, board: 'cash', complete: true },
+      { ticker: 'AAA', date: previous, board: 'negotiation', complete: true },
+      { ticker: 'AAA', date: previous, board: 'regular', complete: false },
+    ]);
+    expect(f.objects.has('site/broker/AAA.json')).toBe(true);
     expect(f.objects.has('broker-run.json')).toBe(false);
-    expect(JSON.parse(f.load('broker-rpm.json').toString())).toBe(30);
   });
 
-  it('skips invalid pairs, preserves their evidence, finishes later pairs, and reports failure after publication', async () => {
+  it('skips invalid pairs, finishes later pairs, and reports failure after publication', async () => {
     for (const invalid of [
       'JSON',
       'SUMMARY',
@@ -562,9 +482,9 @@ describe('private broker pipeline', () => {
         f.data,
         ['AAA', 'FAIL', 'ZZZ'].map((ticker) => ({ ticker, date: day, volume: 1 })),
       );
-      const net = network(f.token, (ticker, date) => {
+      const net = network(f.token, (ticker, date, board) => {
         const result = summary(ticker, date);
-        if (ticker === 'FAIL') {
+        if (ticker === 'FAIL' && board === 'regular') {
           if (invalid === 'JSON') return new Response('{');
           if (invalid === 'SUMMARY') return Response.json({ data: {} });
           if (invalid === 'DATE') result.data.to = previous;
@@ -587,94 +507,28 @@ describe('private broker pipeline', () => {
       const options = { ...f.options, fetcher: net.fetcher };
       await expect(brokers(options)).rejects.toMatchObject({
         summary: {
-          fetched: 3,
-          replayed: 0,
-          completed: 2,
+          fetched: 9,
+          completed: 8,
           pending: 1,
-          failed: [{ ticker: 'FAIL', date: day, error: expect.any(String) }],
+          failed: [{ ticker: 'FAIL', date: day, board: 'regular', error: expect.any(String) }],
         },
       });
-      expect(net.calls).toEqual(['/login/refresh', `AAA/${day}`, `FAIL/${day}`, `ZZZ/${day}`]);
-      expect(await f.coverage()).toEqual(
-        ['AAA', 'FAIL', 'ZZZ'].map((ticker) => ({
-          ticker,
-          date: day,
-          complete: ticker !== 'FAIL',
-        })),
-      );
+      expect((await f.coverage()).filter((row) => !row.complete)).toEqual([
+        { ticker: 'FAIL', date: day, board: 'regular', complete: false },
+      ]);
       expect(f.objects.has('site/market-accumulation.json')).toBe(true);
       expect(f.objects.has('broker-run.json')).toBe(false);
-      expect(f.events.filter((e) => e.startsWith('put site/broker/'))).toEqual([
-        'put site/broker/AAA.json',
-        'put site/broker/ZZZ.json',
-      ]);
-      const bytes = f.load(`raw/broker/${day}/FAIL.json`);
       await f.restart();
       net.calls.length = 0;
       await expect(brokers(options)).rejects.toBeInstanceOf(BrokerRunError);
-      expect(net.calls).toEqual([]);
-      expect(f.load(`raw/broker/${day}/FAIL.json`)).toEqual(bytes);
-      expect(JSON.parse(f.load('broker-rpm.json').toString())).toBe(30);
+      expect(net.calls).toEqual(['/login/refresh', `FAIL/${day}/regular`]);
     }
   });
 
-  it('retries dropped data connections so the pair is archived and saved', async () => {
-    for (const failures of [1, 2]) {
-      const f = await fixture();
-      await prices(f.data, [{ ticker: 'AAA', date: day, volume: 1 }]);
-      let attempts = 0;
-      const net = network(f.token, (ticker, date) => {
-        if (++attempts <= failures) throw new TypeError('fetch failed');
-        return Response.json(summary(ticker, date));
-      });
-      const start = Date.now();
-      const result = await brokers({ ...f.options, fetcher: net.fetcher });
-      expect(result).toEqual({ fetched: 1, replayed: 0, completed: 1, pending: 0, failed: [] });
-      expect(net.calls).toEqual(['/login/refresh', ...Array(failures + 1).fill(`AAA/${day}`)]);
-      expect(net.starts).toEqual(
-        [2000, 4000, 9000, 19000].slice(0, failures + 2).map((ms) => start + ms),
-      );
-      expect(JSON.parse(f.load(`raw/broker/${day}/AAA.json`).toString())).toEqual(
-        summary('AAA', day),
-      );
-      expect(await f.coverage()).toEqual([{ ticker: 'AAA', date: day, complete: true }]);
-      expect(JSON.parse(f.load('broker-rpm.json').toString())).toBe(30);
-    }
-  });
-
-  it('stops retries at the deadline during backoff and saves completed pairs', async () => {
-    const f = await fixture();
-    await prices(
-      f.data,
-      [day, previous].map((date) => ({ ticker: 'AAA', date, volume: 1 })),
-    );
-    const net = network(f.token, (ticker, date) => {
-      if (date === previous) throw new TypeError('fetch failed');
-      return Response.json(summary(ticker, date));
-    });
-    const start = Date.now();
-    const deadline = start + 14000;
-    expect(await brokers({ ...f.options, deadline, fetcher: net.fetcher })).toEqual({
-      fetched: 1,
-      replayed: 0,
-      completed: 1,
-      pending: 1,
-      failed: [],
-    });
-    expect(Date.now()).toBe(deadline);
-    expect(net.starts).toEqual([2000, 4000, 6000, 11000].map((ms) => start + ms));
-    expect(await f.coverage()).toEqual([
-      { ticker: 'AAA', date: day, complete: true },
-      { ticker: 'AAA', date: previous, complete: false },
-    ]);
-    expect(f.objects.has('site/broker/AAA.json')).toBe(true);
-    expect(f.objects.has('broker-run.json')).toBe(false);
-    expect(JSON.parse(f.load('broker-rpm.json').toString())).toBe(30);
-  });
-
-  it('stops on Stockbit failures, saves completed pairs, and lowers the rate only for HTTP 429', async () => {
+  it('stops on Stockbit failures after retrying only transient ones, and saves completed pairs', async () => {
     for (const failure of [
       '401',
+      '403',
       '429',
       '500',
       '502',
@@ -689,8 +543,8 @@ describe('private broker pipeline', () => {
         f.data,
         [day, previous, '2026-01-01'].map((date) => ({ ticker: 'AAA', date, volume: 1 })),
       );
-      const net = network(f.token, (ticker, date) => {
-        if (date === previous) {
+      const net = network(f.token, (ticker, date, board) => {
+        if (date === previous && board === 'cash') {
           if (failure === 'timeout') throw new DOMException('timed out', 'TimeoutError');
           if (failure === 'network') throw new TypeError('network failed');
           if (failure === 'body')
@@ -699,52 +553,49 @@ describe('private broker pipeline', () => {
             );
           return new Response('', { status: Number(failure) });
         }
-        return Response.json(summary(ticker, date));
+        return Response.json(summary(ticker, date, board !== 'regular'));
       });
-      const options = { ...f.options, fetcher: net.fetcher };
-      const start = Date.now();
       const log = vi.spyOn(console, 'error').mockImplementation(() => {});
-      await expect(brokers(options)).rejects.toBeInstanceOf(BrokerRunError);
-      const attempts = ['401', '429'].includes(failure) ? 1 : 5;
+      await expect(brokers({ ...f.options, fetcher: net.fetcher })).rejects.toBeInstanceOf(
+        BrokerRunError,
+      );
+      const attempts = ['401', '403', '429'].includes(failure) ? 1 : 4;
       expect(net.calls).toEqual([
         '/login/refresh',
-        `AAA/${day}`,
-        ...Array(attempts).fill(`AAA/${previous}`),
+        ...['cash', 'negotiation', 'regular'].map((board) => `AAA/${day}/${board}`),
+        ...Array(attempts).fill(`AAA/${previous}/cash`),
       ]);
-      expect(net.starts).toEqual(
-        [2000, 4000, 6000, 11000, 21000, 41000, 81000]
-          .slice(0, attempts + 2)
-          .map((ms) => start + ms),
-      );
       const retries = log.mock.calls
         .map(([line]) => JSON.parse(line))
         .filter((line) => line.attempt !== undefined);
-      expect(retries).toEqual(
-        Array.from({ length: attempts - 1 }, (_, i) => ({
-          url: expect.stringContaining(`/marketdetectors/AAA?from=${previous}`),
-          attempt: i + 2,
-          error: expect.stringContaining(
-            failure === 'timeout'
-              ? 'timed out'
-              : failure === 'network' || failure === 'body'
-                ? `${failure} failed`
-                : `HTTP ${failure}`,
-          ),
-        })),
-      );
+      expect(retries).toHaveLength(attempts - 1);
       log.mockRestore();
       expect(JSON.parse(f.load('site/broker/AAA.json').toString())).toEqual([
-        { date: day, buy: [buy], sell: [sell] },
+        { date: day, board: 'regular', buy: [buy], sell: [sell] },
       ]);
       expect(f.objects.has('site/market-accumulation.json')).toBe(true);
       expect(f.objects.has('broker-run.json')).toBe(false);
-      for (const rpm of failure === '429' ? [20, 15, 12, 12] : [30, 30, 30, 30]) {
-        expect(JSON.parse(f.load('broker-rpm.json').toString())).toBe(rpm);
-        await f.restart();
-        await expect(brokers(options)).rejects.toBeInstanceOf(BrokerRunError);
-      }
     }
   }, 30000);
+
+  it('stops every ticker on the first failure', async () => {
+    const f = await fixture();
+    const tickers = Array.from({ length: 60 }, (_, i) => `T${String(i).padStart(2, '0')}`);
+    await prices(
+      f.data,
+      tickers.map((ticker) => ({ ticker, date: day, volume: 1 })),
+    );
+    const net = network(f.token, async (ticker, date) => {
+      if (ticker === 'T00') return new Response('', { status: 429 });
+      await new Promise((resolve) => setImmediate(resolve));
+      return Response.json(summary(ticker, date, true));
+    });
+    await expect(brokers({ ...f.options, fetcher: net.fetcher })).rejects.toBeInstanceOf(
+      BrokerRunError,
+    );
+    expect(net.calls.some((call) => call.startsWith('T59/'))).toBe(false);
+    expect(net.calls.filter((call) => call.startsWith('T01/'))).toHaveLength(1);
+  });
 
   it('retains an existing run marker and refuses auth, but clears markers on handled auth or storage errors', async () => {
     for (const cut of [
@@ -757,7 +608,6 @@ describe('private broker pipeline', () => {
       'auth-body',
       'auth-invalid',
       'auth-cas',
-      'list',
       'year',
       'coverage',
       'site',
@@ -771,14 +621,13 @@ describe('private broker pipeline', () => {
         if (cut === 'auth-cas' && operation === 'put' && key === 'auth/stockbit.json')
           f.save(key, '{"refresh":"other"}');
         if (
-          (cut === 'list' && operation === 'list') ||
-          (operation === 'put' &&
-            key ===
-              {
-                year: `parquet/brokers/${year}.parquet`,
-                coverage: 'parquet/broker-coverage.parquet',
-                site: 'site/broker/AAA.json',
-              }[cut])
+          operation === 'put' &&
+          key ===
+            {
+              year: `parquet/brokers/${year}.parquet`,
+              coverage: 'parquet/broker-coverage.parquet',
+              site: 'site/broker/AAA.json',
+            }[cut]
         )
           throw new Error('storage failed');
       };
@@ -798,16 +647,11 @@ describe('private broker pipeline', () => {
         return net.fetcher(input, init);
       });
       await expect(brokers({ ...f.options, fetcher })).rejects.toThrow();
-      if (cut.startsWith('auth')) {
-        expect(fetcher).toHaveBeenCalledTimes(1);
-        expect(JSON.parse(f.load('broker-rpm.json').toString())).toBe(
-          cut === 'auth-http' ? 20 : 30,
-        );
-      }
+      if (cut.startsWith('auth')) expect(fetcher).toHaveBeenCalledTimes(1);
       expect(f.objects.has('broker-run.json')).toBe(
         cut === 'existing-marker' || cut === 'marker-cas',
       );
-      if (cut.startsWith('auth') || cut.includes('marker') || cut === 'list')
+      if (cut.startsWith('auth') || cut.includes('marker'))
         expect(net.calls.filter((call) => !call.startsWith('/login'))).toEqual([]);
       if (cut === 'auth-cas')
         expect(f.load('auth/stockbit.json').toString()).toBe('{"refresh":"other"}');
@@ -893,37 +737,20 @@ describe('fetch R2 client', () => {
     expect(unavailable).toHaveBeenCalledTimes(4);
   });
 
-  it('lists every page by prefix, preserves ETags and bytes, handles only 404 as missing, and deletes objects', async () => {
+  it('preserves ETags and bytes, handles only 404 as missing, and deletes objects', async () => {
     const calls: string[] = [];
     const fetcher: typeof fetch = async (input) => {
       if (!(input instanceof Request)) throw new Error('Expected signed request');
       const url = new URL(input.url);
       calls.push(`${input.method} ${url.pathname}`);
-      if (url.searchParams.has('list-type')) {
-        expect(url.searchParams.get('list-type')).toBe('2');
-        expect(url.searchParams.get('prefix')).toBe('raw/broker/2026-01-01/');
-        expect(url.searchParams.get('encoding-type')).toBe('url');
-        if (!url.searchParams.has('continuation-token'))
-          return new Response(
-            '<ListBucketResult><IsTruncated>true</IsTruncated><Contents><Key>raw%2Fbroker%2F2026-01-01%2FAAA.json</Key></Contents><NextContinuationToken>next&amp;page</NextContinuationToken></ListBucketResult>',
-          );
-        expect(url.searchParams.get('continuation-token')).toBe('next&page');
-        return new Response(
-          '<ListBucketResult><IsTruncated>false</IsTruncated><Contents><Key>raw%2Fbroker%2F2026-01-01%2FBBB.json</Key></Contents></ListBucketResult>',
-        );
-      }
       if (input.method === 'DELETE') return new Response(null, { status: 204 });
       if (url.pathname.endsWith('/missing')) return new Response('', { status: 404 });
       return new Response(Buffer.from([0, 255, 1]), { headers: { ETag: '"bytes"' } });
     };
     const r2 = createR2({ ...credentials, fetcher });
-    expect(await r2.list('raw/broker/2026-01-01/')).toEqual([
-      'raw/broker/2026-01-01/AAA.json',
-      'raw/broker/2026-01-01/BBB.json',
-    ]);
     expect(await r2.get('binary')).toEqual({ bytes: Buffer.from([0, 255, 1]), etag: '"bytes"' });
     expect(await r2.get('missing')).toBeUndefined();
     await r2.delete('binary');
-    expect(calls).toHaveLength(5);
+    expect(calls).toHaveLength(3);
   });
 });

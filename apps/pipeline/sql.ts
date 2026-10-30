@@ -117,7 +117,7 @@ WITH active AS (
   SELECT ticker FROM prices WHERE date = (SELECT max(date) FROM prices) AND volume > 0
 ), broker_days AS (
   SELECT date, ticker, count(*) row_count, bool_and(shares IS NOT NULL AND isfinite(shares)) AS valid
-  FROM brokers GROUP BY date, ticker
+  FROM brokers WHERE board = 'regular' GROUP BY date, ticker
 ), coverage AS (
   SELECT a.ticker, w.window_days,
     count(p.volume) = w.window_days AND bool_and(CASE WHEN p.volume > 0
@@ -128,7 +128,7 @@ WITH active AS (
   FROM active a CROSS JOIN market_periods w
   JOIN market_calendar c ON c.session_no <= w.window_days
   LEFT JOIN prices p ON p.date = c.date AND p.ticker = a.ticker
-  LEFT JOIN broker_pairs bp ON bp.date = c.date AND bp.ticker = a.ticker
+  LEFT JOIN broker_pairs bp ON bp.date = c.date AND bp.ticker = a.ticker AND bp.board = 'regular'
   LEFT JOIN broker_days b ON b.date = c.date AND b.ticker = a.ticker
   GROUP BY a.ticker, w.window_days
 ), nets AS (
@@ -139,7 +139,7 @@ WITH active AS (
       nullif(sum(b.freq) FILTER (WHERE b.side = 'buy'), 0) broker_avg
   FROM active a CROSS JOIN market_periods w
   JOIN market_calendar c ON c.session_no <= w.window_days
-  JOIN brokers b ON b.date = c.date AND b.ticker = a.ticker
+  JOIN brokers b ON b.date = c.date AND b.ticker = a.ticker AND b.board = 'regular'
   GROUP BY a.ticker, w.window_days, b.broker
 ), ranked AS (
   SELECT *, row_number() OVER (PARTITION BY ticker, window_days ORDER BY net DESC, broker) rank FROM nets

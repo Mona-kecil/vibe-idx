@@ -8,7 +8,6 @@ import { parseArgs } from 'node:util';
 import { dateValue, DuckDBInstance } from '@duckdb/node-api';
 import type { DuckDBValue } from '@duckdb/node-api';
 import { AwsClient } from 'aws4fetch';
-import { z } from 'zod';
 import { date } from './lib/rows';
 import { accumulation, marketCalendar } from './sql';
 
@@ -20,6 +19,15 @@ const headers = {
   'User-Agent':
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
 };
+const boards = {
+  regular: 'MARKET_BOARD_REGULER',
+  negotiation: 'MARKET_BOARD_NEGO',
+  cash: 'MARKET_BOARD_TUNAI',
+} as const;
+type Board = keyof typeof boards;
+// Stockbit gives each ticker 10 requests, refilled at 10 a second.
+const tickerInterval = 125;
+const workers = 47;
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -59,7 +67,6 @@ export type R2 = {
     condition?: { ifNoneMatch: '*' } | { ifMatch: string },
   ): Promise<string>;
   delete(key: string): Promise<void>;
-  list(prefix: string): Promise<string[]>;
 };
 
 export function createR2({
@@ -151,47 +158,15 @@ export function createR2({
       const result = await request('DELETE', key);
       check(result.status, key);
     },
-    async list(prefix) {
-      const keys: string[] = [];
-      let continuation: string | undefined;
-      do {
-        const params = new URLSearchParams({ 'list-type': '2', prefix, 'encoding-type': 'url' });
-        if (continuation) params.set('continuation-token', continuation);
-        const result = await request('GET', '', {}, `?${params}`);
-        check(result.status, prefix);
-        const xml = result.bytes.toString('utf8');
-        keys.push(
-          ...Array.from(xml.matchAll(/<Key>(.*?)<\/Key>/gs), (match) =>
-            decodeURIComponent(match[1]),
-          ),
-        );
-        const truncated = /<IsTruncated>(true|false)<\/IsTruncated>/.exec(xml)?.[1];
-        if (!truncated) throw new Error(`Invalid R2 listing: ${prefix}`);
-        continuation =
-          truncated === 'true'
-            ? /<NextContinuationToken>(.*?)<\/NextContinuationToken>/s.exec(xml)?.[1]
-            : undefined;
-        if (truncated === 'true' && !continuation)
-          throw new Error(`Missing R2 continuation: ${prefix}`);
-        continuation = continuation
-          ?.replaceAll('&lt;', '<')
-          .replaceAll('&gt;', '>')
-          .replaceAll('&quot;', '"')
-          .replaceAll('&apos;', "'")
-          .replaceAll('&amp;', '&');
-      } while (continuation);
-      return keys;
-    },
   };
   return client;
 }
 
 type BrokerSummary = {
   fetched: number;
-  replayed: number;
   completed: number;
   pending: number;
-  failed: { ticker: string; date: string; error: string }[];
+  failed: { ticker: string; date: string; board: Board; error: string }[];
 };
 
 export class BrokerRunError extends Error {
@@ -213,6 +188,63 @@ class StockbitError extends Error {
   }
 }
 
+function summaryRows(
+  ticker: string,
+  day: string,
+  board: Board,
+  bytes: Uint8Array,
+): DuckDBValue[][] {
+  const pair = `${ticker}/${day}/${board}`;
+  const parsed: unknown = JSON.parse(new TextDecoder().decode(bytes));
+  if (!isObject(parsed) || !isObject(parsed.data))
+    throw new Error(`Invalid broker response: ${pair}`);
+  const result = parsed.data;
+  if (result.from !== day || result.to !== day) throw new Error(`Broker date mismatch: ${pair}`);
+  const summary = result.broker_summary;
+  const counts = result.bandar_detector;
+  if (
+    !isObject(summary) ||
+    !isObject(counts) ||
+    !Array.isArray(summary.brokers_buy) ||
+    !Array.isArray(summary.brokers_sell) ||
+    !Number.isInteger(counts.total_buyer) ||
+    !Number.isInteger(counts.total_seller) ||
+    summary.brokers_buy.length !== counts.total_buyer ||
+    summary.brokers_sell.length !== counts.total_seller
+  )
+    throw new Error(`Incomplete broker summary: ${pair}`);
+  if (summary.symbol !== ticker) throw new Error(`Broker symbol mismatch: ${pair}`);
+  const sides = [
+    { side: 'buy', source: summary.brokers_buy },
+    { side: 'sell', source: summary.brokers_sell },
+  ];
+  return sides.flatMap(({ side, source }) => {
+    const prefix = side === 'buy' ? 'b' : 's';
+    const codes = new Set<string>();
+    return source.map((row: unknown) => {
+      if (!isObject(row)) throw new Error(`Invalid broker row: ${pair}`);
+      if (row.netbs_date !== day.replaceAll('-', ''))
+        throw new Error(`Broker row date mismatch: ${pair}`);
+      if (row.netbs_stock_code !== ticker) throw new Error(`Broker row symbol mismatch: ${pair}`);
+      const broker = field(row, 'netbs_broker_code');
+      if (codes.has(broker)) throw new Error(`Duplicate broker row: ${pair}`);
+      codes.add(broker);
+      return [
+        dateValue(Date.parse(day) / 86400000),
+        ticker,
+        board,
+        side,
+        broker,
+        field(row, 'type'),
+        number(row, `${prefix}lotv`),
+        number(row, `${prefix}val`),
+        number(row, `netbs_${side}_avg_price`),
+        number(row, 'freq'),
+      ];
+    });
+  });
+}
+
 export async function brokers({
   data,
   token,
@@ -231,7 +263,6 @@ export async function brokers({
   fetcher?: typeof fetch;
 }) {
   const started = Date.now();
-  let rpm = 30;
   const completedThrough = new Date(started - (10 * 60 + 17) * 60000).toISOString().slice(0, 10);
   if (await r2.get('broker-run.json'))
     throw new Error('Broker run marker requires operator review');
@@ -243,81 +274,17 @@ export async function brokers({
     if (saved?.bytes.equals(marker)) await r2.delete('broker-run.json');
     throw error;
   }
-  const uploads = new Set<Promise<void>>();
-  let uploadError: unknown;
-  async function drain() {
-    await Promise.all(uploads);
-    if (uploadError) throw uploadError;
-  }
-  async function archive(key: string, bytes: Buffer) {
-    if (uploads.size >= 8) await Promise.race(uploads);
-    if (uploadError) throw uploadError;
-    const upload = r2
-      .put(key, bytes, { ifNoneMatch: '*' })
-      .then(
-        () => {},
-        (error: unknown) => {
-          uploadError ??= error;
-        },
-      )
-      .finally(() => uploads.delete(upload));
-    uploads.add(upload);
-  }
   try {
-    const rate = await r2.get('broker-rpm.json');
-    const rateEtag = rate
-      ? rate.etag
-      : await r2.put('broker-rpm.json', Buffer.from('30'), { ifNoneMatch: '*' });
-    if (rate)
-      rpm = z
-        .union([z.literal(30), z.literal(20), z.literal(15), z.literal(12)])
-        .parse(JSON.parse(rate.bytes.toString('utf8')));
-    console.error(JSON.stringify({ stockbit_rpm: rpm }));
-    try {
-      return await collect();
-    } catch (error) {
-      if (
-        !(
-          error instanceof BrokerRunError &&
-          error.cause instanceof StockbitError &&
-          error.cause.status === 429
-        )
-      )
-        throw error;
-      const nextRpm = rpm === 30 ? 20 : rpm === 20 ? 15 : 12;
-      if (nextRpm !== rpm) {
-        console.error(
-          JSON.stringify({ stockbit_rpm: rpm, next_stockbit_rpm: nextRpm, status: 'failed' }),
-        );
-        await r2.put('broker-rpm.json', Buffer.from(JSON.stringify(nextRpm)), {
-          ifMatch: rateEtag,
-        });
-      }
-      throw error;
-    }
+    return await collect();
   } finally {
-    try {
-      await drain();
-    } finally {
-      await r2.delete('broker-run.json');
-    }
+    await r2.delete('broker-run.json');
   }
 
   async function collect() {
-    let lastStart: number | undefined;
     const bounded = () => Date.now() >= deadline;
     async function stockbit(url: string, init: RequestInit, attempts = 1) {
       for (let attempt = 1; ; attempt++) {
         if (bounded()) return;
-        const interval = 60000 / rpm;
-        await setTimeout(
-          Math.min(
-            lastStart === undefined ? interval : Math.max(0, lastStart + interval - Date.now()),
-            deadline - Date.now(),
-          ),
-        );
-        if (bounded()) return;
-        lastStart = Date.now();
         let error: string;
         try {
           const response = await fetcher(url, {
@@ -338,10 +305,11 @@ export async function brokers({
         }
         if (bounded()) return;
         console.error(JSON.stringify({ url, attempt: attempt + 1, error }));
-        await setTimeout(Math.min(5000 * 2 ** (attempt - 1), deadline - Date.now()));
+        await setTimeout(Math.min(1000 * 2 ** (attempt - 1), deadline - Date.now()));
       }
     }
     let access: string | undefined;
+    let authentication: Promise<boolean> | undefined;
     async function authenticate() {
       const saved = await r2.get('auth/stockbit.json');
       if (!saved) throw new Error('Missing Stockbit token');
@@ -369,27 +337,28 @@ export async function brokers({
     const db = await instance.connect();
     const query = async (sql: string) => (await db.runAndReadAll(sql)).getRowObjectsJson();
     let fetched = 0;
-    let replayed = 0;
     let completed = 0;
-    async function raw(key: string, url: string, archivedKeys: Set<string>) {
-      if (archivedKeys.has(key)) {
-        const saved = await r2.get(key);
-        if (!saved) throw new Error(`Missing listed R2 raw: ${key}`);
-        return { bytes: saved.bytes, cached: true };
-      }
-      if (!access && !(await authenticate())) return;
+    async function brokerSummary(ticker: string, day: string, board: Board) {
+      if (!(await (authentication ??= authenticate()))) return;
+      const url = new URL(`https://exodus.stockbit.com/marketdetectors/${ticker}`);
+      url.search = new URLSearchParams({
+        from: day,
+        to: day,
+        transaction_type: 'TRANSACTION_TYPE_GROSS',
+        market_board: boards[board],
+        investor_type: 'INVESTOR_TYPE_ALL',
+        limit: '200',
+      }).toString();
       const response = await stockbit(
-        url,
+        url.href,
         { headers: { ...headers, Authorization: `Bearer ${access}` } },
-        5,
+        4,
       );
       if (!response) return;
       if (!response.ok)
         throw new StockbitError(`Stockbit HTTP ${response.status}`, { status: response.status });
-      const bytes = Buffer.from(response.bytes);
       fetched++;
-      await archive(key, bytes);
-      return { bytes, cached: false };
+      return response.bytes;
     }
     async function append(rows: DuckDBValue[][]) {
       const appender = await db.createAppender('brokers');
@@ -411,12 +380,12 @@ export async function brokers({
     }
     try {
       await db.run(`CREATE TABLE brokers (
-      date DATE, ticker VARCHAR, side VARCHAR, broker VARCHAR, investor_type VARCHAR,
+      date DATE, ticker VARCHAR, board VARCHAR, side VARCHAR, broker VARCHAR, investor_type VARCHAR,
       shares DOUBLE, value DOUBLE, avg_price DOUBLE, freq DOUBLE,
-      PRIMARY KEY(date, ticker, side, broker)
+      PRIMARY KEY(date, ticker, board, side, broker)
     );
     CREATE TABLE broker_pairs (
-      date DATE, ticker VARCHAR, complete BOOLEAN, PRIMARY KEY(date, ticker)
+      date DATE, ticker VARCHAR, board VARCHAR, complete BOOLEAN, PRIMARY KEY(date, ticker, board)
     )`);
       const parquet = join(data, 'parquet', 'brokers');
       if (existsSync(parquet))
@@ -435,41 +404,42 @@ export async function brokers({
       WHERE volume > 0 AND date >= DATE '2026-01-01'
         AND date <= DATE ${literal(completedThrough)};
       INSERT INTO broker_pairs
-      SELECT date, ticker, false FROM traded
+      SELECT date, ticker, board, false FROM traded
+      CROSS JOIN (VALUES ${Object.keys(boards)
+        .map((board) => `('${board}')`)
+        .join(', ')}) b(board)
       ON CONFLICT DO NOTHING;
       UPDATE broker_pairs SET complete = true
       WHERE EXISTS (SELECT 1 FROM brokers
-        WHERE brokers.date = broker_pairs.date AND brokers.ticker = broker_pairs.ticker)`);
+        WHERE brokers.date = broker_pairs.date AND brokers.ticker = broker_pairs.ticker
+          AND brokers.board = broker_pairs.board)`);
       const entries = (
         await query(
           `WITH activity AS (
             SELECT ticker, sum(frequency) frequency FROM prices
             WHERE date >= DATE '2026-01-01' AND date < DATE '2027-01-01' GROUP BY ticker
           )
-          SELECT ticker, date::VARCHAR date FROM broker_pairs
+          SELECT ticker, date::VARCHAR date, board FROM broker_pairs
           JOIN traded USING(date, ticker) LEFT JOIN activity USING(ticker)
-          WHERE NOT complete ORDER BY frequency DESC NULLS LAST, ticker, date DESC`,
+          WHERE NOT complete ORDER BY frequency DESC NULLS LAST, ticker, date DESC, board`,
         )
       ).map((entry) => {
         if (
           typeof entry.ticker !== 'string' ||
           !/^[A-Z0-9-]+$/.test(entry.ticker) ||
           typeof entry.date !== 'string' ||
-          date(entry.date) !== entry.date
+          date(entry.date) !== entry.date ||
+          !(typeof entry.board === 'string' && entry.board in boards)
         )
           throw new Error('Invalid broker target');
-        return { ticker: entry.ticker, date: entry.date };
+        return { ticker: entry.ticker, date: entry.date, board: entry.board as Board };
       });
-      const archivedKeys = new Set<string>();
-      for (const day of new Set(entries.map((entry) => entry.date)))
-        for (const key of await r2.list(`raw/broker/${day}/`)) archivedKeys.add(key);
       const years = new Map<string, boolean>();
       if (existsSync(parquet))
         for (const file of await readdir(parquet))
           if (file.endsWith('.parquet')) years.set(file.slice(0, -8), false);
       let lastCheckpoint = started;
       async function checkpoint() {
-        await drain();
         for (const [year, changed] of years) {
           const file = join(parquet, `${year}.parquet`);
           if (changed) {
@@ -489,20 +459,16 @@ export async function brokers({
         lastCheckpoint = Date.now();
       }
       async function publish(ticker: string) {
-        await drain();
-        const rows = await output(`SELECT date,
+        const rows = await output(`SELECT date, board,
         coalesce(list(struct_pack(broker := broker, investor_type := investor_type,
           shares := shares, value := value, avg_price := avg_price, freq := freq) ORDER BY broker)
           FILTER (WHERE side = 'buy'), []) buy,
         coalesce(list(struct_pack(broker := broker, investor_type := investor_type,
           shares := shares, value := value, avg_price := avg_price, freq := freq) ORDER BY broker)
           FILTER (WHERE side = 'sell'), []) sell
-        FROM (SELECT date, ticker FROM brokers
-          UNION SELECT date, ticker FROM broker_pairs WHERE complete) days
-        LEFT JOIN brokers USING(date, ticker)
-        WHERE ticker = ${literal(ticker)}
-          AND date >= DATE '2026-01-01'
-        GROUP BY date ORDER BY date DESC`);
+        FROM brokers
+        WHERE ticker = ${literal(ticker)} AND date >= DATE '2026-01-01'
+        GROUP BY date, board ORDER BY date DESC, board`);
         await mkdir(join(out, 'broker'), { recursive: true });
         const file = join(out, 'broker', `${ticker}.json`);
         await writeFile(file + '.tmp', `[${rows.join(',')}]\n`);
@@ -515,116 +481,73 @@ export async function brokers({
         group.push(entry);
         groups.set(entry.ticker, group);
       }
-      const touched = new Set<string>();
+      const queue = [...groups];
       const failed: BrokerSummary['failed'] = [];
-      let currentTicker: string | undefined;
       let failure: Error | undefined;
-      try {
-        collection: for (const [ticker, group] of groups) {
-          currentTicker = ticker;
-          for (const { date: day } of group) {
-            if (bounded()) break collection;
-            const url = new URL(`https://exodus.stockbit.com/marketdetectors/${ticker}`);
-            url.search = new URLSearchParams({
-              from: day,
-              to: day,
-              transaction_type: 'TRANSACTION_TYPE_GROSS',
-              market_board: 'MARKET_BOARD_ALL',
-              investor_type: 'INVESTOR_TYPE_ALL',
-              limit: '200',
-            }).toString();
-            const archived = await raw(`raw/broker/${day}/${ticker}.json`, url.href, archivedKeys);
-            if (!archived) break collection;
-            const pair = `${ticker}/${day}`;
-            let rows: DuckDBValue[][];
-            try {
-              const parsed: unknown = JSON.parse(new TextDecoder().decode(archived.bytes));
-              if (!isObject(parsed) || !isObject(parsed.data))
-                throw new Error(`Invalid broker response: ${pair}`);
-              const result = parsed.data;
-              if (result.from !== day || result.to !== day)
-                throw new Error(`Broker date mismatch: ${pair}`);
-              const summary = result.broker_summary;
-              const counts = result.bandar_detector;
-              if (
-                !isObject(summary) ||
-                !isObject(counts) ||
-                !Array.isArray(summary.brokers_buy) ||
-                !Array.isArray(summary.brokers_sell) ||
-                !Number.isInteger(counts.total_buyer) ||
-                !Number.isInteger(counts.total_seller) ||
-                summary.brokers_buy.length !== counts.total_buyer ||
-                summary.brokers_sell.length !== counts.total_seller
-              )
-                throw new Error(`Incomplete broker summary: ${pair}`);
-              if (summary.symbol !== ticker) throw new Error(`Broker symbol mismatch: ${pair}`);
-              const sides = [
-                { side: 'buy', source: summary.brokers_buy },
-                { side: 'sell', source: summary.brokers_sell },
-              ];
-              rows = sides.flatMap(({ side, source }) => {
-                const prefix = side === 'buy' ? 'b' : 's';
-                const codes = new Set<string>();
-                return source.map((row: unknown) => {
-                  if (!isObject(row)) throw new Error(`Invalid broker row: ${pair}`);
-                  if (row.netbs_date !== day.replaceAll('-', ''))
-                    throw new Error(`Broker row date mismatch: ${pair}`);
-                  if (row.netbs_stock_code !== ticker)
-                    throw new Error(`Broker row symbol mismatch: ${pair}`);
-                  const broker = field(row, 'netbs_broker_code');
-                  if (codes.has(broker)) throw new Error(`Duplicate broker row: ${pair}`);
-                  codes.add(broker);
-                  return [
-                    dateValue(Date.parse(day) / 86400000),
-                    ticker,
-                    side,
-                    broker,
-                    field(row, 'type'),
-                    number(row, `${prefix}lotv`),
-                    number(row, `${prefix}val`),
-                    number(row, `netbs_${side}_avg_price`),
-                    number(row, 'freq'),
-                  ];
-                });
-              });
-            } catch (error) {
-              failed.push({
-                ticker,
-                date: day,
-                error: error instanceof Error ? error.message : String(error),
-              });
-              continue;
-            }
-            await db.run('BEGIN TRANSACTION');
-            try {
-              await append(rows);
-              await db.run(`UPDATE broker_pairs SET complete = true
-                WHERE date = ${literal(day)} AND ticker = ${literal(ticker)}`);
-              await db.run('COMMIT');
-            } catch (error) {
-              await db.run('ROLLBACK');
-              throw error;
-            }
-            if (rows.length) years.set(day.slice(0, 4), true);
-            if (archived.cached) replayed++;
-            completed++;
-            touched.add(ticker);
-          }
-          if (Date.now() - lastCheckpoint >= 10 * 60000) await checkpoint();
-          if (touched.has(ticker)) await publish(ticker);
-          currentTicker = undefined;
+      async function save(ticker: string, rows: DuckDBValue[][], pairs: typeof entries) {
+        await db.run('BEGIN TRANSACTION');
+        try {
+          await append(rows);
+          for (const pair of pairs)
+            await db.run(`UPDATE broker_pairs SET complete = true
+              WHERE date = ${literal(pair.date)} AND ticker = ${literal(ticker)}
+                AND board = ${literal(pair.board)}`);
+          await db.run('COMMIT');
+        } catch (error) {
+          await db.run('ROLLBACK');
+          throw error;
         }
-      } catch (error) {
-        failure = error instanceof Error ? error : new Error(String(error));
+        if (rows.length) for (const pair of pairs) years.set(pair.date.slice(0, 4), true);
+        completed += pairs.length;
+        if (Date.now() - lastCheckpoint >= 10 * 60000) await checkpoint();
+        await publish(ticker);
       }
+      let saved = Promise.resolve();
+      async function worker() {
+        let next = 0;
+        while (!failure && !bounded()) {
+          const entry = queue.shift();
+          if (!entry) return;
+          const [ticker, group] = entry;
+          const rows: DuckDBValue[][] = [];
+          const pairs: typeof entries = [];
+          try {
+            for (const pair of group) {
+              if (failure) break;
+              await setTimeout(Math.min(Math.max(0, next - Date.now()), deadline - Date.now()));
+              next = Date.now() + tickerInterval;
+              const bytes = await brokerSummary(ticker, pair.date, pair.board);
+              if (!bytes) break;
+              try {
+                rows.push(...summaryRows(ticker, pair.date, pair.board, bytes));
+                pairs.push(pair);
+              } catch (error) {
+                failed.push({
+                  ...pair,
+                  error: error instanceof Error ? error.message : String(error),
+                });
+              }
+            }
+          } catch (error) {
+            failure ??= error instanceof Error ? error : new Error(String(error));
+          }
+          if (pairs.length)
+            saved = saved
+              .then(() => save(ticker, rows, pairs))
+              .catch((error: unknown) => {
+                failure ??= error instanceof Error ? error : new Error(String(error));
+              });
+        }
+      }
+      await Promise.all(Array.from({ length: workers }, worker));
+      await saved;
       await checkpoint();
-      if (currentTicker && touched.has(currentTicker)) await publish(currentTicker);
       await mkdir(out, { recursive: true });
       const accumulationFile = join(out, 'market-accumulation.json');
       await writeFile(accumulationFile + '.tmp', `${(await output(accumulation))[0]}\n`);
       await rename(accumulationFile + '.tmp', accumulationFile);
       await r2.put('site/market-accumulation.json', await readFile(accumulationFile));
-      const summary = { fetched, replayed, completed, pending: entries.length - completed, failed };
+      const summary = { fetched, completed, pending: entries.length - completed, failed };
       if (failure || failed.length)
         throw new BrokerRunError(
           failure ? failure.message : `${failed.length} invalid broker pairs`,

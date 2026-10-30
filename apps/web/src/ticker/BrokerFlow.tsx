@@ -2,9 +2,16 @@ import { useEffect, useRef, useState, type FocusEvent, type PointerEvent } from 
 import { useAuth } from '@workos-inc/authkit-react';
 import { AccountControls } from '../BrokerPanel';
 import { aggregateBrokers, brokerName } from '../broker-data';
-import { brokerHistorySchema, type BrokerDay } from '../brokers';
+import { brokerBoards, brokerHistorySchema, type BrokerBoard, type BrokerDay } from '../brokers';
 import { bounds, inRange, type Selection } from './logic';
 import { dateText, nf, rangeText, short } from './format';
+
+const boardLabels = {
+  regular: 'Regular',
+  negotiation: 'Negotiation',
+  cash: 'Cash',
+  all: 'All',
+};
 
 export function BrokerFlow({
   ticker,
@@ -67,6 +74,7 @@ function BrokerData({
     | { kind: 'ready'; days: BrokerDay[] }
   >({ kind: 'loading' });
   const [attempt, retry] = useState(0);
+  const [board, setBoard] = useState<BrokerBoard | 'all'>('regular');
   const [mode, setMode] = useState<'net' | 'gross'>('net');
   const [showAll, setShowAll] = useState(false);
   const [picked, setPicked] = useState<string | null>(null);
@@ -116,11 +124,35 @@ function BrokerData({
       </p>
     );
   if (state.kind !== 'ready') return null;
-  const days = state.days.filter((d) =>
-    selection ? inRange(d.date, selection) : d.date >= start && d.date <= end,
+  const days = state.days.filter(
+    (d) =>
+      (board === 'all' || d.board === board) &&
+      (selection ? inRange(d.date, selection) : d.date >= start && d.date <= end),
   );
   const rows = aggregateBrokers(days);
-  if (!rows.length) return <p className="empty-state">No trades reported in this period</p>;
+  const boardPicker = (
+    <div className="ranges broker-board" aria-label="Market board">
+      {[...brokerBoards, 'all' as const].map((b) => (
+        <button
+          key={b}
+          aria-pressed={b === board}
+          onClick={() => {
+            setBoard(b);
+            setPicked(null);
+          }}
+        >
+          {boardLabels[b]}
+        </button>
+      ))}
+    </div>
+  );
+  if (!rows.length)
+    return (
+      <div className="broker-flow">
+        <div className="broker-controls">{boardPicker}</div>
+        <p className="empty-state">No trades reported in this period</p>
+      </div>
+    );
   const side = (type: 'buy' | 'sell') =>
     rows
       .map((b) => {
@@ -205,6 +237,7 @@ function BrokerData({
   return (
     <div className="broker-flow">
       <div className="broker-controls">
+        {boardPicker}
         <div className="ranges broker-unit" aria-label="Broker flow mode">
           {(['net', 'gross'] as const).map((m) => (
             <button

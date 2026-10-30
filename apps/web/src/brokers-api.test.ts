@@ -29,7 +29,7 @@ const row: BrokerRow = {
   avg_price: 987,
   freq: 42,
 };
-const day: BrokerDay = { date: '2026-10-23', buy: [row], sell: [] };
+const day: BrokerDay = { date: '2026-10-23', board: 'regular', buy: [row], sell: [] };
 
 let keys: Awaited<ReturnType<typeof generateKeyPair>>;
 let otherClientKeys: Awaited<ReturnType<typeof generateKeyPair>>;
@@ -313,7 +313,7 @@ describe('private broker API', () => {
         days: days
           .slice()
           .reverse()
-          .map(({ date, buy, sell }) => ({ date, buy, sell })),
+          .map(({ date, board, buy, sell }) => ({ date, board, buy, sell })),
       });
       expect(JSON.stringify(body)).not.toContain('cloudflarestorage');
     }
@@ -352,6 +352,7 @@ describe('private broker API', () => {
       JSON.stringify([{ ...day, date: '2026-02-30' }]),
       JSON.stringify([{ ...day, buy: [{ ...row, shares: '100' }] }]),
       JSON.stringify([{ ...day, sell: null }]),
+      JSON.stringify([{ ...day, board: 'all' }]),
     ]) {
       storageBody = body;
       const response = await handle(request({ token: auth }));
