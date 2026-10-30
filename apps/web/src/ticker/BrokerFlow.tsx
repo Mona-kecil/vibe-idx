@@ -4,7 +4,7 @@ import { AccountControls } from '../BrokerPanel';
 import { aggregateBrokers, brokerName } from '../broker-data';
 import { brokerHistorySchema, type BrokerDay } from '../brokers';
 import { bounds, inRange, type Selection } from './logic';
-import { dateText, direction, nf, rangeText, short, signed } from './format';
+import { dateText, nf, rangeText, short } from './format';
 
 export function BrokerFlow({
   ticker,
@@ -138,6 +138,7 @@ function BrokerData({
       .sort((a, b) => b.amount - a.amount);
   const buyers = side('buy'),
     sellers = side('sell'),
+    edge = edgeFills(buyers, sellers),
     limit = showAll ? Infinity : 10;
   const ledger = (type: 'buy' | 'sell', list: typeof buyers) => (
     <table className={`broker-ledger ${type}`}>
@@ -152,43 +153,46 @@ function BrokerData({
         </tr>
       </thead>
       <tbody>
-        {list.slice(0, limit).map((row) => {
-          const flip = mode === 'net' && type === 'sell' ? -1 : 1,
-            amount = flip * row.amount,
-            volume = flip * row.volume,
-            format = (v: number, f: typeof nf) => (mode === 'net' ? signed(v, f) : f(v));
-          return (
-            <tr key={row.code}>
-              <td tabIndex={0} {...tip.bind(row.code)}>
-                {row.code}
-                <span className="sr-only"> {brokerName(row.code)}</span>
-              </td>
-              <td
-                className={`num ${mode === 'net' ? direction(amount) : ''}`}
-                title={`${format(amount, nf)} IDR`}
-              >
-                {format(amount, short)}
-              </td>
-              <td className="num" title={`${format(volume, nf)} shares`}>
-                {format(volume, short)}
-              </td>
-              <td className="num" title={`${nf(row.avg, 2)} IDR`}>
-                {nf(row.avg)}
-              </td>
-            </tr>
-          );
-        })}
+        {list.slice(0, limit).map((row) => (
+          <tr key={row.code}>
+            <td tabIndex={0} {...tip.bind(row.code)}>
+              {row.code}
+              <span className="sr-only"> {brokerName(row.code)}</span>
+            </td>
+            <td className={`num ${type === 'buy' ? 'up' : 'down'}`} title={`${nf(row.amount)} IDR`}>
+              {short(row.amount)}
+            </td>
+            <td className="num" title={`${nf(row.volume)} shares`}>
+              {short(row.volume)}
+            </td>
+            <td className={`num${edge.has(row) ? ' edge' : ''}`} title={`${nf(row.avg, 2)} IDR`}>
+              {nf(row.avg, 1)}
+              {edge.has(row) && (
+                <span className="sr-only">
+                  {type === 'buy' ? ' near the period low' : ' near the period high'}
+                </span>
+              )}
+            </td>
+          </tr>
+        ))}
       </tbody>
     </table>
   );
   return (
     <div className="broker-flow">
-      <div className="ranges broker-unit" aria-label="Broker flow mode">
-        {(['net', 'gross'] as const).map((m) => (
-          <button key={m} aria-pressed={m === mode} onClick={() => setMode(m)}>
-            {m === 'net' ? 'Net' : 'Gross'}
+      <div className="broker-controls">
+        <div className="ranges broker-unit" aria-label="Broker flow mode">
+          {(['net', 'gross'] as const).map((m) => (
+            <button key={m} aria-pressed={m === mode} onClick={() => setMode(m)}>
+              {m === 'net' ? 'Net' : 'Gross'}
+            </button>
+          ))}
+        </div>
+        {Math.max(buyers.length, sellers.length) > 10 && (
+          <button className="broker-more" onClick={() => setShowAll(!showAll)}>
+            {showAll ? 'Show top 10' : 'Show all'}
           </button>
-        ))}
+        )}
       </div>
       <div className="broker-ledgers" ref={tip.box}>
         {ledger('buy', buyers)}
@@ -204,12 +208,32 @@ function BrokerData({
           </div>
         )}
       </div>
-      {Math.max(buyers.length, sellers.length) > 10 && (
-        <button className="broker-more" onClick={() => setShowAll(!showAll)}>
-          {showAll ? 'Show top 10' : 'Show all'}
-        </button>
-      )}
     </div>
+  );
+}
+
+type Fill = { avg: number; volume: number };
+// Weighting by volume keeps a 1-lot trade at an odd price from stretching the range.
+export function edgeFills<T extends Fill>(buyers: T[], sellers: T[]) {
+  const fills = [
+    ...buyers.map((fill) => ({ fill, buy: true })),
+    ...sellers.map((fill) => ({ fill, buy: false })),
+  ].sort((a, b) => a.fill.avg - b.fill.avg);
+  const total = fills.reduce((sum, { fill }) => sum + Math.max(fill.volume, 0), 0);
+  let seen = 0;
+  const kept = fills.filter(({ fill }) => {
+    const weight = Math.max(fill.volume, 0),
+      inside = weight > 0 && seen < 0.95 * total && seen + weight > 0.05 * total;
+    seen += weight;
+    return inside;
+  });
+  const low = kept[0]?.fill.avg ?? 0,
+    band = ((kept.at(-1)?.fill.avg ?? 0) - low) * 0.25;
+  if (!(band > 0)) return new Set<T>();
+  return new Set(
+    kept
+      .filter(({ fill, buy }) => (buy ? fill.avg <= low + band : fill.avg >= low + 3 * band))
+      .map(({ fill }) => fill),
   );
 }
 

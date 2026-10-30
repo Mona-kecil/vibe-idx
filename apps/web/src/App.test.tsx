@@ -566,12 +566,13 @@ describe('ticker research regressions', () => {
     const rows = host.querySelectorAll('#broker-section tbody tr');
     expect(rows).toHaveLength(4);
     expect(rows[0]?.textContent).toContain('AK');
-    expect(rows[0]?.textContent).toContain('+200.0K');
+    expect(rows[0]?.textContent).toContain('200.0K');
+    expect(rows[0]?.textContent).not.toContain('+');
     const cells = (side: string) =>
       [...host.querySelectorAll(`.broker-ledger.${side} tbody tr:first-child td`)].map(
         (td) => td.textContent,
       );
-    expect(cells('sell').slice(1)).toEqual(['−160.0K', '−1.6K', '100']);
+    expect(cells('sell').slice(1)).toEqual(['160.0K', '1.6K', '100.0']);
     expect(cells('buy')[0]).toContain('UBS Sekuritas Indonesia');
     await click('.broker-unit button:nth-child(2)');
     expect([cells('buy').slice(1, 3), cells('sell').slice(1, 3)]).toEqual([
