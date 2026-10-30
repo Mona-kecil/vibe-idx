@@ -15,6 +15,11 @@ describe('edgeFills', () => {
     const sellers = [fill('KI', 690, 1000), fill('DX', 681, 1000), fill('CC', 670, 1000)];
     expect(codes(edgeFills(buyers, sellers))).toEqual(['BK', 'DH', 'DX', 'KI']);
   });
+  it('keeps a large trade at the edge of the range', () => {
+    const buyers = [fill('YJ', 690, 5000), fill('DH', 720, 90000)];
+    const sellers = [fill('YU', 737, 8000), fill('CC', 720, 87000)];
+    expect(codes(edgeFills(buyers, sellers))).toEqual(['YJ', 'YU']);
+  });
   it('lets a near-flat net buyer count only by its net volume', () => {
     const buyers = [fill('DH', 650, 1000), fill('AK', 640, 10)];
     const sellers = [fill('KI', 690, 1000), fill('CC', 670, 1000)];

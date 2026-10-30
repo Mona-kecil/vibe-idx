@@ -213,28 +213,21 @@ function BrokerData({
 }
 
 type Fill = { avg: number; volume: number };
-// Weighting by volume keeps a 1-lot trade at an odd price from stretching the range.
+// Only brokers with at least 1% of the shares bought set the range, so a 1-lot trade at an odd
+// price can't stretch it, while a large trade at the day's extreme still counts.
 export function edgeFills<T extends Fill>(buyers: T[], sellers: T[]) {
-  const fills = [
-    ...buyers.map((fill) => ({ fill, buy: true })),
-    ...sellers.map((fill) => ({ fill, buy: false })),
-  ].sort((a, b) => a.fill.avg - b.fill.avg);
-  const total = fills.reduce((sum, { fill }) => sum + Math.max(fill.volume, 0), 0);
-  let seen = 0;
-  const kept = fills.filter(({ fill }) => {
-    const weight = Math.max(fill.volume, 0),
-      inside = weight > 0 && seen < 0.95 * total && seen + weight > 0.05 * total;
-    seen += weight;
-    return inside;
-  });
-  const low = kept[0]?.fill.avg ?? 0,
-    band = ((kept.at(-1)?.fill.avg ?? 0) - low) * 0.25;
+  const min = 0.01 * buyers.reduce((sum, fill) => sum + Math.max(fill.volume, 0), 0),
+    sized = (list: T[]) => list.filter((fill) => fill.volume > 0 && fill.volume >= min),
+    buys = sized(buyers),
+    sells = sized(sellers),
+    avgs = [...buys, ...sells].map((fill) => fill.avg),
+    low = Math.min(...avgs),
+    band = (Math.max(...avgs) - low) * 0.25;
   if (!(band > 0)) return new Set<T>();
-  return new Set(
-    kept
-      .filter(({ fill, buy }) => (buy ? fill.avg <= low + band : fill.avg >= low + 3 * band))
-      .map(({ fill }) => fill),
-  );
+  return new Set([
+    ...buys.filter((fill) => fill.avg <= low + band),
+    ...sells.filter((fill) => fill.avg >= low + 3 * band),
+  ]);
 }
 
 function useBrokerTip() {
