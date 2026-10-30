@@ -459,6 +459,11 @@ export async function brokers({
         years.clear();
         lastCheckpoint = Date.now();
       }
+      let failure: Error | undefined;
+      const fail = (error: unknown) => {
+        failure ??= error instanceof Error ? error : new Error(String(error));
+      };
+      const uploads: Promise<unknown>[] = [];
       async function publish(ticker: string) {
         const rows = await output(`SELECT date, board,
         coalesce(list(struct_pack(broker := broker, investor_type := investor_type,
@@ -474,7 +479,9 @@ export async function brokers({
         const file = join(out, 'broker', `${ticker}.json`);
         await writeFile(file + '.tmp', `[${rows.join(',')}]\n`);
         await rename(file + '.tmp', file);
-        await r2.put(`site/broker/${ticker}.json.gz`, gzipSync(await readFile(file)));
+        uploads.push(
+          r2.put(`site/broker/${ticker}.json.gz`, gzipSync(await readFile(file))).catch(fail),
+        );
       }
       const groups = new Map<string, typeof entries>();
       for (const entry of entries) {
@@ -484,7 +491,6 @@ export async function brokers({
       }
       const queue = [...groups];
       const failed: BrokerSummary['failed'] = [];
-      let failure: Error | undefined;
       async function save(ticker: string, rows: DuckDBValue[][], pairs: typeof entries) {
         await db.run('BEGIN TRANSACTION');
         try {
@@ -530,18 +536,14 @@ export async function brokers({
               }
             }
           } catch (error) {
-            failure ??= error instanceof Error ? error : new Error(String(error));
+            fail(error);
           }
-          if (pairs.length)
-            saved = saved
-              .then(() => save(ticker, rows, pairs))
-              .catch((error: unknown) => {
-                failure ??= error instanceof Error ? error : new Error(String(error));
-              });
+          if (pairs.length) saved = saved.then(() => save(ticker, rows, pairs)).catch(fail);
         }
       }
       await Promise.all(Array.from({ length: workers }, worker));
       await saved;
+      await Promise.all(uploads);
       await checkpoint();
       await mkdir(out, { recursive: true });
       const accumulationFile = join(out, 'market-accumulation.json');
