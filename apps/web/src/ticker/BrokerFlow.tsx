@@ -12,6 +12,7 @@ const boardLabels = {
   cash: 'Cash',
   all: 'All',
 };
+const sharesPerLot = 100;
 
 export function BrokerFlow({
   ticker,
@@ -194,7 +195,9 @@ function BrokerData({
           <th className="num">
             {mode === 'net' ? 'Net' : 'Value'} <small className="unit-suffix">IDR</small>
           </th>
-          <th className="num">Vol</th>
+          <th className="num">
+            Vol <small className="unit-suffix">lot</small>
+          </th>
           <th className="num">Avg</th>
         </tr>
       </thead>
@@ -219,7 +222,7 @@ function BrokerData({
               {short(row.amount)}
             </td>
             <td className="num" title={`${nf(row.volume)} shares`}>
-              {short(row.volume)}
+              {short(row.volume / sharesPerLot)}
             </td>
             <td className={`num${edge.has(row) ? ' edge' : ''}`} title={`${nf(row.avg, 2)} IDR`}>
               {nf(row.avg, 1)}
