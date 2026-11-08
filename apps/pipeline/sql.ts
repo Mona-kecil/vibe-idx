@@ -305,7 +305,8 @@ WITH universe AS (
   UNION SELECT ticker FROM one_pct UNION SELECT ticker FROM disclosures WHERE ticker IS NOT NULL
 ),
 history AS (
-  SELECT ticker, min(date) first_date, list(struct_pack(date := date, close := close, volume := volume,
+  SELECT ticker, min(date) first_date, list(struct_pack(date := date, open := nullif(open, 0),
+    high := nullif(high, 0), low := nullif(low, 0), close := close, volume := volume,
     value := value, net_foreign := net_foreign) ORDER BY date) prices
   FROM (SELECT *, row_number() OVER (PARTITION BY ticker ORDER BY date DESC) n FROM features)
   WHERE n <= ${thresholds.tickerDays} GROUP BY ticker

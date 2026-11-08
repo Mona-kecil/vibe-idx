@@ -20,6 +20,9 @@ import {
 const dates = ['2026-08-10', '2026-08-11', '2026-08-12', '2026-08-21', '2026-08-24'];
 const prices = dates.map((date, i) => ({
   date,
+  open: null,
+  high: null,
+  low: null,
   close: [100, 110, 90, 120, 130][i] ?? 0,
   volume: i === 2 ? 0 : 10 + i,
   value: 1000 + i * 100,
