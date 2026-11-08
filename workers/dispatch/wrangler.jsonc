@@ -3,6 +3,6 @@
   "main": "src/index.js",
   "compatibility_date": "2026-10-01",
   "triggers": {
-    "crons": ["*/10 * * * *", "17 10 * * *"]
-  }
+    "crons": ["17 10 * * *", "0 12 * * *"],
+  },
 }

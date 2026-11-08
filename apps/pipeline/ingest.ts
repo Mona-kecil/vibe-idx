@@ -12,6 +12,7 @@ import { parseIndices } from './lib/indices';
 import { parseIssuers } from './lib/issuers';
 import { parseFivePct, parseFivePctPdf } from './lib/fivePct';
 import { parseOnePct } from './lib/onePct';
+import { reportError, startSentry } from './lib/sentry';
 import { idxUrl, parseOwnershipList } from './lib/ownershipList';
 import { date } from './lib/rows';
 import { labelAttachments, orderAttachments, parseAnnouncements, parseReport } from './reports';
@@ -876,40 +877,46 @@ export async function ingest({
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  const { values } = parseArgs({
-    args: process.argv.slice(2).filter((s) => s !== '--'),
-    options: {
-      data: { type: 'string' },
-      out: { type: 'string' },
-      since: { type: 'string' },
-      until: { type: 'string' },
-      'registry-only': { type: 'boolean' },
-      'ownership-only': { type: 'boolean' },
-      'reparse-registry': { type: 'boolean' },
-      limit: { type: 'string' },
-      'attachment-label-limit': { type: 'string' },
-    },
-  });
-  if (!values.data || !values.out)
-    throw new Error(
-      'Usage: ingest -- --data <dir> --out <dir> [--since YYYY-MM-DD] [--attachment-label-limit 200] [--registry-only --until YYYY-MM-DD --limit 100 --reparse-registry] [--ownership-only --since YYYY-MM-DD --until YYYY-MM-DD]',
+  startSentry();
+  try {
+    const { values } = parseArgs({
+      args: process.argv.slice(2).filter((s) => s !== '--'),
+      options: {
+        data: { type: 'string' },
+        out: { type: 'string' },
+        since: { type: 'string' },
+        until: { type: 'string' },
+        'registry-only': { type: 'boolean' },
+        'ownership-only': { type: 'boolean' },
+        'reparse-registry': { type: 'boolean' },
+        limit: { type: 'string' },
+        'attachment-label-limit': { type: 'string' },
+      },
+    });
+    if (!values.data || !values.out)
+      throw new Error(
+        'Usage: ingest -- --data <dir> --out <dir> [--since YYYY-MM-DD] [--attachment-label-limit 200] [--registry-only --until YYYY-MM-DD --limit 100 --reparse-registry] [--ownership-only --since YYYY-MM-DD --until YYYY-MM-DD]',
+      );
+    process.stdout.write(
+      `${JSON.stringify(
+        await ingest({
+          data: resolve(values.data),
+          out: resolve(values.out),
+          since: values.since,
+          until: values.until,
+          registryOnly: values['registry-only'],
+          ownershipOnly: values['ownership-only'],
+          reparseRegistry: values['reparse-registry'],
+          limit: values.limit ? Number(values.limit) : undefined,
+          attachmentLabelLimit:
+            values['attachment-label-limit'] !== undefined
+              ? Number(values['attachment-label-limit'])
+              : undefined,
+        }),
+      )}\n`,
     );
-  process.stdout.write(
-    `${JSON.stringify(
-      await ingest({
-        data: resolve(values.data),
-        out: resolve(values.out),
-        since: values.since,
-        until: values.until,
-        registryOnly: values['registry-only'],
-        ownershipOnly: values['ownership-only'],
-        reparseRegistry: values['reparse-registry'],
-        limit: values.limit ? Number(values.limit) : undefined,
-        attachmentLabelLimit:
-          values['attachment-label-limit'] !== undefined
-            ? Number(values['attachment-label-limit'])
-            : undefined,
-      }),
-    )}\n`,
-  );
+  } catch (error) {
+    await reportError(error);
+    throw error;
+  }
 }
