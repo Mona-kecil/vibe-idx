@@ -31,8 +31,22 @@ describe('IDX fixture ingestion', () => {
         <c r="C3" t="inlineStr"><is><t>TRINITI DINAMIK Tbk, PT</t></is></c>
         <c r="E3" t="inlineStr"><is><t>INVESTOR</t></is></c></row>`);
     const one = workbook(`
-      <row r="1"><c r="A1" t="inlineStr"><is><t>DATE</t></is></c>
-        <c r="B1" t="inlineStr"><is><t>SHARE_CODE</t></is></c></row>
+      <row r="1">${[
+        'DATE',
+        'SHARE_CODE',
+        'ISSUER_NAME',
+        'INVESTOR_NAME',
+        'INVESTOR_CLASSIFICATION',
+        'LOCAL_FOREIGN',
+        'NATIONALITY',
+        'DOMICILE',
+        'HOLDINGS_SCRIPLESS',
+        'HOLDINGS_SCRIP',
+        'TOTAL_HOLDING_SHARES',
+        'PERCENTAGE',
+      ]
+        .map((h, i) => `<c r="${'ABCDEFGHIJKL'[i]}1" t="inlineStr"><is><t>${h}</t></is></c>`)
+        .join('')}</row>
       <row r="2"><c r="A2" t="inlineStr"><is><t>2026-09-30</t></is></c>
         <c r="B2" t="b"><v>${value}</v></c>
         <c r="C2" t="inlineStr"><is><t>TRINITI DINAMIK Tbk, PT</t></is></c>
@@ -88,6 +102,24 @@ describe('IDX fixture ingestion', () => {
       ticker: 'AADI',
       issuerName: 'ADARO ANDALAN INDONESIA Tbk',
       investorName: 'PT PERSADA CAPITAL INVESTAMA',
+      classification: 'Corporate',
+      localForeign: 'L',
+      nationality: undefined,
+      domicile: 'INDONESIA',
+      scripless: 119887170,
+      scrip: 0,
+      total: 119887170,
+      percent: 1.54,
+    });
+  });
+  it('reads 1% columns by header after IDX inserts a column', () => {
+    const rows = parseOnePct(bytes('ownership-1pct-2026-10.xlsx'));
+    expect(rows[0]).toEqual({
+      asOf: '2026-10-30',
+      seq: 0,
+      ticker: 'AADI',
+      issuerName: 'ADARO ANDALAN INDONESIA Tbk',
+      investorName: 'PERSADA CAPITAL INVESTAMA PT',
       classification: 'Corporate',
       localForeign: 'L',
       nationality: undefined,
