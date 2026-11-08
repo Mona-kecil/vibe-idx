@@ -37,6 +37,7 @@ jobs:
       AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
       AWS_DEFAULT_REGION: auto
       R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+      SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
       DATA: /tmp/idx-data
       OUT: /tmp/idx-public
       REGISTRY_ONLY: ${{ github.event_name == 'workflow_dispatch' && inputs.registry_since != '' }}
