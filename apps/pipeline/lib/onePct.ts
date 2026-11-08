@@ -1,35 +1,59 @@
 import { date, number, oneHolding } from './rows';
 import { readSheet } from './xlsx';
+const COLUMNS = {
+  date: ['DATE'],
+  ticker: ['SHARE_CODE'],
+  issuerName: ['ISSUER_NAME'],
+  investorName: ['INVESTOR_NAME'],
+  classification: ['INVESTOR_CLASSIFICATION', 'INVESTOR_TYPE'],
+  localForeign: ['LOCAL_FOREIGN'],
+  nationality: ['NATIONALITY'],
+  domicile: ['DOMICILE'],
+  scripless: ['HOLDINGS_SCRIPLESS'],
+  scrip: ['HOLDINGS_SCRIP'],
+  total: ['TOTAL_HOLDING_SHARES'],
+  percent: ['PERCENTAGE'],
+};
+type Column = keyof typeof COLUMNS;
 export function parseOnePct(bytes: Uint8Array) {
   const sheet = readSheet(bytes);
   const header = sheet.findIndex((r) => r[0] === 'DATE' && r[1] === 'SHARE_CODE');
   if (header < 0) throw new Error('Missing 1% headers');
+  const names = sheet[header]!.map((name) => name.trim());
+  const index = Object.fromEntries(
+    Object.entries(COLUMNS).map(([column, accepted]) => {
+      const i = names.findIndex((name) => accepted.includes(name));
+      if (i < 0) throw new Error(`Missing 1% column: ${accepted.join(' or ')}`);
+      return [column, i];
+    }),
+  ) as Record<Column, number>;
   const occurrences = new Map<string, number>();
   return sheet
     .slice(header + 1)
-    .filter((r) => r[1]?.trim())
-    .map((r) => {
-      const key = JSON.stringify([r[1]?.trim(), r[3]?.trim()]);
+    .map((r) => (column: Column) => r[index[column]]?.trim() ?? '')
+    .filter((cell) => cell('ticker'))
+    .map((cell) => {
+      const key = JSON.stringify([cell('ticker'), cell('investorName')]);
       const seq = occurrences.get(key) ?? 0;
       occurrences.set(key, seq + 1);
       return oneHolding.parse({
         seq,
         asOf: date(
-          /^\d+(\.\d+)?$/.test(r[0] ?? '')
-            ? new Date(Date.UTC(1899, 11, 30) + number(r[0] ?? '') * 86400000).toISOString()
-            : (r[0] ?? ''),
+          /^\d+(\.\d+)?$/.test(cell('date'))
+            ? new Date(Date.UTC(1899, 11, 30) + number(cell('date')) * 86400000).toISOString()
+            : cell('date'),
         ),
-        ticker: r[1]?.trim(),
-        issuerName: r[2]?.trim(),
-        investorName: r[3]?.trim(),
-        classification: r[4]?.trim() || undefined,
-        localForeign: r[5]?.trim() || undefined,
-        nationality: r[6]?.trim() || undefined,
-        domicile: r[7]?.trim() || undefined,
-        scripless: r[8] ? number(r[8]) : undefined,
-        scrip: r[9] ? number(r[9]) : undefined,
-        total: number(r[10] ?? ''),
-        percent: number(r[11] ?? ''),
+        ticker: cell('ticker'),
+        issuerName: cell('issuerName'),
+        investorName: cell('investorName'),
+        classification: cell('classification') || undefined,
+        localForeign: cell('localForeign') || undefined,
+        nationality: cell('nationality') || undefined,
+        domicile: cell('domicile') || undefined,
+        scripless: cell('scripless') ? number(cell('scripless')) : undefined,
+        scrip: cell('scrip') ? number(cell('scrip')) : undefined,
+        total: number(cell('total')),
+        percent: number(cell('percent')),
       });
     });
 }
