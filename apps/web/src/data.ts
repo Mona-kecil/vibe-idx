@@ -8,6 +8,8 @@ const healthSchema = z.object({
   issuers: z.string().nullable(),
   disclosures: z.string().nullable().default(null),
   brokers: z.string().nullable().default(null),
+  corporate_actions: z.string().nullable().default(null),
+  risk: z.string().nullable().default(null),
   run_at: z.string(),
   failed: z.array(z.string()).default([]),
 });
@@ -254,6 +256,8 @@ const sourceLabels = {
   issuers: 'Issuers',
   disclosures: 'Disclosures',
   brokers: 'Broker flow',
+  corporate_actions: 'Corporate actions',
+  risk: 'Risk flags',
 } as const satisfies Partial<Record<keyof Health, string>>;
 const isSource = (source: string): source is keyof typeof sourceLabels =>
   Object.hasOwn(sourceLabels, source);
@@ -306,3 +310,34 @@ export async function load(
       return tickerSchema.parse(json);
   }
 }
+
+export const corporateActionSchema = z.object({
+  ticker: z.string(),
+  kind: z.enum(['DIV', 'RIGHTS', 'BONUS', 'SPLIT', 'RUPS', 'IPO', 'DELIST']),
+  label: z.string(),
+  steps: z.array(
+    z.object({
+      step: z.enum([
+        'cum',
+        'ex',
+        'record',
+        'pay',
+        'distribution',
+        'listing',
+        'trade_start',
+        'trade_end',
+        'meeting',
+        'delisting',
+      ]),
+      date: z.string(),
+    }),
+  ),
+});
+export const riskSchema = z.object({
+  notes: z.array(z.object({ code: z.string(), text: z.string() })),
+  susp: z.object({ since: z.string(), reason: z.string().nullable(), url: z.url() }).nullable(),
+  uma: z.object({ date: z.string(), url: z.url() }).nullable(),
+});
+
+export const corporateActionsSchema = z.array(corporateActionSchema);
+export const risksSchema = z.record(z.string(), riskSchema);

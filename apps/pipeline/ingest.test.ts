@@ -236,12 +236,26 @@ function network({ monthly = false, reports = false } = {}) {
         .replaceAll('2026-10-20', '2026-10-21');
       return new Response(marketFixtureForOwnershipDay);
     }
+    if (/GetCalendar|GetSpecialNotation|GetUma/.test(url.pathname))
+      return Response.json({ ResultCount: 0, Results: [] });
     if (url.pathname.includes('GetSuspension'))
       return Response.json({
         ResultCount: 2,
         Results: [
-          { Kode: 'AADI', Data_Download: '/StaticData/single.pdf' },
-          { Kode: '>1 Kode', Data_Download: '/StaticData/suspension-notice.pdf' },
+          {
+            Kode: 'AADI',
+            Data_Download: '/StaticData/single.pdf',
+            Date: '2026-10-21T08:00:00',
+            Info_Type: 'SPT',
+            Judul: '',
+          },
+          {
+            Kode: '>1 Kode',
+            Data_Download: '/StaticData/suspension-notice.pdf',
+            Date: '2026-10-21T09:00:00',
+            Info_Type: 'SPT',
+            Judul: '',
+          },
         ],
       });
     if (url.pathname === '/StaticData/suspension-notice.pdf')
@@ -1145,7 +1159,7 @@ BT /F1 10 Tf 1 0 0 1 529 530 Tm (-100) Tj ET`;
       ).toEqual(before);
       expect(
         net.urls.every((url) =>
-          /data-kepemilikan-saham|GetAnnouncement|GetStockSummary|GetIndexSummary|GetSuspension|satu-persen/.test(
+          /data-kepemilikan-saham|GetAnnouncement|GetStockSummary|GetIndexSummary|GetSuspension|GetCalendar|GetSpecialNotation|GetUma|satu-persen/.test(
             url,
           ),
         ),
@@ -1943,3 +1957,126 @@ it('publishes ownership conflicts on offline export while excluding public aggre
     await rm(root, { recursive: true, force: true });
   }
 });
+
+it('publishes calendar and risk snapshots, records independent failures, and reuses stored data offline', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'idx-calendar-risk-'));
+  const net = network();
+  const options = {
+    data: join(root, 'data'),
+    out: join(root, 'out'),
+    today: '2026-10-21',
+    since: '2026-10-21',
+  };
+  const published = async (file: string) =>
+    JSON.parse(await readFile(join(options.out, file), 'utf8'));
+  const fetcher: typeof fetch = async (input, init) => {
+    const url = new URL(input instanceof Request ? input.url : input);
+    if (url.pathname.includes('GetCalendar')) {
+      const Results =
+        url.searchParams.get('date') === '20261001'
+          ? [
+              {
+                title: 'AADI',
+                Jenis: '',
+                description: 'tanggal Pembayaran Dividen Tunai PT Adaro Andalan Indonesia Tbk',
+                start: '2026-10-27T00:00:00',
+                TglWaktuRups: '',
+              },
+            ]
+          : [];
+      return Response.json({ ResultCount: Results.length, Results });
+    }
+    return net.fetcher(input, init);
+  };
+  try {
+    expect((await ingest({ ...options, fetcher })).failed).toEqual([]);
+    const actions = await published('corporate-actions.json');
+    const risk = await published('risk.json');
+    expect(actions).toEqual([
+      {
+        ticker: 'AADI',
+        kind: 'DIV',
+        label: 'Cash dividend',
+        steps: [{ step: 'pay', date: '2026-10-27' }],
+      },
+    ]);
+    expect(risk.AADI.susp.since).toBe('2026-10-21T08:00');
+    expect(
+      Object.values(risk).some((r: unknown) => JSON.stringify(r).includes('suspension-notice.pdf')),
+    ).toBe(true);
+    expect(await published('health.json')).toMatchObject({
+      corporate_actions: '2026-10-21',
+      risk: '2026-10-21',
+      failed: [],
+    });
+    const failed = await ingest({
+      ...options,
+      today: '2026-10-22',
+      fetcher: async (input, init) => {
+        const url = new URL(input instanceof Request ? input.url : input).href;
+        if (url.includes('GetCalendar')) return Response.json({ ResultCount: 1, Results: [] });
+        if (url.includes('GetSpecialNotation')) return new Response('', { status: 503 });
+        return fetcher(input, init);
+      },
+    });
+    expect(failed.failed.map((f) => [f.source, f.error.message])).toEqual([
+      ['corporate_actions', 'Incomplete IDX calendar'],
+      ['risk', expect.stringContaining('IDX HTTP 503')],
+    ]);
+    expect(await published('corporate-actions.json')).toEqual(actions);
+    expect(await published('risk.json')).toEqual(risk);
+    expect(await published('health.json')).toMatchObject({
+      corporate_actions: '2026-10-21',
+      risk: '2026-10-21',
+      failed: ['corporate_actions', 'risk'],
+    });
+    expect(await published('market.json')).toHaveProperty('history');
+    const replay = await ingest({
+      ...options,
+      registryOnly: true,
+      reparseRegistry: true,
+      until: options.today,
+      fetcher: async () => {
+        throw new Error('Offline export fetched IDX');
+      },
+    });
+    expect(replay.requests).toBe(0);
+    expect(await published('corporate-actions.json')).toEqual(actions);
+    expect(await published('risk.json')).toEqual(risk);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+}, 30000);
+
+it('records unread multi-stock notices as risk failures while publishing available flags', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'idx-risk-unread-'));
+  const net = network();
+  try {
+    const out = join(root, 'out');
+    const result = await ingest({
+      data: join(root, 'data'),
+      out,
+      today: '2026-10-21',
+      since: '2026-10-21',
+      fetcher: async (input, init) => {
+        if (
+          new URL(input instanceof Request ? input.url : input).pathname ===
+          '/StaticData/suspension-notice.pdf'
+        )
+          return new Response('', { status: 503 });
+        return net.fetcher(input, init);
+      },
+    });
+    expect(result.failed.map((f) => f.source)).toEqual(['suspensions', 'risk']);
+    expect(result.failed[1]?.error.message).toContain(
+      '1 multi-stock suspension notice not read yet',
+    );
+    expect(JSON.parse(await readFile(join(out, 'risk.json'), 'utf8')).AADI.susp).toBeTruthy();
+    expect(JSON.parse(await readFile(join(out, 'health.json'), 'utf8')).failed).toEqual([
+      'suspensions',
+      'risk',
+    ]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+}, 30000);
