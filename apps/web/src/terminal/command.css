@@ -1,0 +1,169 @@
+.terminal-page .cmd {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px 0 12px;
+  background: var(--head);
+}
+.terminal-page .prompt {
+  color: var(--accent);
+  font-weight: 700;
+}
+.terminal-page .cmd input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  background: none;
+  border: 0;
+  outline: none;
+  color: var(--ink);
+  font: 500 13px var(--font);
+  text-transform: uppercase;
+  caret-color: var(--accent);
+}
+.terminal-page .cmd input::placeholder {
+  color: var(--muted);
+  text-transform: none;
+}
+.terminal-page .ac {
+  display: none;
+  position: absolute;
+  top: 37px;
+  left: 0;
+  width: min(520px, 100%);
+  background: var(--head);
+  z-index: 40;
+  box-shadow: 0 4px 14px #0008;
+}
+.terminal-page .ac.open {
+  display: block;
+}
+.terminal-page .ac [role='option'] {
+  display: grid;
+  grid-template-columns: 64px 1fr;
+  gap: 12px;
+  padding: 5px 12px;
+  cursor: pointer;
+}
+.terminal-page .ac .on {
+  background: var(--sel);
+}
+.terminal-page .ac b {
+  color: var(--accent);
+}
+.terminal-page .ac span {
+  color: var(--ink-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.terminal-page .lay {
+  display: flex;
+  gap: 2px;
+}
+.terminal-page .lay button {
+  padding: 4px 8px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.terminal-page .lay kbd {
+  font: inherit;
+  margin-right: 6px;
+}
+.terminal-page .lay [aria-pressed='true'] {
+  color: var(--ink);
+  background: var(--sel);
+}
+.terminal-page .lay [aria-pressed='true'] kbd {
+  color: var(--accent);
+}
+.terminal-page .helpbtn {
+  width: 22px;
+  height: 22px;
+  color: var(--muted);
+}
+.terminal-page .help {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: #000a;
+}
+.terminal-page .help > div {
+  position: relative;
+  width: min(660px, 100%);
+  max-height: 90dvh;
+  overflow: auto;
+  background: var(--pane);
+  padding: 24px;
+}
+.terminal-page .help h2 {
+  font-size: 12px;
+  color: var(--accent);
+  margin: 18px 0 12px;
+}
+.terminal-page .help dl {
+  display: grid;
+  grid-template-columns: 150px 1fr;
+  gap: 9px 16px;
+  margin: 0;
+}
+.terminal-page .help dl > div {
+  display: contents;
+}
+.terminal-page .help dt {
+  color: var(--ink);
+}
+.terminal-page .help dd {
+  margin: 0;
+  color: var(--ink-2);
+}
+.terminal-page .help a {
+  display: block;
+  margin-top: 24px;
+  color: var(--muted);
+  font-size: 10px;
+}
+.terminal-page .close-help {
+  position: absolute;
+  right: 12px;
+  top: 8px;
+  font-size: 22px;
+}
+.terminal-page .command-error {
+  position: absolute;
+  top: 38px;
+  left: 0;
+  z-index: 45;
+  padding: 10px;
+  background: var(--head);
+  color: var(--down);
+}
+.terminal-page .command-error button {
+  margin-left: 12px;
+}
+@media (max-width: 600px) {
+  .terminal-page .cmd {
+    gap: 5px;
+    padding: 0 5px;
+  }
+  .terminal-page .cmd input {
+    font-size: 11px;
+  }
+  .terminal-page .cmd input::placeholder {
+    font-size: 10px;
+  }
+  .terminal-page .lay kbd {
+    display: none;
+  }
+  .terminal-page .lay button {
+    padding: 4px 5px;
+    font-size: 10px;
+  }
+  .terminal-page .help dl {
+    grid-template-columns: 90px 1fr;
+  }
+}

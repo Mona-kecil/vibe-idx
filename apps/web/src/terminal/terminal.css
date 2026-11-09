@@ -1,0 +1,221 @@
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+.terminal-page {
+  --bg: #0a0c0b;
+  --pane: #101312;
+  --head: #141816;
+  --line: #222826;
+  --sel: #1b2220;
+  --hover: #171d1b;
+  --ink: #d9ded8;
+  --ink-2: #a2aaa4;
+  --muted: #8d9790;
+  --up: #22a6a0;
+  --down: #e4573f;
+  --accent: #d6b25e;
+  --font: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  background: var(--bg);
+  color: var(--ink);
+  font: 12px/1.45 var(--font);
+  font-variant-numeric: tabular-nums;
+  min-height: 100dvh;
+}
+.terminal-page * {
+  box-sizing: border-box;
+}
+.terminal-page .term {
+  position: relative;
+  display: grid;
+  grid-template-rows: 38px minmax(0, 1fr) 26px;
+  height: 100dvh;
+  overflow: hidden;
+}
+.terminal-page button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  cursor: pointer;
+}
+.terminal-page button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.terminal-page a {
+  color: inherit;
+  text-decoration: none;
+}
+.terminal-page a:hover {
+  color: var(--accent);
+}
+.terminal-page button:focus-visible,
+.terminal-page a:focus-visible,
+.terminal-page input:focus-visible,
+.terminal-page [tabindex]:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+.terminal-page .up {
+  color: var(--up);
+}
+.terminal-page .dn {
+  color: var(--down);
+}
+.terminal-page .mut {
+  color: var(--muted);
+}
+.terminal-page .accent {
+  color: var(--accent);
+}
+.terminal-page .empty {
+  padding: 18px 12px;
+  margin: 0;
+  color: var(--muted);
+}
+.terminal-page .empty button,
+.terminal-page .empty a {
+  color: var(--accent);
+  padding: 4px;
+}
+.terminal-page .seg {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  align-items: center;
+}
+.terminal-page .seg button {
+  color: var(--muted);
+  padding: 3px 7px;
+  font-size: 10px;
+  white-space: nowrap;
+  text-transform: uppercase;
+}
+.terminal-page .seg button[aria-pressed='true'] {
+  color: var(--ink);
+  background: var(--sel);
+}
+.terminal-page .seg button:hover {
+  color: var(--ink);
+}
+.terminal-page .sub {
+  display: flex;
+  flex: none;
+  gap: 14px;
+  padding: 3px 6px;
+  flex-wrap: wrap;
+}
+.terminal-page .pb {
+  overflow: auto;
+  flex: 1;
+  min-height: 0;
+  scrollbar-width: thin;
+  scrollbar-color: #354139 transparent;
+}
+.terminal-page table {
+  border-collapse: collapse;
+  width: 100%;
+  white-space: nowrap;
+  font: inherit;
+}
+.terminal-page th {
+  color: var(--muted);
+  font-weight: 500;
+  font-size: 9px;
+  text-align: right;
+  padding: 5px 7px;
+  position: sticky;
+  top: 0;
+  background: var(--pane);
+  z-index: 1;
+}
+.terminal-page td {
+  padding: 4px 7px;
+  text-align: right;
+  vertical-align: top;
+}
+.terminal-page th:first-child,
+.terminal-page td:first-child,
+.terminal-page .l {
+  text-align: left;
+}
+.terminal-page tr:hover {
+  background: var(--hover);
+}
+.terminal-page tr.on {
+  background: var(--sel);
+}
+.terminal-page .ticker {
+  font-weight: 600;
+  color: var(--ink);
+}
+.terminal-page .publication {
+  padding: 4px 8px;
+  color: var(--muted);
+  font-size: 10px;
+}
+.terminal-page .status {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  padding: 0 10px;
+  background: var(--head);
+  white-space: nowrap;
+  color: var(--ink-2);
+  font-size: 10px;
+  overflow: hidden;
+}
+.terminal-page .status .asof {
+  margin-left: auto;
+}
+.terminal-page .status .spark {
+  flex: none;
+}
+.terminal-page .flags {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.terminal-page .flag {
+  padding: 0 3px;
+  color: var(--accent);
+  background: #d6b25e12;
+  font-size: 9px;
+}
+.terminal-page .flag.sus {
+  color: var(--down);
+}
+.terminal-page .flag.uma {
+  color: #b494db;
+}
+@media (max-width: 900px) {
+  .terminal-page .term {
+    height: auto;
+    min-height: 100dvh;
+    grid-template-rows: 38px auto 26px;
+    overflow: visible;
+  }
+  .terminal-page .status {
+    position: sticky;
+    bottom: 0;
+    z-index: 20;
+  }
+  .terminal-page .hidenarrow {
+    display: none;
+  }
+}
+@media (max-width: 520px) {
+  .terminal-page .status {
+    gap: 9px;
+    font-size: 9px;
+  }
+  .terminal-page .status .spark {
+    display: none;
+  }
+  .terminal-page table {
+    font-size: 11px;
+  }
+  .terminal-page td {
+    padding: 4px 6px;
+  }
+}

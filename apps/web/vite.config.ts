@@ -6,6 +6,7 @@ export default defineConfig({
   plugins: lazyPlugins(() => react() as unknown as PluginOption[]),
   server: {
     proxy: {
+      '/api': { target: 'https://vibe-idx.vercel.app', changeOrigin: true },
       '/data': {
         target: 'https://pub-7982bfb066694e6e8615750132283eba.r2.dev',
         changeOrigin: true,

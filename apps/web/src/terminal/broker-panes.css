@@ -1,0 +1,96 @@
+.terminal-page .broker-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 12px;
+  padding: 4px 6px;
+}
+.terminal-page .broker-controls .seg button {
+  font-size: 9px;
+  padding: 3px 5px;
+}
+.terminal-page .broker-ledgers {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+}
+.terminal-page .broker-ledger {
+  font-size: 11px;
+}
+.terminal-page .broker-ledger td,
+.terminal-page .broker-ledger th {
+  padding: 4px;
+}
+.terminal-page .broker-ledger .dim {
+  opacity: 0.25;
+}
+.terminal-page .broker-ledger .edge {
+  color: var(--muted);
+}
+.terminal-page .pairable .broker-ledger button {
+  cursor: pointer;
+}
+.terminal-page .broker-ledger .type-FOREIGN {
+  color: #709fe3;
+}
+.terminal-page .broker-ledger .type-GOV {
+  color: var(--accent);
+}
+.terminal-page .broker-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 10px;
+  color: var(--muted);
+  padding: 8px;
+}
+.terminal-page .broker-key {
+  display: inline-flex;
+  gap: 3px;
+}
+.terminal-page .broker-key button {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.terminal-page .broker-key button[aria-pressed='false'] {
+  opacity: 0.35;
+}
+.terminal-page .broker-key i {
+  width: 7px;
+  height: 7px;
+}
+.terminal-page .broker-picker {
+  position: absolute;
+  top: 32px;
+  left: 8px;
+  right: 8px;
+  max-height: 80%;
+  overflow: auto;
+  background: var(--head);
+  padding: 8px;
+  z-index: 8;
+  box-shadow: 0 8px 24px #0009;
+}
+.terminal-page .broker-picker input {
+  width: 100%;
+  background: var(--pane);
+  color: var(--ink);
+  border: 0;
+  padding: 8px;
+  font: inherit;
+}
+.terminal-page .broker-picker > button {
+  display: block;
+  padding: 6px;
+  width: 100%;
+  text-align: left;
+}
+.terminal-page .broker-picker > button:hover {
+  background: var(--sel);
+}
+@media (max-width: 520px) {
+  .terminal-page .broker-ledgers {
+    gap: 8px;
+    min-width: 450px;
+  }
+}
