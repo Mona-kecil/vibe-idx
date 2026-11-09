@@ -26,6 +26,8 @@ async function route(request: Request, env: Env): Promise<Response> {
   // Google News returns 503 to Workers, so ticker news comes from the Vercel handler.
   if (url.pathname === '/api/news')
     return fetch(`https://vibe-idx.vercel.app/api/news${url.search}`);
+  if (url.pathname.startsWith('/api/'))
+    return Response.json({ error: 'not_found' }, { status: 404 });
   if (url.pathname.startsWith('/data/')) {
     const object = await env.PUBLIC.get(url.pathname.slice('/data/'.length));
     if (!object) return new Response('Not found', { status: 404 });

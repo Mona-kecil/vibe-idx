@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vite-plus/test';
 import worker from '../worker';
 
@@ -38,5 +39,32 @@ describe('preview Worker', () => {
     expect(
       await (await worker.fetch(new Request('https://preview.test/terminal'), env, ctx)).text(),
     ).toBe('asset');
+  });
+  it('returns JSON 404 for unknown API routes without an assets binding', async () => {
+    const env = environment();
+    const response = await worker.fetch(new Request('https://preview.test/api/foo'), env, ctx);
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: 'not_found' });
+    expect(env.ASSETS.fetch).not.toHaveBeenCalled();
+
+    ctx.waitUntil.mockClear();
+    const probed = await worker.fetch(
+      new Request('https://preview.test/api/.git/config'),
+      { ...env, ASSETS: undefined as never },
+      ctx,
+    );
+    expect(probed.status).toBe(404);
+    expect(await probed.json()).toEqual({ error: 'not_found' });
+    expect(ctx.waitUntil).not.toHaveBeenCalled();
+  });
+  it('binds static assets for the worker fallback', () => {
+    const config = JSON.parse(
+      readFileSync(new URL('../wrangler.jsonc', import.meta.url), 'utf8').replace(
+        /,(\s*[}\]])/g,
+        '$1',
+      ),
+    ) as { assets: { binding?: string; run_worker_first: string[] } };
+    expect(config.assets.binding).toBe('ASSETS');
+    expect(config.assets.run_worker_first).toEqual(['/api/*', '/data/*']);
   });
 });
