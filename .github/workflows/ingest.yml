@@ -29,7 +29,24 @@ permissions:
   contents: read
 
 jobs:
+  window:
+    runs-on: ubuntu-latest
+    outputs:
+      open: ${{ steps.window.outputs.open }}
+    steps:
+      - id: window
+        env:
+          REGISTRY_ONLY: ${{ github.event_name == 'workflow_dispatch' && inputs.registry_since != '' }}
+        run: |
+          if [ "$REGISTRY_ONLY" = true ] || [ "$(TZ=Asia/Jakarta date +%H%M)" -ge 1717 ]; then
+            echo open=true >> "$GITHUB_OUTPUT"
+          else
+            echo '::notice::IDX source ingestion runs at 17:17 Jakarta or later; skipping this run'
+            echo open=false >> "$GITHUB_OUTPUT"
+          fi
   ingest:
+    needs: window
+    if: needs.window.outputs.open == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 90
     env:
@@ -65,10 +82,6 @@ jobs:
             if [ "$REGISTRY_REPARSE" = true ]; then args+=(--reparse-registry); fi
             pnpm --filter @vibe-idx/pipeline ingest -- --data "$DATA" --out "$OUT" "${args[@]}"
             exit
-          fi
-          if [ "$(TZ=Asia/Jakarta date +%H%M)" -lt 1717 ]; then
-            echo 'IDX source ingestion requires 17:17 Jakarta or later'
-            exit 1
           fi
           pnpm --filter @vibe-idx/pipeline ingest -- --data "$DATA" --out "$OUT"
       - name: Archive raw responses
