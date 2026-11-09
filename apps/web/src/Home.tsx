@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { initialPins, readStorage, writeStorage } from './watchlist';
 import { AccountControls } from './BrokerPanel';
 import { load, type Feed, type Health, type Market, type Stock, type Ticker } from './data';
+import { Stale } from './Stale';
 import { dateText, direction, nf } from './ticker/format';
 
 type Event = Feed[number];
@@ -618,6 +619,7 @@ export function Home() {
         ) : (
           <>
             <div className="freshness">
+              <Stale health={state.health} />
               <span>Prices {date(state.health.prices)}</span>
               <span>5% ownership {date(state.health.five_pct)}</span>
               <span>Registry {date(state.health.one_pct)}</span>

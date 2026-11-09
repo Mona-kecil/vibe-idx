@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AccountControls } from '../BrokerPanel';
 import { load, type Health, type Market, type Stock, type Ticker } from '../data';
+import { Stale } from '../Stale';
 import { holdingSeries, ownershipEvents, registryAt, type Selection } from './logic';
 import { dateText, direction, nf, short, signed } from './format';
 import { PriceChart, visiblePrices, type Period } from './PriceChart';
@@ -251,6 +252,7 @@ function TickerDetail({ data, health }: { data: Ticker; health: Health | null })
   return (
     <main className="wrap">
       <div className="freshness">
+        {health && <Stale health={health} />}
         {last && <span>Prices {dateText(health?.prices ?? last.date)}</span>}
         {dailyDate && <span>5% ownership {dateText(dailyDate)}</span>}
         {registry && <span>Registry {dateText(registry.date)}</span>}

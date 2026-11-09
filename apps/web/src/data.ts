@@ -232,6 +232,16 @@ export async function loadNews(ticker: string, range?: { start: string; end: str
 }
 
 export type Health = z.infer<typeof healthSchema>;
+
+// The daily batch publishes around 10:30 UTC every day, weekends included, and is
+// checked at 12:00 UTC. A snapshot from before that day's run is stale.
+export function staleSince(health: Health, now = Date.now()) {
+  const check = new Date(now);
+  check.setUTCHours(12, 0, 0, 0);
+  if (check.getTime() > now) check.setUTCDate(check.getUTCDate() - 1);
+  const published = Date.parse(`${health.run_at.slice(0, 19).replace(' ', 'T')}Z`);
+  return published < check.getTime() - 2 * 3600e3 ? health.run_at.slice(0, 10) : null;
+}
 export type Market = z.infer<typeof marketSchema>;
 export type Feed = z.infer<typeof feedSchema>;
 export type Stock = z.infer<typeof stocksSchema>[number];
