@@ -996,6 +996,9 @@ BT /F1 10 Tf 1 0 0 1 529 530 Tm (-100) Tj ET`;
       );
       const aadi = JSON.parse(await readFile(join(root, 'out/ticker/AADI.json'), 'utf8'));
       expect(aadi.prices).toHaveLength(1);
+      expect(aadi.prices[0]).toMatchObject({ open: 10450, high: 10950, low: 10300 });
+      const abba = JSON.parse(await readFile(join(root, 'out/ticker/ABBA.json'), 'utf8'));
+      expect(abba.prices[0]).toMatchObject({ open: null, high: null, low: null, volume: 0 });
       expect(aadi.holders).toContainEqual(
         expect.objectContaining({ investor: 'ADARO STRATEGIC INVESTMENTS', shares: 3200142830 }),
       );

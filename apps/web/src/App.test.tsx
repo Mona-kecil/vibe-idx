@@ -40,6 +40,9 @@ function ticker(symbol: string): Ticker {
     name: `Company ${symbol}`,
     prices: dates.map((date, i) => ({
       date,
+      open: null,
+      high: null,
+      low: null,
       close: 100 + i,
       volume: 700,
       value: 70000,

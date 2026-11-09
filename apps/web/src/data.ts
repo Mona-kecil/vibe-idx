@@ -160,6 +160,21 @@ export const tickerSchema = z.object({
   prices: z.array(
     z.object({
       date: z.string(),
+      open: z
+        .number()
+        .nullable()
+        .optional()
+        .transform((value) => value ?? null),
+      high: z
+        .number()
+        .nullable()
+        .optional()
+        .transform((value) => value ?? null),
+      low: z
+        .number()
+        .nullable()
+        .optional()
+        .transform((value) => value ?? null),
       close: z.number(),
       volume: z.number(),
       value: z.number(),
