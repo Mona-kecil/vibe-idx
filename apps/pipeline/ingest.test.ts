@@ -235,6 +235,16 @@ function network({ monthly = false, reports = false } = {}) {
         .replaceAll('2026-10-20', '2026-10-21');
       return new Response(marketFixtureForOwnershipDay);
     }
+    if (url.pathname.includes('GetSuspension'))
+      return Response.json({
+        ResultCount: 2,
+        Results: [
+          { Kode: 'AADI', Data_Download: '/StaticData/single.pdf' },
+          { Kode: '>1 Kode', Data_Download: '/StaticData/suspension-notice.pdf' },
+        ],
+      });
+    if (url.pathname === '/StaticData/suspension-notice.pdf')
+      return new Response(new Uint8Array(await fixture('suspension-notice-2026-annual.pdf')));
     if (url.pathname.includes('GetCompanyProfiles')) name = 'company-profiles.json';
     else if (url.pathname.includes('GetAnnouncement')) {
       const start = Number(url.searchParams.get('indexFrom')) * 2;
@@ -1094,7 +1104,7 @@ BT /F1 10 Tf 1 0 0 1 529 530 Tm (-100) Tj ET`;
       ).toEqual(before);
       expect(
         net.urls.every((url) =>
-          /data-kepemilikan-saham|GetAnnouncement|GetStockSummary|GetIndexSummary/.test(url),
+          /data-kepemilikan-saham|GetAnnouncement|GetStockSummary|GetIndexSummary|GetSuspension/.test(url),
         ),
       ).toBe(true);
       expect(second.report_gaps).toEqual(first.report_gaps);
