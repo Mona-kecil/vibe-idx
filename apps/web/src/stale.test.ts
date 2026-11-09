@@ -1,13 +1,16 @@
 import { describe, expect, it } from 'vite-plus/test';
-import { staleSince } from './data';
+import { staleSince, staleSources } from './data';
 
-const health = (run_at: string) => ({
+const health = (run_at: string, failed: string[] = []) => ({
   prices: '2026-11-06',
   indices: '2026-11-06',
   five_pct: '2026-11-06',
   one_pct: '2026-10-30',
   issuers: '2026-11-06',
+  disclosures: '2026-11-06',
+  brokers: '2026-11-03',
   run_at,
+  failed,
 });
 
 describe('staleSince', () => {
@@ -24,5 +27,22 @@ describe('staleSince', () => {
     expect(
       staleSince(health('2026-11-07 10:55:00+00'), Date.parse('2026-11-07T12:00:00Z')),
     ).toBeNull();
+  });
+});
+
+describe('staleSources', () => {
+  const evening = Date.parse('2026-11-06T12:30:00Z');
+  it('names each source the last run failed, with its last good date', () => {
+    expect(
+      staleSources(health('2026-11-06 10:28:00+00', ['brokers', 'one_pct', 'later']), evening),
+    ).toEqual([
+      { label: 'Broker flow', since: '2026-11-03' },
+      { label: 'Registry', since: '2026-10-30' },
+    ]);
+  });
+  it('replaces per-source markers with one marker when the run itself is missed', () => {
+    expect(staleSources(health('2026-11-05 10:28:00+00', ['brokers']), evening)).toEqual([
+      { label: null, since: '2026-11-05' },
+    ]);
   });
 });

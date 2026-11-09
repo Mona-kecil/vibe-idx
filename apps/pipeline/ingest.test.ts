@@ -1132,7 +1132,7 @@ BT /F1 10 Tf 1 0 0 1 529 530 Tm (-100) Tj ET`;
     }
   }, 30000);
 
-  it('rejects truncated pages and failed fetches, recovers interrupted report saves, and retains unreadable PDFs as linked disclosures', async () => {
+  it('isolates truncated pages and failed fetches, recovers interrupted report saves, and retains unreadable PDFs as linked disclosures', async () => {
     const root = await mkdtemp(join(tmpdir(), 'idx-source-failure-'));
     const net = network({ reports: true });
     const options = {
@@ -1141,53 +1141,64 @@ BT /F1 10 Tf 1 0 0 1 529 530 Tm (-100) Tj ET`;
       since: '2026-10-21',
       today: '2026-10-22',
     };
+    const health = async () => JSON.parse(await readFile(join(options.out, 'health.json'), 'utf8'));
     try {
-      await expect(
-        ingest({
-          ...options,
-          fetcher: async (input, init) => {
-            const url = new URL(input instanceof Request ? input.url : input);
-            if (
-              url.pathname.includes('GetAnnouncement') &&
-              url.searchParams.get('indexFrom') === '1'
-            )
-              return Response.json({ ResultCount: 10, Replies: [] });
-            return net.fetcher(input, init);
-          },
-        }),
-      ).rejects.toThrow('Incomplete announcement page');
-      await expect(readFile(join(options.out, 'ticker/BJTM.json'))).rejects.toMatchObject({
-        code: 'ENOENT',
+      const truncated = await ingest({
+        ...options,
+        fetcher: async (input, init) => {
+          const url = new URL(input instanceof Request ? input.url : input);
+          if (url.pathname.includes('GetAnnouncement') && url.searchParams.get('indexFrom') === '1')
+            return Response.json({ ResultCount: 10, Replies: [] });
+          return net.fetcher(input, init);
+        },
       });
-      await expect(
-        ingest({
-          ...options,
-          fetcher: async (input, init) => {
-            const url = new URL(input instanceof Request ? input.url : input);
-            if (url.pathname.includes('From_KSEI'))
-              return new Response('unavailable', { status: 502 });
-            return net.fetcher(input, init);
-          },
-        }),
-      ).rejects.toThrow('IDX HTTP 502');
+      expect(truncated.failed).toEqual([
+        { source: 'disclosures', error: new Error('Incomplete announcement page at 2 of 10') },
+      ]);
+      expect(await health()).toMatchObject({
+        prices: '2026-10-21',
+        five_pct: '2026-10-21',
+        disclosures: null,
+        failed: ['disclosures'],
+      });
+      expect(
+        JSON.parse(await readFile(join(options.out, 'ticker/BJTM.json'), 'utf8')),
+      ).toMatchObject({
+        disclosures: [],
+        prices: [expect.objectContaining({ date: '2026-10-21' })],
+      });
+      const unavailable = await ingest({
+        ...options,
+        fetcher: async (input, init) => {
+          const url = new URL(input instanceof Request ? input.url : input);
+          if (url.pathname.includes('From_KSEI'))
+            return new Response('unavailable', { status: 502 });
+          return net.fetcher(input, init);
+        },
+      });
+      expect(unavailable.failed.map((f) => [f.source, f.error.message])).toEqual([
+        ['disclosures', expect.stringContaining('IDX HTTP 502')],
+      ]);
       await expect(
         readFile(join(options.data, 'parquet/disclosures/2026.parquet')),
       ).rejects.toMatchObject({ code: 'ENOENT' });
-      await expect(
-        ingest({
-          ...options,
-          fetcher: async (input, init) => {
-            const url = new URL(input instanceof Request ? input.url : input);
-            if (url.pathname.endsWith('/unsupported.pdf')) {
-              await mkdir(join(options.data, 'parquet/insiders/2026.parquet'), {
-                recursive: true,
-              });
-              return new Response('%PDF-1.7\ntruncated');
-            }
-            return net.fetcher(input, init);
-          },
-        }),
-      ).rejects.toMatchObject({ code: 'EISDIR' });
+      const unsaved = await ingest({
+        ...options,
+        fetcher: async (input, init) => {
+          const url = new URL(input instanceof Request ? input.url : input);
+          if (url.pathname.endsWith('/unsupported.pdf')) {
+            await mkdir(join(options.data, 'parquet/insiders/2026.parquet'), {
+              recursive: true,
+            });
+            return new Response('%PDF-1.7\ntruncated');
+          }
+          return net.fetcher(input, init);
+        },
+      });
+      expect(unsaved.failed).toEqual([
+        { source: 'disclosures', error: expect.objectContaining({ code: 'EISDIR' }) },
+      ]);
+      expect(await health()).toMatchObject({ failed: ['disclosures'] });
       const restored = { ...options, data: join(root, 'restored') };
       await cp(join(options.data, 'raw'), join(restored.data, 'raw'), { recursive: true });
       for (const entry of await readdir(join(options.data, 'parquet'), {
@@ -1202,6 +1213,8 @@ BT /F1 10 Tf 1 0 0 1 529 530 Tm (-100) Tj ET`;
       }
       net.urls.length = 0;
       const withUnreadableReport = await ingest({ ...restored, fetcher: net.fetcher });
+      expect(withUnreadableReport.failed).toEqual([]);
+      expect(await health()).toMatchObject({ failed: [], brokers: null });
       expect(withUnreadableReport.counts).toMatchObject({
         disclosures: 10,
         insiders: 4,
@@ -1228,6 +1241,67 @@ BT /F1 10 Tf 1 0 0 1 529 530 Tm (-100) Tj ET`;
       const bjtm = JSON.parse(await readFile(join(options.out, 'ticker/BJTM.json'), 'utf8'));
       expect(bjtm.one_pct).toEqual({ date: null, holders: [] });
       expect(bjtm.insiders).toHaveLength(1);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('publishes every other source when the 1% file breaks and flags incomplete broker sessions', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'idx-isolated-'));
+    const net = network({ monthly: true });
+    const options = {
+      data: join(root, 'data'),
+      out: join(root, 'out'),
+      since: '2026-09-01',
+      today: '2026-10-22',
+    };
+    const coverage = async (complete: boolean) => {
+      const instance = await DuckDBInstance.create(':memory:');
+      const db = await instance.connect();
+      await mkdir(join(options.data, 'parquet'), { recursive: true });
+      await db.run(`COPY (SELECT * FROM (VALUES
+        (DATE '2026-10-20', 'AADI', 'regular', true),
+        (DATE '2026-10-21', 'AADI', 'regular', ${complete})) t(date, ticker, board, complete))
+        TO '${join(options.data, 'parquet/broker-coverage.parquet')}' (FORMAT PARQUET)`);
+      db.closeSync();
+      instance.closeSync();
+    };
+    const health = async () => JSON.parse(await readFile(join(options.out, 'health.json'), 'utf8'));
+    try {
+      await coverage(false);
+      const broken = await ingest({
+        ...options,
+        fetcher: async (input, init) =>
+          new URL(input instanceof Request ? input.url : input).pathname.endsWith(
+            '-satu-persen.xlsx',
+          )
+            ? new Response('unavailable', { status: 502 })
+            : net.fetcher(input, init),
+      });
+      expect(broken.failed.map((f) => [f.source, f.error.message])).toEqual([
+        ['one_pct', 'IDX HTTP 502: https://www.idx.id/Media/2026-09-satu-persen.xlsx'],
+        ['brokers', 'Broker data is complete through 2026-10-20; expected 2026-10-21'],
+      ]);
+      expect(broken.counts).toMatchObject({
+        prices: 963,
+        five_pct: expect.any(Number),
+        one_pct: 0,
+      });
+      expect(await health()).toMatchObject({
+        prices: '2026-10-21',
+        five_pct: '2026-10-21',
+        one_pct: null,
+        brokers: '2026-10-20',
+        failed: ['one_pct', 'brokers'],
+      });
+      await coverage(true);
+      const recovered = await ingest({ ...options, fetcher: net.fetcher });
+      expect(recovered.failed).toEqual([]);
+      expect(await health()).toMatchObject({
+        one_pct: '2026-09-30',
+        brokers: '2026-10-21',
+        failed: [],
+      });
     } finally {
       await rm(root, { recursive: true, force: true });
     }
