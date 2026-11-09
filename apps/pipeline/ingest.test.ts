@@ -529,11 +529,11 @@ describe('batch pipeline', () => {
         await db.run(schema);
         await db.run(`INSERT INTO five_pct (date, ticker, investor, account, shares,
           combined_shares, previous_combined, pct_before, pct_after, previous_date) VALUES
-          ('2024-10-21', 'AADI', 'OTHER', 'a', 30, 30, 20, 2, 3, '2024-10-20'),
-          ('2025-10-21', '1', 'INVESTOR', 'a', 100, 100, 90, 9, 10, '2025-10-20'),
-          ('2026-10-21', '1', 'INVESTOR', 'a', 100, 100, 90, 9, 10, '2026-10-20'),
-          ('2026-10-21', 'TRUE', 'INVESTOR', 'a', 110, 110, 90, 9, 11, '2026-10-20'),
-          ('2026-10-21', '1', 'INVESTOR', 'b', 0, 110, 90, 9, 11, '2026-10-20');
+          ('2024-10-21', 'AADI', 'OTHER', '["a","OTHER"]', 30, 30, 20, 2, 3, '2024-10-20'),
+          ('2025-10-21', '1', 'INVESTOR', '["a","INVESTOR"]', 100, 100, 90, 9, 10, '2025-10-20'),
+          ('2026-10-21', '1', 'INVESTOR', '["a","INVESTOR"]', 100, 100, 90, 9, 10, '2026-10-20'),
+          ('2026-10-21', 'TRUE', 'INVESTOR', '["a","INVESTOR"]', 110, 110, 90, 9, 11, '2026-10-20'),
+          ('2026-10-21', '1', 'INVESTOR', '["b","INVESTOR"]', 0, 110, 90, 9, 11, '2026-10-20');
           INSERT INTO one_pct (date, ticker, investor, seq, shares, pct) VALUES
           ('2024-09-30', 'AADI', 'OTHER', 0, 30, 3),
           ('2025-09-30', '1', 'INVESTOR', 0, 100, 10),
@@ -619,14 +619,14 @@ describe('batch pipeline', () => {
       await db.run(`INSERT INTO prices (date, ticker) VALUES ('2026-10-23', 'SINI');
         INSERT INTO five_pct (date, ticker, investor, account, combined_shares,
           previous_combined, pct_before, pct_after, previous_date) VALUES
-        ('2026-10-21', 'SINI', 'PT. KREASI JASA PERSADA', 'a', 94940000, 94940000, 7.9, 7.9, '2026-10-20'),
-        ('2026-10-21', 'SINI', 'PT. PETROSEA TBK', 'a', 239105000, 239105000, 19.88, 19.88, '2026-10-20'),
-        ('2026-10-21', 'SINI', 'BATUBARA DEVELOPMENT PTE. LTD.', 'a', 74530000, 74530000, 6.2, 6.2, '2026-10-20'),
-        ('2026-10-21', 'SINI', 'PT. PERSADA JASA KREASI', 'a', 70000000, 70000000, 5.82, 5.82, '2026-10-20'),
-        ('2026-10-23', 'SINI', 'KREASI  JASA PERSADA PT', 'a', 94940000, NULL, NULL, 7.9, '2026-10-21'),
-        ('2026-10-23', 'SINI', 'PT PETROSEA TBK', 'a', 239105000, NULL, NULL, 19.88, '2026-10-21'),
-        ('2026-10-23', 'SINI', 'Batubara Development Limited', 'a', 74530000, NULL, NULL, 6.2, '2026-10-21'),
-        ('2026-10-23', 'SINI', 'PERSADA JASA KREASI PT', 'a', 70000000, NULL, NULL, 5.82, '2026-10-21');`);
+        ('2026-10-21', 'SINI', 'PT. KREASI JASA PERSADA', '["a","PT. KREASI JASA PERSADA"]', 94940000, 94940000, 7.9, 7.9, '2026-10-20'),
+        ('2026-10-21', 'SINI', 'PT. PETROSEA TBK', '["a","PT. PETROSEA TBK"]', 239105000, 239105000, 19.88, 19.88, '2026-10-20'),
+        ('2026-10-21', 'SINI', 'BATUBARA DEVELOPMENT PTE. LTD.', '["a","BATUBARA DEVELOPMENT PTE. LTD."]', 74530000, 74530000, 6.2, 6.2, '2026-10-20'),
+        ('2026-10-21', 'SINI', 'PT. PERSADA JASA KREASI', '["a","PT. PERSADA JASA KREASI"]', 70000000, 70000000, 5.82, 5.82, '2026-10-20'),
+        ('2026-10-23', 'SINI', 'KREASI  JASA PERSADA PT', '["a","KREASI  JASA PERSADA PT"]', 94940000, NULL, NULL, 7.9, '2026-10-21'),
+        ('2026-10-23', 'SINI', 'PT PETROSEA TBK', '["a","PT PETROSEA TBK"]', 239105000, NULL, NULL, 19.88, '2026-10-21'),
+        ('2026-10-23', 'SINI', 'Batubara Development Limited', '["a","Batubara Development Limited"]', 74530000, NULL, NULL, 6.2, '2026-10-21'),
+        ('2026-10-23', 'SINI', 'PERSADA JASA KREASI PT', '["a","PERSADA JASA KREASI PT"]', 70000000, NULL, NULL, 5.82, '2026-10-21');`);
       await db.run(analytics);
       const published = (await db.runAndReadAll(tickers)).getRowObjectsJson();
       expect(published).toMatchObject([
@@ -663,6 +663,46 @@ describe('batch pipeline', () => {
     }
   });
 
+  it('follows a holder IDX relabels under the same accounts but not a transfer to another holder', async () => {
+    const instance = await DuckDBInstance.create(':memory:');
+    const db = await instance.connect();
+    try {
+      await db.run(schema);
+      await db.run(`INSERT INTO prices (date, ticker) VALUES ('2026-03-02', 'DILD');
+        INSERT INTO five_pct (date, ticker, investor, account, combined_shares,
+          previous_combined, pct_before, pct_after, previous_date) VALUES
+        ('2026-02-27', 'DILD', 'LO KHENG HONG. DRS', '["PANIN SEKURITAS Tbk, PT","DRS. LO KHENG HONG"]', 696038100, 696038100, 6.48, 6.48, '2026-02-26'),
+        ('2026-02-27', 'DILD', 'LO KHENG HONG. DRS', '["PT BCA SEKURITAS","LO KHENG HONG. DRS"]', 696038100, 696038100, 6.48, 6.48, '2026-02-26'),
+        ('2026-02-27', 'DILD', 'PT ANGKASA PURA INDONESIA', '["PT BANK MANDIRI","PT ANGKASA PURA INDONESIA"]', 600000000, 600000000, 5.58, 5.58, '2026-02-26'),
+        ('2026-03-02', 'DILD', 'DRS LO KHENG HONG', '["PANIN SEKURITAS Tbk, PT","DRS. LO KHENG HONG"]', 696038100, 696038100, 6.48, 6.48, '2026-02-27'),
+        ('2026-03-02', 'DILD', 'DRS LO KHENG HONG', '["","LO KHENG HONG. DRS"]', 696038100, 696038100, 6.48, 6.48, '2026-02-27'),
+        ('2026-03-02', 'DILD', 'DANANTARA ASSET MANAGEMENT', '["PT BANK MANDIRI","DANANTARA ASSET MANAGEMENT"]', 600000000, 600000000, 5.58, 5.58, '2026-02-27');
+        INSERT INTO one_pct (date, ticker, investor, seq, shares, pct) VALUES
+        ('2026-02-27', 'DILD', 'LO KHENG HONG. DRS', 0, 696038100, 6.48);`);
+      await db.run(analytics);
+      const [published] = (await db.runAndReadAll(tickers)).getRowObjectsJson();
+      expect(published).toMatchObject({
+        holders: [
+          { investor: 'DANANTARA ASSET MANAGEMENT', holder_key: 'DANANTARAASSETMANAGEMENT' },
+          { investor: 'DRS LO KHENG HONG', holder_key: 'DRSLOKHENGHONG', shares: 696038100 },
+        ],
+        changes: [
+          { investor: 'DANANTARA ASSET MANAGEMENT', net_shares: 600000000, exited: false },
+          { investor: 'PT ANGKASA PURA INDONESIA', shares_before: 600000000, exited: true },
+        ],
+        one_pct: { holders: [{ investor: 'LO KHENG HONG. DRS', holder_key: 'DRSLOKHENGHONG' }] },
+      });
+      expect(
+        (await db.runAndReadAll('SELECT numbers FROM feed'))
+          .getRowObjectsJson()
+          .map((r) => r.numbers),
+      ).not.toContainEqual(expect.stringContaining('LO KHENG HONG'));
+    } finally {
+      db.closeSync();
+      instance.closeSync();
+    }
+  });
+
   it('keeps older keyed share changes, marks unknown exits, and publishes entrants from zero', async () => {
     const instance = await DuckDBInstance.create(':memory:');
     const db = await instance.connect();
@@ -672,12 +712,12 @@ describe('batch pipeline', () => {
         ('2026-01-02', 'SINI'), ('2026-10-23', 'SINI');
         INSERT INTO five_pct (date, ticker, investor, account, combined_shares,
           previous_combined, pct_before, pct_after, previous_date) VALUES
-        ('2026-01-02', 'SINI', 'PT. KREASI JASA PERSADA', 'a', 94940000, 94940000, 7.9, 7.9, '2026-01-01'),
-        ('2026-01-02', 'SINI', 'EVER GRACE INTERNATIONAL TRADING LIMITED', 'a', 90000000, 90000000, 7.48, 7.48, '2026-01-01'),
-        ('2026-01-05', 'SINI', 'KREASI JASA PERSADA PT', 'a', 100000000, 0, 0, 8.32, '2026-01-02'),
-        ('2026-01-05', 'SINI', 'KREASI JASA PERSADA PT', 'b', 100000000, 0, 0, 8.32, '2026-01-02'),
-        ('2026-10-23', 'SINI', 'PT KREASI JASA PERSADA', 'a', 100000000, 100000000, 8.32, 8.32, '2026-01-05'),
-        ('2026-10-23', 'SINI', 'PT DELI INDONESIA RAYA', 'a', 90000000, 30000000, 2.49, 7.48, '2026-01-05');`);
+        ('2026-01-02', 'SINI', 'PT. KREASI JASA PERSADA', '["a","PT. KREASI JASA PERSADA"]', 94940000, 94940000, 7.9, 7.9, '2026-01-01'),
+        ('2026-01-02', 'SINI', 'EVER GRACE INTERNATIONAL TRADING LIMITED', '["a","EVER GRACE INTERNATIONAL TRADING LIMITED"]', 90000000, 90000000, 7.48, 7.48, '2026-01-01'),
+        ('2026-01-05', 'SINI', 'KREASI JASA PERSADA PT', '["a","KREASI JASA PERSADA PT"]', 100000000, 0, 0, 8.32, '2026-01-02'),
+        ('2026-01-05', 'SINI', 'KREASI JASA PERSADA PT', '["b","KREASI JASA PERSADA PT"]', 100000000, 0, 0, 8.32, '2026-01-02'),
+        ('2026-10-23', 'SINI', 'PT KREASI JASA PERSADA', '["a","PT KREASI JASA PERSADA"]', 100000000, 100000000, 8.32, 8.32, '2026-01-05'),
+        ('2026-10-23', 'SINI', 'PT DELI INDONESIA RAYA', '["a","PT DELI INDONESIA RAYA"]', 90000000, 30000000, 2.49, 7.48, '2026-01-05');`);
       await db.run(analytics);
       const published = (await db.runAndReadAll(tickers)).getRowObjectsJson();
       expect(published).toMatchObject([
@@ -1843,6 +1883,8 @@ it('publishes ownership conflicts on offline export while excluding public aggre
       ('2026-09-30','CHECK','Missing Investor',5,1),
       ('2026-09-30','CHECK','Small Difference',9,1),
       ('2026-09-30','CHECK','Large Difference',20,1),
+      ('2026-09-30','CHECK','Split Holder',3,1),
+      ('2026-09-30','CHECK','PT Split Holder',4.1,1),
       ('2026-09-30','CHECK','Threshold Difference',2.3,1),
       ('2026-09-30','CHECK','PEMDA KABUPATEN',7.5,1),
       ('2026-09-30','CHECK','Masyarakat',60,1),
@@ -1856,6 +1898,7 @@ it('publishes ownership conflicts on offline export while excluding public aggre
       ('2026-09-30','CHECK','Exact, PT',2,40,4,'https://example.com/one.xlsx'),
       ('2026-09-30','CHECK','Small Difference',3,85,8.5,'https://example.com/one.xlsx'),
       ('2026-09-30','CHECK','Large Difference',4,100,10,'https://example.com/one.xlsx'),
+      ('2026-09-30','CHECK','Split Holder',8,71,7.1,'https://example.com/one.xlsx'),
       ('2026-09-30','CHECK','Threshold Difference',7,13,1.3,'https://example.com/one.xlsx'),
       ('2026-09-30','CHECK','PEMDA KABUPATEN BANDUNG',5,100,10,'https://example.com/one.xlsx'),
       ('2026-09-30','CHECK','PEMDA KABUPATEN BOGOR',6,200,20,'https://example.com/one.xlsx')`);
@@ -1882,7 +1925,7 @@ it('publishes ownership conflicts on offline export while excluding public aggre
     expect(report).toMatchObject({
       months: ['2026-09'],
       agreement_tolerance_pp: 0.02,
-      counts: { agree: 1, missing: 1, differ_small: 1, differ_large: 2, ambiguous_name: 1 },
+      counts: { agree: 2, missing: 1, differ_small: 1, differ_large: 2, ambiguous_name: 1 },
     });
     expect(report.conflicts).toHaveLength(5);
     expect(report.conflicts).toContainEqual({

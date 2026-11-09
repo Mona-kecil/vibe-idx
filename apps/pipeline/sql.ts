@@ -166,6 +166,37 @@ export const analytics = `
 CREATE MACRO ownership_key(name) AS coalesce(array_to_string(list_filter(regexp_split_to_array(
   regexp_replace(upper(name), '[^A-Z0-9]+', ' ', 'g'), ' +'),
   token -> token NOT IN ('', 'PT', 'TBK', 'PTE', 'LTD', 'LIMITED', 'PERSERO', 'PERUSAHAAN', 'PERSEROAN', 'INC', 'LLC')), ''), upper(trim(name)));
+-- IDX relabels a 5% holder between files while its accounts keep their names, so a name that
+-- leaves and a name that arrives the same day under the same account are one holder, keyed by its latest name.
+CREATE TEMP TABLE holder_aliases AS
+WITH RECURSIVE named AS (
+  SELECT DISTINCT date, ticker, ownership_key(investor) name_key, json_extract_string(account, 1) account_name
+  FROM five_pct
+), days AS (SELECT DISTINCT date, previous_date FROM five_pct),
+relabels AS (
+  SELECT DISTINCT c.ticker, p.name_key a, c.name_key b
+  FROM days d
+  JOIN named p ON p.date = d.previous_date
+  JOIN named c ON c.date = d.date AND c.ticker = p.ticker AND c.account_name = p.account_name
+    AND c.name_key <> p.name_key
+  WHERE c.account_name <> ''
+    AND NOT EXISTS (SELECT 1 FROM named x WHERE x.date = d.date AND x.ticker = p.ticker AND x.name_key = p.name_key)
+    AND NOT EXISTS (SELECT 1 FROM named x WHERE x.date = d.previous_date AND x.ticker = c.ticker AND x.name_key = c.name_key)
+), links AS (
+  SELECT ticker, a, b FROM relabels r WHERE NOT EXISTS (
+    SELECT 1 FROM named x JOIN named y ON y.date = x.date AND y.ticker = x.ticker
+    WHERE x.ticker = r.ticker AND x.name_key = r.a AND y.name_key = r.b)
+), edges AS (SELECT ticker, a, b FROM links UNION SELECT ticker, b, a FROM links),
+linked(ticker, alias, member) AS (
+  SELECT ticker, a, a FROM edges
+  UNION
+  SELECT l.ticker, l.alias, e.b FROM linked l JOIN edges e ON e.ticker = l.ticker AND e.a = l.member
+), seen AS (SELECT ticker, name_key, max(date) last_seen FROM named GROUP BY ticker, name_key)
+SELECT l.ticker, l.alias, arg_max(l.member, (s.last_seen, l.member)) holder_key
+FROM linked l JOIN seen s ON s.ticker = l.ticker AND s.name_key = l.member
+GROUP BY l.ticker, l.alias;
+CREATE MACRO holder_key_of(stock, name) AS coalesce((SELECT a.holder_key FROM holder_aliases a
+  WHERE a.ticker = stock AND a.alias = ownership_key(name)), ownership_key(name));
 
 ${marketCalendar}
 ${marketSummaryView}
@@ -183,7 +214,7 @@ FROM prices WINDOW w AS (
 );
 CREATE VIEW investor_snapshots AS
 WITH keyed AS (
-  SELECT *, ownership_key(investor) holder_key FROM five_pct
+  SELECT *, holder_key_of(ticker, investor) holder_key FROM five_pct
 ), snapshots AS (
   SELECT date, ticker, holder_key, max(investor) investor,
     max(combined_shares) shares, max(previous_combined) previous_shares,
@@ -289,11 +320,11 @@ history AS (
   WHERE h.first_date IS NULL OR date >= h.first_date
   GROUP BY c.ticker
 ), monthly AS (
-  SELECT ticker, list(struct_pack(investor := investor, holder_key := ownership_key(investor), shares := shares, pct := pct,
+  SELECT ticker, list(struct_pack(investor := investor, holder_key := holder_key_of(ticker, investor), shares := shares, pct := pct,
     classification := classification, local_foreign := local_foreign) ORDER BY investor, seq) holders
   FROM one_pct WHERE date = (SELECT max(date) FROM one_pct) GROUP BY ticker
 ), monthly_snapshots AS (
-  SELECT date, ticker, list(struct_pack(investor := investor, holder_key := ownership_key(investor), shares := shares, pct := pct,
+  SELECT date, ticker, list(struct_pack(investor := investor, holder_key := holder_key_of(ticker, investor), shares := shares, pct := pct,
     classification := classification, local_foreign := local_foreign) ORDER BY investor, seq) holders
   FROM one_pct GROUP BY date, ticker
 ), one_pct_history AS (
@@ -304,14 +335,14 @@ history AS (
     url := url, kind := kind, attachments := attachments) ORDER BY published_at DESC, id) disclosures
   FROM disclosures GROUP BY ticker
 ), trades AS (
-  SELECT ticker, list(struct_pack(date := date, reporter := reporter, holder_key := ownership_key(reporter),
+  SELECT ticker, list(struct_pack(date := date, reporter := reporter, holder_key := holder_key_of(ticker, reporter),
     shares_before := shares_before, shares_after := shares_after, net_shares := net_shares,
     url := url) ORDER BY date DESC, id, url) insiders FROM insiders GROUP BY ticker
 ), registry_types AS (
   SELECT date, ticker, list(struct_pack(label := label, shares := shares, page := page) ORDER BY label) investor_types
   FROM registry_investors GROUP BY date, ticker
 ), registry_flags AS (
-  SELECT date, ticker, list(struct_pack(investor := investor, holder_key := ownership_key(investor), pct := pct, controller := controller,
+  SELECT date, ticker, list(struct_pack(investor := investor, holder_key := holder_key_of(ticker, investor), pct := pct, controller := controller,
     controller_affiliate := controller_affiliate, page := page) ORDER BY investor) holders
   FROM registry_holders GROUP BY date, ticker
 ), registers AS (
