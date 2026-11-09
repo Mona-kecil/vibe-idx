@@ -10,49 +10,83 @@ import { parseOwnershipList } from './ownershipList';
 const bytes = (name: string) => readFileSync(new URL(`../fixtures/${name}`, import.meta.url));
 const json = (name: string): unknown => JSON.parse(bytes(name).toString());
 const five = parseFivePct(bytes('ownership-5pct-2026-10-19.xlsx'));
+type Cell = string | { bool: string };
+const workbook = (rows: Cell[][]) =>
+  zipSync({
+    'xl/worksheets/sheet1.xml': strToU8(
+      `<worksheet><sheetData>${rows
+        .map(
+          (cells, r) =>
+            `<row r="${r + 1}">${cells
+              .map((c, i) => {
+                const ref = `${String.fromCharCode(65 + i)}${r + 1}`;
+                if (typeof c === 'object') return `<c r="${ref}" t="b"><v>${c.bool}</v></c>`;
+                return c ? `<c r="${ref}" t="inlineStr"><is><t>${c}</t></is></c>` : '';
+              })
+              .join('')}</row>`,
+        )
+        .join('')}</sheetData></worksheet>`,
+    ),
+  });
+const fiveHeader = [
+  ['No', 'Kode Efek', 'Nama Emiten', 'Nama Pemegang Rekening Efek', 'Nama Pemegang Saham'],
+  ['Nama Rekening Efek', 'Alamat', 'Alamat (Lanjutan)', 'Kebangsaan', 'Domisili'],
+  ['Status (Lokal/Asing)', '21-Oct-2026', '', '', '22-Oct-2026', '', '', 'Perubahan'],
+].flat();
+const fiveAmounts = [
+  ...Array<string>(11).fill(''),
+  ...['Jumlah Saham', 'Saham Gabungan Per Investor', 'Persentase Kepemilikan Per Investor (%)'],
+  ...['Jumlah Saham', 'Saham Gabungan Per Investor', 'Persentase Kepemilikan Per Investor (%)'],
+  '',
+];
+const fiveRow = (ticker: Cell) => [
+  ...['1', ticker, 'TRINITI DINAMIK Tbk, PT', 'HOLDER', 'INVESTOR', 'ACCOUNT', '', ''],
+  ...['INDONESIA', 'INDONESIA', 'L', '100', '100', '5.1', '120', '120', '6.1', '20'],
+];
 
 describe('IDX fixture ingestion', () => {
   it.each([
     ['1', 'TRUE'],
     ['0', 'FALSE'],
   ])('keeps Excel boolean ticker %s as %s in both ownership parsers', (value, ticker) => {
-    const workbook = (rows: string) =>
-      zipSync({
-        'xl/worksheets/sheet1.xml': strToU8(
-          `<worksheet><sheetData>${rows}</sheetData></worksheet>`,
-        ),
-      });
-    const five = workbook(`
-      <row r="1"><c r="B1" t="inlineStr"><is><t>Kode Efek</t></is></c>
-        <c r="L1" t="inlineStr"><is><t>21-Oct-2026</t></is></c>
-        <c r="O1" t="inlineStr"><is><t>22-Oct-2026</t></is></c></row>
-      <row r="2"></row>
-      <row r="3"><c r="B3" t="b"><v>${value}</v></c>
-        <c r="C3" t="inlineStr"><is><t>TRINITI DINAMIK Tbk, PT</t></is></c>
-        <c r="E3" t="inlineStr"><is><t>INVESTOR</t></is></c></row>`);
-    const one = workbook(`
-      <row r="1">${[
-        'DATE',
-        'SHARE_CODE',
-        'ISSUER_NAME',
-        'INVESTOR_NAME',
-        'INVESTOR_CLASSIFICATION',
-        'LOCAL_FOREIGN',
-        'NATIONALITY',
-        'DOMICILE',
-        'HOLDINGS_SCRIPLESS',
-        'HOLDINGS_SCRIP',
-        'TOTAL_HOLDING_SHARES',
-        'PERCENTAGE',
-      ]
-        .map((h, i) => `<c r="${'ABCDEFGHIJKL'[i]}1" t="inlineStr"><is><t>${h}</t></is></c>`)
-        .join('')}</row>
-      <row r="2"><c r="A2" t="inlineStr"><is><t>2026-09-30</t></is></c>
-        <c r="B2" t="b"><v>${value}</v></c>
-        <c r="C2" t="inlineStr"><is><t>TRINITI DINAMIK Tbk, PT</t></is></c>
-        <c r="D2" t="inlineStr"><is><t>INVESTOR</t></is></c></row>`);
+    const five = workbook([fiveHeader, fiveAmounts, fiveRow({ bool: value })]);
+    const one = workbook([
+      [
+        ...['DATE', 'SHARE_CODE', 'ISSUER_NAME', 'INVESTOR_NAME', 'INVESTOR_CLASSIFICATION'],
+        ...['LOCAL_FOREIGN', 'NATIONALITY', 'DOMICILE', 'HOLDINGS_SCRIPLESS', 'HOLDINGS_SCRIP'],
+        ...['TOTAL_HOLDING_SHARES', 'PERCENTAGE'],
+      ],
+      ['2026-09-30', { bool: value }, 'TRINITI DINAMIK Tbk, PT', 'INVESTOR'],
+    ]);
     expect.soft(parseFivePct(five).groups.map((g) => g.holding.ticker)).toEqual([ticker]);
     expect.soft(parseOnePct(one).map((r) => r.ticker)).toEqual([ticker]);
+  });
+  it('reads 5% columns by header when IDX inserts or drops a column', () => {
+    const insert = (row: Cell[], at: number, cell: Cell) => [
+      ...row.slice(0, at),
+      cell,
+      ...row.slice(at),
+    ];
+    const base = parseFivePct(workbook([fiveHeader, fiveAmounts, fiveRow('TRIN')]));
+    expect(base.groups[0]?.holding).toMatchObject({ combinedShares: 120, percent: 6.1 });
+    expect(
+      parseFivePct(
+        workbook([
+          insert(fiveHeader, 11, 'Tipe Investor'),
+          insert(fiveAmounts, 11, ''),
+          insert(fiveRow('TRIN'), 11, 'CP'),
+        ]),
+      ),
+    ).toEqual(base);
+    expect(() =>
+      parseFivePct(
+        workbook([
+          fiveHeader.map((h) => (h === 'Domisili' ? 'Domicile' : h)),
+          fiveAmounts,
+          fiveRow('TRIN'),
+        ]),
+      ),
+    ).toThrow('Missing 5% column: Domisili');
   });
   it('retains investor identity and combined totals across 5% continuation accounts', () => {
     expect(five.asOf).toBe('2026-10-19');

@@ -12,8 +12,87 @@ function headerDate(text: string): string {
     ) + 1;
   return date(`${match[3]}-${String(month).padStart(2, '0')}-${(match[1] ?? '').padStart(2, '0')}`);
 }
+type Columns = Record<
+  | 'ticker'
+  | 'issuer'
+  | 'holder'
+  | 'investor'
+  | 'account'
+  | 'nationality'
+  | 'domicile'
+  | 'localForeign'
+  | 'previousShares'
+  | 'previousCombined'
+  | 'previousPercent'
+  | 'currentShares'
+  | 'currentCombined'
+  | 'currentPercent',
+  number
+>;
+// The legacy PDF reader lays its cells out in this order.
+const PDF_LAYOUT: Columns = {
+  ticker: 1,
+  issuer: 2,
+  holder: 3,
+  investor: 4,
+  account: 5,
+  nationality: 8,
+  domicile: 9,
+  localForeign: 10,
+  previousShares: 11,
+  previousCombined: 12,
+  previousPercent: 13,
+  currentShares: 14,
+  currentCombined: 15,
+  currentPercent: 16,
+};
+const FIELDS = {
+  ticker: 'Kode Efek',
+  issuer: 'Nama Emiten',
+  holder: 'Nama Pemegang Rekening Efek',
+  investor: 'Nama Pemegang Saham',
+  account: 'Nama Rekening Efek',
+  nationality: 'Kebangsaan',
+  domicile: 'Domisili',
+  localForeign: 'Status (Lokal/Asing)',
+} as const;
+const AMOUNTS = {
+  Shares: 'Jumlah Saham',
+  Combined: 'Saham Gabungan Per Investor',
+  Percent: 'Persentase Kepemilikan Per Investor (%)',
+} as const;
+
+function xlsxColumns(names: string[], amounts: string[]): Columns {
+  const find = (label: string, from = 0, to = names.length) => {
+    const i = names.findIndex((n, j) => j >= from && j < to && n?.trim() === label);
+    if (i < 0) throw new Error(`Missing 5% column: ${label}`);
+    return i;
+  };
+  const dates = names.flatMap((n, i) => (/\d{1,2}[- ][A-Za-z]{3}[- ]\d{4}/.test(n) ? [i] : []));
+  if (dates.length !== 2) throw new Error('Expected two 5% snapshot date columns');
+  const [previous, current] = dates as [number, number];
+  const group = (prefix: 'previous' | 'current', from: number, to: number) =>
+    Object.fromEntries(
+      Object.entries(AMOUNTS).map(([field, label]) => {
+        const i = amounts.findIndex((n, j) => j >= from && j < to && n?.trim() === label);
+        if (i < 0) throw new Error(`Missing 5% column: ${label} under ${names[from]}`);
+        return [prefix + field, i];
+      }),
+    );
+  return {
+    ...(Object.fromEntries(
+      Object.entries(FIELDS).map(([field, label]) => [field, find(label)]),
+    ) as Pick<Columns, keyof typeof FIELDS>),
+    ...group('previous', previous, current),
+    ...group('current', current, current + Object.keys(AMOUNTS).length),
+  } as Columns;
+}
+
 export function parseFivePct(bytes: Uint8Array) {
-  return parseFiveRows(readSheet(bytes));
+  const sheet = readSheet(bytes);
+  const header = sheet.findIndex((r) => r.some((c) => c?.trim() === FIELDS.ticker));
+  if (header < 0) throw new Error('Missing 5% headers');
+  return parseFiveRows(sheet, header, xlsxColumns(sheet[header]!, sheet[header + 1] ?? []));
 }
 
 export async function parseFivePctPdf(bytes: Uint8Array) {
@@ -51,13 +130,13 @@ export async function parseFivePctPdf(bytes: Uint8Array) {
       const current = headerDate(dates[1]?.text ?? '');
       if (!sheet.length) {
         const header: string[] = [];
-        header[1] = 'Kode Efek';
-        header[11] = dates[0]?.text ?? '';
-        header[14] = dates[1]?.text ?? '';
+        header[PDF_LAYOUT.ticker] = FIELDS.ticker;
+        header[PDF_LAYOUT.previousShares] = dates[0]?.text ?? '';
+        header[PDF_LAYOUT.currentShares] = dates[1]?.text ?? '';
         sheet.push(header, []);
       } else if (
-        headerDate(sheet[0]?.[11] ?? '') !== previous ||
-        headerDate(sheet[0]?.[14] ?? '') !== current
+        headerDate(sheet[0]?.[PDF_LAYOUT.previousShares] ?? '') !== previous ||
+        headerDate(sheet[0]?.[PDF_LAYOUT.currentShares] ?? '') !== current
       )
         throw new Error('Mixed legacy 5% snapshot dates');
     }
@@ -303,14 +382,12 @@ export async function parseFivePctPdf(bytes: Uint8Array) {
       sheet.push(row);
     }
   }
-  return parseFiveRows(sheet);
+  return parseFiveRows(sheet, 0, PDF_LAYOUT);
 }
 
-function parseFiveRows(sheet: string[][]) {
-  const header = sheet.findIndex((r) => r[1] === 'Kode Efek');
-  if (header < 0) throw new Error('Missing 5% headers');
-  const previousDate = headerDate(sheet[header]?.[11] ?? '');
-  const asOf = headerDate(sheet[header]?.[14] ?? '');
+function parseFiveRows(sheet: string[][], header: number, c: Columns) {
+  const previousDate = headerDate(sheet[header]?.[c.previousShares] ?? '');
+  const asOf = headerDate(sheet[header]?.[c.currentShares] ?? '');
   const groups: {
     holding: FiveHolding;
     previousCombined: number;
@@ -324,33 +401,35 @@ function parseFiveRows(sheet: string[][]) {
   }[] = [];
   let group: (typeof groups)[number] | undefined;
   for (const r of sheet.slice(header + 2)) {
-    if (!r[3]?.trim() && !r[4]?.trim() && !r[11]?.trim() && !r[14]?.trim()) continue;
-    if (r[4]?.trim()) {
+    const cell = (column: keyof Columns) => r[c[column]]?.trim() ?? '';
+    if (!cell('holder') && !cell('investor') && !cell('previousShares') && !cell('currentShares'))
+      continue;
+    if (cell('investor')) {
       group = {
         holding: fiveHolding.parse({
-          ticker: r[1]?.trim(),
-          investorName: r[4].trim(),
-          issuerName: r[2]?.trim(),
+          ticker: cell('ticker'),
+          investorName: cell('investor'),
+          issuerName: cell('issuer'),
           asOf,
-          combinedShares: number(r[15] ?? ''),
-          percent: number(r[16] ?? ''),
-          localForeign: r[10]?.trim() ?? '',
-          nationality: r[8]?.trim() || undefined,
-          domicile: r[9]?.trim() || undefined,
+          combinedShares: number(cell('currentCombined')),
+          percent: number(cell('currentPercent')),
+          localForeign: cell('localForeign'),
+          nationality: cell('nationality') || undefined,
+          domicile: cell('domicile') || undefined,
           accounts: [],
         }),
-        previousCombined: number(r[12] ?? ''),
-        previousPercent: number(r[13] ?? ''),
+        previousCombined: number(cell('previousCombined')),
+        previousPercent: number(cell('previousPercent')),
         accounts: [],
       };
       groups.push(group);
     }
     if (!group) throw new Error('Account without investor');
     const account = {
-      holderName: r[3]?.trim() ?? '',
-      accountName: r[5]?.trim() ?? '',
-      previousShares: number(r[11] ?? ''),
-      currentShares: number(r[14] ?? ''),
+      holderName: cell('holder'),
+      accountName: cell('account'),
+      previousShares: number(cell('previousShares')),
+      currentShares: number(cell('currentShares')),
     };
     group.accounts.push(account);
     group.holding.accounts.push({
