@@ -423,6 +423,35 @@ describe('daily briefing', () => {
   });
 });
 
+describe('terminal availability', () => {
+  it('blocks mobile data requests and reacts when the desktop media query changes', async () => {
+    const media = window.matchMedia('(min-width: 901px)');
+    const matches = vi.spyOn(media, 'matches', 'get').mockReturnValue(false);
+    vi.spyOn(window, 'matchMedia').mockReturnValue(media);
+    window.history.replaceState(null, '', '/terminal?t=BBCA&l=focus');
+    await render();
+    expect(host.textContent).toContain('The terminal is not available on mobile yet.');
+    expect(host.querySelector('a')?.getAttribute('href')).toBe('/');
+    expect(fetcher).not.toHaveBeenCalled();
+    // The chart library needs canvas APIs that happy-dom does not implement.
+    fetcher.mockRejectedValueOnce(new Error('Offline'));
+    await act(async () => {
+      matches.mockReturnValue(true);
+      media.dispatchEvent(new Event('change'));
+      await vi.dynamicImportSettled();
+    });
+    expect(host.querySelector('.terminal-page')).not.toBeNull();
+    expect(host.querySelector('.terminal-unavailable')).toBeNull();
+    expect(window.location.search).toBe('?t=BBCA&l=focus');
+    await act(async () => {
+      matches.mockReturnValue(false);
+      media.dispatchEvent(new Event('change'));
+    });
+    expect(host.textContent).toContain('The terminal is not available on mobile yet.');
+    expect(host.querySelector('.terminal-page')).toBeNull();
+  });
+});
+
 describe('ticker research regressions', () => {
   it('opens public ticker research without broker tokens and returns to the briefing', async () => {
     window.history.replaceState(null, '', '/t/BBCA');
@@ -439,6 +468,7 @@ describe('ticker research regressions', () => {
       window.dispatchEvent(new PopStateEvent('popstate'));
     });
     expect(host.querySelector('h1')?.textContent).toBe('IHSG');
+    expect(host.querySelector('a.terminal-link')?.getAttribute('href')).toBe('/terminal');
     await act(async () => {
       window.history.pushState(null, '', '/callback');
       window.dispatchEvent(new PopStateEvent('popstate'));

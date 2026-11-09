@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FocusEvent, type PointerEvent } from 'react';
 import { useAuth } from '@workos-inc/authkit-react';
 import { AccountControls } from '../BrokerPanel';
-import { aggregateBrokers, brokerName } from '../broker-data';
+import { aggregateBrokers, brokerName, edgeFills } from '../broker-data';
 import { brokerBoards, brokerHistorySchema, type BrokerBoard, type BrokerDay } from '../brokers';
 import { bounds, inRange, type Selection } from './logic';
 import { dateText, nf, rangeText, short } from './format';
@@ -279,23 +279,7 @@ function BrokerData({
   );
 }
 
-type Fill = { amount: number; avg: number };
-// Only the top 10% of brokers by value on each side set the range, so small trades at odd prices
-// can't stretch it.
-export function edgeFills<T extends Fill>(buyers: T[], sellers: T[]) {
-  const leaders = (list: T[]) =>
-      [...list].sort((a, b) => b.amount - a.amount).slice(0, Math.ceil(list.length * 0.1)),
-    buys = leaders(buyers),
-    sells = leaders(sellers),
-    avgs = [...buys, ...sells].map((fill) => fill.avg),
-    low = Math.min(...avgs),
-    band = (Math.max(...avgs) - low) * 0.25;
-  if (!(band > 0)) return new Set<T>();
-  return new Set([
-    ...buys.filter((fill) => fill.avg <= low + band),
-    ...sells.filter((fill) => fill.avg >= low + 3 * band),
-  ]);
-}
+export { edgeFills } from '../broker-data';
 
 function useBrokerTip() {
   const box = useRef<HTMLDivElement>(null),

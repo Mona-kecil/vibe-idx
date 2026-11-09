@@ -19,6 +19,7 @@
     "aws4fetch": "^1.0.20",
     "fast-xml-parser": "^5.11.2",
     "jose": "^6.2.13",
+    "lightweight-charts": "5.2.1",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "zod": "^4.4.3"

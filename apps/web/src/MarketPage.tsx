@@ -187,6 +187,10 @@ export function MarketPage() {
             <a href="/market" aria-current="page">
               Market
             </a>
+            <a className="terminal-link" href="/terminal">
+              Terminal
+              <span className="cursor" aria-hidden="true" />
+            </a>
           </nav>
           <div className="search">
             <svg

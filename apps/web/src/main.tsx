@@ -31,7 +31,12 @@ createRoot(rootElement, {
       redirectUri={`${window.location.origin}/callback`}
       onRedirectCallback={() => {
         const saved = window.sessionStorage.getItem('vibe-idx-return-to') ?? '/';
-        const path = /^(?:\/|\/stocks|\/market|\/t\/[A-Z0-9-]+)$/.test(saved) ? saved : '/';
+        const path =
+          /^(?:\/|\/stocks|\/market|\/t\/[A-Z0-9-]+|\/terminal(?:\?[A-Za-z0-9_=%&-]*)?)$/.test(
+            saved,
+          )
+            ? saved
+            : '/';
         window.sessionStorage.removeItem('vibe-idx-return-to');
         window.history.replaceState(null, '', path);
         window.dispatchEvent(new PopStateEvent('popstate'));

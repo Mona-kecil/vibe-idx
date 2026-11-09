@@ -6,6 +6,8 @@ const indonesian: Record<string, string> = {
   'Sign out': 'Keluar akun',
   'Signing you in…': 'Memproses masuk…',
   'Could not sign in. Try again.': 'Gagal masuk. Coba lagi.',
+  'The terminal is not available on mobile yet.': 'Terminal belum tersedia di ponsel.',
+  'Back to home': 'Kembali ke beranda',
 };
 const LocaleContext = createContext<Locale>('en');
 
