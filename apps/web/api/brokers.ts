@@ -2,6 +2,7 @@ import { AwsClient } from 'aws4fetch';
 import { createRemoteJWKSet, customFetch, errors, jwtVerify } from 'jose';
 import { z } from 'zod';
 import { accumulationSchema, brokerDaySchema, brokerTickerSchema } from '../src/brokers.js';
+import { reportFailure } from './_sentry.js';
 
 const clientIdSchema = z.string().regex(/^client_[a-zA-Z0-9]+$/);
 const storageConfigSchema = z.object({
@@ -50,7 +51,10 @@ export function createBrokerHandler({
 
     const bearer = /^Bearer (\S+)$/i.exec(request.headers.get('Authorization') ?? '');
     if (!bearer?.[1]) return json({ error: 'unauthorized' }, 401);
-    if (!jwks) return json({ error: 'unavailable' }, 503);
+    if (!jwks) {
+      await reportFailure('brokers', 'WORKOS_CLIENT_ID is not configured');
+      return json({ error: 'unavailable' }, 503);
+    }
 
     try {
       const { payload } = await jwtVerify(bearer[1], jwks, {
@@ -78,11 +82,15 @@ export function createBrokerHandler({
       ) {
         return json({ error: 'unauthorized' }, 401);
       }
+      await reportFailure('brokers', error);
       return json({ error: 'unavailable' }, 503);
     }
 
     const storage = storageConfigSchema.safeParse(env);
-    if (!storage.success) return json({ error: 'unavailable' }, 503);
+    if (!storage.success) {
+      await reportFailure('brokers', 'R2 storage settings are missing');
+      return json({ error: 'unavailable' }, 503);
+    }
     const { R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY } = storage.data;
     try {
       const aws = new AwsClient({
@@ -101,13 +109,20 @@ export function createBrokerHandler({
       );
       const response = await fetcher(signed);
       if (response.status === 404) return json({ error: 'not_found' }, 404);
-      if (!response.ok) return json({ error: 'unavailable' }, 503);
+      if (!response.ok) {
+        await reportFailure(
+          'brokers',
+          `R2 ${target === 'market' ? 'market' : target.ticker} HTTP ${response.status}`,
+        );
+        return json({ error: 'unavailable' }, 503);
+      }
       if (target === 'market') return json(accumulationSchema.parse(await response.json()), 200);
       const source = new Response(response.body?.pipeThrough(new DecompressionStream('gzip')));
       const days = sourceSchema.parse(await source.json());
       days.sort((a, b) => b.date.localeCompare(a.date));
       return json({ ticker: target.ticker, days }, 200);
-    } catch {
+    } catch (error) {
+      await reportFailure('brokers', error);
       return json({ error: 'unavailable' }, 503);
     }
   };
