@@ -75,18 +75,27 @@ export function reconcileOwnership(
     // A month without a published 1% list cannot be compared.
     if (!report.months.includes(month)) continue;
     const monthly = data.one_pct_history.find((s) => s.date.slice(0, 7) === month);
+    // A holder can sit in the registry under several rows, as it does in the 1% list.
+    const holders = new Map<string, { investor: string; pct: number }>();
     for (const h of snapshot.holders) {
       if (
-        h.pct < 1 ||
         /^(MASYARAKAT|PUBLIK|PUBLIC(?:SHAREHOLDERS|BELOW|LESSTHAN|UNDER|$)|AFILIASI|AFFILIAT|PIHAKTERAFILIASI|SAHAMTREAS|TREASURY|PEMEGANGSAHAM|SHAREHOLDERS|LAINNYA|OTHERS|TOTAL|JUMLAH|PEMDASEJAWA)/.test(
           h.investor.toUpperCase().replace(/[^A-Z]/g, ''),
         )
       )
         continue;
-      const matches = monthly?.holders.filter((r) => r.holder_key === h.holder_key) ?? [];
+      const held = holders.get(h.holder_key);
+      holders.set(h.holder_key, {
+        investor: held?.investor ?? h.investor,
+        pct: Number(((held?.pct ?? 0) + h.pct).toFixed(4)),
+      });
+    }
+    for (const [key, h] of holders) {
+      if (h.pct < 1) continue;
+      const matches = monthly?.holders.filter((r) => r.holder_key === key) ?? [];
       const pct = matches.length ? matches.reduce((sum, r) => sum + r.pct, 0) : null;
       const delta = pct === null ? null : Math.abs(pct - h.pct);
-      const category = ambiguous.has(h.holder_key)
+      const category = ambiguous.has(key)
         ? 'ambiguous_name'
         : delta === null
           ? 'missing'
