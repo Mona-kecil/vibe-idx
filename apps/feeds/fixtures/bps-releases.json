@@ -1,0 +1,25 @@
+{
+  "status": "OK",
+  "data-availability": "available",
+  "data": [
+    {
+      "page": 1,
+      "pages": 2,
+      "per_page": 10,
+      "count": 10,
+      "total": 13
+    },
+    [
+      {
+        "brs_id": 181143,
+        "title": "Indeks Kondisi dan  Prospek Bisnis Industri  Manufaktur (IKBM) Triwulan III-2026 tercatat sebesar 52,75,  menunjukkan Industri Manufaktur Indonesia berada  pada posisi ekspansi",
+        "rl_date": "2026-11-05"
+      },
+      {
+        "brs_id": 171255,
+        "title": "Indeks Pembangunan Manusia (IPM) Indonesia tahun 2026 mencapai 76,59, meningkat 0,69 poin dibandingkan tahun sebelumnya yang sebesar 75,90.",
+        "rl_date": "2026-11-05"
+      }
+    ]
+  ]
+}
