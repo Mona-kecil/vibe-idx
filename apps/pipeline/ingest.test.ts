@@ -1104,7 +1104,9 @@ BT /F1 10 Tf 1 0 0 1 529 530 Tm (-100) Tj ET`;
       ).toEqual(before);
       expect(
         net.urls.every((url) =>
-          /data-kepemilikan-saham|GetAnnouncement|GetStockSummary|GetIndexSummary|GetSuspension/.test(url),
+          /data-kepemilikan-saham|GetAnnouncement|GetStockSummary|GetIndexSummary|GetSuspension/.test(
+            url,
+          ),
         ),
       ).toBe(true);
       expect(second.report_gaps).toEqual(first.report_gaps);
