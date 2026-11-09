@@ -19,7 +19,8 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec vp check apps/pipeline apps/web .github/workflows
+      - run: pnpm exec vp check apps/pipeline apps/web apps/feeds .github/workflows
       - run: pnpm --filter @vibe-idx/pipeline test
+      - run: pnpm --filter @vibe-idx/feeds test
       - run: pnpm --filter @vibe-idx/web test
       - run: pnpm --filter @vibe-idx/web build

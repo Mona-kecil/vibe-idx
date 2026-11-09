@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/" xmlns:atom="http://www.w3.org/2005/Atom">
+<channel><title>Example Market</title><atom:link href="https://example.org/rss" rel="self" type="application/rss+xml"/>
+<item><title><![CDATA[Bank Central Asia uji layanan baru]]></title><link>https://example.org/one</link><guid>https://example.org/one</guid><pubDate>Mon, 09 Nov 2026 10:00:00 +0700</pubDate><description><![CDATA[<p>Ringkasan <b>rekaan</b> &amp; informasi.<script>bad()</script></p>]]></description><content:encoded><![CDATA[<p>This invented body must never be used.</p>]]></content:encoded></item>
+<item><title>Saham BBCA dalam simulasi</title><guid>https://example.org/two</guid><pubDate>Mon, 09 Nov 2026 11:00:00 +0700</pubDate></item>
+<item><title>Tanggal rusak</title><link>https://example.org/bad</link><pubDate>invalid</pubDate></item>
+</channel></rss>

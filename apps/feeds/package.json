@@ -1,0 +1,23 @@
+{
+  "name": "@vibe-idx/feeds",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "CI=true vp check",
+    "test": "CI=true vp test",
+    "verify:live": "tsx verify-live.ts"
+  },
+  "dependencies": {
+    "fast-xml-parser": "^5.11.2",
+    "htmlparser2": "^10.0.0",
+    "tsx": "^4.20.6",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "5.20261107.1",
+    "@types/node": "^26.0.1",
+    "typescript": "^6.0.3",
+    "vite-plus": "^0.2.1",
+    "wrangler": "^4.0.0"
+  }
+}

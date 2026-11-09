@@ -1,0 +1,22 @@
+[
+  {
+    "title": "Example high impact release",
+    "country": "USD",
+    "date": "2026-11-09T08:30:00-05:00",
+    "impact": "High",
+    "forecast": "3%",
+    "previous": "2%"
+  },
+  {
+    "title": "Example medium release",
+    "country": "CNY",
+    "date": "2026-11-09T09:00:00+08:00",
+    "impact": "Medium"
+  },
+  {
+    "title": "Example low release",
+    "country": "USD",
+    "date": "2026-11-09T10:00:00-05:00",
+    "impact": "Low"
+  }
+]
