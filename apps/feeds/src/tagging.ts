@@ -18,15 +18,19 @@ export function tickerTagger(tickers: Ticker[]) {
   const names = tickers
     .map(({ ticker, name }) => ({ ticker, name: companyName(name) }))
     .filter(({ name }) => name.length >= 2)
-    .sort((a, b) => b.name.length - a.name.length);
+    .sort((a, b) => b.name.length - a.name.length)
+    .map(({ ticker, name }) => ({
+      ticker,
+      pattern: name.includes(' ')
+        ? new RegExp(` ${escape(name)} `, 'g')
+        : new RegExp(` (?:pt ${escape(name)}|${escape(name)} (?:persero )?tbk) `, 'g'),
+    }));
   const codes = new Set(tickers.map((t) => t.ticker));
   return (text: string): string[] => {
     let remaining = ` ${normalize(text)} `;
     const tags = new Set<string>();
-    for (const { ticker, name } of names) {
-      const pattern = name.includes(' ')
-        ? new RegExp(` ${escape(name)} `, 'g')
-        : new RegExp(` (?:pt ${escape(name)}|${escape(name)} (?:persero )?tbk) `, 'g');
+    for (const { ticker, pattern } of names) {
+      pattern.lastIndex = 0;
       if (pattern.test(remaining)) {
         tags.add(ticker);
         remaining = remaining.replace(pattern, ' ');
