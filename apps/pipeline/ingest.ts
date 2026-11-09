@@ -18,6 +18,8 @@ import { idxUrl, parseOwnershipList } from './lib/ownershipList';
 import { date } from './lib/rows';
 import { labelAttachments, orderAttachments, parseAnnouncements, parseReport } from './reports';
 import { registryParserVersion } from './registry';
+import { fetchCorporateActions } from './lib/idx-calendar';
+import { fetchRisk } from './lib/risk';
 import { tickerSchema } from '../web/src/data';
 import { ownershipQuality, reconcileOwnership, resolveHolderKeys } from './ownership';
 import { analytics, health, market, marketSummary, schema, stockTable, tickers } from './sql';
@@ -46,6 +48,8 @@ const tables = [
   'registry_investors',
   'registry_holders',
   'issuers',
+  'corporate_actions',
+  'risk',
 ] as const;
 type Table = (typeof tables)[number];
 const sources = [
@@ -58,6 +62,8 @@ const sources = [
   'suspensions',
   'corrections',
   'brokers',
+  'corporate_actions',
+  'risk',
 ] as const;
 export type Source = (typeof sources)[number];
 const literal = (s: string) => `'${s.replaceAll("'", "''")}'`;
@@ -1002,6 +1008,42 @@ export async function ingest({
               );
             return notices;
           });
+    if (!registryOnly && !ownershipOnly) {
+      const stocks = new Set(names.keys());
+      if (!stocks.size) {
+        fail('corporate_actions', new Error('No issuer universe for corporate actions'));
+        fail('risk', new Error('No issuer universe for risk flags'));
+      } else {
+        const now = new Date(`${today}T12:00:00+07:00`);
+        await step('corporate_actions', async () => {
+          const years = new Set<string>();
+          try {
+            const actions = await fetchCorporateActions(stocks, download, now);
+            await db.run('INSERT OR REPLACE INTO corporate_actions VALUES (?, ?)', [
+              today,
+              JSON.stringify(actions),
+            ]);
+            years.add(today.slice(0, 4));
+          } finally {
+            await save('corporate_actions', years);
+          }
+        });
+        await step('risk', async () => {
+          const years = new Set<string>();
+          try {
+            const result = await fetchRisk(stocks, suspensions ?? {}, download, { now });
+            await db.run('INSERT OR REPLACE INTO risk VALUES (?, ?)', [
+              today,
+              JSON.stringify(result.risk),
+            ]);
+            years.add(today.slice(0, 4));
+            if (result.errors.length) fail('risk', new Error(result.errors.join('; ')));
+          } finally {
+            await save('risk', years);
+          }
+        });
+      }
+    }
     const brokers =
       registryOnly || ownershipOnly
         ? undefined
@@ -1053,6 +1095,16 @@ export async function ingest({
     await writeFile(join(out, 'ownership-quality.json'), `${JSON.stringify(quality)}\n`);
     if (suspensions)
       await writeFile(join(out, 'suspension-notices.json'), `${JSON.stringify(suspensions)}\n`);
+    for (const [table, file, empty] of [
+      ['corporate_actions', 'corporate-actions.json', '[]'],
+      ['risk', 'risk.json', '{}'],
+    ] as const) {
+      const [row] = await query(
+        `SELECT payload::VARCHAR payload FROM ${table} ORDER BY date DESC LIMIT 1`,
+      );
+      const payload = row ? z.string().parse(row.payload) : empty;
+      await writeFile(join(out, file), `${payload}\n`);
+    }
     // Written last: the publish step treats health.json as proof that the output is complete.
     await writeFile(
       join(out, 'health.json'),

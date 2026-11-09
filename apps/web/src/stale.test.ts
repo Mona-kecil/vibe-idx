@@ -9,6 +9,8 @@ const health = (run_at: string, failed: string[] = []) => ({
   issuers: '2026-11-06',
   disclosures: '2026-11-06',
   brokers: '2026-11-03',
+  corporate_actions: '2026-11-06',
+  risk: '2026-11-06',
   run_at,
   failed,
 });
@@ -38,6 +40,14 @@ describe('staleSources', () => {
     ).toEqual([
       { label: 'Broker flow', since: '2026-11-03' },
       { label: 'Registry', since: '2026-10-30' },
+    ]);
+  });
+  it('names corporate actions and risk failures', () => {
+    expect(
+      staleSources(health('2026-11-06 10:28:00+00', ['corporate_actions', 'risk']), evening),
+    ).toEqual([
+      { label: 'Corporate actions', since: '2026-11-06' },
+      { label: 'Risk flags', since: '2026-11-06' },
     ]);
   });
   it('replaces per-source markers with one marker when the run itself is missed', () => {

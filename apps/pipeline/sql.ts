@@ -67,6 +67,8 @@ CREATE TABLE issuers (
   date DATE, ticker VARCHAR PRIMARY KEY, name VARCHAR, board VARCHAR, sector VARCHAR,
   sub_sector VARCHAR, industry VARCHAR, sub_industry VARCHAR
 );
+CREATE TABLE corporate_actions (date DATE PRIMARY KEY, payload JSON);
+CREATE TABLE risk (date DATE PRIMARY KEY, payload JSON);
 CREATE TEMP TABLE incoming_five AS SELECT * FROM five_pct WHERE false;`;
 
 export const marketCalendar = `
@@ -382,4 +384,6 @@ export const health = `SELECT
   (SELECT max(date) FROM one_pct) one_pct,
   (SELECT max(date) FROM issuers) issuers,
   (SELECT max(date) FROM disclosures) disclosures,
+  (SELECT max(date) FROM corporate_actions) corporate_actions,
+  (SELECT max(date) FROM risk) risk,
   current_timestamp run_at`;
