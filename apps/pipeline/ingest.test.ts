@@ -2,6 +2,7 @@ import { cp, mkdir, mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
 import { DuckDBInstance } from '@duckdb/node-api';
+import { strToU8, strFromU8, unzipSync, zipSync } from 'fflate';
 import { describe, expect, it } from 'vite-plus/test';
 import { ingest } from './ingest';
 import { resolveHolderKeys } from './ownership';
@@ -1104,7 +1105,7 @@ BT /F1 10 Tf 1 0 0 1 529 530 Tm (-100) Tj ET`;
       ).toEqual(before);
       expect(
         net.urls.every((url) =>
-          /data-kepemilikan-saham|GetAnnouncement|GetStockSummary|GetIndexSummary|GetSuspension/.test(
+          /data-kepemilikan-saham|GetAnnouncement|GetStockSummary|GetIndexSummary|GetSuspension|satu-persen/.test(
             url,
           ),
         ),
@@ -1318,6 +1319,159 @@ BT /F1 10 Tf 1 0 0 1 529 530 Tm (-100) Tj ET`;
       await rm(root, { recursive: true, force: true });
     }
   });
+
+  it('applies and reports a replaced 1% file and new files for stored ownership dates', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'idx-corrections-'));
+    const net = network({ monthly: true });
+    const column = (i: number) => String.fromCharCode(65 + i);
+    const cell = (value: string | number, ref: string) =>
+      typeof value === 'number'
+        ? `<c r="${ref}"><v>${value}</v></c>`
+        : `<c r="${ref}" t="inlineStr"><is><t>${value}</t></is></c>`;
+    const onePct = (holders: [string, string, number, number][]) =>
+      zipSync({
+        'xl/worksheets/sheet1.xml': strToU8(
+          `<worksheet><sheetData>${[
+            [
+              'DATE',
+              'SHARE_CODE',
+              'ISSUER_NAME',
+              'INVESTOR_NAME',
+              'INVESTOR_CLASSIFICATION',
+              'LOCAL_FOREIGN',
+              'NATIONALITY',
+              'DOMICILE',
+              'HOLDINGS_SCRIPLESS',
+              'HOLDINGS_SCRIP',
+              'TOTAL_HOLDING_SHARES',
+              'PERCENTAGE',
+            ],
+            ...holders.map(([ticker, investor, shares, pct]) => [
+              '2026-09-30',
+              ticker,
+              `${ticker} Tbk`,
+              investor,
+              'Corporate',
+              'L',
+              '',
+              'INDONESIA',
+              shares,
+              0,
+              shares,
+              pct,
+            ]),
+          ]
+            .map(
+              (row, r) =>
+                `<row r="${r + 1}">${row.map((v, c) => cell(v, `${column(c)}${r + 1}`)).join('')}</row>`,
+            )
+            .join('')}</sheetData></worksheet>`,
+        ),
+      });
+    const files = new Map<string, Uint8Array>([
+      [
+        '/Media/2026-09-satu-persen.xlsx',
+        onePct([
+          ['AADI', 'HOLDER ONE', 1000, 2.5],
+          ['BBCA', 'HOLDER TWO', 2000, 3.5],
+        ]),
+      ],
+    ]);
+    const extra: { Description: string; Prospectus: string; ListingDate: string }[] = [];
+    const options = {
+      data: join(root, 'data'),
+      out: join(root, 'out'),
+      since: '2026-09-01',
+      today: '2026-10-22',
+      fetcher: (async (input, init) => {
+        const { pathname } = new URL(input instanceof Request ? input.url : input);
+        const file = files.get(pathname);
+        if (file) return new Response(new Uint8Array(file));
+        const response = await net.fetcher(input, init);
+        if (!pathname.includes('data-kepemilikan-saham')) return response;
+        const list = await response.json();
+        return Response.json({ items: [...list.items, ...extra] });
+      }) as typeof fetch,
+    };
+    const messages = async () =>
+      (await ingest(options)).failed.map((f) => [
+        f.source,
+        f.error.message.replace(/\d+ rows/, 'N rows'),
+      ]);
+    const holders = async (ticker: string) =>
+      JSON.parse(await readFile(join(options.out, `ticker/${ticker}.json`), 'utf8'));
+    try {
+      expect(await messages()).toEqual([]);
+      expect(await messages()).toEqual([]);
+      files.set(
+        '/Media/2026-09-satu-persen.xlsx',
+        onePct([
+          ['AADI', 'HOLDER ONE', 1000, 2.5],
+          ['BBCA', 'HOLDER TWO', 2400, 4.2],
+        ]),
+      );
+      expect(await messages()).toEqual([
+        [
+          'corrections',
+          'IDX replaced the 1% ownership file for 2026-09-30; applied it (N rows differ): https://www.idx.id/Media/2026-09-satu-persen.xlsx',
+        ],
+      ]);
+      expect((await holders('BBCA')).one_pct.holders).toEqual([
+        expect.objectContaining({ shares: 2400, pct: 4.2 }),
+      ]);
+      expect(await messages()).toEqual([]);
+      files.set(
+        '/Media/2026-09-koreksi-satu-persen.xlsx',
+        onePct([
+          ['AADI', 'HOLDER ONE', 1500, 3.1],
+          ['BBCA', 'HOLDER TWO', 2400, 4.2],
+        ]),
+      );
+      extra.push({
+        Description: '',
+        Prospectus: '/Media/2026-09-koreksi-satu-persen.xlsx',
+        ListingDate: '2026-09-30',
+      });
+      expect(await messages()).toEqual([
+        [
+          'corrections',
+          'IDX published another 1% ownership file for 2026-09-30; applied it (N rows differ): https://www.idx.id/Media/2026-09-koreksi-satu-persen.xlsx',
+        ],
+      ]);
+      expect((await holders('AADI')).one_pct.holders).toEqual([
+        expect.objectContaining({ shares: 1500, pct: 3.1 }),
+      ]);
+      const five = await fixture('ownership-5pct-2026-10-21.xlsx');
+      files.set('/Media/2026-10-21-repost-lima-persen.xlsx', new Uint8Array(five));
+      extra.push({
+        Description: '',
+        Prospectus: '/Media/2026-10-21-repost-lima-persen.xlsx',
+        ListingDate: '2026-10-21',
+      });
+      expect(await messages()).toEqual([]);
+      const zip = unzipSync(new Uint8Array(five));
+      const strings = strFromU8(zip['xl/sharedStrings.xml']!);
+      const percent = /<t>(\d{1,2}\.\d{2})<\/t>/.exec(strings)![1]!;
+      zip['xl/sharedStrings.xml'] = strToU8(
+        strings.replace(`<t>${percent}</t>`, `<t>${(Number(percent) + 0.01).toFixed(2)}</t>`),
+      );
+      files.set('/Media/2026-10-21-koreksi-lima-persen.xlsx', zipSync(zip));
+      extra.push({
+        Description: '',
+        Prospectus: '/Media/2026-10-21-koreksi-lima-persen.xlsx',
+        ListingDate: '2026-10-21',
+      });
+      expect(await messages()).toEqual([
+        [
+          'corrections',
+          'IDX published another 5% ownership file for 2026-10-21; applied it (N rows differ): https://www.idx.id/Media/2026-10-21-koreksi-lima-persen.xlsx',
+        ],
+      ]);
+      expect(await messages()).toEqual([]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  }, 30000);
 
   it('parses a registry report whose cover failed to download for attachment labels', async () => {
     const root = await mkdtemp(join(tmpdir(), 'idx-registry-label-gap-'));

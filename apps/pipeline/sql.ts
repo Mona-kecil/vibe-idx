@@ -38,7 +38,7 @@ CREATE TABLE one_pct (
   nationality VARCHAR, domicile VARCHAR, scripless DOUBLE, scrip DOUBLE, url VARCHAR,
   PRIMARY KEY(date, ticker, investor, seq)
 );
-CREATE TABLE ownership_files (date DATE, source VARCHAR, url VARCHAR PRIMARY KEY);
+CREATE TABLE ownership_files (date DATE, source VARCHAR, url VARCHAR PRIMARY KEY, sha256 VARCHAR);
 CREATE TABLE disclosures (
   date DATE, id VARCHAR PRIMARY KEY, ticker VARCHAR, title VARCHAR,
   published_at VARCHAR, url VARCHAR, kind VARCHAR, attachments JSON,
