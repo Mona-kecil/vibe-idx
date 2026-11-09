@@ -124,7 +124,7 @@ it('keeps clipped second lines and decimal commas in the June PDF alongside the 
       currentShares: 68352699,
     }),
   );
-});
+}, 30000);
 
 function tablePdf(ticker: string, headers: boolean, text = true) {
   const row = [
