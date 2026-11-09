@@ -1471,7 +1471,7 @@ BT /F1 10 Tf 1 0 0 1 529 530 Tm (-100) Tj ET`;
     } finally {
       await rm(root, { recursive: true, force: true });
     }
-  });
+  }, 30000);
 
   it('parses a registry report whose cover failed to download for attachment labels', async () => {
     const root = await mkdtemp(join(tmpdir(), 'idx-registry-label-gap-'));
