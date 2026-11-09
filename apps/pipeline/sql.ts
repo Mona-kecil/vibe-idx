@@ -349,4 +349,5 @@ export const health = `SELECT
   (SELECT max(date) FROM five_pct) five_pct,
   (SELECT max(date) FROM one_pct) one_pct,
   (SELECT max(date) FROM issuers) issuers,
+  (SELECT max(date) FROM disclosures) disclosures,
   current_timestamp run_at`;

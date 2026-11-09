@@ -17,7 +17,7 @@ export function startSentry() {
   });
 }
 
-export async function reportError(error: unknown) {
-  Sentry.captureException(error);
+export async function reportError(error: unknown, tags?: Record<string, string>) {
+  Sentry.captureException(error, { tags });
   await Sentry.flush(5000);
 }

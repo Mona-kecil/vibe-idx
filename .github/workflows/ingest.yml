@@ -96,5 +96,12 @@ jobs:
           if [ -d "$DATA/parquet" ]; then
             aws s3 sync "$DATA/parquet" s3://vibe-idx-private/parquet --exclude "*.tmp" --exclude "brokers/*" --exclude "broker-coverage.parquet" --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
           fi
+      # A failed source still publishes the others. health.json is written last, so its absence means the output is incomplete.
       - name: Publish website JSON
-        run: aws s3 sync "$OUT" s3://vibe-idx-public --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+        if: ${{ !cancelled() }}
+        run: |
+          if [ ! -f "$OUT/health.json" ]; then
+            echo '::error::The batch stopped before it finished the website JSON; nothing was published'
+            exit 1
+          fi
+          aws s3 sync "$OUT" s3://vibe-idx-public --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"

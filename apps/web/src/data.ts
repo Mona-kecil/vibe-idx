@@ -6,7 +6,10 @@ const healthSchema = z.object({
   five_pct: z.string().nullable(),
   one_pct: z.string().nullable().default(null),
   issuers: z.string().nullable(),
+  disclosures: z.string().nullable().default(null),
+  brokers: z.string().nullable().default(null),
   run_at: z.string(),
+  failed: z.array(z.string()).default([]),
 });
 
 const marketSchema = z.object({
@@ -241,6 +244,27 @@ export function staleSince(health: Health, now = Date.now()) {
   if (check.getTime() > now) check.setUTCDate(check.getUTCDate() - 1);
   const published = Date.parse(`${health.run_at.slice(0, 19).replace(' ', 'T')}Z`);
   return published < check.getTime() - 2 * 3600e3 ? health.run_at.slice(0, 10) : null;
+}
+
+const sourceLabels = {
+  prices: 'Prices',
+  indices: 'Indices',
+  five_pct: '5% ownership',
+  one_pct: 'Registry',
+  issuers: 'Issuers',
+  disclosures: 'Disclosures',
+  brokers: 'Broker flow',
+} as const satisfies Partial<Record<keyof Health, string>>;
+const isSource = (source: string): source is keyof typeof sourceLabels =>
+  Object.hasOwn(sourceLabels, source);
+
+// A missed run makes the whole page stale; otherwise each source the last run failed is behind.
+export function staleSources(health: Health, now = Date.now()) {
+  const since = staleSince(health, now);
+  if (since) return [{ label: null, since }];
+  return health.failed
+    .filter(isSource)
+    .map((source) => ({ label: sourceLabels[source], since: health[source] }));
 }
 export type Market = z.infer<typeof marketSchema>;
 export type Feed = z.infer<typeof feedSchema>;
