@@ -56,6 +56,7 @@ const sources = [
   'one_pct',
   'disclosures',
   'suspensions',
+  'corrections',
   'brokers',
 ] as const;
 export type Source = (typeof sources)[number];
@@ -64,6 +65,23 @@ const dayValue = (s: string) => dateValue(Date.parse(s) / 86400000);
 const hash = (value: string | Uint8Array) => createHash('sha256').update(value).digest('hex');
 const shiftDay = (day: string, offset: number) =>
   new Date(Date.parse(day) + offset * 86400000).toISOString().slice(0, 10);
+
+const onePctRow = (r: ReturnType<typeof parseOnePct>[number], url: string): DuckDBValue[] => [
+  dayValue(r.asOf),
+  r.ticker,
+  r.investorName,
+  r.seq,
+  r.issuerName,
+  r.total,
+  r.percent,
+  r.classification ?? null,
+  r.localForeign ?? null,
+  r.nationality ?? null,
+  r.domicile ?? null,
+  r.scripless ?? null,
+  r.scrip ?? null,
+  url,
+];
 
 export async function ingest({
   data,
@@ -219,6 +237,31 @@ export async function ingest({
   const failed: { source: Source; error: Error }[] = [];
   const fail = (source: Source, error: unknown) =>
     failed.push({ source, error: error instanceof Error ? error : new Error(String(error)) });
+  // Replaces a stored 1% month with a newer file and returns how many rows differ.
+  async function replaceOnePct(day: string, rows: ReturnType<typeof parseOnePct>, url: string) {
+    const key = (...fields: unknown[]) => JSON.stringify(fields);
+    const before = new Set(
+      (
+        await query(
+          `SELECT ticker, investor, seq, shares, pct FROM one_pct WHERE date = DATE ${literal(day)}`,
+        )
+      ).map((r) => key(r.ticker, r.investor, r.seq, r.shares, r.pct)),
+    );
+    const after = new Set(
+      rows.map((r) => key(r.ticker, r.investorName, r.seq, r.total, r.percent)),
+    );
+    const changed =
+      [...before].filter((k) => !after.has(k)).length +
+      [...after].filter((k) => !before.has(k)).length;
+    if (changed) {
+      await db.run(`DELETE FROM one_pct WHERE date = DATE ${literal(day)}`);
+      await append(
+        'one_pct',
+        rows.map((r) => onePctRow(r, url)),
+      );
+    }
+    return changed;
+  }
   // A failed source is recorded and the run continues, so every other source still saves and publishes.
   async function step<T>(source: Source, run: () => Promise<T>) {
     try {
@@ -477,17 +520,21 @@ export async function ingest({
         try {
           for (const file of await ownershipFiles('fivePct')) {
             if (knownFiles.has(file.url)) continue;
-            if (file.date < first) continue;
+            // Outside a backfill, where XLSX and PDF copies overlap, a new file for a stored date is a correction.
+            if (file.date < first && (ownershipOnly || !dates.has(file.date))) continue;
             const pdf = /\.pdf$/i.test(new URL(file.url).pathname);
             const bytes = await raw(`five-pct/${hash(file.url)}.${pdf ? 'pdf' : 'xlsx'}`, file.url);
             const parsed = pdf ? await parseFivePctPdf(bytes) : parseFivePct(bytes);
             if (!parsed.groups.length) throw new Error(`Empty 5% ownership file: ${file.url}`);
-            if (parsed.asOf < first || parsed.asOf > through) continue;
-            await append('ownership_files', [[dayValue(parsed.asOf), file.source, file.url]]);
+            const correction = !ownershipOnly && dates.has(parsed.asOf);
+            if ((parsed.asOf < first && !correction) || parsed.asOf > through) continue;
+            await append('ownership_files', [
+              [dayValue(parsed.asOf), file.source, file.url, hash(bytes)],
+            ]);
             fileYears.add(parsed.asOf.slice(0, 4));
             knownFiles.add(file.url);
             if (ownershipOnly) processed++;
-            if (dates.has(parsed.asOf)) continue;
+            if (dates.has(parsed.asOf) && !correction) continue;
             const rows = parsed.groups.flatMap((g) =>
               g.accounts.map((a) => [
                 dayValue(parsed.asOf),
@@ -506,11 +553,26 @@ export async function ingest({
             );
             await db.run('DELETE FROM incoming_five');
             await append('incoming_five', rows);
-            await db.run(`INSERT INTO five_pct
-          SELECT date, ticker, investor, account, any_value(holder_name),
-            sum(shares), sum(previous_shares), max(combined_shares), max(previous_combined),
-            max(pct_before), max(pct_after), max(previous_date)
-          FROM incoming_five GROUP BY date, ticker, investor, account`);
+            const incoming = `SELECT date, ticker, investor, account, any_value(holder_name),
+              sum(shares), sum(previous_shares), max(combined_shares), max(previous_combined),
+              max(pct_before), max(pct_after), max(previous_date)
+              FROM incoming_five GROUP BY date, ticker, investor, account`;
+            if (correction) {
+              const stored = `SELECT * FROM five_pct WHERE date = DATE ${literal(parsed.asOf)}`;
+              const [diff] = await query(`SELECT
+                (SELECT count(*) FROM (${stored} EXCEPT ALL ${incoming})) +
+                (SELECT count(*) FROM (${incoming} EXCEPT ALL ${stored})) n`);
+              const changed = Number(diff?.n);
+              if (!changed) continue;
+              await db.run(`DELETE FROM five_pct WHERE date = DATE ${literal(parsed.asOf)}`);
+              fail(
+                'corrections',
+                new Error(
+                  `IDX published another 5% ownership file for ${parsed.asOf}; applied it (${changed} rows differ): ${file.url}`,
+                ),
+              );
+            }
+            await db.run(`INSERT INTO five_pct ${incoming}`);
             dates.add(parsed.asOf);
             years.add(parsed.asOf.slice(0, 4));
           }
@@ -525,37 +587,43 @@ export async function ingest({
         try {
           for (const file of await ownershipFiles('onePct')) {
             if (knownFiles.has(file.url)) continue;
-            if (file.date < monthlyFirst) continue;
+            if (file.date < monthlyFirst && (ownershipOnly || !monthlyDates.has(file.date)))
+              continue;
             // The XLSX list republishes these month-end snapshots; report the PDFs instead of parsing them.
             if (/\.pdf$/i.test(new URL(file.url).pathname)) {
               skippedOnePctPdfs.push(file.url);
               continue;
             }
-            const rows = parseOnePct(await raw(`one-pct/${hash(file.url)}.xlsx`, file.url));
+            const bytes = await raw(`one-pct/${hash(file.url)}.xlsx`, file.url);
+            const rows = parseOnePct(bytes);
             if (!rows.length) throw new Error(`Empty 1% ownership file: ${file.url}`);
             const incomingDates = new Set(rows.map((r) => r.asOf));
             if (incomingDates.size !== 1) throw new Error(`Mixed 1% snapshot dates: ${file.url}`);
+            const asOf = rows[0]!.asOf;
+            if (!ownershipOnly && monthlyDates.has(asOf)) {
+              const changed = await replaceOnePct(asOf, rows, file.url);
+              if (changed) {
+                monthlyYears.add(asOf.slice(0, 4));
+                fail(
+                  'corrections',
+                  new Error(
+                    `IDX published another 1% ownership file for ${asOf}; applied it (${changed} rows differ): ${file.url}`,
+                  ),
+                );
+              }
+              await append('ownership_files', [
+                [dayValue(asOf), file.source, file.url, hash(bytes)],
+              ]);
+              fileYears.add(asOf.slice(0, 4));
+              knownFiles.add(file.url);
+              continue;
+            }
             const incoming = rows.filter(
               (r) => r.asOf >= monthlyFirst && r.asOf <= through && !monthlyDates.has(r.asOf),
             );
             await append(
               'one_pct',
-              incoming.map((r) => [
-                dayValue(r.asOf),
-                r.ticker,
-                r.investorName,
-                r.seq,
-                r.issuerName,
-                r.total,
-                r.percent,
-                r.classification ?? null,
-                r.localForeign ?? null,
-                r.nationality ?? null,
-                r.domicile ?? null,
-                r.scripless ?? null,
-                r.scrip ?? null,
-                file.url,
-              ]),
+              incoming.map((r) => onePctRow(r, file.url)),
             );
             for (const r of incoming) {
               monthlyDates.add(r.asOf);
@@ -563,7 +631,9 @@ export async function ingest({
             }
             for (const asOf of incomingDates) {
               if (asOf < monthlyFirst || asOf > through) continue;
-              await append('ownership_files', [[dayValue(asOf), file.source, file.url]]);
+              await append('ownership_files', [
+                [dayValue(asOf), file.source, file.url, hash(bytes)],
+              ]);
               fileYears.add(asOf.slice(0, 4));
               knownFiles.add(file.url);
               if (ownershipOnly) processed++;
@@ -575,6 +645,49 @@ export async function ingest({
         }
       });
     }
+    // IDX may correct a 1% month by replacing its XLSX at the same link.
+    if (!registryOnly && !ownershipOnly)
+      await step('corrections', async () => {
+        const found: string[] = [];
+        const years = { files: new Set<string>(), one_pct: new Set<string>() };
+        try {
+          for (const row of await query(`SELECT date::VARCHAR date, url, sha256 FROM ownership_files
+            WHERE source = 'onePct' AND url ILIKE '%.xlsx' AND date >= DATE ${literal(shiftDay(today, -183))}
+            ORDER BY date`)) {
+            const file = z
+              .object({ date: z.string(), url: z.string(), sha256: z.string().nullable() })
+              .parse(row);
+            const bytes = await download(file.url);
+            const sha256 = hash(bytes);
+            const cached = join(data, 'raw', 'one-pct', `${hash(file.url)}.xlsx`);
+            const ingested =
+              file.sha256 ?? (existsSync(cached) ? hash(await readFile(cached)) : sha256);
+            if (sha256 !== ingested) {
+              await archive(`one-pct/${hash(file.url)}-${sha256}.xlsx`, bytes);
+              const rows = parseOnePct(bytes);
+              if (rows.some((r) => r.asOf !== file.date))
+                throw new Error(`Replaced 1% file no longer covers ${file.date}: ${file.url}`);
+              const changed = await replaceOnePct(file.date, rows, file.url);
+              if (changed) {
+                years.one_pct.add(file.date.slice(0, 4));
+                found.push(
+                  `IDX replaced the 1% ownership file for ${file.date}; applied it (${changed} rows differ): ${file.url}`,
+                );
+              }
+            }
+            if (sha256 !== file.sha256) {
+              await db.run(
+                `UPDATE ownership_files SET sha256 = ${literal(sha256)} WHERE url = ${literal(file.url)}`,
+              );
+              years.files.add(file.date.slice(0, 4));
+            }
+          }
+        } finally {
+          await save('ownership_files', years.files);
+          await save('one_pct', years.one_pct);
+        }
+        if (found.length) throw new Error(found.join('\n'));
+      });
     if (!ownershipOnly)
       await step('disclosures', async () => {
         const known = new Map(
