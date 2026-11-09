@@ -1111,3 +1111,7 @@ body {
     justify-self: start;
   }
 }
+.freshness .stale {
+  color: var(--down);
+  font-weight: 650;
+}

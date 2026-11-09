@@ -700,25 +700,28 @@ describe('market summary', () => {
   it('renders and sorts buy size with nulls last and keeps old accumulation payloads readable', async () => {
     auth.user = { id: 'market-user', email: 'market@example.com' };
     window.history.replaceState(null, '', '/market');
-    fetcher.mockResolvedValueOnce(Response.json(summary)).mockResolvedValueOnce(
-      Response.json({
-        ...marketAccumulation,
-        stocks: marketAccumulation.stocks.map((stock, i) => ({
-          ...stock,
-          windows: {
-            ...stock.windows,
-            '1d': {
-              pct: 0.182,
-              broker: 'XL',
-              size: i === 2 ? null : i === 0 ? 4.1 : 2,
-              broker_avg: 12400,
-              stock_avg: 3020,
-              buy_trades: 214,
-              trades: 18512,
-            },
-          },
-        })),
-      }),
+    const baseFetch = fetcher.getMockImplementation()!;
+    fetcher.mockImplementation(async (input) =>
+      !String(input).includes('/api/brokers?view=market')
+        ? baseFetch(input)
+        : Response.json({
+            ...marketAccumulation,
+            stocks: marketAccumulation.stocks.map((stock, i) => ({
+              ...stock,
+              windows: {
+                ...stock.windows,
+                '1d': {
+                  pct: 0.182,
+                  broker: 'XL',
+                  size: i === 2 ? null : i === 0 ? 4.1 : 2,
+                  broker_avg: 12400,
+                  stock_avg: 3020,
+                  buy_trades: 214,
+                  trades: 18512,
+                },
+              },
+            })),
+          }),
     );
     await render();
     expect(host.querySelector('th:nth-child(7)')?.textContent).toContain('Buy size');
@@ -737,6 +740,7 @@ describe('market summary', () => {
     expect(host.textContent).toContain('30.0%AA');
     expect(cells().map((cell) => cell.textContent)).toEqual(['', '', '']);
     expect(host.querySelector('[role="alert"]')).toBeNull();
+    fetcher.mockImplementation(baseFetch);
   });
   it('keeps prices and sorting public, offers sign-in once and never requests private data while signed out', async () => {
     window.history.replaceState(null, '', '/market');

@@ -3,7 +3,8 @@ import { useAuth } from '@workos-inc/authkit-react';
 import { AccountControls, SignInButton } from './BrokerPanel';
 import { brokerName } from './broker-data';
 import { accumulationSchema, type Accumulation } from './brokers';
-import { load, type MarketPeriod, type MarketSummary } from './data';
+import { load, type Health, type MarketPeriod, type MarketSummary } from './data';
+import { Stale } from './Stale';
 import { dateText, direction, nf } from './ticker/format';
 import { initialPins, readStorage, writeStorage } from './watchlist';
 import './market.css';
@@ -72,6 +73,7 @@ export function MarketPage() {
     key: 'value',
     ascending: false,
   });
+  const [health, setHealth] = useState<Health | null>(null);
   const [query, setQuery] = useState('');
   const [pins, setPins] = useState(initialPins);
   const [announcement, announce] = useState('');
@@ -86,6 +88,12 @@ export function MarketPage() {
       () => {
         if (active) setState({ kind: 'error' });
       },
+    );
+    void load('health.json').then(
+      (data) => {
+        if (active) setHealth(data);
+      },
+      () => {},
     );
     const key = (event: KeyboardEvent) => {
       if (
@@ -212,6 +220,7 @@ export function MarketPage() {
       </header>
       <main className="wrap">
         <div className="freshness">
+          {health && <Stale health={health} />}
           {data?.date && (
             <>
               Prices <time dateTime={data.date}>{dateText(data.date)}</time>

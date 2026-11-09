@@ -537,3 +537,6 @@
   text-decoration: underline;
   text-underline-offset: 4px;
 }
+.market-page .freshness .stale {
+  margin-right: 22px;
+}
