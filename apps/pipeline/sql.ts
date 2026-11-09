@@ -383,6 +383,6 @@ export const health = `SELECT
   (SELECT max(date) FROM one_pct) one_pct,
   (SELECT max(date) FROM issuers) issuers,
   (SELECT max(date) FROM disclosures) disclosures,
-(SELECT max(date) FROM corporate_actions) corporate_actions,
-(SELECT max(date) FROM risk) risk,
+  (SELECT max(date) FROM corporate_actions) corporate_actions,
+  (SELECT max(date) FROM risk) risk,
   current_timestamp run_at`;
