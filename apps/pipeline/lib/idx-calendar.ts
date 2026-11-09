@@ -49,7 +49,7 @@ export function corporateActions(rows: CalendarRow[], stocks: Set<string>, from:
     date: string,
   ) => {
     const key = `${ticker}|${label}`;
-    const action = byKey.get(key) ?? { ticker, kind, label, steps: [] };
+    const action = byKey.get(key) ?? { ticker, kind, label, amount: null, steps: [] };
     action.steps = [...action.steps.filter((s) => s.step !== step), { step, date }];
     byKey.set(key, action);
   };

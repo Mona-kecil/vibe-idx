@@ -20,6 +20,7 @@ import { labelAttachments, orderAttachments, parseAnnouncements, parseReport } f
 import { registryParserVersion } from './registry';
 import { fetchCorporateActions } from './lib/idx-calendar';
 import { fetchRisk } from './lib/risk';
+import { dividendAmounts } from './lib/dividends';
 import { tickerSchema } from '../web/src/data';
 import { ownershipQuality, reconcileOwnership, resolveHolderKeys } from './ownership';
 import { analytics, health, market, marketSummary, schema, stockTable, tickers } from './sql';
@@ -63,6 +64,7 @@ const sources = [
   'corrections',
   'brokers',
   'corporate_actions',
+  'dividends',
   'risk',
 ] as const;
 export type Source = (typeof sources)[number];
@@ -1018,7 +1020,23 @@ export async function ingest({
         await step('corporate_actions', async () => {
           const years = new Set<string>();
           try {
-            const actions = await fetchCorporateActions(stocks, download, now);
+            const calendar = await fetchCorporateActions(stocks, download, now);
+            const disclosures = (
+              await query(
+                `SELECT source_json FROM disclosures WHERE title ILIKE '%dividen%' AND date >= DATE ${literal(shiftDay(today, -120))}`,
+              )
+            ).map((r) => archivedDisclosure.parse(JSON.parse(z.string().parse(r.source_json))));
+            const { actions, errors } = await dividendAmounts(calendar, disclosures, (url) =>
+              raw(`dividends/${hash(url)}.pdf`, url),
+            );
+            if (errors.length)
+              fail(
+                'dividends',
+                new AggregateError(
+                  errors,
+                  `Unreadable dividend announcements: ${errors.map((e) => e.message).join('; ')}`,
+                ),
+              );
             await db.run('INSERT OR REPLACE INTO corporate_actions VALUES (?, ?)', [
               today,
               JSON.stringify(actions),

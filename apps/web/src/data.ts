@@ -330,6 +330,10 @@ export const corporateActionSchema = z.object({
   ticker: z.string(),
   kind: z.enum(['DIV', 'RIGHTS', 'BONUS', 'SPLIT', 'RUPS', 'IPO', 'DELIST']),
   label: z.string(),
+  amount: z
+    .object({ value: z.number().positive(), currency: z.string().regex(/^[A-Z]{3}$/) })
+    .nullable()
+    .default(null),
   steps: z.array(
     z.object({
       step: z.enum([
