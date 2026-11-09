@@ -2000,6 +2000,7 @@ it('publishes calendar and risk snapshots, records independent failures, and reu
         ticker: 'AADI',
         kind: 'DIV',
         label: 'Cash dividend',
+        amount: null,
         steps: [{ step: 'pay', date: '2026-10-27' }],
       },
     ]);
@@ -2079,6 +2080,97 @@ it('records unread multi-stock notices as risk failures while publishing availab
       'suspensions',
       'risk',
     ]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+}, 30000);
+
+it('publishes dividend amounts from disclosure attachments and records structural failures without losing the calendar', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'idx-dividend-publish-'));
+  const net = network();
+  const options = {
+    data: join(root, 'data'),
+    out: join(root, 'out'),
+    since: '2026-10-21',
+    today: '2026-10-21',
+  };
+  const fetcher: typeof fetch = async (input, init) => {
+    const url = new URL(input instanceof Request ? input.url : input);
+    if (url.pathname.includes('GetCalendar')) {
+      const Results =
+        url.searchParams.get('date') === '20261001'
+          ? ['GEMS', 'AADI'].map((title) => ({
+              title,
+              Jenis: '',
+              description: 'tanggal Pembayaran Dividen Tunai Interim',
+              start: '2026-10-22T00:00:00',
+              TglWaktuRups: '',
+            }))
+          : [];
+      return Response.json({ ResultCount: Results.length, Results });
+    }
+    if (url.pathname.includes('GetAnnouncement'))
+      return Response.json({
+        ResultCount: 2,
+        Replies: [
+          announcement({
+            ticker: 'GEMS',
+            id: 'dividend/gems',
+            title: 'Jadwal Dividen Tunai Interim',
+            path: '/dividend/gems.pdf',
+          }),
+          announcement({
+            ticker: 'AADI',
+            id: 'dividend/unreadable',
+            title: 'Pengumuman Pembagian Dividen Tunai',
+            path: '/dividend/broken.pdf',
+          }),
+        ],
+      });
+    if (url.pathname === '/dividend/gems.pdf')
+      return new Response(new Uint8Array(await fixture('dividend-GEMS-2026-09-30.pdf')));
+    if (url.pathname === '/dividend/broken.pdf') return new Response('not a PDF');
+    return net.fetcher(input, init);
+  };
+  try {
+    const result = await ingest({ ...options, fetcher });
+    expect(result.failed.map((f) => f.source)).toEqual(['corporate_actions']);
+    expect(result.failed[0]?.error.message).toContain('https://www.idx.id/dividend/broken.pdf');
+    const actions = JSON.parse(await readFile(join(options.out, 'corporate-actions.json'), 'utf8'));
+    expect(actions.find((a: { ticker: string }) => a.ticker === 'GEMS')).toEqual({
+      ticker: 'GEMS',
+      kind: 'DIV',
+      label: 'Interim dividend',
+      amount: { value: 0.034, currency: 'USD' },
+      steps: [
+        { step: 'cum', date: '2026-10-08' },
+        { step: 'ex', date: '2026-10-09' },
+        { step: 'record', date: '2026-10-12' },
+        { step: 'pay', date: '2026-10-22' },
+      ],
+    });
+    expect(actions.find((a: { ticker: string }) => a.ticker === 'AADI').amount).toBeNull();
+    expect(JSON.parse(await readFile(join(options.out, 'health.json'), 'utf8'))).toMatchObject({
+      corporate_actions: options.today,
+      risk: options.today,
+      failed: ['corporate_actions'],
+    });
+    expect(
+      JSON.parse(await readFile(join(options.out, 'risk.json'), 'utf8')).AADI.susp,
+    ).toBeTruthy();
+    const replay = await ingest({
+      ...options,
+      registryOnly: true,
+      reparseRegistry: true,
+      until: options.today,
+      fetcher: async () => {
+        throw new Error('Offline dividend export fetched IDX');
+      },
+    });
+    expect(replay.requests).toBe(0);
+    expect(JSON.parse(await readFile(join(options.out, 'corporate-actions.json'), 'utf8'))).toEqual(
+      actions,
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
   }

@@ -39,6 +39,7 @@ describe('corporate actions', () => {
         ticker: 'BMAS',
         kind: 'RIGHTS',
         label: 'Rights issue',
+        amount: null,
         steps: [
           { step: 'cum', date: '2026-11-23' },
           { step: 'ex', date: '2026-11-24' },
@@ -49,12 +50,14 @@ describe('corporate actions', () => {
         ticker: 'TAPG',
         kind: 'DIV',
         label: 'Interim dividend',
+        amount: null,
         steps: [{ step: 'pay', date: '2026-11-27' }],
       },
       {
         ticker: 'AGRS',
         kind: 'RUPS',
         label: 'Shareholder meeting',
+        amount: null,
         steps: [{ step: 'meeting', date: '2026-11-30T13:30' }],
       },
     ]);

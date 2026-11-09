@@ -1,0 +1,58 @@
+[
+  {
+    "file": "dividend-GEMS-2026-09-30.pdf",
+    "ticker": "GEMS",
+    "published_at": "2026-09-30T16:51:19",
+    "url": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202609/e405b45452_6c49faa9d2.pdf",
+    "amount": {
+      "value": 0.034,
+      "currency": "USD"
+    },
+    "steps": [
+      {
+        "step": "cum",
+        "date": "2026-10-08"
+      },
+      {
+        "step": "ex",
+        "date": "2026-10-09"
+      },
+      {
+        "step": "record",
+        "date": "2026-10-12"
+      },
+      {
+        "step": "pay",
+        "date": "2026-10-22"
+      }
+    ]
+  },
+  {
+    "file": "dividend-EAST-2026-11-09.pdf",
+    "ticker": "EAST",
+    "published_at": "2026-11-09T08:29:38",
+    "url": "https://www.idx.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202611/e2b1d5e951_08fce57389.pdf",
+    "amount": {
+      "value": 1.6,
+      "currency": "IDR"
+    },
+    "steps": [
+      {
+        "step": "cum",
+        "date": "2026-11-17"
+      },
+      {
+        "step": "ex",
+        "date": "2026-11-18"
+      },
+      {
+        "step": "record",
+        "date": "2026-11-19"
+      },
+      {
+        "step": "pay",
+        "date": "2026-11-30"
+      }
+    ]
+  }
+]
