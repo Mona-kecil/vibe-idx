@@ -10,7 +10,8 @@ import { exportJWK, generateKeyPair, SignJWT } from 'jose';
 import ts from 'typescript';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vite-plus/test';
 import type { JWTPayload } from 'jose';
-import api, { createBrokerHandler } from '../api/brokers';
+import api from '../api/brokers';
+import { createBrokerHandler } from '../api/_brokers';
 import { brokerHistorySchema } from './brokers';
 import type { BrokerDay, BrokerRow } from './brokers';
 
@@ -334,7 +335,12 @@ describe('private broker API', () => {
   });
 
   it('maps missing objects to 404 and storage failures or malformed broker days to 503', async () => {
-    const handle = createBrokerHandler({ env, fetcher });
+    const reports: unknown[] = [];
+    const handle = createBrokerHandler({
+      env,
+      fetcher,
+      reportFailure: async (_route, failure) => void reports.push(failure),
+    });
     const auth = await token();
     for (const status of [404, 403, 429, 500, 503]) {
       storageStatus = status;
@@ -346,6 +352,7 @@ describe('private broker API', () => {
       });
       expectPrivate(response);
     }
+    expect(reports).toEqual([403, 429, 500, 503].map((status) => `R2 BBCA HTTP ${status}`));
     storageStatus = 200;
     for (const body of [
       'invalid JSON',
@@ -361,6 +368,8 @@ describe('private broker API', () => {
       expect(await response.json()).toEqual({ error: 'unavailable' });
       expectPrivate(response);
     }
+    expect(reports.slice(4)).toHaveLength(6);
+    expect(reports.slice(4).every((failure) => failure instanceof Error)).toBe(true);
     storageBody = '[]';
     const empty = await handle(request({ token: auth }));
     expect(empty.status).toBe(200);

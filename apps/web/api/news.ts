@@ -1,6 +1,7 @@
 import { XMLParser } from 'fast-xml-parser';
 import { z } from 'zod';
 import { brokerTickerSchema } from '../src/brokers.js';
+import { reportFailure } from './_sentry.js';
 
 const article = z.object({
   title: z.string(),
@@ -152,7 +153,8 @@ export async function news(request: Request, fetcher: typeof fetch = fetch) {
             : 'public, s-maxage=900, stale-while-revalidate=3600',
       },
     });
-  } catch {
+  } catch (error) {
+    await reportFailure('news', error);
     return Response.json({ error: 'unavailable' }, { status: 502 });
   }
 }

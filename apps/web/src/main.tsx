@@ -1,8 +1,15 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { AuthKitProvider } from '@workos-inc/authkit-react';
+import * as Sentry from '@sentry/react';
 
 import { App } from './App';
+import { SENTRY_DSN } from './sentry';
+
+Sentry.init({
+  dsn: import.meta.env.PROD ? SENTRY_DSN : undefined,
+  environment: window.location.hostname,
+});
 
 const rootElement = document.getElementById('root');
 const clientId = import.meta.env.VITE_WORKOS_CLIENT_ID;
@@ -12,7 +19,11 @@ if (!rootElement) {
 }
 if (!clientId) throw new Error('Set VITE_WORKOS_CLIENT_ID before starting the app.');
 
-createRoot(rootElement).render(
+createRoot(rootElement, {
+  onUncaughtError: Sentry.reactErrorHandler(),
+  onCaughtError: Sentry.reactErrorHandler(),
+  onRecoverableError: Sentry.reactErrorHandler(),
+}).render(
   <StrictMode>
     <AuthKitProvider
       clientId={clientId}
