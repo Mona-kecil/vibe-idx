@@ -9,7 +9,7 @@
     "noEmit": true,
     "skipLibCheck": true,
     "esModuleInterop": true,
-    "types": ["node", "@cloudflare/workers-types", "vite-plus/test"]
+    "types": ["node", "vite-plus/test"]
   },
   "include": ["src", "*.ts"]
 }

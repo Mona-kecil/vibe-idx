@@ -1,8 +1,0 @@
-{
-  "name": "vibe-idx-feeds",
-  "main": "src/index.ts",
-  "compatibility_date": "2026-11-09",
-  "workers_dev": false,
-  "triggers": { "crons": ["*/10 * * * *"] },
-  "r2_buckets": [{ "binding": "PUBLIC", "bucket_name": "vibe-idx-public" }],
-}

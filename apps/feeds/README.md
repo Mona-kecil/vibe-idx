@@ -1,10 +1,10 @@
 # Scheduled feeds
 
-`vibe-idx-feeds` publishes `news.json` and `calendar.json` to `PUBLIC`, the `vibe-idx-public` R2 bucket. The cron runs every ten minutes. ForexFactory and BPS refresh hourly. BI refreshes daily. Failed sources retry on the next cron.
+`pnpm --filter @vibe-idx/feeds collect` publishes `news.json` and `calendar.json` to the `vibe-idx-public` R2 bucket. The News and calendar feeds workflow runs every 15 minutes, at minutes 7, 22, 37, and 52, and accepts manual dispatches. GitHub may delay scheduled runs. ForexFactory and BPS refresh hourly. BI refreshes daily. Failed sources retry on the next run.
 
 The news items match the terminal `headlineSchema`. `sum` contains the feed's own summary with HTML removed. The collector never requests article pages or stores article bodies. The Google News and Vercel ticker-news paths remain separate.
 
-Tagging uses the company names in `PUBLIC/tickers.json`, with `PT`, `Persero`, and `Tbk` normalized. Longer names match first. A single-word company name requires `PT` or `Tbk`. A four-letter ticker requires a stock marker such as `saham` or `emiten` immediately before it, or `Tbk` immediately after it. Bare codes, bank abbreviations, and group nicknames do not qualify by themselves.
+Tagging uses the company names in `tickers.json` in the public bucket, with `PT`, `Persero`, and `Tbk` normalized. Longer names match first. A single-word company name requires `PT` or `Tbk`. A four-letter ticker requires a stock marker such as `saham` or `emiten` immediately before it, or `Tbk` immediately after it. Bare codes, bank abbreviations, and group nicknames do not qualify by themselves.
 
 `calendar.json` uses the terminal `calendarEventSchema`. ForexFactory supplies its weekly high-impact events and medium-impact events for USD, CNY, EUR, and JPY.
 
@@ -27,8 +27,8 @@ Run `pnpm --filter @vibe-idx/feeds check` and `pnpm --filter @vibe-idx/feeds tes
 
 For live checks, run `pnpm --filter @vibe-idx/feeds verify:live /path/to/private/bps-key-file /tmp/feeds-verification`. The script reads the key at runtime and writes only to the scratch directory. It uses an in-memory bucket, prints source counts and fifteen tag samples, and exits unsuccessfully if a source fails. Never commit those outputs because they contain publisher text. Offline RSS and ForexFactory fixtures contain invented titles and summaries. BPS and BI fixtures contain public schedule data.
 
-For the local Workers runtime, seed `tickers.json` with `wrangler r2 object put vibe-idx-public/tickers.json --file /tmp/tickers.json --local`. Use an untracked environment file with `BPS_KEY` and `SENTRY_DSN`. Start `wrangler dev --local --test-scheduled --env-file /path/to/private/local.env`, then request `http://localhost:8787/__scheduled`. R2 writes remain local. Keep the same `--persist-to` directory for all commands if you set one.
+## Production configuration
 
-## Production setup
+The workflow reads `R2_ACCOUNT_ID` from the repository variables and `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `BPS_KEY`, and `SENTRY_DSN` from repository secrets. The same environment variables configure local collection. Running `collect` writes directly to the public bucket. Use `verify:live` for checks that must stay local.
 
-Deployment and setting secrets are separate steps that require the user's approval. The required Worker secrets are `BPS_KEY` and `SENTRY_DSN`. Neither belongs in Wrangler variables, source code, or committed environment files. There is no HTTP collection route and `workers_dev` is disabled. Source errors go to Sentry as credential-free diagnostics.
+GitHub Actions serializes runs with the `news-calendar-feeds` concurrency group. The collector reads the last publication from R2, retains failed sources, and signs requests with the existing R2 credentials. Only a missing object (HTTP 404) starts a new publication. Other read errors prevent that document from being overwritten. Source or publication failures report credential-free diagnostics to Sentry and fail the workflow after the remaining sources finish. No Cloudflare Worker deployment is required.
