@@ -22,13 +22,38 @@ function json(body: unknown, status: number, headers?: Record<string, string>) {
   });
 }
 
+export type BrokerStore = (key: string) => Promise<Response>;
+
+function s3Store(env: NodeJS.ProcessEnv, fetcher: typeof fetch): BrokerStore | null {
+  const storage = storageConfigSchema.safeParse(env);
+  if (!storage.success) return null;
+  const { R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY } = storage.data;
+  const aws = new AwsClient({
+    accessKeyId: R2_ACCESS_KEY_ID,
+    secretAccessKey: R2_SECRET_ACCESS_KEY,
+    service: 's3',
+    region: 'auto',
+  });
+  return async (key) =>
+    fetcher(
+      await aws.sign(`https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com/vibe-idx-private/${key}`, {
+        method: 'GET',
+        cache: 'no-store',
+        redirect: 'error',
+        signal: AbortSignal.timeout(10000),
+      }),
+    );
+}
+
 export function createBrokerHandler({
   env = process.env,
   fetcher = fetch,
+  store,
   reportFailure = async () => {},
 }: {
   env?: NodeJS.ProcessEnv;
   fetcher?: typeof fetch;
+  store?: BrokerStore;
   reportFailure?: (route: string, failure: unknown) => Promise<void>;
 } = {}) {
   const clientId = clientIdSchema.safeParse(env.WORKOS_CLIENT_ID);
@@ -87,28 +112,17 @@ export function createBrokerHandler({
       return json({ error: 'unavailable' }, 503);
     }
 
-    const storage = storageConfigSchema.safeParse(env);
-    if (!storage.success) {
+    const read = store ?? s3Store(env, fetcher);
+    if (!read) {
       await reportFailure('brokers', 'R2 storage settings are missing');
       return json({ error: 'unavailable' }, 503);
     }
-    const { R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY } = storage.data;
     try {
-      const aws = new AwsClient({
-        accessKeyId: R2_ACCESS_KEY_ID,
-        secretAccessKey: R2_SECRET_ACCESS_KEY,
-        service: 's3',
-        region: 'auto',
-      });
       const key =
         target === 'market'
           ? 'site/market-accumulation.json'
           : `site/broker/${target.ticker}.json.gz`;
-      const signed = await aws.sign(
-        `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com/vibe-idx-private/${key}`,
-        { method: 'GET', cache: 'no-store', redirect: 'error', signal: AbortSignal.timeout(10000) },
-      );
-      const response = await fetcher(signed);
+      const response = await read(key);
       if (response.status === 404) return json({ error: 'not_found' }, 404);
       if (!response.ok) {
         await reportFailure(

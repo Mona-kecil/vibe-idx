@@ -213,6 +213,24 @@ describe('private broker API', () => {
     expect(storageReads).toHaveLength(1);
   });
 
+  it('reads broker history from an injected store without R2 credentials', async () => {
+    const keys: string[] = [];
+    const handle = createBrokerHandler({
+      env: { WORKOS_CLIENT_ID: clientId },
+      fetcher,
+      store: async (key) => {
+        keys.push(key);
+        return new Response(gzipSync(JSON.stringify([day])));
+      },
+    });
+    expect((await handle(request())).status).toBe(401);
+    const response = await handle(request({ token: await token() }));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ticker: 'BBCA', days: [day] });
+    expect(keys).toEqual(['site/broker/BBCA.json.gz']);
+    expect(storageReads).toEqual([]);
+  });
+
   it('protects market accumulation with the same JWT checks and reads only the private summary key', async () => {
     const handle = createBrokerHandler({ env, fetcher });
     for (const invalid of [

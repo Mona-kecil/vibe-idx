@@ -5,6 +5,7 @@
   "scripts": {
     "build": "pnpm run build:client",
     "build:client": "CI=true vp build",
+    "deploy:preview": "pnpm run build:client && pnpm dlx wrangler@4 deploy",
     "check": "CI=true vp check",
     "dev": "CI=true vp dev",
     "dev:web": "CI=true vp dev",
