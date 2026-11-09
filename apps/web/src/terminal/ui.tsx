@@ -69,7 +69,7 @@ export function Availability<T>({
     <Empty>{resource.kind === 'loading' ? `Loading ${name}…` : `${name} unavailable`}</Empty>
   );
 }
-export function Publication({ date, errors }: { date?: string | null; errors: string[] }) {
+export function Publication({ date, errors = [] }: { date?: string | null; errors?: string[] }) {
   return (
     <>
       {date && <div className="publication">As of {dateText(date)}</div>}

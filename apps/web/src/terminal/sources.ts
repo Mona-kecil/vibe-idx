@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { load, loadNews, corporateActionSchema, riskSchema } from '../data';
+import { load, loadNews, corporateActionsSchema, risksSchema, riskSchema } from '../data';
 import { brokerHistorySchema, brokerTickerSchema } from '../brokers';
 import { headlineSchema, calendarEventSchema } from './contracts';
 
@@ -17,39 +17,10 @@ const publication = {
     .optional(),
   errors: z.array(z.string()).default([]),
 };
-const newsRows = z.array(headlineSchema);
-const calendarRows = z.array(calendarEventSchema);
-const date = z.string().refine((value) => Number.isFinite(Date.parse(value)));
-const httpUrl = z.url().refine((value) => /^https?:/.test(value));
-const actionRows = z.array(
-  corporateActionSchema.extend({
-    amount: z.number().nullable().optional(),
-    steps: z.array(corporateActionSchema.shape.steps.element.extend({ date })),
-  }),
-);
-const riskRows = z.record(
-  z.string(),
-  riskSchema.extend({
-    susp: riskSchema.shape.susp.unwrap().extend({ since: date, url: httpUrl }).nullable(),
-    uma: riskSchema.shape.uma.unwrap().extend({ date, url: httpUrl }).nullable(),
-  }),
-);
-const newsSchema = z.union([
-  z.object({ ...publication, news: newsRows }),
-  newsRows.transform((news) => ({ news, errors: [], as_of: undefined })),
-]);
-const calendarSchema = z.union([
-  z.object({ ...publication, cal: calendarRows }),
-  calendarRows.transform((cal) => ({ cal, errors: [], as_of: undefined })),
-]);
-const actionsSchema = z.union([
-  z.object({ ...publication, actions: actionRows }),
-  actionRows.transform((actions) => ({ actions, errors: [], as_of: undefined })),
-]);
-const risksSchema = z.union([
-  z.object({ ...publication, asof: date.nullable().optional(), risk: riskRows }),
-  riskRows.transform((risk) => ({ risk, errors: [], as_of: undefined, asof: undefined })),
-]);
+const newsSchema = z.object({ ...publication, news: z.array(headlineSchema) });
+const calendarSchema = z.object({ ...publication, cal: z.array(calendarEventSchema) });
+const actionsSchema = corporateActionsSchema.transform((actions) => ({ actions }));
+const risks = risksSchema.transform((risk) => ({ risk }));
 
 async function published<T>(
   path: string,
@@ -70,7 +41,7 @@ export const fetchCalendar = (signal?: AbortSignal) =>
   published('calendar.json', calendarSchema, signal);
 export const fetchActions = (signal?: AbortSignal) =>
   published('corporate-actions.json', actionsSchema, signal);
-export const fetchRisk = (signal?: AbortSignal) => published('risk.json', risksSchema, signal);
+export const fetchRisk = (signal?: AbortSignal) => published('risk.json', risks, signal);
 export async function terminalData() {
   const [stocks, market, health, feed, summary] = await Promise.all([
     load('tickers.json'),

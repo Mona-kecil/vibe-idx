@@ -32,21 +32,17 @@ describe('terminal publications', () => {
           },
         ],
       },
-      '/data/corporate-actions.json': {
-        as_of: timestamp,
-        actions: [
-          {
-            ticker: 'BREN',
-            kind: 'DIV',
-            label: 'Dividend',
-            amount: 12.5,
-            steps: [{ step: 'pay', date: '2026-11-10' }],
-          },
-        ],
-      },
+      '/data/corporate-actions.json': [
+        {
+          ticker: 'BREN',
+          kind: 'DIV',
+          label: 'Cash dividend',
+          amount: { value: 0.034, currency: 'USD' },
+          steps: [{ step: 'pay', date: '2026-11-10' }],
+        },
+      ],
       '/data/risk.json': {
-        as_of: timestamp,
-        risk: { BREN: { notes: [{ code: 'X', text: 'Watchlist board' }], susp: null, uma: null } },
+        BREN: { notes: [{ code: 'X', text: 'Watchlist board' }], susp: null, uma: null },
       },
     };
     const fetcher = vi.fn<typeof fetch>(async (input) => {
@@ -62,8 +58,11 @@ describe('terminal publications', () => {
       risk = await fetchRisk();
     expect(news.kind === 'ready' && news.data.news[0]?.sum).toBe('Own summary');
     expect(calendar.kind === 'ready' && calendar.data.as_of).toBe(timestamp);
-    expect(actions.kind === 'ready' && actions.data.actions[0]?.amount).toBe(12.5);
-    expect(risk.kind === 'ready' && risk.data.as_of).toBe(timestamp);
+    expect(actions.kind === 'ready' && actions.data.actions[0]?.amount).toEqual({
+      value: 0.034,
+      currency: 'USD',
+    });
+    expect(risk.kind === 'ready' && risk.data.risk.BREN?.notes[0]?.code).toBe('X');
     expect(fetcher.mock.calls.map(([path]) => path)).toEqual(Object.keys(payloads));
   });
   it('reads the raw action array and ticker-keyed risk object published by the daily batch', async () => {
@@ -105,11 +104,9 @@ describe('terminal publications', () => {
     expect(await fetchRisk()).toEqual({ kind: 'unavailable' });
     expect(fetcher).toHaveBeenCalledTimes(5);
   });
-  it('accepts the prototype risk publication date and rejects unsafe article URLs and invalid timestamps', async () => {
+  it('rejects unsafe article URLs and invalid timestamps', async () => {
     const fetcher = vi.fn<typeof fetch>();
     vi.stubGlobal('fetch', fetcher);
-    fetcher.mockResolvedValueOnce(Response.json({ asof: '2026-11-09', risk: {} }));
-    expect((await fetchRisk()).kind).toBe('ready');
     for (const item of [
       { ts: timestamp, link: 'javascript:alert(1)' },
       { ts: 'not a date', link: 'https://example.com' },

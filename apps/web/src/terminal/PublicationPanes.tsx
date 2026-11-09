@@ -2,8 +2,11 @@ import { Fragment, useState } from 'react';
 import { useTerminal } from './state';
 import type { Headline, Risk, Resource } from './sources';
 import { Availability, Empty, Publication, RiskFlags, Scroll, Segments, TickerLink } from './ui';
-import { dateText, nf } from '../ticker/format';
+import { dateText } from '../ticker/format';
 import './publication-panes.css';
+
+const perShare = ({ value, currency }: { value: number; currency: string }) =>
+  `${new Intl.NumberFormat('en-US', { maximumFractionDigits: 4 }).format(value)} ${currency} per share`;
 
 const wib = (value: string, options: Intl.DateTimeFormatOptions = {}) =>
   new Intl.DateTimeFormat('en-GB', {
@@ -304,10 +307,7 @@ export function ActionsPane() {
             let day = '';
             return (
               <>
-                <Publication
-                  date={data.as_of ?? market.health.corporate_actions}
-                  errors={data.errors}
-                />
+                <Publication date={market.health.corporate_actions} />
                 {rows.length ? (
                   <table className="actions">
                     <tbody>
@@ -337,11 +337,8 @@ export function ActionsPane() {
                                 >
                                   {row.action.label}
                                 </button>
-                                {row.action.amount != null && (
-                                  <span className="mut">
-                                    {' '}
-                                    {nf(row.action.amount, 2)} IDR per share
-                                  </span>
+                                {row.action.amount && (
+                                  <span className="mut"> {perShare(row.action.amount)}</span>
                                 )}
                               </td>
                             </tr>
@@ -414,10 +411,7 @@ export function RiskPane() {
               );
             return (
               <>
-                <Publication
-                  date={data.as_of ?? data.asof ?? market.health.risk}
-                  errors={data.errors}
-                />
+                <Publication date={market.health.risk} />
                 {rows.length ? (
                   <table>
                     <tbody>
