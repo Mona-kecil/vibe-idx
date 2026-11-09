@@ -541,6 +541,10 @@ export function Home() {
               Home
             </a>
             <a href="/market">Market</a>
+            <a className="terminal-link" href="/terminal">
+              Terminal
+              <span className="cursor" aria-hidden="true" />
+            </a>
           </nav>
           <div className="search" ref={searchBox}>
             <svg

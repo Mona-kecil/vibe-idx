@@ -118,6 +118,10 @@ function TickerNav({ market, stocks }: { market: Market | null; stocks: Stock[] 
         <nav className="main-nav" aria-label="Main">
           <a href="/">Home</a>
           <a href="/market">Market</a>
+          <a className="terminal-link" href="/terminal">
+            Terminal
+            <span className="cursor" aria-hidden="true" />
+          </a>
         </nav>
         <div className="search" ref={container}>
           <svg
