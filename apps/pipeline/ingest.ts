@@ -13,6 +13,7 @@ import { parseIssuers } from './lib/issuers';
 import { parseFivePct, parseFivePctPdf } from './lib/fivePct';
 import { parseOnePct } from './lib/onePct';
 import { reportError, startSentry } from './lib/sentry';
+import { multiStockNotices, readNotice } from './lib/suspensions';
 import { idxUrl, parseOwnershipList } from './lib/ownershipList';
 import { date } from './lib/rows';
 import { labelAttachments, orderAttachments, parseAnnouncements, parseReport } from './reports';
@@ -54,6 +55,7 @@ const sources = [
   'five_pct',
   'one_pct',
   'disclosures',
+  'suspensions',
   'brokers',
 ] as const;
 export type Source = (typeof sources)[number];
@@ -860,6 +862,33 @@ export async function ingest({
             await save(table, years[table]);
         }
       });
+    const suspensions =
+      registryOnly || ownershipOnly
+        ? undefined
+        : await step('suspensions', async () => {
+            const notices: Record<string, Awaited<ReturnType<typeof readNotice>>> = {};
+            const unreadable: string[] = [];
+            for (const url of multiStockNotices(
+              json(
+                await download(
+                  '/primary/NewsAnnouncement/GetSuspension?pageNumber=1&pageSize=5000',
+                ),
+              ),
+            ))
+              try {
+                notices[url] = await readNotice(await raw(`suspensions/${hash(url)}.pdf`, url));
+              } catch (error) {
+                unreadable.push(
+                  `${url} (${error instanceof Error ? error.message : String(error)})`,
+                );
+              }
+            if (unreadable.length)
+              fail(
+                'suspensions',
+                new Error(`Unreadable suspension notices: ${unreadable.join('; ')}`),
+              );
+            return notices;
+          });
     const brokers =
       registryOnly || ownershipOnly
         ? undefined
@@ -909,6 +938,8 @@ export async function ingest({
       await writeFile(join(out, 'ticker', `${parsed.ticker}.json`), `${JSON.stringify(parsed)}\n`);
     }
     await writeFile(join(out, 'ownership-quality.json'), `${JSON.stringify(quality)}\n`);
+    if (suspensions)
+      await writeFile(join(out, 'suspension-notices.json'), `${JSON.stringify(suspensions)}\n`);
     // Written last: the publish step treats health.json as proof that the output is complete.
     await writeFile(
       join(out, 'health.json'),
