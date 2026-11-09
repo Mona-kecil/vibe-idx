@@ -64,6 +64,7 @@ const sources = [
   'corrections',
   'brokers',
   'corporate_actions',
+  'dividends',
   'risk',
 ] as const;
 export type Source = (typeof sources)[number];
@@ -1030,7 +1031,7 @@ export async function ingest({
             );
             if (errors.length)
               fail(
-                'corporate_actions',
+                'dividends',
                 new AggregateError(
                   errors,
                   `Unreadable dividend announcements: ${errors.map((e) => e.message).join('; ')}`,

@@ -2134,7 +2134,7 @@ it('publishes dividend amounts from disclosure attachments and records structura
   };
   try {
     const result = await ingest({ ...options, fetcher });
-    expect(result.failed.map((f) => f.source)).toEqual(['corporate_actions']);
+    expect(result.failed.map((f) => f.source)).toEqual(['dividends']);
     expect(result.failed[0]?.error.message).toContain('https://www.idx.id/dividend/broken.pdf');
     const actions = JSON.parse(await readFile(join(options.out, 'corporate-actions.json'), 'utf8'));
     expect(actions.find((a: { ticker: string }) => a.ticker === 'GEMS')).toEqual({
@@ -2153,7 +2153,7 @@ it('publishes dividend amounts from disclosure attachments and records structura
     expect(JSON.parse(await readFile(join(options.out, 'health.json'), 'utf8'))).toMatchObject({
       corporate_actions: options.today,
       risk: options.today,
-      failed: ['corporate_actions'],
+      failed: ['dividends'],
     });
     expect(
       JSON.parse(await readFile(join(options.out, 'risk.json'), 'utf8')).AADI.susp,
