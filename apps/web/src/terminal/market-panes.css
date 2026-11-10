@@ -3,6 +3,20 @@
   flex: 1;
   min-height: 0;
 }
+.terminal-page .heat-scale {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 8px;
+  font-size: 10px;
+}
+.terminal-page .heat-scale span {
+  padding: 2px 4px;
+}
+.terminal-page .tile:focus-visible {
+  z-index: 1;
+  outline-width: 2px;
+}
 .terminal-page .tile {
   position: absolute;
   display: flex;

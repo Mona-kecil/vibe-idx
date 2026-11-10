@@ -245,6 +245,11 @@ export function SignalsPane() {
   );
 }
 type Tile = { stock: Stock; x: number; y: number; w: number; h: number };
+function heatColour(change: number) {
+  const strength = Math.min(1, Math.abs(change) / 4) ** 0.8;
+  const end = change >= 0 ? [20, 122, 117] : [170, 62, 44];
+  return `rgb(${[43, 48, 46].map((n, i) => Math.round(n + ((end[i] ?? 0) - n) * strength)).join(',')})`;
+}
 function treemap(stocks: Stock[], width: number, height: number): Tile[] {
   const total = stocks.reduce((sum, stock) => sum + stock.value, 0);
   if (!total || !width || !height) return [];
@@ -319,32 +324,38 @@ export function HeatmapPane() {
     .sort((a, b) => b.value - a.value)
     .slice(0, 60);
   return (
-    <div ref={ref} className="heat">
-      {treemap(stocks, size.width, size.height).map((tile) => {
-        const change = tile.stock.change_pct ?? 0;
-        const strength = Math.min(1, Math.abs(change) / 4) ** 0.8;
-        const end = change >= 0 ? [20, 122, 117] : [170, 62, 44];
-        const background = `rgb(${[43, 48, 46].map((n, i) => Math.round(n + ((end[i] ?? 0) - n) * strength)).join(',')})`;
-        return (
-          <button
-            key={tile.stock.ticker}
-            className={`tile${ticker === tile.stock.ticker ? ' on' : ''}`}
-            aria-label={`${tile.stock.ticker} ${percent(tile.stock.change_pct)}`}
-            title={`${tile.stock.name}\n${nf(tile.stock.close)} IDR\n${nf(tile.stock.value)} IDR value`}
-            onClick={() => setTicker(tile.stock.ticker)}
-            style={{
-              left: tile.x + 1,
-              top: tile.y + 1,
-              width: Math.max(0, tile.w - 2),
-              height: Math.max(0, tile.h - 2),
-              background,
-            }}
-          >
-            {tile.w > 34 && tile.h > 18 && <b>{tile.stock.ticker}</b>}
-            {tile.w > 46 && tile.h > 34 && <span>{percent(tile.stock.change_pct)}</span>}
-          </button>
-        );
-      })}
-    </div>
+    <>
+      <div className="heat-scale" aria-label="Daily price change colour scale">
+        <span className="mut">CHG</span>
+        {[-4, -2, 0, 2, 4].map((change) => (
+          <span key={change} style={{ background: heatColour(change) }}>
+            {change === -4 ? '≤−4%' : change === 4 ? '≥+4%' : `${signed(change, nf)}%`}
+          </span>
+        ))}
+      </div>
+      <div ref={ref} className="heat">
+        {treemap(stocks, size.width, size.height).map((tile) => {
+          return (
+            <button
+              key={tile.stock.ticker}
+              className={`tile${ticker === tile.stock.ticker ? ' on' : ''}`}
+              aria-label={`${tile.stock.ticker} ${tile.stock.name}, change ${percent(tile.stock.change_pct)}, last ${nf(tile.stock.close)} IDR, traded value ${nf(tile.stock.value)} IDR`}
+              title={`${tile.stock.name}\n${nf(tile.stock.close)} IDR\n${nf(tile.stock.value)} IDR value`}
+              onClick={() => setTicker(tile.stock.ticker)}
+              style={{
+                left: tile.x + 1,
+                top: tile.y + 1,
+                width: Math.max(0, tile.w - 2),
+                height: Math.max(0, tile.h - 2),
+                background: heatColour(tile.stock.change_pct ?? 0),
+              }}
+            >
+              {tile.w > 34 && tile.h > 18 && <b>{tile.stock.ticker}</b>}
+              {tile.w > 46 && tile.h > 34 && <span>{percent(tile.stock.change_pct)}</span>}
+            </button>
+          );
+        })}
+      </div>
+    </>
   );
 }
