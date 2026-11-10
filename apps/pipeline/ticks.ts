@@ -13,7 +13,7 @@ import {
 } from './ticks-data';
 import type { BookRow, Trade } from './ticks-data';
 import { TickStore } from './ticks-store';
-import type { Dataset, TradeProgress } from './ticks-store';
+import type { Dataset } from './ticks-store';
 
 export type TickSummary = { published: string[]; pending: string[]; stopped?: string };
 type Request = (url: string, deadline: number) => Promise<Response | undefined>;
@@ -64,7 +64,7 @@ export async function collectTicks({
       return response.json();
     }
   }
-  async function tradePage(date: string, sort: 'ASC' | 'DESC', cursor = 0, ticker?: string) {
+  async function tradePage(date: string, sort: 'ASC' | 'DESC', cursor = 0) {
     const url = new URL('https://exodus.stockbit.com/order-trade/running-trade');
     url.search = new URLSearchParams({
       date,
@@ -72,14 +72,10 @@ export async function collectTicks({
       order_by: 'RUNNING_TRADE_ORDER_BY_TIME',
       limit: '100',
       ...(cursor ? { trade_number: String(cursor) } : {}),
-      ...(ticker ? { symbols: ticker } : {}),
     }).toString();
     const raw = await paced(url, 'running_trade');
     if (raw === undefined) return;
-    const rows = parseTradePage(raw, date);
-    if (ticker && rows.some((r) => r.ticker !== ticker))
-      throw new Error('Running trade symbol mismatch');
-    return rows;
+    return parseTradePage(raw, date);
   }
   async function alreadyPublished(date: string, dataset: Dataset) {
     if (await store.complete(date, dataset)) {
@@ -154,74 +150,85 @@ export async function collectTicks({
         phase: 'bulk',
         cursor: 0,
         seen: [],
-        repairIndex: 0,
+        repairs: 0,
       };
     }
-    await store.targets(date, p.dataset, p.tickers);
-    await store.restore(p);
+    const progress = p;
+    await store.targets(date, progress.dataset, progress.tickers);
+    await store.restore(progress);
     let rows: Trade[] = [];
     let pages = 0;
-    let start = p.cursor;
-    async function flush(progress: TradeProgress) {
+    let start = progress.cursor;
+    async function flush() {
       await store.checkpoint(progress, rows, start, progress.cursor);
       rows = [];
       pages = 0;
       start = progress.cursor;
     }
+    async function take(page: Trade[]) {
+      if (page.some((r) => r.trade_number > progress.expected))
+        throw new Error('Running trade exceeds closing sequence');
+      rows.push(...page);
+      pages++;
+      if (pages >= 100) await flush();
+    }
     try {
-      while (!bounded()) {
-        const ticker = p.phase === 'repair' ? p.tickers[p.repairIndex] : undefined;
-        if (p.phase === 'repair' && !ticker) break;
-        const page = await tradePage(date, 'ASC', p.cursor, ticker);
+      while (progress.phase === 'bulk' && !bounded()) {
+        const page = await tradePage(date, 'ASC', progress.cursor);
         if (!page) break;
-        if (page.some((r) => r.trade_number > p.expected))
-          throw new Error('Running trade exceeds closing sequence');
-        rows.push(...page);
-        pages++;
-        const tail = page.at(-1)?.trade_number ?? p.cursor;
-        const exhausted = page.length < 100 || p.seen.includes(tail);
-        p.seen.push(p.cursor);
-        p.cursor = tail;
+        await take(page);
+        const tail = page.at(-1)?.trade_number ?? progress.cursor;
+        const exhausted = page.length < 100 || progress.seen.includes(tail);
+        progress.seen.push(progress.cursor);
+        progress.cursor = tail;
         if (exhausted) {
-          await flush(p);
-          if (await store.contiguous(p.expected)) break;
-          if (p.phase === 'bulk') {
-            // Include instruments discovered by the market crawl, even if absent from the stock list.
-            p.tickers = [
-              ...new Set([
-                ...p.tickers,
-                ...(await store.counts('running_trade')).map((r) => r.ticker),
-              ]),
-            ].sort();
-            p.phase = 'repair';
-          } else p.repairIndex++;
-          p.cursor = 0;
-          p.seen = [];
-          await flush(p);
-        } else if (pages >= 100) await flush(p);
+          progress.phase = 'repair';
+          progress.cursor = 0;
+          progress.seen = [];
+          await flush();
+        }
+      }
+      // Trades sharing a second come back in a different order on each request, so the cursor can skip one.
+      // Re-read only the seconds around each gap; numbers still absent after that are not in Stockbit's feed.
+      while (progress.phase === 'repair' && progress.repairs < 2 && !bounded()) {
+        const { seconds } = await store.gaps(progress.expected);
+        if (!seconds.length) break;
+        for (const second of seconds) {
+          let cursor = second.anchor;
+          for (let read = 0; read < 20 && !bounded(); read++) {
+            const page = await tradePage(date, 'ASC', cursor);
+            if (!page?.length) break;
+            await take(page);
+            cursor = page.at(-1)!.trade_number;
+            if (page.at(-1)!.time > second.time) break;
+          }
+        }
+        if (bounded()) break;
+        progress.repairs++;
+        await flush();
       }
     } finally {
-      await flush(p);
+      await flush();
     }
-    if (await store.contiguous(p.expected)) {
-      await store.publish(p);
-      summary.published.push(`running_trade/${date}`);
-    } else {
+    if (progress.phase !== 'repair' || (progress.repairs < 2 && bounded())) {
       summary.pending.push(`running_trade/${date}`);
-      if (p.phase === 'repair' && p.repairIndex >= p.tickers.length) {
-        // A full repair pass still has gaps. Retry the market crawl next run, retaining all deduped trades.
-        p.phase = 'bulk';
-        p.cursor = 0;
-        p.seen = [];
-        p.repairIndex = 0;
-        await flush(p);
-        await report(new Error(`Running trade gaps remain for ${date}`), {
-          source: 'ticks',
-          dataset: p.dataset,
-          date,
-        });
-      }
+      return;
     }
+    const { missing } = await store.gaps(progress.expected);
+    if (missing.length <= Math.max(20, progress.expected * 1e-5)) {
+      await store.publish(progress, missing);
+      summary.published.push(`running_trade/${date}`);
+      return;
+    }
+    summary.pending.push(`running_trade/${date}`);
+    // Far more gaps than cancelled trades explain means the crawl itself failed. Crawl the day again next run.
+    Object.assign(progress, { phase: 'bulk', cursor: 0, seen: [], repairs: 0 });
+    await flush();
+    await report(new Error(`${missing.length} running trades missing for ${date}`), {
+      source: 'ticks',
+      dataset: progress.dataset,
+      date,
+    });
   }
   try {
     await store.db.run(

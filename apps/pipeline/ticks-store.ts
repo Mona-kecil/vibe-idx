@@ -27,13 +27,12 @@ export const progressSchema = z.discriminatedUnion('dataset', [
     phase: z.enum(['bulk', 'repair']),
     cursor: z.number().int().nonnegative(),
     seen: z.array(z.number().int().nonnegative()),
-    repairIndex: z.number().int().nonnegative(),
+    repairs: z.number().int().nonnegative(),
   }),
   base.extend({ dataset: z.literal('closing_book'), nextTicker: z.number().int().nonnegative() }),
 ]);
 export type Progress = z.infer<typeof progressSchema>;
 export type TradeProgress = Extract<Progress, { dataset: 'running_trade' }>;
-const countSchema = z.object({ ticker: tickerCode, n: z.coerce.number().int().nonnegative() });
 
 export class TickStore {
   private constructor(
@@ -155,19 +154,21 @@ export class TickStore {
       WHERE date=${lit(p.date)} AND dataset=${lit(p.dataset)}`);
     await this.saveLedger();
   }
-  async contiguous(expected: number) {
-    const [r] = await this.query(
-      'SELECT count(*) n, min(trade_number) lo, max(trade_number) hi FROM running_trade',
+  /** Missing trade numbers, and for each second they fall in, a cursor one second earlier to re-read from. */
+  async gaps(expected: number) {
+    await this.db.run(`CREATE OR REPLACE TEMP TABLE missing AS
+      SELECT n.trade_number, t.time FROM range(1, ${expected + 1}) n(trade_number)
+      ASOF LEFT JOIN running_trade t ON n.trade_number >= t.trade_number
+      WHERE NOT EXISTS (SELECT 1 FROM running_trade r WHERE r.trade_number = n.trade_number)`);
+    const missing = (await this.query('SELECT trade_number FROM missing ORDER BY 1')).map((r) =>
+      Number(r.trade_number),
     );
-    return (
-      expected > 0 && Number(r.n) === expected && Number(r.lo) === 1 && Number(r.hi) === expected
-    );
-  }
-  async counts(dataset: Dataset) {
-    return (
-      await this.query(`SELECT ticker,count(*) n FROM ${dataset}
-      ${dataset === 'closing_book' ? "WHERE record_type='level'" : ''} GROUP BY ticker`)
-    ).map((r) => countSchema.parse(r));
+    const seconds = (
+      await this.query(`SELECT m.time, coalesce((SELECT max(trade_number) FROM running_trade r
+        WHERE r.time < m.time), 0) anchor FROM (SELECT DISTINCT coalesce(time, '00:00:00') AS time FROM missing) m
+        ORDER BY m.time`)
+    ).map((r) => ({ time: z.string().parse(r.time), anchor: Number(r.anchor) }));
+    return { missing, seconds };
   }
   private async finish(date: string, dataset: Dataset) {
     const tickers = (await this.query(`SELECT DISTINCT ticker FROM ${dataset}`)).map((r) =>
@@ -197,9 +198,7 @@ export class TickStore {
     if (progress) await this.cleanup(progress);
     return true;
   }
-  async publish(p: Progress) {
-    if (p.dataset === 'running_trade' && !(await this.contiguous(p.expected)))
-      throw new Error('Incomplete running trade');
+  async publish(p: Progress, missing: number[] = []) {
     if (p.dataset === 'closing_book') {
       const [r] = await this.query(
         "SELECT count(DISTINCT ticker) n FROM closing_book WHERE record_type='snapshot'",
@@ -212,7 +211,11 @@ export class TickStore {
     await mkdir(dirname(file), { recursive: true });
     await this.db
       .run(`COPY (SELECT * FROM ${p.dataset} ORDER BY ticker,${p.dataset === 'running_trade' ? 'trade_number' : 'side,level'})
-      TO ${lit(file)} (FORMAT PARQUET, COMPRESSION ZSTD, ROW_GROUP_SIZE 65536)`);
+      TO ${lit(file)} (FORMAT PARQUET, COMPRESSION ZSTD, ROW_GROUP_SIZE 65536${
+        p.dataset === 'running_trade'
+          ? `, KV_METADATA {expected: ${lit(String(p.expected))}, missing: ${lit(missing.join(','))}}`
+          : ''
+      })`);
     await this.r2.put(key, await readFile(file), { ifNoneMatch: '*' });
     await this.finish(p.date, p.dataset);
     await this.cleanup(p);

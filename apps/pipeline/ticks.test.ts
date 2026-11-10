@@ -157,7 +157,7 @@ it('derives continuous blocks from the aggressor order and auction histories fro
         phase: 'bulk',
         cursor: 4,
         seen: [],
-        repairIndex: 0,
+        repairs: 0,
       },
       parseTradePage({ data: { running_trade: r } }, day),
       0,
@@ -176,11 +176,12 @@ it('derives continuous blocks from the aggressor order and auction histories fro
     store.close();
   }
 });
-it('deduplicates non-monotonic market pages and repairs gaps per symbol before create-once publication', async () => {
+it('deduplicates non-monotonic market pages and re-reads skipped seconds before create-once publication', async () => {
   const f = await fixture();
   const calls: URL[] = [];
   const starts: number[] = [];
   let throttled = true;
+  let firstPass = true;
   const result = await collectTicks({
     ...f,
     request: async (input) => {
@@ -189,24 +190,26 @@ it('deduplicates non-monotonic market pages and repairs gaps per symbol before c
       starts.push(Date.now());
       expect(u.searchParams.get('order_by')).toBe('RUNNING_TRADE_ORDER_BY_TIME');
       expect(u.searchParams.get('limit')).toBe('100');
+      expect(u.searchParams.has('symbols')).toBe(false);
       if (throttled) {
         throttled = false;
         return new Response('', { status: 429 });
       }
       if (u.searchParams.get('sort') === 'DESC') return page([205]);
       const cursor = Number(u.searchParams.get('trade_number') ?? 0);
-      if (u.searchParams.has('symbols'))
-        return page(sequence(cursor + 1, Math.min(cursor + 100, 205)));
-      if (cursor === 0) return page([...sequence(1, 99), 105]);
+      if (cursor === 0 && firstPass) {
+        firstPass = false;
+        return page([...sequence(1, 99), 105]);
+      }
+      if (cursor === 0) return page(sequence(5, 104));
       if (cursor === 105) return page([...sequence(106, 204), 50]);
-      expect(cursor).toBe(50);
-      return page([205]);
+      if (cursor === 50) return page([205]);
+      return page([]);
     },
   });
   expect(result.published).toEqual([`running_trade/${day}`]);
   expect(starts.every((s, i) => !i || s - starts[i - 1] >= 250)).toBe(true);
   expect(starts[1] - starts[0]).toBeGreaterThanOrEqual(1000);
-  expect(calls.some((u) => u.searchParams.get('symbols') === 'SINI')).toBe(true);
   expect(await rows(f, 'running_trade')).toHaveLength(205);
   expect([...f.objects.keys()].filter((k) => k.startsWith('staging/'))).toEqual([]);
   expect(f.puts.find((p) => p.key === `ticks/running_trade/${day}.parquet`)?.condition).toEqual({
@@ -272,18 +275,38 @@ it('recovers a successful daily upload when its response was lost, without overw
   expect([...f.objects.keys()].some((k) => k.startsWith('staging/'))).toBe(false);
   expect(resumed.puts.some((p) => p.key === `ticks/running_trade/${day}.parquet`)).toBe(false);
 });
-it('never publishes an empty history response or a crawl with unrepaired sequence gaps', async () => {
+it('never publishes an empty history response or a crawl with far more gaps than cancellations explain', async () => {
   const f = await fixture();
   await collectTicks({ ...f, request: async () => page([]) });
   expect(f.objects.has(`ticks/running_trade/${day}.parquet`)).toBe(false);
   const g = await fixture();
-  await collectTicks({
-    ...g,
-    request: async (input) =>
-      new URL(input).searchParams.get('symbols') === 'ZERO' ? page([]) : page([2]),
-  });
+  await collectTicks({ ...g, request: async () => page([1000]) });
   expect(g.objects.has(`ticks/running_trade/${day}.parquet`)).toBe(false);
-  expect(report.mock.calls.some(([e]) => String(e).includes('gaps remain'))).toBe(true);
+  expect(report.mock.calls.some(([e]) => String(e).includes('999 running trades missing'))).toBe(
+    true,
+  );
+  const progress = JSON.parse(
+    g.objects.get(`staging/ticks/running_trade/${day}/progress.json`)!.toString(),
+  );
+  expect(progress).toMatchObject({ phase: 'bulk', cursor: 0, repairs: 0 });
+});
+it('publishes a day whose few missing trade numbers Stockbit never serves, and records them', async () => {
+  const f = await fixture();
+  const request = vi.fn(async (input: string) => {
+    const u = new URL(input);
+    if (u.searchParams.get('sort') === 'DESC') return page([5]);
+    return Number(u.searchParams.get('trade_number') ?? 0) === 0 ? page([1, 2, 4, 5]) : page([]);
+  });
+  expect((await collectTicks({ ...f, request })).published).toEqual([`running_trade/${day}`]);
+  expect(request).toHaveBeenCalledTimes(1 + 1 + 2 * 2);
+  expect(
+    await sql(
+      `SELECT decode(key) AS key, decode(value) AS value FROM parquet_kv_metadata('${f.data}/ticks/running_trade/${day}.parquet') ORDER BY 1`,
+    ),
+  ).toEqual([
+    { key: 'expected', value: '5' },
+    { key: 'missing', value: '3' },
+  ]);
 });
 it('captures every book level first, preserves an empty book header, and then backfills oldest first', async () => {
   vi.setSystemTime(new Date(`${day}T09:20:00Z`));
