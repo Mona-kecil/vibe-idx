@@ -19,6 +19,7 @@ export const functions = {
   DES: 'Description',
   BRK: 'Broker summary',
   BFL: 'Broker flow',
+  FF: 'Foreign flow',
   HDS: '5% holders and changes',
   DISC: 'IDX disclosures',
   SIG: 'Signals feed',

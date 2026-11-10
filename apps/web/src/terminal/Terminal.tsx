@@ -32,7 +32,7 @@ import { SplitLayout, layouts } from './Layout';
 import { Empty, RiskFlags, StatusBar, direction, percent } from './ui';
 import { nf } from '../ticker/format';
 import { PricePane } from './PricePane';
-import { BrokerSummaryPane, BrokerFlowPane } from './BrokerPanes';
+import { BrokerSummaryPane, BrokerFlowPane, ForeignFlowPane } from './BrokerPanes';
 import { WatchlistPane, MoversPane, SignalsPane, HeatmapPane } from './MarketPanes';
 import { DescriptionPane, HoldersPane, DisclosuresPane } from './TickerPanes';
 import { NewsPane, CalendarPane, ActionsPane, RiskPane } from './PublicationPanes';
@@ -194,7 +194,7 @@ function TerminalWorkspace({ data }: { data: TerminalData }) {
   const userId = auth.user?.id;
   const needsBrokers = Object.entries(slots[layout]).some(([slot, ids]) => {
     const id = active[`${layout}:${slot}`] ?? ids[0];
-    return id === 'BRK' || id === 'BFL';
+    return id === 'BRK' || id === 'BFL' || id === 'FF';
   });
   useEffect(() => {
     if (!userId || !needsBrokers) return;
@@ -331,7 +331,8 @@ function TerminalWorkspace({ data }: { data: TerminalData }) {
 }
 function PaneContext({ id }: { id: FunctionId }) {
   const { data, ticker, publications } = useTerminal();
-  if (!['GP', 'DES', 'BRK', 'BFL', 'HDS', 'DISC'].includes(id)) return <span className="ctx" />;
+  if (!['GP', 'DES', 'BRK', 'BFL', 'FF', 'HDS', 'DISC'].includes(id))
+    return <span className="ctx" />;
   const quote = data.stocks.find((stock) => stock.ticker === ticker);
   return (
     <div className="ctx">
@@ -361,6 +362,8 @@ function PaneView({ id }: { id: FunctionId }) {
       return <BrokerSummaryPane />;
     case 'BFL':
       return <BrokerFlowPane />;
+    case 'FF':
+      return <ForeignFlowPane />;
     case 'HDS':
       return <HoldersPane />;
     case 'DISC':
