@@ -5,8 +5,6 @@ import {
   parseRSS,
   parseForexFactory,
   parseBI,
-  bpsScripts,
-  bpsAction,
   parseBPSCalendar,
   parseBPSReleases,
 } from './parsers';
@@ -106,20 +104,6 @@ describe('source parsers', () => {
     expect(() => parseBI(fixture('bi.html'), 2027)).toThrow();
     expect(() => parseBI(fixture('bi.html').replace('17-18', 'missing'), 2026)).toThrow();
   });
-  it('discovers redeployed BPS action ids rather than pinning hashes', () => {
-    expect(
-      bpsScripts(
-        '<script src="/_next/static/chunks/new.js" async></script><script src="https://evil.test/x.js"></script>',
-      ),
-    ).toEqual(['/_next/static/chunks/new.js']);
-    for (const id of ['a'.repeat(40), 'b'.repeat(42)])
-      expect(
-        bpsAction(
-          `let x=(0,m.createServerReference)("${id}",m.callServer,void 0,m.findSourceMapURL,"getArcBrs");`,
-        ),
-      ).toBe(id);
-    expect(bpsAction('changed layout')).toBeUndefined();
-  });
   it('parses BPS ARC and WebAPI public metadata', () => {
     expect(parseBPSCalendar(fixture('bps-arc.txt'), 2026).length).toBeGreaterThan(0);
     const result = parseBPSReleases(JSON.parse(fixture('bps-releases.json')));
@@ -128,80 +112,57 @@ describe('source parsers', () => {
     expect(() => parseBPSCalendar('1:[]', 2026)).toThrow();
     expect(() => parseBPSReleases({ status: 'Error', data: [] })).toThrow();
   });
-  it('collects a rediscovered BPS action and every WebAPI page without abstracts', async () => {
-    const calls: string[] = [];
-    const id = 'c'.repeat(42);
-    const events = await collectBPS(
-      async (url, init) => {
-        calls.push(url);
-        if (url.includes('webapi.bps.go.id')) {
-          const data: unknown = JSON.parse(fixture('bps-releases.json'));
-          return Response.json(data);
-        }
-        if (init?.method === 'POST') {
-          expect(new Headers(init.headers).get('Next-Action')).toBe(id);
-          expect(init.body).toBe(JSON.stringify(['id', '2026']));
-          return new Response(fixture('bps-arc.txt'));
-        }
-        if (url.endsWith('rotated.js'))
-          return new Response(
-            `(0,m.createServerReference)("${id}",m.callServer,void 0,m.findSourceMapURL,"getArcBrs")`,
-          );
-        return new Response('<script src="/_next/static/chunks/rotated.js"></script>');
-      },
-      'private-test-token',
-      new Date('2026-11-09T00:00:00Z'),
-    );
-    expect(calls.filter((url) => url.includes('webapi.bps.go.id'))).toHaveLength(2);
-    expect(events.some((e) => e.ts.startsWith('2026-11'))).toBe(true);
-    expect(JSON.stringify(events)).not.toContain('abstract');
-  });
-  it('collects BPS through the proxy while keeping paginated WebAPI requests direct', async () => {
-    const proxy = { url: 'https://proxy.test', token: 'private-proxy-token' };
-    const id = 'd'.repeat(42);
-    const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+  it('merges the cached calendar with every direct WebAPI page without duplicates', async () => {
+    const fetcher = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = input instanceof Request ? input.url : input.toString();
-      if (url.startsWith('https://webapi.bps.go.id/')) {
-        expect(new Headers(init?.headers).has('Authorization')).toBe(false);
-        return Response.json(JSON.parse(fixture('bps-releases.json')));
-      }
-      expect(url.startsWith('https://proxy.test/bps/')).toBe(true);
-      expect(new Headers(init?.headers).get('Authorization')).toBe('Bearer private-proxy-token');
-      if (init?.method === 'POST') return new Response(fixture('bps-arc.txt'));
-      if (url.endsWith('rotated.js'))
-        return new Response(
-          `(0,m.createServerReference)("${id}",m.callServer,void 0,m.findSourceMapURL,"getArcBrs")`,
-        );
-      return new Response('<script src="/_next/static/chunks/rotated.js"></script>');
+      if (!url.startsWith('https://webapi.bps.go.id/')) throw new Error('Unexpected request');
+      const releases = JSON.parse(fixture('bps-releases.json'));
+      releases.data[1].push({ brs_id: 999, title: 'Additional release', rl_date: '2026-11-09' });
+      return Response.json(releases);
     });
+    const bucket = {
+      get: vi.fn(async () => ({
+        json: async () => ({
+          fetched_at: '2026-11-09T00:00:00Z',
+          year: 2026,
+          body: fixture('bps-arc.txt'),
+        }),
+      })),
+    };
     try {
       const events = await collectBPS(
-        (url, init) => request(url, init, proxy),
-        'private-bps-key',
-        new Date('2026-11-09'),
+        request,
+        'test-key',
+        new Date('2026-11-09T01:00:00Z'),
+        bucket,
       );
-      expect(events.some((event) => event.ts.startsWith('2026-11'))).toBe(true);
+      expect(bucket.get).toHaveBeenCalledWith('bps/calendar-2026.json');
+      expect(events).toHaveLength(parseBPSCalendar(fixture('bps-arc.txt'), 2026).length + 1);
+      expect(events.filter((event) => event.ev === 'Additional release')).toHaveLength(1);
+      expect(events.some((event) => event.ts === '2026-11-30T17:00:00.000Z')).toBe(true);
       expect(
-        fetch.mock.calls.map(([url]) => (url instanceof Request ? url.url : url.toString())),
+        fetcher.mock.calls.map(([url]) => (url instanceof Request ? url.url : url.toString())),
       ).toEqual([
-        'https://proxy.test/bps/id/arc',
-        'https://proxy.test/bps/_next/static/chunks/rotated.js',
-        'https://proxy.test/bps/id/arc',
-        'https://webapi.bps.go.id/v1/api/list/model/pressrelease/domain/0000/key/private-bps-key/year/2026/month/11/page/1/',
-        'https://webapi.bps.go.id/v1/api/list/model/pressrelease/domain/0000/key/private-bps-key/year/2026/month/11/page/2/',
+        'https://webapi.bps.go.id/v1/api/list/model/pressrelease/domain/0000/key/test-key/year/2026/month/11/page/1/',
+        'https://webapi.bps.go.id/v1/api/list/model/pressrelease/domain/0000/key/test-key/year/2026/month/11/page/2/',
       ]);
     } finally {
-      fetch.mockRestore();
+      fetcher.mockRestore();
     }
   });
-  it('fails loudly if BPS action discovery or current year breaks', async () => {
+  it.each([
+    [null, 'missing'],
+    [{ fetched_at: '2026-11-08T21:00:00Z', year: 2026, body: 'unused' }, 'stale'],
+    [{ fetched_at: 'invalid', year: 2026, body: 'unused' }, 'invalid'],
+    [{ fetched_at: '2026-11-09T00:00:00Z', year: 2025, body: 'unused' }, 'stale'],
+  ])('rejects an unusable copy before contacting any BPS service', async (copy, reason) => {
+    const get = vi.fn();
     await expect(
-      collectBPS(
-        async () => new Response('<script src="/_next/static/chunks/new.js"></script>'),
-        'test-key',
-        new Date('2026-11-09'),
-      ),
-    ).rejects.toThrow('discovery failed');
+      collectBPS(get, 'test-key', new Date('2026-11-09'), {
+        get: async () => (copy ? { json: async () => copy } : null),
+      }),
+    ).rejects.toThrow(`BPS calendar copy ${reason}`);
+    expect(get).not.toHaveBeenCalled();
   });
 });
 const now = new Date('2026-11-09T06:00:00Z');
@@ -335,6 +296,7 @@ describe('publication failure isolation', () => {
     const failures: string[] = [];
     await collect({
       bucket,
+      privateBucket: bucket,
       bpsKey: '',
       now,
       report: async (source) => {
@@ -369,6 +331,24 @@ describe('credential-safe diagnostics', () => {
       mock.mockRestore();
     }
   });
+  it.each(['missing', 'stale', 'invalid'])(
+    'reports bounded copy failures to Sentry',
+    async (reason) => {
+      const fetcher = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null));
+      const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+      try {
+        await sentryReport(
+          'https://public@sentry.test/123',
+          'bps',
+          new Error(`BPS calendar copy ${reason}`),
+        );
+        expect(fetcher.mock.calls[0]?.[1]?.body).toContain(`BPS calendar copy ${reason}`);
+      } finally {
+        fetcher.mockRestore();
+        log.mockRestore();
+      }
+    },
+  );
   it('sends a Sentry envelope without arbitrary error text', async () => {
     const mock = vi
       .spyOn(globalThis, 'fetch')

@@ -4,9 +4,11 @@ import { collect, type Bucket } from './src/collector';
 import { calendarSchema, newsSchema, tickerSchema } from './src/contracts';
 import { request } from './src/sources';
 
-const [keyFile, output] = process.argv.slice(2);
-if (!keyFile || !output)
-  throw new Error('Usage: pnpm verify:live <BPS key file> <scratch directory outside repo>');
+const [keyFile, output, copyFile] = process.argv.slice(2);
+if (!keyFile || !output || !copyFile)
+  throw new Error(
+    'Usage: pnpm verify:live <BPS key file> <scratch directory outside repo> <BPS copy file>',
+  );
 const directory = resolve(output);
 if (!directory.startsWith('/tmp/'))
   throw new Error('Live output must be in /tmp/; never commit publisher text');
@@ -30,6 +32,11 @@ const failures: string[] = [],
 const key = (await readFile(keyFile, 'utf8')).trim();
 await collect({
   bucket,
+  privateBucket: {
+    get: async () => ({
+      json: async (): Promise<unknown> => JSON.parse(await readFile(copyFile, 'utf8')),
+    }),
+  },
   bpsKey: key,
   report: async (source) => {
     failures.push(source);

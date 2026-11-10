@@ -1,5 +1,5 @@
 import { calendarSchema, newsSchema, type SourceStatus } from './contracts';
-import { calendarSources, newsSources, request, type Request, type BPSProxy } from './sources';
+import { calendarSources, newsSources, request, type Request } from './sources';
 
 export type Source<T> = { id: string; interval: number; load: () => Promise<T[]> };
 type Publication<T> = { as_of: string; sources: Record<string, SourceStatus>; items: T[] };
@@ -69,12 +69,12 @@ export async function collect({
   bpsKey,
   report,
   now = new Date(),
-  bpsProxy,
-  get = (url, init) => request(url, init, bpsProxy),
+  privateBucket,
+  get = request,
 }: {
   bucket: Bucket;
   bpsKey: string;
-  bpsProxy?: BPSProxy;
+  privateBucket: Pick<Bucket, 'get'>;
   report: Report;
   now?: Date;
   get?: Request;
@@ -116,7 +116,7 @@ export async function collect({
     const object = await bucket.get('calendar.json');
     const previous = object ? calendarSchema.parse(await object.json()) : null;
     const result = await refresh(
-      calendarSources(get, bpsKey, now),
+      calendarSources(get, bpsKey, now, privateBucket),
       previous ? { ...previous, items: previous.cal } : null,
       now,
       report,

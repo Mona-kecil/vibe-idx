@@ -2,7 +2,7 @@ export async function report(dsnValue: string, source: string, failure: unknown)
   // Only our bounded error codes go out; upstream errors may embed credential-bearing URLs.
   const reason =
     failure instanceof Error &&
-    /^(HTTP \d{3} [a-zA-Z0-9.-]+ (?:GET|POST)|BPS_KEY missing|Network request failed)$/.test(
+    /^(HTTP \d{3} [a-zA-Z0-9.-]+ (?:GET|POST)|BPS calendar copy (?:missing|stale|invalid)|BPS_KEY missing|Network request failed)$/.test(
       failure.message,
     )
       ? failure.message

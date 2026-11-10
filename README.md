@@ -61,7 +61,7 @@ A Cloudflare Worker dispatches IDX ingestion daily at 17:17 Jakarta and checks e
 
 The collector authenticates only when it needs Stockbit, and retries network failures and 5xx responses three times. Any other Stockbit error stops every ticker. Handled failures remove `broker-run.json`; a killed process leaves the marker and blocks later broker runs for operator review. Before clearing a marker, confirm no collector is active and inspect its token. Configure the dispatch Worker's `GITHUB_TOKEN` secret before deployment.
 
-The feeds collector can route only `www.bps.go.id` requests through the dispatch Worker's `/bps` proxy to avoid runner IP challenges; BPS WebAPI requests stay direct. Set the same `BPS_PROXY_TOKEN` as a Worker secret and repository secret, and set repository variable `BPS_PROXY_URL` to the dispatch Worker's base URL; leave both repository settings unset to fetch directly.
+The dispatch Worker's ten-minute schedule refreshes an hourly BPS calendar copy in `vibe-idx-private` at `bps/calendar-<year>.json`. Feeds parses that copy, rejects copies older than three hours, and merges direct BPS WebAPI releases.
 
 GitHub Actions uses `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY` secrets with read and write access to both buckets, plus the `R2_ACCOUNT_ID` repository variable. Vercel needs its own server environment variables. GitHub secrets do not sync to Vercel. History since January 2026 remains in private raw and Parquet storage; the existing broker view shows only the last 90 calendar days.
 

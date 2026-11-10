@@ -140,16 +140,6 @@ function indonesianEvent(
     ...(note ? { note } : {}),
   });
 }
-export function bpsScripts(html: string): string[] {
-  const scripts = [...html.matchAll(/<script\b[^>]*\bsrc="([^"?#]+)[^"]*"/g)]
-    .map((m) => m[1])
-    .filter((s): s is string => !!s && s.startsWith('/_next/static/chunks/') && s.endsWith('.js'));
-  if (!scripts.length) throw new Error('BPS calendar scripts missing');
-  return [...new Set(scripts)];
-}
-export function bpsAction(script: string): string | undefined {
-  return /createServerReference\)\("([a-f0-9]{40,})",[^;]{0,250}?"getArcBrs"\)/.exec(script)?.[1];
-}
 const arcSchema = z
   .array(
     z.object({

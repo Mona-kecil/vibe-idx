@@ -5,18 +5,20 @@ export function r2Bucket({
   accountId,
   accessKeyId,
   secretAccessKey,
+  bucketName = 'vibe-idx-public',
   fetcher = fetch,
 }: {
   accountId: string;
   accessKeyId: string;
   secretAccessKey: string;
+  bucketName?: 'vibe-idx-public' | 'vibe-idx-private';
   fetcher?: typeof fetch;
 }): Bucket {
   const signer = new AwsClient({ accessKeyId, secretAccessKey, service: 's3', region: 'auto' });
   async function request(key: string, init: RequestInit) {
     return fetcher(
       await signer.sign(
-        `https://${accountId}.r2.cloudflarestorage.com/vibe-idx-public/${encodeURIComponent(key)}`,
+        `https://${accountId}.r2.cloudflarestorage.com/${bucketName}/${encodeURIComponent(key)}`,
         { ...init, redirect: 'error', signal: AbortSignal.timeout(30000) },
       ),
     );

@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vite-plus/test';
 import { r2Bucket } from './storage';
 import { run } from './run';
@@ -18,6 +19,17 @@ describe('R2 publications', () => {
     await expect(bucket.get('news.json')).rejects.toThrow('R2 read HTTP 403');
     fetcher.mockResolvedValueOnce(Response.json({ news: ['saved'] }));
     expect(await (await bucket.get('news.json'))?.json()).toEqual({ news: ['saved'] });
+  });
+  it('signs reads from the private BPS bucket', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ body: 'cached' }));
+    const bucket = r2Bucket({ ...config, bucketName: 'vibe-idx-private', fetcher });
+    await bucket.get('bps/calendar-2026.json');
+    const request = fetcher.mock.calls[0]?.[0];
+    if (!(request instanceof Request)) throw new Error('Expected a signed request');
+    expect(request.url).toBe(
+      `https://${config.accountId}.r2.cloudflarestorage.com/vibe-idx-private/bps%2Fcalendar-2026.json`,
+    );
+    expect(request.headers.get('authorization')).toContain('AWS4-HMAC-SHA256');
   });
   it('signs publication writes, preserves cache metadata, and rejects failed uploads', async () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 200 }));
@@ -47,6 +59,68 @@ describe('R2 publications', () => {
 });
 
 describe('scheduled collector', () => {
+  it('publishes parsed BPS events from the private copy without requesting the BPS website', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-11-09T06:00:00Z'));
+    const fixture = (name: string) =>
+      readFileSync(new URL(`../fixtures/${name}`, import.meta.url), 'utf8');
+    const writes = new Map<string, unknown>();
+    const reads: string[] = [];
+    const fetcher = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      if (input instanceof Request) {
+        if (input.method === 'PUT') {
+          writes.set(input.url, await input.json());
+          return new Response(null);
+        }
+        reads.push(input.url);
+        if (input.url.includes('/vibe-idx-private/bps%2Fcalendar-2026.json'))
+          return Response.json({
+            fetched_at: '2026-11-09T05:00:00Z',
+            year: 2026,
+            body: fixture('bps-arc.txt'),
+          });
+        if (input.url.endsWith('/tickers.json'))
+          return Response.json([{ ticker: 'BBCA', name: 'Bank Central Asia Tbk' }]);
+        return new Response(null, { status: 404 });
+      }
+      const url = input.toString();
+      if (url.startsWith('https://webapi.bps.go.id/'))
+        return Response.json(JSON.parse(fixture('bps-releases.json')));
+      if (url.includes('bi.go.id')) return new Response(fixture('bi.html'));
+      if (url.includes('faireconomy')) return Response.json(JSON.parse(fixture('ff.json')));
+      if (url.includes('www.bps.go.id')) throw new Error('BPS website must never be requested');
+      return new Response(fixture('rss.xml'));
+    });
+    try {
+      expect(
+        await run({
+          R2_ACCOUNT_ID: config.accountId,
+          R2_ACCESS_KEY_ID: config.accessKeyId,
+          R2_SECRET_ACCESS_KEY: config.secretAccessKey,
+          BPS_KEY: 'test-key',
+          SENTRY_DSN: 'https://public@sentry.test/123',
+        }),
+      ).toBe(0);
+      expect(reads).toContain(
+        `https://${config.accountId}.r2.cloudflarestorage.com/vibe-idx-private/bps%2Fcalendar-2026.json`,
+      );
+      expect(
+        writes.get(
+          `https://${config.accountId}.r2.cloudflarestorage.com/vibe-idx-public/calendar.json`,
+        ),
+      ).toMatchObject({
+        sources: { bps: { status: 'ready', count: 20 } },
+      });
+      expect(
+        fetcher.mock.calls.some(
+          ([input]) => !(input instanceof Request) && input.toString().includes('www.bps.go.id'),
+        ),
+      ).toBe(false);
+    } finally {
+      fetcher.mockRestore();
+      vi.useRealTimers();
+    }
+  });
   it('fails the run and reports denied R2 reads without overwriting saved publications', async () => {
     const requests: Request[] = [];
     const fetcher = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {

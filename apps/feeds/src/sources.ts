@@ -1,8 +1,7 @@
+import { z } from 'zod';
+import type { Bucket } from './collector';
 import { tickerSchema, type Ticker } from './contracts';
 import {
-  bpsAction,
-  bpsScripts,
-  BPS_URL,
   BI_URL,
   FF_URL,
   parseBI,
@@ -47,12 +46,7 @@ export const FEEDS = [
   { id: 'wsj', url: 'https://feeds.a.dj.com/rss/RSSMarketsMain.xml', src: 'WSJ', region: 'WORLD' },
 ] satisfies { id: string; url: string; src: string; region: 'ID' | 'WORLD' }[];
 export type Request = (url: string, init?: RequestInit) => Promise<Response>;
-export type BPSProxy = { url: string; token: string };
-export async function request(
-  url: string,
-  init?: RequestInit,
-  bpsProxy?: BPSProxy,
-): Promise<Response> {
+export async function request(url: string, init?: RequestInit): Promise<Response> {
   try {
     const headers = new Headers(init?.headers);
     headers.set(
@@ -62,18 +56,11 @@ export async function request(
     if (!headers.has('Accept'))
       headers.set('Accept', 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8');
     if (!headers.has('Accept-Language')) headers.set('Accept-Language', 'id-ID,id;q=0.9,en;q=0.8');
-    const target = new URL(url);
-    const proxied = bpsProxy && target.origin === 'https://www.bps.go.id';
-    if (proxied) headers.set('Authorization', `Bearer ${bpsProxy.token}`);
-    const response = await fetch(
-      proxied ? `${bpsProxy.url.replace(/\/+$/, '')}/bps${target.pathname}${target.search}` : url,
-      {
-        ...init,
-        headers,
-        signal: AbortSignal.timeout(25000),
-        ...(proxied ? { redirect: 'manual' } : {}),
-      },
-    );
+    const response = await fetch(url, {
+      ...init,
+      headers,
+      signal: AbortSignal.timeout(25000),
+    });
     if (!response.ok) {
       await response.body?.cancel();
       throw new Error(`HTTP ${response.status} ${new URL(url).hostname} ${init?.method ?? 'GET'}`);
@@ -100,28 +87,29 @@ export function newsSources(loadTickers: () => Promise<unknown>, get: Request) {
     },
   }));
 }
-export async function collectBPS(get: Request, key: string, now: Date) {
+const bpsCopySchema = z.object({
+  fetched_at: z.iso.datetime(),
+  year: z.number().int(),
+  body: z.string(),
+});
+export async function collectBPS(
+  get: Request,
+  key: string,
+  now: Date,
+  bucket: Pick<Bucket, 'get'>,
+) {
   if (!key) throw new Error('BPS_KEY missing');
   const local = new Date(now.getTime() + 7 * 3600e3);
   const year = local.getUTCFullYear(),
     month = local.getUTCMonth() + 1;
-  const scripts = bpsScripts(await (await get(BPS_URL)).text());
-  let action: string | undefined;
-  for (const script of scripts.reverse()) {
-    action = bpsAction(await (await get(new URL(script, BPS_URL).href)).text());
-    if (action) break;
-  }
-  if (!action) throw new Error('BPS calendar action discovery failed');
-  const response = await get(BPS_URL, {
-    method: 'POST',
-    headers: {
-      'Next-Action': action,
-      'Content-Type': 'text/plain;charset=UTF-8',
-      Origin: 'https://www.bps.go.id',
-    },
-    body: JSON.stringify(['id', String(year)]),
-  });
-  const events = parseBPSCalendar(await response.text(), year);
+  const object = await bucket.get(`bps/calendar-${year}.json`);
+  if (!object) throw new Error('BPS calendar copy missing');
+  const copy = bpsCopySchema.safeParse(await object.json());
+  if (!copy.success) throw new Error('BPS calendar copy invalid');
+  const age = now.getTime() - Date.parse(copy.data.fetched_at);
+  if (copy.data.year !== year || age < 0 || age >= 3 * 3600e3)
+    throw new Error('BPS calendar copy stale');
+  const events = parseBPSCalendar(copy.data.body, year);
   let pages = 1;
   for (let page = 1; page <= pages; page++) {
     const url = `https://webapi.bps.go.id/v1/api/list/model/pressrelease/domain/0000/key/${encodeURIComponent(key)}/year/${year}/month/${month}/page/${page}/`;
@@ -143,14 +131,14 @@ export async function collectBPS(get: Request, key: string, now: Date) {
     throw new Error('BPS current month missing');
   return events;
 }
-export function calendarSources(get: Request, key: string, now: Date) {
+export function calendarSources(get: Request, key: string, now: Date, bucket: Pick<Bucket, 'get'>) {
   return [
     {
       id: 'forexfactory',
       interval: 3600e3,
       load: async () => parseForexFactory(await (await get(FF_URL)).json()),
     },
-    { id: 'bps', interval: 3600e3, load: () => collectBPS(get, key, now) },
+    { id: 'bps', interval: 3600e3, load: () => collectBPS(get, key, now, bucket) },
     {
       id: 'bi',
       interval: 24 * 3600e3,
