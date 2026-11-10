@@ -7,7 +7,34 @@ import {
   type Layout,
   useTerminal,
 } from './state';
+import type { Stock } from '../data';
 import './command.css';
+
+export function commandSuggestions(
+  stocks: readonly Pick<Stock, 'ticker' | 'name' | 'value'>[],
+  query: string,
+) {
+  if (!query) return [];
+  const rank = (item: { code: string; label: string }) =>
+    item.code === query
+      ? 0
+      : item.code.startsWith(query)
+        ? 1
+        : query.length >= 3 &&
+            item.label.toUpperCase().split(/\s+/).some((word) => word.startsWith(query))
+          ? 2
+          : 3;
+  return [
+    ...Object.entries(functions).map(([code, label]) => ({ code, label })),
+    ...['GRID', 'FOCUS', 'FLOW', 'HELP'].map((code) => ({ code, label: '' })),
+    ...[...stocks]
+      .sort((a, b) => b.value - a.value)
+      .map((stock) => ({ code: stock.ticker, label: stock.name })),
+  ]
+    .filter((item) => rank(item) < 3)
+    .sort((a, b) => rank(a) - rank(b))
+    .slice(0, 8);
+}
 
 export function CommandBar({
   layout,
@@ -28,25 +55,7 @@ export function CommandBar({
     [help, setHelp] = useState(false),
     [error, setError] = useState('');
   const last = text.trim().toUpperCase().split(/\s+/).at(-1) ?? '';
-  const suggestions = last
-    ? [
-        ...Object.entries(functions).map(([code, label]) => ({ code, label })),
-        ...['GRID', 'FOCUS', 'FLOW', 'HELP'].map((code) => ({ code, label: '' })),
-        ...[...data.stocks]
-          .sort((a, b) => b.value - a.value)
-          .map((stock) => ({ code: stock.ticker, label: stock.name })),
-      ]
-        .filter(
-          (item) =>
-            item.code.startsWith(last) ||
-            (last.length >= 3 &&
-              item.label
-                .toUpperCase()
-                .split(/\s+/)
-                .some((word) => word.startsWith(last))),
-        )
-        .slice(0, 8)
-    : [];
+  const suggestions = commandSuggestions(data.stocks, last);
   function run(command: string) {
     setError('');
     const tokens = command.toUpperCase().trim().split(/\s+/);
