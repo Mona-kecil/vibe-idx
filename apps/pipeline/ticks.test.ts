@@ -317,7 +317,7 @@ it('publishes a day whose few missing trade numbers Stockbit never serves, and r
     { key: 'missing', value: '3' },
   ]);
 });
-it('captures every book level first, preserves an empty book header, and then backfills oldest first', async () => {
+it('captures every book level first, preserves an empty book header, and then backfills newest first', async () => {
   vi.setSystemTime(new Date(`${day}T09:20:00Z`));
   const dates = ['2025-12-31', '2026-01-02', '2026-01-05', day];
   const f = await fixture({ dates });
@@ -356,7 +356,7 @@ it('captures every book level first, preserves an empty book header, and then ba
     JSON.parse(gunzipSync(f.objects.get(`site/ticks/ZERO/${day}.book.json.gz`)!).toString()),
   ).toMatchObject({ bid: [], offer: [] });
 });
-it('waits until 16:30 WIB for the latest running trade, then visits older missing sessions oldest first', async () => {
+it('waits until 16:30 WIB for the latest running trade, then visits older missing sessions newest first', async () => {
   vi.setSystemTime(new Date(`${day}T10:00:00Z`));
   const f = await fixture({ dates: ['2026-01-02', '2026-01-05', day], tickers: ['SINI'] });
   const calls: string[] = [];
@@ -369,7 +369,7 @@ it('waits until 16:30 WIB for the latest running trade, then visits older missin
       return page([1]);
     },
   });
-  expect([...new Set(calls)]).toEqual([day, '2026-01-02', '2026-01-05']);
+  expect([...new Set(calls)]).toEqual([day, '2026-01-05', '2026-01-02']);
 });
 it('does not publish a book whose date mismatches or whose capture crosses the next pre-open', async () => {
   vi.setSystemTime(new Date('2026-11-10T01:44:59.900Z'));
