@@ -11,6 +11,8 @@ import { date } from './lib/rows';
 import { publishBrokerActivity } from './broker-publication';
 import { accumulation, marketCalendar } from './sql';
 import { brokerActivity } from './brokerActivity';
+import { checkRescales } from './rescale-check';
+import { startSentry } from './lib/sentry';
 import type { ActivitySummary } from './brokerActivity';
 
 const literal = (s: string) => `'${s.replaceAll("'", "''")}'`;
@@ -311,6 +313,14 @@ export async function brokers({
       await rename(accumulationFile + '.tmp', accumulationFile);
       await r2.put('site/market-accumulation.json', await readFile(accumulationFile));
       await publishBrokerActivity(data, out, r2);
+      await checkRescales({
+        data,
+        r2,
+        access: async () => ((await (authentication ??= authenticate())) ? access : undefined),
+        fetcher,
+      }).catch((error) =>
+        console.error(JSON.stringify({ check: 'broker-rescale', error: String(error) })),
+      );
       const summary = { activity };
       if (activity.failed.length || activity.stopped)
         throw new BrokerRunError(
@@ -336,6 +346,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   });
   if (!values.data || !values.token || !values.out)
     throw new Error('Usage: brokers -- --data <dir> --token <file> --out <private dir>');
+  startSentry();
   const accountId = process.env.R2_ACCOUNT_ID;
   const minutes = Number(process.env.BROKER_DEADLINE_MINUTES);
   if (!accountId || !Number.isFinite(minutes) || minutes <= 0)
