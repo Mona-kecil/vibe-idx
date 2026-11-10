@@ -1,7 +1,7 @@
 import { Fragment, useState } from 'react';
 import { useTerminal } from './state';
 import type { Headline, Risk, Resource } from './sources';
-import { Availability, Empty, Publication, RiskFlags, Scroll, Segments, TickerLink } from './ui';
+import { Availability, Empty, Publication, Scroll, Segments, TickerLink } from './ui';
 import { dateText } from '../ticker/format';
 import './publication-panes.css';
 
@@ -388,6 +388,7 @@ const hasRisk = (risk: Risk, filter: string) =>
           : risk.notes.length > 0;
 export function RiskPane() {
   const { publications, filters, filter, ticker, data: market } = useTerminal();
+  const [open, setOpen] = useState<string | null>(null);
   return (
     <>
       <div className="sub">
@@ -413,29 +414,88 @@ export function RiskPane() {
               <>
                 <Publication date={market.health.risk} />
                 {rows.length ? (
-                  <table>
+                  <table className="risk-table">
+                    <colgroup>
+                      <col className="risk-ticker" />
+                      <col className="risk-flags" />
+                      <col className="risk-date" />
+                      <col />
+                    </colgroup>
                     <tbody>
-                      {rows.map(([code, risk]) => (
-                        <tr key={code} className={ticker === code ? 'on' : ''}>
-                          <td>
-                            <TickerLink ticker={code} />
-                          </td>
-                          <td>
-                            <RiskFlags risk={risk} />
-                          </td>
-                          <td className="mut">{risk.susp?.since ?? risk.uma?.date}</td>
-                          <td className="l">
-                            {[
-                              risk.susp?.reason,
-                              ...risk.notes
-                                .filter((note) => note.code !== 'X')
-                                .map((note) => note.text),
-                            ]
-                              .filter(Boolean)
-                              .join('; ')}
-                          </td>
-                        </tr>
-                      ))}
+                      {rows.map(([code, risk]) => {
+                        const date = risk.susp?.since ?? risk.uma?.date;
+                        const flags = [
+                          ...(risk.susp
+                            ? [{ code: 'SUSP', text: 'Suspended', url: risk.susp.url }]
+                            : []),
+                          ...(risk.uma
+                            ? [{ code: 'UMA', text: 'Unusual market activity', url: risk.uma.url }]
+                            : []),
+                          ...risk.notes.map((note) => ({
+                            ...note,
+                            code: note.code === 'X' ? 'FCA' : note.code,
+                            url: undefined,
+                          })),
+                        ];
+                        const reason = [risk.susp?.reason, ...risk.notes.map((note) => note.text)]
+                          .filter(Boolean)
+                          .join('; ');
+                        return (
+                          <Fragment key={code}>
+                            <tr className={ticker === code ? 'on' : ''}>
+                              <td>
+                                <TickerLink ticker={code} />
+                              </td>
+                              <td>
+                                <button
+                                  aria-label={`Risk details for ${code}`}
+                                  aria-expanded={open === code}
+                                  onClick={() => setOpen(open === code ? null : code)}
+                                >
+                                  <span className="flags">
+                                    {flags.map((flag) => (
+                                      <span
+                                        className={`flag${flag.code === 'SUSP' ? ' sus' : flag.code === 'UMA' ? ' uma' : ''}`}
+                                        key={flag.code}
+                                        aria-label={`${flag.code}: ${flag.text}`}
+                                      >
+                                        {flag.code}
+                                      </span>
+                                    ))}
+                                  </span>
+                                </button>
+                              </td>
+                              <td className="mut">{date && dateText(date)}</td>
+                              <td className="l">
+                                <span className="risk-reason">{reason}</span>
+                              </td>
+                            </tr>
+                            {open === code && (
+                              <tr className="details">
+                                <td colSpan={4}>
+                                  <dl>
+                                    {flags.map((flag) => (
+                                      <div key={flag.code}>
+                                        <dt>{flag.code}</dt>
+                                        <dd>
+                                          {flag.url ? (
+                                            <a href={flag.url} target="_blank" rel="noreferrer">
+                                              {flag.text}
+                                            </a>
+                                          ) : (
+                                            flag.text
+                                          )}
+                                        </dd>
+                                      </div>
+                                    ))}
+                                  </dl>
+                                  {risk.susp?.reason && <p>{risk.susp.reason}</p>}
+                                </td>
+                              </tr>
+                            )}
+                          </Fragment>
+                        );
+                      })}
                     </tbody>
                   </table>
                 ) : (

@@ -1,5 +1,17 @@
-import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
-import { fetchActions, fetchBrokers, fetchCalendar, fetchHeadlines, fetchRisk } from './sources';
+// @vitest-environment happy-dom
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
+import {
+  fetchActions,
+  fetchBrokers,
+  fetchCalendar,
+  fetchHeadlines,
+  fetchRisk,
+  type Headline,
+  type Resource,
+} from './sources';
+import { act, createElement } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
+import { RiskPane } from './PublicationPanes';
 afterEach(() => vi.unstubAllGlobals());
 const timestamp = '2026-11-09T08:00:00Z';
 describe('terminal publications', () => {
@@ -141,3 +153,84 @@ describe('terminal publications', () => {
 function requestUrl(input: RequestInfo | URL) {
   return input instanceof Request ? input.url : input.toString();
 }
+
+const context: {
+  publications: {
+    news: Awaited<ReturnType<typeof fetchHeadlines>>;
+    calendar: Awaited<ReturnType<typeof fetchCalendar>>;
+    actions: Awaited<ReturnType<typeof fetchActions>>;
+    risks: Awaited<ReturnType<typeof fetchRisk>>;
+  };
+  tickerNews: Resource<Headline[]>;
+  ticker: string;
+  filters: { news: string; cal: string; ca: string; risk: string };
+  filter: ReturnType<typeof vi.fn>;
+  setTicker: ReturnType<typeof vi.fn>;
+  data: { health: { corporate_actions: string; risk: string } };
+} = {
+  publications: {
+    news: { kind: 'unavailable' },
+    calendar: { kind: 'unavailable' },
+    actions: { kind: 'unavailable' },
+    risks: { kind: 'unavailable' },
+  },
+  tickerNews: { kind: 'unavailable' },
+  ticker: 'BBRI',
+  filters: { news: 'ID', cal: 'ALL', ca: 'ALL', risk: 'ALL' },
+  filter: vi.fn<(key: string, value: string) => void>(),
+  setTicker: vi.fn<(ticker: string) => void>(),
+  data: { health: { corporate_actions: '2026-11-09', risk: '2026-11-09' } },
+};
+vi.mock('./state', () => ({ useTerminal: () => context }));
+
+describe('publication pane interactions', () => {
+  let root: Root, host: HTMLDivElement;
+  beforeEach(() => {
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    context.filters.news = 'ID';
+    context.setTicker.mockClear();
+    host = document.createElement('div');
+    document.body.append(host);
+    root = createRoot(host);
+  });
+  afterEach(async () => {
+    await act(async () => root.unmount());
+    host.remove();
+    vi.restoreAllMocks();
+  });
+  async function click(selector: string) {
+    const button = host.querySelector(selector);
+    if (!(button instanceof HTMLButtonElement)) throw new Error(`Missing ${selector}`);
+    await act(async () => button.click());
+  }
+  it('formats risk dates and exposes full flag meanings without hover', async () => {
+    context.publications.risks = {
+      kind: 'ready',
+      data: {
+        risk: {
+          BBCA: {
+            susp: {
+              since: '2026-11-06T00:30',
+              reason: 'Financial reporting sanctions',
+              url: 'https://example.com/suspension',
+            },
+            uma: null,
+            notes: [
+              { code: 'S', text: 'No operating revenue' },
+              { code: 'X', text: 'Watchlist board' },
+            ],
+          },
+        },
+      },
+    };
+    await act(async () => root.render(createElement(RiskPane)));
+    expect(host.querySelector('tr td:nth-child(3)')?.textContent).toBe('6 Nov 2026');
+    expect(host.querySelector('[aria-label="S: No operating revenue"]')).not.toBeNull();
+    await click('[aria-label="Risk details for BBCA"]');
+    expect(host.querySelector('.details')?.textContent).toContain('No operating revenue');
+    expect(host.querySelector('.details')?.textContent).toContain('Watchlist board');
+    expect(host.querySelector('.details a')?.getAttribute('href')).toBe(
+      'https://example.com/suspension',
+    );
+  });
+});

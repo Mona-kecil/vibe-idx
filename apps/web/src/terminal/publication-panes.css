@@ -137,3 +137,35 @@
 .terminal-page .imp-3 .filled {
   background: var(--accent);
 }
+
+.terminal-page .risk-table {
+  table-layout: fixed;
+}
+.terminal-page .risk-ticker {
+  width: 52px;
+}
+.terminal-page .risk-flags {
+  width: 56px;
+}
+.terminal-page .risk-date {
+  width: 96px;
+}
+.terminal-page .risk-table .flags {
+  flex-wrap: wrap;
+}
+.terminal-page .risk-reason {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.terminal-page .risk-table .details td {
+  overflow-wrap: anywhere;
+}
+.terminal-page .risk-table .details dt {
+  flex: none;
+  width: 40px;
+}
+
+.terminal-page .risk-table .flag {
+  font-size: 10px;
+}
