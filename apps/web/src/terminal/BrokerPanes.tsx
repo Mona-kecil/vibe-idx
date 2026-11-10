@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { LineSeries, type ISeriesApi } from 'lightweight-charts';
 import { aggregateBrokers, brokerName, edgeFills } from '../broker-data';
-import type { BrokerDay } from '../brokers';
+import { matchesInvestor, type InvestorFilter, type BrokerDay } from '../brokers';
 import { bounds } from '../ticker/logic';
 import { nf, short, signed } from '../ticker/format';
 import { useTerminal } from './state';
@@ -10,12 +10,6 @@ import { terminalChart, chartDate } from './charts';
 import { Attribution } from './PricePane';
 import './broker-panes.css';
 
-function brokerType(value: string) {
-  if (value === 'Asing' || value === 'FOREIGN') return 'FOREIGN';
-  if (value === 'Lokal' || value === 'LOCAL') return 'LOCAL';
-  if (value === 'Pemerintah' || value === 'GOV') return 'GOV';
-  return value;
-}
 function BrokerGate({ children }: { children: (days: BrokerDay[]) => ReactNode }) {
   const { brokers, signedIn, signIn, brokerError, retryBrokers } = useTerminal();
   if (!signedIn)
@@ -50,8 +44,8 @@ function BrokerControls({ flow = false }: { flow?: boolean }) {
         onChange={(value) => setBroker('board', value)}
       />
       <Segments
-        label="Broker type"
-        values={['ALL', 'FOREIGN', 'LOCAL', 'GOV']}
+        label="Client domicile"
+        values={['ALL', 'FOREIGN', 'DOMESTIC']}
         value={broker.type}
         onChange={(value) => setBroker('type', value)}
       />
@@ -122,8 +116,9 @@ function Summary({ days }: { days: BrokerDay[] }) {
       ? dates.filter((date) => date >= b.start && date <= b.end)
       : dates.slice(0, parseInt(broker.period)),
   );
-  const totals = aggregateBrokers(onBoard.filter((day) => selected.has(day.date))).filter(
-    (row) => broker.type === 'ALL' || brokerType(row.type) === broker.type,
+  const totals = aggregateBrokers(
+    onBoard.filter((day) => selected.has(day.date)),
+    broker.type,
   );
   const lots = broker.unit === 'LOT',
     gross = broker.mode === 'GROSS';
@@ -138,10 +133,10 @@ function Summary({ days }: { days: BrokerDay[] }) {
           volume = gross ? shares : shares - otherShares;
         return {
           code: row.code,
-          type: brokerType(row.type),
+          type: row.broker_type === 'government' ? 'GOV' : row.broker_type.toUpperCase(),
           amount,
           volume,
-          avg: shares ? value / shares : 0,
+          avg: which === 'buy' ? row.buyAvg : row.sellAvg,
           metric: lots ? volume / 100 : amount,
         };
       })
@@ -236,7 +231,7 @@ export function cumulativeFlows(
   days: BrokerDay[],
   dates: string[],
   unit: 'VALUE' | 'LOT',
-  type: string,
+  type: InvestorFilter,
 ) {
   const daily = new Map<string, Map<string, number>>();
   for (const day of days)
@@ -245,7 +240,7 @@ export function cumulativeFlows(
       ['sell', -1],
     ] as const)
       for (const row of day[side]) {
-        if (type !== 'ALL' && brokerType(row.investor_type) !== type) continue;
+        if (!matchesInvestor(row, type)) continue;
         const series = daily.get(row.broker) ?? new Map<string, number>();
         series.set(
           day.date,

@@ -1,4 +1,4 @@
-import type { BrokerDay } from './brokers';
+import { matchesInvestor, type InvestorFilter, type BrokerRow, type BrokerDay } from './brokers';
 import directory from './broker-directory.json';
 
 const brokers = new Map(Object.entries(directory.brokers));
@@ -12,17 +12,25 @@ export function brokerName(code: string) {
           : '')
     : code;
 }
-export function aggregateBrokers(days: BrokerDay[]) {
+export function aggregateBrokers(days: BrokerDay[], investor: InvestorFilter = 'ALL') {
   const totals = new Map<
     string,
-    { code: string; type: string; buy: number; sell: number; buyValue: number; sellValue: number }
+    {
+      code: string;
+      broker_type: BrokerRow['broker_type'];
+      buy: number;
+      sell: number;
+      buyValue: number;
+      sellValue: number;
+    }
   >();
   for (const day of days)
     for (const side of ['buy', 'sell'] as const)
       for (const row of day[side]) {
+        if (!matchesInvestor(row, investor)) continue;
         const total = totals.get(row.broker) ?? {
           code: row.broker,
-          type: row.investor_type,
+          broker_type: row.broker_type,
           buy: 0,
           sell: 0,
           buyValue: 0,
@@ -37,7 +45,11 @@ export function aggregateBrokers(days: BrokerDay[]) {
         }
         totals.set(row.broker, total);
       }
-  return [...totals.values()];
+  return [...totals.values()].map((total) => ({
+    ...total,
+    buyAvg: total.buy ? total.buyValue / total.buy : 0,
+    sellAvg: total.sell ? total.sellValue / total.sell : 0,
+  }));
 }
 
 type Fill = { amount: number; avg: number };

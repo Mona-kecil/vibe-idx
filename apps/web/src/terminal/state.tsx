@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import type { Ticker } from '../data';
-import type { BrokerDay, BrokerBoard } from '../brokers';
+import type { BrokerDay, BrokerBoard, InvestorFilter } from '../brokers';
 import type { Selection } from '../ticker/logic';
 import type { Period } from '../ticker/PriceChart';
 import {
@@ -36,7 +36,7 @@ export const isLayout = (value: string | null): value is Layout =>
   value === 'grid' || value === 'focus' || value === 'live';
 export type BrokerFilters = {
   board: BrokerBoard | 'all';
-  type: 'ALL' | 'FOREIGN' | 'LOCAL' | 'GOV';
+  type: InvestorFilter;
   mode: 'NET' | 'GROSS';
   unit: 'VALUE' | 'LOT';
   period: '1D' | '5D' | '20D';
