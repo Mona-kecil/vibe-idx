@@ -760,3 +760,166 @@ it('keeps sign-in hidden while AuthKit is loading with no user', async () => {
     false,
   );
 });
+
+it.each(['4H', '1H', '15M'])(
+  'keeps daily and weekly public and gates %s without requesting ticks',
+  async (timeframe) => {
+    tickSessions = true;
+    await render();
+    expect(host.querySelector('.chart-host')?.getAttribute('data-series')).toBe('candles');
+    expect(
+      host.querySelector('[aria-label="Chart timeframe"] [aria-pressed="true"]')?.textContent,
+    ).toBe('D');
+    await click('[aria-label="Chart timeframe"] button:first-child');
+    expect(host.querySelector('.chart-host')?.getAttribute('data-bars')).toBe('2');
+    await act(async () =>
+      [...host.querySelectorAll<HTMLButtonElement>('[aria-label="Chart timeframe"] button')]
+        .find((el) => el.textContent === timeframe)
+        ?.click(),
+    );
+    expect(host.querySelector('[data-slot="b"]')?.textContent).toContain(
+      'Sign in to see broker and trade data',
+    );
+    expect(host.querySelector('.chart-host')).toBeNull();
+    expect(fetcher.mock.calls.every(([path]) => !requestUrl(path).includes('view=ticks'))).toBe(
+      true,
+    );
+    expect(host.querySelector('[role="tab"][title="Intraday chart"]')).toBeNull();
+    await click('[aria-label="Chart timeframe"] button:nth-child(2)');
+    expect(host.querySelector('.chart-host')?.getAttribute('data-bars')).toBe('2');
+  },
+);
+
+it('defaults to candles and separate volume and foreign panes, and remembers each viewer preference on remount', async () => {
+  tickSessions = true;
+  await render();
+  const series = () => host.querySelector('.chart-host');
+  expect(series()?.getAttribute('data-series')).toBe('candles');
+  expect(series()?.getAttribute('data-volume')).toBe('PANE');
+  expect(series()?.getAttribute('data-foreign')).toBe('ON');
+  await click('[aria-label="Chart type"] button:last-child');
+  await click('[aria-label="Chart volume"] button:nth-child(2)');
+  await click('[aria-label="Chart foreign net"] button:first-child');
+  await click('[aria-label="Chart timeframe"] button:first-child');
+  await act(async () => root.unmount());
+  root = createRoot(host);
+  await render();
+  expect(series()?.getAttribute('data-series')).toBe('line');
+  expect(series()?.getAttribute('data-volume')).toBe('OVERLAY');
+  expect(series()?.getAttribute('data-foreign')).toBe('OFF');
+  expect(
+    host.querySelector('[aria-label="Chart timeframe"] [aria-pressed="true"]')?.textContent,
+  ).toBe('D');
+  expect(host.querySelector('.legend')?.textContent).not.toContain('F NET');
+  await click('[aria-label="Chart volume"] button:first-child');
+  expect(series()?.getAttribute('data-volume')).toBe('OFF');
+  expect(host.querySelector('.legend')?.textContent).not.toContain('LOT');
+});
+
+it('ignores invalid preferences and still works when localStorage is blocked', async () => {
+  tickSessions = true;
+  window.localStorage.setItem('terminal:chart:type', 'area');
+  window.localStorage.setItem('terminal:chart:volume', 'broken');
+  await render();
+  expect(host.querySelector('.chart-host')?.getAttribute('data-series')).toBe('candles');
+  expect(host.querySelector('.chart-host')?.getAttribute('data-volume')).toBe('PANE');
+  const get = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+    throw new Error('blocked');
+  });
+  const set = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+    throw new Error('blocked');
+  });
+  try {
+    await act(async () => root.unmount());
+    root = createRoot(host);
+    await render();
+    await click('[aria-label="Chart type"] button:last-child');
+    await click('[aria-label="Chart volume"] button:nth-child(2)');
+    await click('[aria-label="Chart foreign net"] button:first-child');
+    expect(host.querySelector('.chart-host')?.getAttribute('data-series')).toBe('line');
+  } finally {
+    get.mockRestore();
+    set.mockRestore();
+  }
+});
+
+it.each([
+  { timeframe: '15M', count: 5, month: '03' },
+  { timeframe: '1H', count: 10, month: '04' },
+  { timeframe: '4H', count: 20, month: '05' },
+])(
+  'loads at most $count recent sessions for $timeframe, skips 404s, and shares the trade cache',
+  async ({ timeframe, count, month }) => {
+    const serve = fetcher.getMockImplementation();
+    if (!serve) throw new Error('Missing fixture fetcher');
+    auth.user = { id: 'test-user' };
+    const dates = Array.from(
+      { length: 25 },
+      (_, i) => `2026-${month}-${String(i + 1).padStart(2, '0')}`,
+    );
+    const latest = dates.at(-1);
+    const previous = dates.at(-2);
+    await fetcher.withImplementation(
+      async (input, init) => {
+        const path = requestUrl(input);
+        if (path.includes('ticker/BBCA'))
+          return Response.json({
+            ticker: 'BBCA',
+            name: 'BBCA',
+            holders: [],
+            changes: [],
+            prices: dates.map((date) => ({
+              date,
+              close: 100,
+              volume: 100,
+              value: 10000,
+              net_foreign: 0,
+            })),
+          });
+        if (path.includes('view=ticks') && path.includes('ticker=BBCA')) {
+          const date = new URL(path, 'http://localhost').searchParams.get('date');
+          if (date !== latest && date !== previous) return new Response('', { status: 404 });
+          return Response.json({
+            date,
+            ticker: 'BBCA',
+            time: [32700],
+            price: [100],
+            shares: [100],
+            side: ['b'],
+            auction: [false],
+            board: ['RG'],
+            buyer: ['AA'],
+            seller: ['BB'],
+            buyer_foreign: [true],
+            seller_foreign: [false],
+            buy_order: [1],
+            sell_order: [2],
+          });
+        }
+        return serve(input, init);
+      },
+      async () => {
+        await render();
+        await command('FOCUS BBCA GP');
+        await act(async () =>
+          [...host.querySelectorAll<HTMLButtonElement>('[aria-label="Chart timeframe"] button')]
+            .find((el) => el.textContent === timeframe)
+            ?.click(),
+        );
+        const requests = () =>
+          fetcher.mock.calls
+            .map(([input]) => requestUrl(input))
+            .filter((path) => path.includes('view=ticks') && path.includes('ticker=BBCA'));
+        expect(requests()).toHaveLength(count);
+        expect(
+          requests().map((path) => new URL(path, 'http://localhost').searchParams.get('date')),
+        ).toEqual(dates.slice(-count));
+        expect(host.querySelector('.chart-host')?.getAttribute('data-bars')).toBe('2');
+        expect(host.querySelector('.legend')?.textContent).toContain('F NET +10.0K IDR');
+        await command('RT');
+        expect(requests()).toHaveLength(count);
+        expect(host.querySelectorAll('.tick-table tbody tr')).toHaveLength(1);
+      },
+    );
+  },
+);

@@ -94,6 +94,7 @@ describe('price chart bars', () => {
       low: 100,
       close: 110,
       volume: 300,
+      value: 32000,
       net_foreign: -12000,
     });
     expect(result[1]).toMatchObject({ volume: 300, net_foreign: 0 });
