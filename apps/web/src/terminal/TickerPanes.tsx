@@ -3,7 +3,7 @@ import { Availability, Empty, Scroll } from './ui';
 import type { Ticker } from '../data';
 import { PinButton } from './MarketPanes';
 import { dateText, nf, short, signed } from '../ticker/format';
-import { bounds, inRange, registryAt } from '../ticker/logic';
+import { bounds, holderRole, inRange, registryAt } from '../ticker/logic';
 import { FilingAttachments } from '../ticker/Feeds';
 
 export function DescriptionPane() {
@@ -56,7 +56,10 @@ export function DescriptionPane() {
     </Scroll>
   );
 }
-type HolderPoint = { date: string; pct: number | null; shares: number | null };
+type HolderPoint = { date: string; shares: number | null } & (
+  | { pct: number }
+  | { pct: null; below: 1 | 5 }
+);
 type HolderHistory = { key: string; name: string; points: HolderPoint[] };
 function holderHistories(data: Ticker, date: string | null) {
   const histories = new Map<string, HolderHistory>();
@@ -69,16 +72,49 @@ function holderHistories(data: Ticker, date: string | null) {
   }
   for (const snapshot of [...data.registry_history].sort((a, b) => a.date.localeCompare(b.date)))
     for (const holder of snapshot.holders)
-      if (holder.pct >= 5)
+      if (holder.pct >= 1)
         add(holder.holder_key, holder.investor, {
           date: snapshot.date,
           pct: holder.pct,
           shares: null,
         });
+  const monthly = data.one_pct_history.filter((s) => s.date !== data.one_pct.date);
+  if (data.one_pct.date) monthly.push({ date: data.one_pct.date, holders: data.one_pct.holders });
+  let previousAccounts: string[] = [];
+  for (const snapshot of monthly.sort((a, b) => a.date.localeCompare(b.date))) {
+    const accounts = new Map<string, Ticker['holders'][number]>();
+    for (const holder of snapshot.holders) {
+      const combined = accounts.get(holder.holder_key);
+      accounts.set(holder.holder_key, {
+        ...holder,
+        pct: (combined?.pct ?? 0) + holder.pct,
+        shares: (combined?.shares ?? 0) + holder.shares,
+      });
+    }
+    for (const key of previousAccounts) {
+      const history = histories.get(key);
+      if (history && !accounts.has(key))
+        add(key, history.name, { date: snapshot.date, pct: null, shares: null, below: 1 });
+    }
+    previousAccounts = [...accounts.keys()];
+    for (const holder of accounts.values()) {
+      const history = histories.get(holder.holder_key);
+      // Monthly account totals supersede rounded registry percentages for that month.
+      if (history)
+        history.points = history.points.filter(
+          (p) => p.date.slice(0, 7) !== snapshot.date.slice(0, 7),
+        );
+      add(holder.holder_key, holder.investor, {
+        date: snapshot.date,
+        pct: holder.pct,
+        shares: holder.shares,
+      });
+    }
+  }
   for (const row of [...data.changes].sort((a, b) => a.date.localeCompare(b.date)))
     add(row.holder_key, row.investor, {
       date: row.date,
-      pct: row.pct_after,
+      ...(row.pct_after === null ? { pct: null, below: 5 } : { pct: row.pct_after }),
       shares: row.shares_after,
     });
   if (date)
@@ -89,7 +125,13 @@ function holderHistories(data: Ticker, date: string | null) {
     points: history.points.sort((a, b) => a.date.localeCompare(b.date)),
   }));
 }
-function HolderChart({ history }: { history: HolderHistory }) {
+function HolderChart({
+  history,
+  role,
+}: {
+  history: HolderHistory;
+  role: ReturnType<typeof holderRole>;
+}) {
   const first = history.points[0],
     last = history.points.at(-1);
   if (!first || !last) return null;
@@ -110,8 +152,15 @@ function HolderChart({ history }: { history: HolderHistory }) {
   return (
     <section className="holder-history" aria-label={history.name}>
       <div className="holder-title">
-        <span>{history.name}</span>
-        <b>{last.pct === null ? 'Below 5%' : `${nf(last.pct, 2)}%`}</b>
+        <span className="holder-name">
+          {history.name}
+          {role && (
+            <span className="holder-role" aria-label={role} title={role}>
+              {role === 'Controller' ? 'CTRL' : 'AFFIL'}
+            </span>
+          )}
+        </span>
+        <b>{last.pct === null ? `Below ${last.below}%` : `${nf(last.pct, 2)}%`}</b>
       </div>
       {values.length > 0 && (
         <div className="holder-plot">
@@ -156,7 +205,7 @@ function HolderChart({ history }: { history: HolderHistory }) {
             {[...history.points].reverse().map((point) => (
               <tr key={point.date}>
                 <td>{dateText(point.date)}</td>
-                <td>{point.pct === null ? 'Below 5%' : `${nf(point.pct, 2)}%`}</td>
+                <td>{point.pct === null ? `Below ${point.below}%` : `${nf(point.pct, 2)}%`}</td>
                 <td>{point.shares === null ? '—' : nf(point.shares)}</td>
               </tr>
             ))}
@@ -182,6 +231,10 @@ export function HoldersPane() {
       <Scroll reset={`${ticker}:${selection?.anchor}:${selection?.end}`}>
         <Availability resource={detail} name="Ownership">
           {(data) => {
+            const snapshot = registryAt(
+              data,
+              range?.end ?? market.health.five_pct ?? data.prices.at(-1)?.date ?? '',
+            );
             const histories = holderHistories(data, market.health.five_pct)
               .map((history) => ({
                 ...history,
@@ -192,12 +245,16 @@ export function HoldersPane() {
             return histories.length ? (
               <div className="holders">
                 {histories.map((history) => (
-                  <HolderChart key={history.key} history={history} />
+                  <HolderChart
+                    key={history.key}
+                    history={history}
+                    role={holderRole(snapshot, history.key)}
+                  />
                 ))}
               </div>
             ) : (
               <Empty>
-                {range ? 'No holder reports in this chart range' : 'No 5% holders reported'}
+                {range ? 'No holder reports in this chart range' : 'No holders reported'}
               </Empty>
             );
           }}

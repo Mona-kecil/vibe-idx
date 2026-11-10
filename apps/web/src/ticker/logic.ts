@@ -145,6 +145,17 @@ export function registryAt(data: Ticker, date: string) {
     .filter((s) => s.date <= date)
     .sort((a, b) => b.date.localeCompare(a.date))[0];
 }
+export function holderRole(
+  snapshot: Ticker['registry_history'][number] | undefined,
+  holderKey: string,
+) {
+  const holder = snapshot?.holders.find((h) => h.holder_key === holderKey);
+  return holder?.controller
+    ? 'Controller'
+    : holder?.controller_affiliate
+      ? 'Controller affiliate'
+      : null;
+}
 export function totalAt(data: Ticker, date: string) {
   return registryAt(data, date)?.issued_shares ?? null;
 }
