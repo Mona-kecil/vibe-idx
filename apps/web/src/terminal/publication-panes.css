@@ -140,6 +140,13 @@
 .terminal-page .calendar th {
   font-size: 10px;
 }
+.terminal-page .calendar th:nth-child(3),
+.terminal-page .calendar td button {
+  text-align: left;
+}
+.terminal-page .calendar th:not(:nth-child(3)) {
+  width: 1%;
+}
 .terminal-page .risk-table {
   table-layout: fixed;
 }
