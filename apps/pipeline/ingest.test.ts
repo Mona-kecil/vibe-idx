@@ -1329,10 +1329,13 @@ BT /F1 10 Tf 1 0 0 1 529 530 Tm (-100) Tj ET`;
       const instance = await DuckDBInstance.create(':memory:');
       const db = await instance.connect();
       await mkdir(join(options.data, 'parquet'), { recursive: true });
-      await db.run(`COPY (SELECT * FROM (VALUES
-        (DATE '2026-10-20', 'AADI', 'regular', true),
-        (DATE '2026-10-21', 'AADI', 'regular', ${complete})) t(date, ticker, board, complete))
-        TO '${join(options.data, 'parquet/broker-coverage.parquet')}' (FORMAT PARQUET)`);
+      await db.run(`COPY (
+        SELECT date, board, NULL::VARCHAR broker, NULL::VARCHAR investor, true listed, NULL::BOOLEAN complete
+        FROM (VALUES (DATE '2026-10-20'), (DATE '2026-10-21')) d(date)
+        CROSS JOIN (VALUES ('regular'), ('negotiation'), ('cash')) b(board)
+        UNION ALL SELECT DATE '2026-10-21', 'regular', 'XL', investor, NULL, done
+          FROM (VALUES ('domestic', true), ('foreign', ${complete})) t(investor, done)
+      ) TO '${join(options.data, 'parquet/broker-activity-coverage.parquet')}' (FORMAT PARQUET)`);
       db.closeSync();
       instance.closeSync();
     };

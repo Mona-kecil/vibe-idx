@@ -232,29 +232,9 @@ describe('private broker API', () => {
     expect(storageReads).toEqual([]);
   });
 
-  it('normalizes legacy source rows and accepts client domicile rows during rollout', async () => {
+  it('accepts separate domestic and foreign client rows', async () => {
     const handle = createBrokerHandler({ env, fetcher });
     const auth = await token();
-    for (const [legacy, ownership] of [
-      ['Asing', 'foreign'],
-      ['Lokal', 'local'],
-      ['Pemerintah', 'government'],
-    ]) {
-      const amounts = {
-        broker: row.broker,
-        shares: row.shares,
-        value: row.value,
-        avg_price: row.avg_price,
-        freq: row.freq,
-      };
-      storageBody = JSON.stringify([{ ...day, buy: [{ ...amounts, investor_type: legacy }] }]);
-      const result = await handle(request({ token: auth }));
-      expect(result.status).toBe(200);
-      expect(await result.json()).toEqual({
-        ticker: 'BBCA',
-        days: [{ ...day, buy: [{ ...amounts, investor: 'unknown', broker_type: ownership }] }],
-      });
-    }
     storageBody = JSON.stringify([{ ...day, buy: [row, { ...row, investor: 'foreign' }] }]);
     const result = await handle(request({ token: auth }));
     expect(result.status).toBe(200);

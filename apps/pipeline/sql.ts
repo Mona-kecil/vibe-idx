@@ -114,23 +114,36 @@ FROM (
   ) windows FROM market_summary GROUP BY ticker, name, close
 ) s`;
 
+export const completeActivityBoards = `
+SELECT d.date, d.board FROM broker_activity_coverage d
+WHERE d.broker IS NULL AND d.listed
+  AND NOT EXISTS (SELECT 1 FROM broker_activity_coverage t
+    WHERE t.date = d.date AND t.board = d.board AND t.broker IS NOT NULL
+      AND t.complete IS DISTINCT FROM true)`;
+
 export const accumulation = `
 WITH active AS (
   SELECT ticker FROM prices WHERE date = (SELECT max(date) FROM prices) AND volume > 0
+), complete_boards AS (
+  ${completeActivityBoards}
+), broker_totals AS (
+  SELECT b.date, b.ticker, b.board, b.broker, b.side, sum(b.shares) shares, sum(b.freq) freq
+  FROM broker_activity b JOIN complete_boards c USING(date, board)
+  GROUP BY b.date, b.ticker, b.board, b.broker, b.side
 ), broker_days AS (
   SELECT date, ticker, count(*) row_count, bool_and(shares IS NOT NULL AND isfinite(shares)) AS valid
-  FROM brokers WHERE board = 'regular' GROUP BY date, ticker
+  FROM broker_totals WHERE board = 'regular' GROUP BY date, ticker
 ), coverage AS (
   SELECT a.ticker, w.window_days,
     count(p.volume) = w.window_days AND bool_and(CASE WHEN p.volume > 0
-      THEN coalesce(bp.complete, false) AND coalesce(b.valid, false) AND coalesce(b.row_count, 0) > 0
+      THEN bp.date IS NOT NULL AND coalesce(b.valid, false) AND coalesce(b.row_count, 0) > 0
       ELSE true END) complete,
     sum(p.volume) volume, sum(p.frequency) trades,
     sum(p.volume) / nullif(sum(p.frequency), 0) stock_avg
   FROM active a CROSS JOIN market_periods w
   JOIN market_calendar c ON c.session_no <= w.window_days
   LEFT JOIN prices p ON p.date = c.date AND p.ticker = a.ticker
-  LEFT JOIN broker_pairs bp ON bp.date = c.date AND bp.ticker = a.ticker AND bp.board = 'regular'
+  LEFT JOIN complete_boards bp ON bp.date = c.date AND bp.board = 'regular'
   LEFT JOIN broker_days b ON b.date = c.date AND b.ticker = a.ticker
   GROUP BY a.ticker, w.window_days
 ), nets AS (
@@ -141,7 +154,7 @@ WITH active AS (
       nullif(sum(b.freq) FILTER (WHERE b.side = 'buy'), 0) broker_avg
   FROM active a CROSS JOIN market_periods w
   JOIN market_calendar c ON c.session_no <= w.window_days
-  JOIN brokers b ON b.date = c.date AND b.ticker = a.ticker AND b.board = 'regular'
+  JOIN broker_totals b ON b.date = c.date AND b.ticker = a.ticker AND b.board = 'regular'
   GROUP BY a.ticker, w.window_days, b.broker
 ), ranked AS (
   SELECT *, row_number() OVER (PARTITION BY ticker, window_days ORDER BY net DESC, broker) rank FROM nets

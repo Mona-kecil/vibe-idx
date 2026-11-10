@@ -1,0 +1,117 @@
+{
+  "date": "2026-10-19",
+  "stocks": [
+    {
+      "ticker": "AAA",
+      "windows": {
+        "1d": {
+          "pct": 0.5,
+          "broker": "BB",
+          "size": 1,
+          "broker_avg": 20,
+          "stock_avg": 20,
+          "buy_trades": 5,
+          "trades": 10
+        },
+        "3d": {
+          "pct": 0.25,
+          "broker": "AA",
+          "size": 3.214285714285714,
+          "broker_avg": 38.57142857142857,
+          "stock_avg": 12,
+          "buy_trades": 14,
+          "trades": 50
+        },
+        "5d": {
+          "pct": 0.18,
+          "broker": "BB",
+          "size": 1.2461538461538462,
+          "broker_avg": 13.846153846153847,
+          "stock_avg": 11.11111111111111,
+          "buy_trades": 13,
+          "trades": 90
+        }
+      }
+    },
+    {
+      "ticker": "BBB",
+      "windows": {
+        "1d": {
+          "pct": 0.1,
+          "broker": "BB",
+          "size": null,
+          "broker_avg": null,
+          "stock_avg": 20,
+          "buy_trades": 0,
+          "trades": 10
+        },
+        "3d": {
+          "pct": 0.1,
+          "broker": "BB",
+          "size": null,
+          "broker_avg": null,
+          "stock_avg": 12,
+          "buy_trades": 0,
+          "trades": 50
+        },
+        "5d": {
+          "pct": 0.1,
+          "broker": "BB",
+          "size": null,
+          "broker_avg": null,
+          "stock_avg": 11.11111111111111,
+          "buy_trades": 0,
+          "trades": 90
+        }
+      }
+    },
+    {
+      "ticker": "NEW",
+      "windows": {
+        "1d": {
+          "pct": 0.1,
+          "broker": "BB",
+          "size": 0.2,
+          "broker_avg": 4,
+          "stock_avg": 20,
+          "buy_trades": 5,
+          "trades": 10
+        },
+        "3d": null,
+        "5d": null
+      }
+    },
+    {
+      "ticker": "ZERO",
+      "windows": {
+        "1d": {
+          "pct": 0.1,
+          "broker": "BB",
+          "size": 0.2,
+          "broker_avg": 4,
+          "stock_avg": 20,
+          "buy_trades": 5,
+          "trades": 10
+        },
+        "3d": {
+          "pct": 0.1,
+          "broker": "BB",
+          "size": 0.7142857142857143,
+          "broker_avg": 5.714285714285714,
+          "stock_avg": 8,
+          "buy_trades": 7,
+          "trades": 50
+        },
+        "5d": {
+          "pct": 0.1,
+          "broker": "BB",
+          "size": 0.8181818181818181,
+          "broker_avg": 7.2727272727272725,
+          "stock_avg": 8.88888888888889,
+          "buy_trades": 11,
+          "trades": 90
+        }
+      }
+    }
+  ]
+}

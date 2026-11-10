@@ -23,7 +23,16 @@ import { fetchRisk } from './lib/risk';
 import { dividendAmounts } from './lib/dividends';
 import { tickerSchema } from '../web/src/data';
 import { ownershipQuality, reconcileOwnership, resolveHolderKeys } from './ownership';
-import { analytics, health, market, marketSummary, schema, stockTable, tickers } from './sql';
+import {
+  analytics,
+  completeActivityBoards,
+  health,
+  market,
+  marketSummary,
+  schema,
+  stockTable,
+  tickers,
+} from './sql';
 
 const archivedDisclosure = z.object({
   id: z.string(),
@@ -1066,13 +1075,15 @@ export async function ingest({
       registryOnly || ownershipOnly
         ? undefined
         : await step('brokers', async () => {
-            // The collector fills a session's broker pairs after that evening's batch publishes its prices,
-            // so this run expects every pair of the previous session to be complete.
-            const coverage = join(data, 'parquet', 'broker-coverage.parquet');
+            // Collection follows the evening price batch, so expect the previous session to be complete.
+            const coverage = join(data, 'parquet', 'broker-activity-coverage.parquet');
             if (!existsSync(coverage)) return null;
+            await db.run(`CREATE OR REPLACE TEMP VIEW broker_activity_coverage AS
+              SELECT * FROM read_parquet(${literal(coverage)})`);
             const [row] = await query(`SELECT
-              (SELECT max(date)::VARCHAR FROM (SELECT date FROM read_parquet(${literal(coverage)})
-                GROUP BY date HAVING bool_and(complete))) complete,
+              (SELECT max(date)::VARCHAR FROM (SELECT date FROM (${completeActivityBoards})
+                WHERE board IN ('regular', 'negotiation', 'cash')
+                GROUP BY date HAVING count(DISTINCT board) = 3)) complete,
               (SELECT max(date)::VARCHAR FROM prices WHERE date < DATE ${literal(today)}) expected`);
             const complete = typeof row?.complete === 'string' ? row.complete : null;
             if (typeof row?.expected === 'string' && (complete ?? '') < row.expected)
