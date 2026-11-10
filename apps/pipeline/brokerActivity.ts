@@ -45,10 +45,13 @@ const listSchema = z.object({
   }),
 });
 const pageLimit = 3000;
+// Auth, network and HTTP errors fail every target alike, so they end the phase instead of failing each one.
+class ActivityStop extends Error {}
 export const BROKER_ACTIVITY_RPS = 10;
 export type ActivitySummary = {
   completed: number;
   pending: number;
+  stopped?: string;
   failed: { date: string; board: string; broker?: string; investor?: string; error: string }[];
 };
 
@@ -79,6 +82,7 @@ export async function brokerActivity({
   let cooldown = 0;
   let gate = Promise.resolve();
   let lastCheckpoint = Date.now();
+  let stopped: ActivityStop | undefined;
   const changed = new Set<string>();
   async function paced(url: URL): Promise<unknown> {
     for (let attempt = 0; ; attempt++) {
@@ -92,7 +96,18 @@ export async function brokerActivity({
       gate = turn;
       await turn;
       if (Date.now() >= deadline) return;
-      const response = await request(url.href);
+      let response: Response | undefined;
+      try {
+        response = await request(url.href);
+      } catch (error) {
+        if (attempt < 3) {
+          await setTimeout(Math.min(1000, Math.max(0, deadline - Date.now())));
+          continue;
+        }
+        throw new ActivityStop(`Stockbit activity request failed: ${String(error)}`, {
+          cause: error,
+        });
+      }
       if (!response) return;
       const remaining = response.headers.get('x-rate-limit-remaining');
       if (remaining !== null && Number(remaining) <= 2)
@@ -102,7 +117,7 @@ export async function brokerActivity({
         await setTimeout(Math.min(1000, Math.max(0, deadline - Date.now())));
         continue;
       }
-      if (!response.ok) throw new Error(`Stockbit activity HTTP ${response.status}`);
+      if (!response.ok) throw new ActivityStop(`Stockbit activity HTTP ${response.status}`);
       return response.json();
     }
   }
@@ -215,7 +230,7 @@ export async function brokerActivity({
       )
     ).map((r) => dayBoard.extend({ listed: z.boolean() }).parse(r));
     for (const day of days) {
-      if (Date.now() >= deadline) break;
+      if (stopped || Date.now() >= deadline) break;
       if (!day.listed) {
         try {
           const url = new URL('https://exodus.stockbit.com/order-trade/broker/top');
@@ -244,6 +259,10 @@ export async function brokerActivity({
             );
           });
         } catch (error) {
+          if (error instanceof ActivityStop) {
+            stopped = error;
+            break;
+          }
           failed.push({ date: day.date, board: day.board, error: String(error) });
           continue;
         }
@@ -255,7 +274,7 @@ export async function brokerActivity({
       ).map((r) => targetSchema.parse(r));
       let saved = Promise.resolve();
       async function worker() {
-        while (Date.now() < deadline) {
+        while (!stopped && Date.now() < deadline) {
           const target = targets.shift();
           if (!target) return;
           try {
@@ -289,7 +308,8 @@ export async function brokerActivity({
             saved = save.catch(() => {});
             await save;
           } catch (error) {
-            failed.push({ ...target, error: String(error) });
+            if (error instanceof ActivityStop) stopped ??= error;
+            else failed.push({ ...target, error: String(error) });
           }
         }
       }
@@ -301,7 +321,12 @@ export async function brokerActivity({
     const counts = await query(
       'SELECT (SELECT count(*) FROM activity_days WHERE NOT listed) + (SELECT count(*) FROM activity_targets WHERE NOT complete) pending',
     );
-    return { completed, pending: Number(counts[0].pending), failed };
+    return {
+      completed,
+      pending: Number(counts[0].pending),
+      failed,
+      ...(stopped && { stopped: stopped.message }),
+    };
   } finally {
     db.closeSync();
     instance.closeSync();

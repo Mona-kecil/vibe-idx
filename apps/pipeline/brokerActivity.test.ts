@@ -359,10 +359,26 @@ it('bounds busy retries and backs off on low remaining budget', async () => {
       return Response.json(response(), { headers: { 'x-rate-limit-remaining': '2' } });
     },
   });
-  expect(result.completed).toBe(1);
-  expect(result.failed).toHaveLength(1);
-  expect(activityStarts).toHaveLength(5);
+  expect(result.stopped).toBe('Stockbit activity HTTP 503');
+  expect(result.failed).toEqual([]);
+  expect(result.pending).toBeGreaterThan(0);
+  expect(activityStarts.length).toBeLessThanOrEqual(5);
   expect(activityStarts[activityStarts.length - 1] - activityStarts[0]).toBeGreaterThanOrEqual(
     3000,
   );
+});
+it('stops the phase once on a failing login instead of failing every target', async () => {
+  const f = await fixture();
+  let requests = 0;
+  const result = await brokerActivity({
+    ...f,
+    dates: [day, '2026-11-06', '2026-11-05'],
+    request: async () => {
+      requests++;
+      throw new Error('Stockbit auth HTTP 401');
+    },
+  });
+  expect(result.stopped).toMatch(/Stockbit auth HTTP 401/);
+  expect(result.failed).toEqual([]);
+  expect(requests).toBe(4);
 });

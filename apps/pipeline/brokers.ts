@@ -579,11 +579,12 @@ export async function brokers({
       await r2.put('site/market-accumulation.json', await readFile(accumulationFile));
       const activity = await activityRun;
       const summary = { fetched, completed, pending: entries.length - completed, failed, activity };
-      if (failure || failed.length || activity.failed.length)
+      if (failure || failed.length || activity.failed.length || activity.stopped)
         throw new BrokerRunError(
           failure
             ? failure.message
-            : `${failed.length} invalid broker pairs, ${activity.failed.length} activity failures`,
+            : (activity.stopped ??
+                `${failed.length} invalid broker pairs, ${activity.failed.length} activity failures`),
           summary,
           { cause: failure },
         );

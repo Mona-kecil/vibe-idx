@@ -71,7 +71,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Restore Parquet ledger
-        run: mkdir -p "$DATA/raw" && aws s3 sync s3://vibe-idx-private/parquet "$DATA/parquet" --exclude "brokers/*" --exclude "broker-coverage.parquet" --exclude "broker_activity/*" --exclude "broker-activity-coverage.parquet" --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+        run: mkdir -p "$DATA/raw" && aws s3 sync s3://vibe-idx-private/parquet "$DATA/parquet" --exclude "broker_activity/*" --exclude "broker-activity-coverage.parquet" --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
       - name: Restore IDX raw responses
         run: aws s3 sync s3://vibe-idx-private/raw "$DATA/raw" --exclude "broker/*" --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
       - name: Ingest IDX and emit website JSON
