@@ -5,19 +5,14 @@ import { matchesInvestor, type InvestorFilter, type BrokerDay } from '../brokers
 import { bounds } from '../ticker/logic';
 import { nf, short, signed } from '../ticker/format';
 import { useTerminal, type BrokerFilters } from './state';
-import { Empty, Scroll, Segments, direction } from './ui';
+import { Empty, Scroll, Segments, SignInPrompt, direction } from './ui';
 import { terminalChart, chartDate } from './charts';
 import { Attribution } from './PricePane';
 import './broker-panes.css';
 
 function BrokerGate({ children }: { children: (days: BrokerDay[]) => ReactNode }) {
-  const { brokers, signedIn, signIn, brokerError, retryBrokers } = useTerminal();
-  if (!signedIn)
-    return (
-      <Empty>
-        <button onClick={signIn}>Sign in</button>
-      </Empty>
-    );
+  const { brokers, session, signIn, brokerError, retryBrokers } = useTerminal();
+  if (session !== 'signed-in') return <SignInPrompt />;
   if (brokerError)
     return (
       <p className="empty" role="alert">

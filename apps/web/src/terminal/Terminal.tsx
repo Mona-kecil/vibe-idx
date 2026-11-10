@@ -4,7 +4,7 @@ import type { Ticker } from '../data';
 import type { BrokerDay } from '../brokers';
 import type { Selection } from '../ticker/logic';
 import type { Period } from '../ticker/PriceChart';
-import { initialPins } from '../watchlist';
+import { initialPins, writeStorage } from '../watchlist';
 import {
   fetchBrokers,
   fetchDetail,
@@ -19,7 +19,7 @@ import {
   functions,
   initialFilters,
   initialBrokerFilters,
-  isLayout,
+  parseLayout,
   usePublications,
   useTerminal,
   type Filters,
@@ -105,8 +105,7 @@ function TerminalWorkspace({ data }: { data: TerminalData }) {
     );
   });
   const [layout, changeLayout] = useState<Layout>(() => {
-    const value = query.get('l');
-    return isLayout(value) ? value : 'grid';
+    return parseLayout(query.get('l')) ?? 'grid';
   });
   const [selection, select] = useState<Selection>(null),
     [range, setRange] = useState<Period>('3M');
@@ -137,7 +136,7 @@ function TerminalWorkspace({ data }: { data: TerminalData }) {
   const [slots, setSlots] = useState<Record<Layout, Record<string, FunctionId[]>>>(() => ({
     grid: layouts.grid.slots,
     focus: layouts.focus.slots,
-    live: layouts.live.slots,
+    flow: layouts.flow.slots,
   }));
   const [active, setActive] = useState<Record<string, FunctionId>>({});
   const publications = usePublications();
@@ -149,6 +148,15 @@ function TerminalWorkspace({ data }: { data: TerminalData }) {
       setPins(initialPins().filter((pin) => data.stocks.some((stock) => stock.ticker === pin)));
     window.addEventListener('storage', update);
     return () => window.removeEventListener('storage', update);
+  }, []);
+  const togglePin = useCallback((value: string) => {
+    setPins((previous) => {
+      const next = previous.includes(value)
+        ? previous.filter((pin) => pin !== value)
+        : [...previous, value];
+      writeStorage('vibe-idx:watchlist', JSON.stringify(next));
+      return next;
+    });
   }, []);
   const setTicker = useCallback(
     (value: string) => {
@@ -177,10 +185,10 @@ function TerminalWorkspace({ data }: { data: TerminalData }) {
   useEffect(() => {
     const pop = () => {
       const params = new URLSearchParams(window.location.search),
-        value = params.get('l');
+        value = parseLayout(params.get('l'));
       const target = params.get('t');
       if (target) setTicker(target);
-      if (isLayout(value)) setLayout(value);
+      if (value) setLayout(value);
     };
     window.addEventListener('popstate', pop);
     return () => window.removeEventListener('popstate', pop);
@@ -302,6 +310,7 @@ function TerminalWorkspace({ data }: { data: TerminalData }) {
         setTicker,
         detail,
         pins,
+        togglePin,
         selection,
         select,
         range,
@@ -312,7 +321,7 @@ function TerminalWorkspace({ data }: { data: TerminalData }) {
         setBroker,
         brokers,
         brokerError,
-        signedIn: !!auth.user,
+        session: auth.isLoading ? 'checking' : auth.user ? 'signed-in' : 'signed-out',
         signIn,
         getToken,
         tickDate,
@@ -343,7 +352,7 @@ function TerminalWorkspace({ data }: { data: TerminalData }) {
 }
 function PaneContext({ id }: { id: FunctionId }) {
   const { data, ticker, publications } = useTerminal();
-  if (!['GP', 'DES', 'BRK', 'BFL', 'FF', 'OB', 'RT', 'DD', 'TB', 'ID', 'HDS', 'DISC'].includes(id))
+  if (!['GP', 'KEY', 'BRK', 'BFL', 'FF', 'OB', 'RT', 'DD', 'TB', 'ID', 'HDS', 'DISC'].includes(id))
     return <span className="ctx" />;
   const quote = data.stocks.find((stock) => stock.ticker === ticker);
   return (
@@ -368,7 +377,7 @@ function PaneView({ id }: { id: FunctionId }) {
       return <WatchlistPane />;
     case 'GP':
       return <PricePane />;
-    case 'DES':
+    case 'KEY':
       return <DescriptionPane />;
     case 'BRK':
       return <BrokerSummaryPane />;

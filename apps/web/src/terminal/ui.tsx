@@ -54,6 +54,20 @@ export function Empty({ children }: { children: ReactNode }) {
     </p>
   );
 }
+export function SignInPrompt() {
+  const { session, signIn } = useTerminal();
+  return (
+    <Empty>
+      {session === 'checking' ? (
+        'Checking sign-in…'
+      ) : (
+        <>
+          <button onClick={signIn}>Sign in</button> to see broker and trade data
+        </>
+      )}
+    </Empty>
+  );
+}
 export function Availability<T>({
   resource,
   name,

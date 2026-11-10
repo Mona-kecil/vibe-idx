@@ -16,7 +16,7 @@ import {
 export const functions = {
   WL: 'Watchlist',
   GP: 'Price history',
-  DES: 'Description',
+  KEY: 'Key figures',
   BRK: 'Broker summary',
   BFL: 'Broker flow',
   FF: 'Foreign flow',
@@ -37,9 +37,12 @@ export const functions = {
 };
 export type FunctionId = keyof typeof functions;
 export const isFunction = (value: string): value is FunctionId => Object.hasOwn(functions, value);
-export type Layout = 'grid' | 'focus' | 'live';
+export type Layout = 'grid' | 'focus' | 'flow';
 export const isLayout = (value: string | null): value is Layout =>
-  value === 'grid' || value === 'focus' || value === 'live';
+  value === 'grid' || value === 'focus' || value === 'flow';
+export const parseLayout = (value: string | null): Layout | null =>
+  value === 'live' ? 'flow' : isLayout(value) ? value : null;
+export type Session = 'checking' | 'signed-in' | 'signed-out';
 export type BrokerFilters = {
   board: BrokerBoard | 'all';
   type: InvestorFilter;
@@ -101,6 +104,7 @@ type TerminalContextValue = {
   ticker: string;
   setTicker: (ticker: string) => void;
   pins: string[];
+  togglePin: (ticker: string) => void;
   selection: Selection;
   select: (selection: Selection) => void;
   range: Period;
@@ -111,7 +115,7 @@ type TerminalContextValue = {
   setBroker: <K extends keyof BrokerFilters>(key: K, value: BrokerFilters[K]) => void;
   brokers: Resource<BrokerDay[]>;
   brokerError: string;
-  signedIn: boolean;
+  session: Session;
   signIn: () => void;
   getToken: () => Promise<string | undefined>;
   tickDate: string | null;

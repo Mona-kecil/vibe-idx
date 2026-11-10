@@ -19,7 +19,7 @@ import {
 import { fetchTicks } from './sources';
 import { useTerminal } from './state';
 import { terminalChart } from './charts';
-import { Empty, Scroll, Segments } from './ui';
+import { Empty, Scroll, Segments, SignInPrompt } from './ui';
 import './tick-panes.css';
 
 type Loaded<K extends TickKind> = K extends 'book' ? TickBook : TickTrades;
@@ -47,7 +47,8 @@ function useSession() {
 }
 
 function useTicks<K extends TickKind>(kind: K, date: string | undefined): TickState<K> {
-  const { ticker, signedIn, getToken } = useTerminal();
+  const { ticker, session, getToken } = useTerminal();
+  const signedIn = session === 'signed-in';
   const [state, setState] = useState<TickState<K>>({ kind: 'loading' });
   useEffect(() => {
     if (!signedIn || !date) return;
@@ -116,16 +117,11 @@ function TickPane<K extends TickKind>({
   controls?: ReactNode;
   children: (data: Loaded<K>) => ReactNode;
 }) {
-  const { signedIn, signIn } = useTerminal();
+  const { session } = useTerminal();
   const { date } = useSession();
   const state = useTicks(kind, date);
   let body: ReactNode;
-  if (!signedIn)
-    body = (
-      <Empty>
-        <button onClick={signIn}>Sign in</button>
-      </Empty>
-    );
+  if (session !== 'signed-in') body = <SignInPrompt />;
   else if (!date) body = <Empty>No 2026 sessions for this ticker</Empty>;
   else if (state.kind === 'loading') body = <Empty>Loading {date}…</Empty>;
   else if (state.kind === 'missing') body = <Empty>Not collected for {date}</Empty>;

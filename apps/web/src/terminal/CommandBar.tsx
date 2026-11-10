@@ -31,7 +31,7 @@ export function CommandBar({
   const suggestions = last
     ? [
         ...Object.entries(functions).map(([code, label]) => ({ code, label })),
-        ...['GRID', 'FOCUS', 'LIVE', 'HELP'].map((code) => ({ code, label: '' })),
+        ...['GRID', 'FOCUS', 'FLOW', 'HELP'].map((code) => ({ code, label: '' })),
         ...[...data.stocks]
           .sort((a, b) => b.value - a.value)
           .map((stock) => ({ code: stock.ticker, label: stock.name })),
@@ -110,7 +110,7 @@ export function CommandBar({
           : event.key === '2'
             ? 'focus'
             : event.key === '3'
-              ? 'live'
+              ? 'flow'
               : null;
       if (isLayout(next)) {
         setLayout(next);
@@ -188,7 +188,7 @@ export function CommandBar({
               setError('');
               dismiss();
             } else if (!text && ['1', '2', '3'].includes(event.key)) {
-              const next = ['grid', 'focus', 'live'][Number(event.key) - 1];
+              const next = ['grid', 'focus', 'flow'][Number(event.key) - 1];
               if (next && isLayout(next)) {
                 event.preventDefault();
                 setLayout(next);
@@ -219,7 +219,7 @@ export function CommandBar({
           ))}
         </div>
         <nav className="lay" aria-label="Layout">
-          {(['grid', 'focus', 'live'] as const).map((value, index) => (
+          {(['grid', 'focus', 'flow'] as const).map((value, index) => (
             <button key={value} aria-pressed={layout === value} onClick={() => setLayout(value)}>
               <kbd>{index + 1}</kbd>
               {value.toUpperCase()}
@@ -270,7 +270,7 @@ export function CommandBar({
               <dt>Up Down</dt>
               <dd>Move through suggestions, watchlist or articles</dd>
               <dt>1 2 3</dt>
-              <dd>GRID FOCUS LIVE</dd>
+              <dd>GRID FOCUS FLOW</dd>
               <dt>Esc</dt>
               <dd>Clear selection, close reader or restore pane</dd>
               <dt>Drag borders</dt>

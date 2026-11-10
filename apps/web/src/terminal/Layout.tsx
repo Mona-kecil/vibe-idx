@@ -24,7 +24,7 @@ export const layouts: Record<Layout, { tree: LayoutNode; slots: Record<string, F
       c: ['NEWS', 'SIG', 'CAL', 'CA', 'HEAT'],
       d: ['MOV', 'RISK'],
       e: ['BRK', 'BFL', 'FF', 'RT', 'DD'],
-      f: ['HDS', 'DISC', 'DES', 'OB', 'TB'],
+      f: ['HDS', 'DISC', 'KEY', 'OB', 'TB'],
     },
   },
   focus: {
@@ -33,7 +33,7 @@ export const layouts: Record<Layout, { tree: LayoutNode; slots: Record<string, F
       b: [
         'GP',
         'ID',
-        'DES',
+        'KEY',
         'BRK',
         'BFL',
         'FF',
@@ -49,7 +49,7 @@ export const layouts: Record<Layout, { tree: LayoutNode; slots: Record<string, F
       c: ['NEWS', 'SIG', 'CAL', 'CA', 'RISK', 'WL'],
     },
   },
-  live: {
+  flow: {
     tree: {
       direction: 'row',
       sizes: [60, 40],
@@ -59,7 +59,7 @@ export const layouts: Record<Layout, { tree: LayoutNode; slots: Record<string, F
       ],
     },
     slots: {
-      b: ['GP', 'ID', 'DES'],
+      b: ['GP', 'ID', 'KEY'],
       c: ['CAL', 'CA', 'RISK', 'OB', 'TB'],
       d: ['BRK', 'BFL', 'FF', 'RT', 'DD'],
       e: ['NEWS', 'WL', 'SIG'],
