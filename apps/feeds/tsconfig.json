@@ -11,5 +11,5 @@
     "esModuleInterop": true,
     "types": ["node", "vite-plus/test"]
   },
-  "include": ["src", "*.ts"]
+  "include": ["src", "scripts", "*.ts"]
 }
