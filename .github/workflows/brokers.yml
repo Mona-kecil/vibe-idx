@@ -42,8 +42,8 @@ jobs:
           node --input-type=module -e '
             import fs from "node:fs";
             const s = JSON.parse(fs.readFileSync("/tmp/broker-comparison.json", "utf8"));
-            const totals = s.dates.reduce((a, d) => ({matched:a.matched+d.matched, mismatched:a.mismatched+d.mismatched, only:a.only+d.only_in_activity+d.only_in_brokers}), {matched:0,mismatched:0,only:0});
-            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `Broker comparison: ${s.comparableDays} complete day/boards, ${totals.matched} matched, ${totals.mismatched} mismatched, ${totals.only} one-sided rows. Volume exceptions: ${s.volumeMismatches.length}.\n`);
+            const totals = s.dates.reduce((a, d) => ({matched:a.matched+d.matched, adjusted:a.adjusted+d.adjusted, mismatched:a.mismatched+d.mismatched, only:a.only+d.only_in_activity+d.only_in_brokers}), {matched:0,adjusted:0,mismatched:0,only:0});
+            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `Broker comparison: ${s.comparableDays} complete day/boards, ${totals.matched} matched, ${totals.adjusted} rescaled by corporate actions (${s.adjusted.map((t) => t.ticker).join(", ") || "none"}), ${totals.mismatched} mismatched, ${totals.only} one-sided rows. Per-broker only: ${s.activityOnly.instruments} instruments. Volume exceptions: ${s.volumeMismatches.length}.\n`);
           '
           cat /tmp/broker-comparison.json
           exit "$status"
