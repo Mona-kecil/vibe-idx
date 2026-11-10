@@ -11,7 +11,7 @@ import {
 } from './sources';
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { CalendarPane, RiskPane } from './PublicationPanes';
+import { ActionsPane, CalendarPane, RiskPane } from './PublicationPanes';
 import { calendarEventSchema } from './contracts';
 afterEach(() => vi.unstubAllGlobals());
 const timestamp = '2026-11-09T08:00:00Z';
@@ -268,6 +268,34 @@ describe('publication pane interactions', () => {
     if (!(button instanceof HTMLButtonElement)) throw new Error(`Missing ${selector}`);
     await act(async () => button.click());
   }
+  it('expands a corporate action without switching ticker and keeps the ticker link active', async () => {
+    context.publications.actions = {
+      kind: 'ready',
+      data: {
+        actions: [
+          {
+            ticker: 'BBCA',
+            kind: 'DIV',
+            label: 'Dividend',
+            amount: null,
+            steps: [
+              { step: 'pay', date: '2026-11-10' },
+              { step: 'meeting', date: '2026-11-11T10:00' },
+            ],
+          },
+        ],
+      },
+    };
+    await act(async () => root.render(createElement(ActionsPane)));
+    await click('.actions td.l button');
+    expect(host.querySelector('.details')?.textContent).toContain('10 Nov 2026');
+    expect(context.setTicker).not.toHaveBeenCalled();
+    expect(host.querySelector('.details')?.textContent).toContain('11 Nov, 10:00 WIB');
+    const link = host.querySelector('a.ticker');
+    if (!(link instanceof HTMLAnchorElement)) throw new Error('Missing ticker');
+    await act(async () => link.click());
+    expect(context.setTicker).toHaveBeenCalledWith('BBCA');
+  });
   it('leaves date-only times empty, keeps past rows and reveals forecast values on expansion', async () => {
     vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-11-11T06:00:00Z'));
     const event = { c: 'ID', imp: 3, ev: 'Decision', url: 'https://example.com', by: 'Publisher' };

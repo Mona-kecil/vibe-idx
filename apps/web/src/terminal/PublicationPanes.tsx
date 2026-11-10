@@ -334,7 +334,7 @@ const steps = {
   delisting: 'DELIST',
 };
 export function ActionsPane() {
-  const { publications, filters, filter, ticker, setTicker, data: market } = useTerminal();
+  const { publications, filters, filter, ticker, data: market } = useTerminal();
   const [open, setOpen] = useState<string | null>(null);
   return (
     <>
@@ -383,10 +383,7 @@ export function ActionsPane() {
                               <td className="l">
                                 <button
                                   aria-expanded={open === key}
-                                  onClick={() => {
-                                    setOpen(open === key ? null : key);
-                                    setTicker(row.action.ticker);
-                                  }}
+                                  onClick={() => setOpen(open === key ? null : key)}
                                 >
                                   {row.action.label}
                                 </button>
@@ -404,7 +401,7 @@ export function ActionsPane() {
                                         <dt>{steps[step.step]}</dt>
                                         <dd>
                                           {step.date.length > 10
-                                            ? `${dateText(step.date)} ${step.date.slice(11, 16)} WIB`
+                                            ? `${wib(step.date)} WIB`
                                             : dateText(step.date)}
                                         </dd>
                                       </div>
