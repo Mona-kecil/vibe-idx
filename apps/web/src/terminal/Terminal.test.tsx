@@ -403,6 +403,37 @@ describe('React terminal', () => {
       ).toBe('ALL');
     },
   );
+  it('keeps broker flow colours stable across pins and closes the picker on Escape', async () => {
+    auth.user = { id: 'test-user' };
+    await render();
+    await command('FOCUS BREN BFL');
+    const colours = () =>
+      new Map(
+        [...host.querySelectorAll<HTMLElement>('.broker-key')].map((key) => [
+          key.textContent?.slice(0, 2),
+          key.querySelector('i')?.style.background,
+        ]),
+      );
+    const before = colours();
+    await click('[aria-label="Add broker"]');
+    await act(async () =>
+      host
+        .querySelector('input[aria-label="Find a broker"]')
+        ?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })),
+    );
+    expect(host.querySelector('.broker-picker')).toBeNull();
+    expect(document.activeElement?.getAttribute('aria-label')).toBe('Add broker');
+    await click('[aria-label="Add broker"]');
+    await act(async () =>
+      [...host.querySelectorAll<HTMLButtonElement>('.broker-picker > button')]
+        .find((button) => button.textContent?.startsWith('CC '))
+        ?.click(),
+    );
+    expect(host.querySelector('[aria-label="Remove CC"]')).not.toBeNull();
+    expect(colours()).toEqual(before);
+    for (const colour of colours().values())
+      expect(colour).not.toMatch(/34, 166, 160|214, 178, 94|228, 87, 63/);
+  });
   it('builds cumulative net flows from actual dates and selected broker types', () => {
     const regular = days.filter((day) => day.board === 'regular');
     const flow = cumulativeFlows(regular, ['2026-11-06', '2026-11-09'], 'VALUE', 'ALL');

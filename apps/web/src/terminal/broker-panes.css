@@ -79,6 +79,8 @@
   right: 8px;
   max-height: 80%;
   overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #354139 transparent;
   background: var(--head);
   padding: 8px;
   z-index: 8;

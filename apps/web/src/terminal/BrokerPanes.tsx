@@ -270,7 +270,12 @@ function flowDays(days: BrokerDay[], broker: BrokerFilters, start?: string, end?
   const selected = new Set(dates);
   return { dates, onBoard: board.filter((day) => selected.has(day.date)) };
 }
-const palette = ['#22a6a0', '#d6b25e', '#709fe3', '#e4573f', '#b494db', '#d985a5'];
+function brokerColor(code: string) {
+  let hash = 0;
+  for (const letter of code) hash = hash * 31 + letter.charCodeAt(0);
+  // Restrict broker identity colours to blue through pink, outside the directional colours.
+  return `hsl(${210 + ((hash * 137) % 105)}, 65%, 72%)`;
+}
 export function BrokerFlowPane() {
   return (
     <>
@@ -323,6 +328,7 @@ function Flow({ days }: { days: BrokerDay[] }) {
   const lines = useRef(new Map<string, ISeriesApi<'Line'>>());
   const [adding, setAdding] = useState(false),
     [query, setQuery] = useState('');
+  const addBroker = useRef<HTMLButtonElement>(null);
   const host = useRef<HTMLDivElement>(null);
   const b = bounds(selection),
     start = b?.start,
@@ -350,9 +356,9 @@ function Flow({ days }: { days: BrokerDay[] }) {
   useEffect(() => {
     if (!host.current || !shown.length) return;
     const chart = terminalChart(host.current);
-    shown.forEach((series, index) => {
+    shown.forEach((series) => {
       const line = chart.addSeries(LineSeries, {
-        color: palette[index % palette.length],
+        color: brokerColor(series.code),
         title: series.code,
         lineWidth: 2,
         priceLineVisible: false,
@@ -387,7 +393,7 @@ function Flow({ days }: { days: BrokerDay[] }) {
           <div className="legend">
             <time>{date && dateText(date)}</time>
             {price && <span>C {nf(price.close)} IDR</span>}
-            {shown.map((series, index) => (
+            {shown.map((series) => (
               <span className="broker-key" key={series.code}>
                 <button
                   aria-pressed={!hidden.includes(series.code)}
@@ -400,7 +406,7 @@ function Flow({ days }: { days: BrokerDay[] }) {
                     )
                   }
                 >
-                  <i style={{ background: palette[index % palette.length] }} />
+                  <i style={{ background: brokerColor(series.code) }} />
                   {series.code}{' '}
                   <span className={direction(currentValue(series))}>
                     {signed(currentValue(series), short)}
@@ -417,6 +423,7 @@ function Flow({ days }: { days: BrokerDay[] }) {
               </span>
             ))}
             <button
+              ref={addBroker}
               aria-label="Add broker"
               disabled={pins.length >= 6}
               onClick={() => setAdding(!adding)}
@@ -425,7 +432,17 @@ function Flow({ days }: { days: BrokerDay[] }) {
             </button>
           </div>
           {adding && (
-            <div className="broker-picker">
+            <div
+              className="broker-picker"
+              role="dialog"
+              aria-label="Choose broker"
+              onKeyDown={(event) => {
+                if (event.key !== 'Escape') return;
+                event.stopPropagation();
+                setAdding(false);
+                addBroker.current?.focus();
+              }}
+            >
               <input
                 aria-label="Find a broker"
                 value={query}
