@@ -62,14 +62,13 @@ describe('price chart bars', () => {
       close: 115,
       volume: 300,
       value: 33000,
-      net_foreign: 30,
       estimated: true,
     });
     expect(weekly[1]).toMatchObject({ date: '2021-01-04', close: 105, volume: 300 });
     expect(prices[0]?.volume).toBe(100);
   });
 
-  it('reuses regular-board aggregation, sums foreign IDR at trade prices, and omits empty intervals', () => {
+  it('reuses regular-board aggregation and omits empty intervals', () => {
     const trades = tickTradesSchema.parse({
       date: '2026-11-10',
       ticker: 'TEST',
@@ -95,9 +94,8 @@ describe('price chart bars', () => {
       close: 110,
       volume: 300,
       value: 32000,
-      net_foreign: -12000,
     });
-    expect(result[1]).toMatchObject({ volume: 300, net_foreign: 0 });
+    expect(result[1]).toMatchObject({ volume: 300 });
     expect(result[0]?.time).toBe(Date.parse('2026-11-10T09:00:00+07:00') / 1000);
     expect(chartDate(result[2]?.time)).toBe('2026-11-11');
     expect(intradayBars([trades], 60)).toHaveLength(2);

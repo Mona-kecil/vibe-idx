@@ -39,7 +39,7 @@ export function chartDate(time: Time | undefined) {
         : null;
 }
 
-export type PriceBar = Omit<Ticker['prices'][number], 'open' | 'high' | 'low'> & {
+export type PriceBar = Omit<Ticker['prices'][number], 'open' | 'high' | 'low' | 'net_foreign'> & {
   time: Time;
   endDate: string;
   open: number;
@@ -49,7 +49,7 @@ export type PriceBar = Omit<Ticker['prices'][number], 'open' | 'high' | 'low'> &
 };
 
 export function dailyBars(prices: Ticker['prices']): PriceBar[] {
-  return prices.map((price) => {
+  return prices.map(({ net_foreign: _, ...price }) => {
     // Missing OHLC cannot describe the day's range; use the close without inventing a move.
     const open = price.open ?? price.close;
     return {
@@ -79,7 +79,6 @@ export function weeklyBars(prices: Ticker['prices']): PriceBar[] {
       week.endDate = price.date;
       week.volume += price.volume;
       week.value += price.value;
-      week.net_foreign += price.net_foreign;
       week.estimated ||= price.estimated;
     }
   }
@@ -89,15 +88,12 @@ export function weeklyBars(prices: Ticker['prices']): PriceBar[] {
 export function intradayBars(sessions: TickTrades[], minutes: number): PriceBar[] {
   return sessions
     .flatMap((trades) => {
-      const foreign = new Map<number, number>();
       const values = new Map<number, number>();
       trades.time.forEach((time, i) => {
         if (trades.board[i] !== 'RG') return;
         const start = time - (time % (minutes * 60));
         const value = trades.price[i]! * trades.shares[i]!;
         values.set(start, (values.get(start) ?? 0) + value);
-        const net = (Number(trades.buyer_foreign[i]) - Number(trades.seller_foreign[i])) * value;
-        foreign.set(start, (foreign.get(start) ?? 0) + net);
       });
       const midnight = Date.parse(`${trades.date}T00:00:00+07:00`) / 1000;
       return bars(trades, minutes).map((bar) => ({
@@ -110,7 +106,6 @@ export function intradayBars(sessions: TickTrades[], minutes: number): PriceBar[
         close: bar.close,
         volume: bar.shares,
         value: values.get(bar.time) ?? 0,
-        net_foreign: foreign.get(bar.time) ?? 0,
         estimated: false,
       }));
     })

@@ -813,7 +813,7 @@ it('keeps two compact control groups, fixed volume and foreign data, and remembe
   expect(series()?.getAttribute('data-series')).toBe('line');
   expect(window.localStorage.getItem('terminal:chart:type')).toBe('LINE');
   expect(host.querySelector('.legend')?.textContent).toContain('LOT');
-  expect(host.querySelector('.legend')?.textContent).toContain('F NET EST.');
+  expect(host.querySelector('.legend')?.textContent).not.toContain('F NET');
   expect(
     host.querySelector('[aria-label="Chart timeframe"] [aria-pressed="true"]')?.textContent,
   ).toBe('D');
@@ -914,7 +914,6 @@ it.each([
           requests().map((path) => new URL(path, 'http://localhost').searchParams.get('date')),
         ).toEqual(dates.slice(-count));
         expect(host.querySelector('.chart-host')?.getAttribute('data-bars')).toBe('2');
-        expect(host.querySelector('.legend')?.textContent).toContain('F NET +10.0K IDR');
         await command('RT');
         expect(requests()).toHaveLength(count);
         expect(host.querySelectorAll('.tick-table tbody tr')).toHaveLength(1);

@@ -4,13 +4,12 @@ import {
   HistogramSeries,
   LineSeries,
   TickMarkType,
-  createTextWatermark,
   type IChartApi,
   type LogicalRange,
   type Time,
 } from 'lightweight-charts';
 import type { Ticker } from '../data';
-import { nf, short, dateText, signed } from '../ticker/format';
+import { nf, short, dateText } from '../ticker/format';
 import { bounds } from '../ticker/logic';
 import { readStorage, writeStorage } from '../watchlist';
 import { useTerminal } from './state';
@@ -263,28 +262,6 @@ function PriceHistory({
       priceFormat: { type: 'custom', formatter: short },
     });
     volume.priceScale().applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
-    const foreign = api.addSeries(
-      HistogramSeries,
-      {
-        lastValueVisible: false,
-        priceLineVisible: false,
-        priceFormat: { type: 'custom', formatter: short },
-      },
-      1,
-    );
-    createTextWatermark(api.panes()[1]!, {
-      horzAlign: 'left',
-      vertAlign: 'top',
-      lines: [
-        {
-          text: typeof data[0]?.time === 'number' ? 'FOREIGN NET IDR' : 'FOREIGN NET EST. IDR',
-          color: '#8d9790',
-          fontSize: 10,
-          fontFamily: 'JetBrains Mono, monospace',
-        },
-      ],
-    });
-    api.panes().forEach((pane, i) => pane.setStretchFactor(i === 0 ? 4 : 1));
     redraw.current = () => {
       const b = bounds(current.current.selection);
       const selected = b
@@ -343,13 +320,6 @@ function PriceHistory({
           time: bar.time,
           value: bar.volume / 100,
           color: bar.close >= bar.open ? '#22a6a08c' : '#e4573f8c',
-        })),
-      );
-      foreign.setData(
-        data.map((bar) => ({
-          time: bar.time,
-          value: bar.net_foreign,
-          color: bar.net_foreign >= 0 ? '#22a6a0' : '#e4573f',
         })),
       );
       if (range && previous.length && added >= 0)
@@ -440,10 +410,6 @@ function PriceHistory({
             )}
             <span>C {nf(hover.close)} IDR</span>
             <span>LOT {short(hover.volume / 100)}</span>
-            <span>
-              F NET {typeof hover.time !== 'number' && 'EST. '}
-              {signed(hover.net_foreign, short)} IDR
-            </span>
           </>
         )}
       </div>
