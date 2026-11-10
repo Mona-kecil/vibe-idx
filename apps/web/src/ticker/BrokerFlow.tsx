@@ -165,7 +165,7 @@ function BrokerData({
           code: b.code,
           amount: mode === 'net' ? value - otherValue : value,
           volume: mode === 'net' ? shares - otherShares : shares,
-          avg: value / shares,
+          avg: type === 'buy' ? b.buyAvg : b.sellAvg,
         };
       })
       .filter((b) => b.amount > 0)

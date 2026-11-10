@@ -25,7 +25,8 @@ const env = {
 };
 const row: BrokerRow = {
   broker: 'YP',
-  investor_type: 'D',
+  investor: 'domestic',
+  broker_type: 'local',
   shares: 1250000,
   value: 1234567890,
   avg_price: 987,
@@ -229,6 +230,35 @@ describe('private broker API', () => {
     expect(await response.json()).toEqual({ ticker: 'BBCA', days: [day] });
     expect(keys).toEqual(['site/broker/BBCA.json.gz']);
     expect(storageReads).toEqual([]);
+  });
+
+  it('normalizes legacy source rows and accepts client domicile rows during rollout', async () => {
+    const handle = createBrokerHandler({ env, fetcher });
+    const auth = await token();
+    for (const [legacy, ownership] of [
+      ['Asing', 'foreign'],
+      ['Lokal', 'local'],
+      ['Pemerintah', 'government'],
+    ]) {
+      const amounts = {
+        broker: row.broker,
+        shares: row.shares,
+        value: row.value,
+        avg_price: row.avg_price,
+        freq: row.freq,
+      };
+      storageBody = JSON.stringify([{ ...day, buy: [{ ...amounts, investor_type: legacy }] }]);
+      const result = await handle(request({ token: auth }));
+      expect(result.status).toBe(200);
+      expect(await result.json()).toEqual({
+        ticker: 'BBCA',
+        days: [{ ...day, buy: [{ ...amounts, investor: 'unknown', broker_type: ownership }] }],
+      });
+    }
+    storageBody = JSON.stringify([{ ...day, buy: [row, { ...row, investor: 'foreign' }] }]);
+    const result = await handle(request({ token: auth }));
+    expect(result.status).toBe(200);
+    expect(brokerHistorySchema.parse(await result.json()).days[0]?.buy).toHaveLength(2);
   });
 
   it('protects market accumulation with the same JWT checks and reads only the private summary key', async () => {

@@ -12,11 +12,17 @@ const auth = vi.hoisted(() => ({
   signIn: vi.fn<() => Promise<void>>(async () => {}),
 }));
 vi.mock('@workos-inc/authkit-react', () => ({ useAuth: () => auth }));
-const row = (broker: string, shares: number, value: number, investor_type = 'LOCAL') => ({
+const row = (
+  broker: string,
+  shares: number,
+  value: number,
+  investor: 'domestic' | 'foreign' = 'domestic',
+) => ({
   broker,
   shares,
   value,
-  investor_type,
+  investor,
+  broker_type: 'local' as const,
   avg_price: value / shares,
   freq: 1,
 });
@@ -24,14 +30,14 @@ const days: BrokerDay[] = [
   {
     date: '2026-11-06',
     board: 'regular',
-    buy: [row('AA', 1000, 100000), row('BB', 2000, 400000, 'FOREIGN')],
+    buy: [row('AA', 1000, 100000), row('BB', 2000, 400000, 'foreign')],
     sell: [row('AA', 500, 75000), row('CC', 2000, 500000)],
   },
   {
     date: '2026-11-09',
     board: 'regular',
     buy: [row('AA', 500, 50000)],
-    sell: [row('BB', 1000, 200000, 'FOREIGN')],
+    sell: [row('BB', 1000, 200000, 'foreign')],
   },
   {
     date: '2026-11-09',
@@ -235,14 +241,30 @@ describe('React terminal', () => {
     await click('.broker-ledger.buy button');
     expect(host.querySelectorAll('.broker-ledger tr.dim').length).toBeGreaterThan(0);
     expect(host.querySelector('.broker-ledger .edge')).not.toBeNull();
-    await click('[aria-label="Broker type"] button:nth-child(2)');
+    await click('[aria-label="Client domicile"] button:nth-child(2)');
     expect(host.querySelector('.broker-ledger.buy')?.textContent).toContain('BB');
     expect(host.querySelector('.broker-ledger.buy')?.textContent).not.toContain('AA');
     await click('[aria-label="Broker unit"] button:nth-child(2)');
     expect(host.querySelector('.broker-ledger.buy td.bar')?.textContent).toBe('20');
+    await click('[aria-label="Client domicile"] button:nth-child(3)');
+    expect(host.querySelector('.broker-ledger.buy')?.textContent).toContain('AA');
+    expect(host.querySelector('.broker-ledger.buy')?.textContent).not.toContain('BB');
     await click('[aria-label="Market board"] button:nth-child(3)');
     expect(host.textContent).toContain('No broker summary in this view');
   });
+  it.each(['LOCAL', 'GOV'])(
+    'falls back to ALL with obsolete stored %s broker preferences',
+    async (type) => {
+      window.localStorage.setItem('vibe-idx:broker', JSON.stringify({ type }));
+      window.history.replaceState(null, '', `/terminal?t=BREN&l=grid&brokerType=${type}`);
+      auth.user = { id: 'test-user' };
+      await render();
+      expect(
+        host.querySelector('[aria-label="Client domicile"] button[aria-pressed="true"]')
+          ?.textContent,
+      ).toBe('ALL');
+    },
+  );
   it('builds cumulative net flows from actual dates and selected broker types', () => {
     const regular = days.filter((day) => day.board === 'regular');
     const flow = cumulativeFlows(regular, ['2026-11-06', '2026-11-09'], 'VALUE', 'ALL');
@@ -252,6 +274,11 @@ describe('React terminal', () => {
     expect(flow.find((series) => series.code === 'BB')?.points.map((p) => p.value)).toEqual([
       400000, 200000,
     ]);
+    expect(
+      cumulativeFlows(regular, ['2026-11-06', '2026-11-09'], 'VALUE', 'DOMESTIC').map(
+        (series) => series.code,
+      ),
+    ).toEqual(['AA', 'CC']);
     expect(cumulativeFlows(regular, ['2026-11-06', '2026-11-09'], 'LOT', 'FOREIGN')).toEqual([
       {
         code: 'BB',
