@@ -270,12 +270,8 @@ function flowDays(days: BrokerDay[], broker: BrokerFilters, start?: string, end?
   const selected = new Set(dates);
   return { dates, onBoard: board.filter((day) => selected.has(day.date)) };
 }
-function brokerColor(code: string) {
-  let hash = 0;
-  for (const letter of code) hash = hash * 31 + letter.charCodeAt(0);
-  // Restrict broker identity colours to blue through pink, outside the directional colours.
-  return `hsl(${210 + ((hash * 137) % 105)}, 65%, 72%)`;
-}
+// Teal, red and gold mean up, down and accent elsewhere, so broker lines avoid them.
+const palette = ['#6f9be8', '#b28ae6', '#e58bb8', '#79d2f0', '#cfd3d8', '#9a7f5c'];
 export function BrokerFlowPane() {
   return (
     <>
@@ -353,12 +349,26 @@ function Flow({ days }: { days: BrokerDay[] }) {
         .slice(0, 3),
     ].slice(0, 6);
   }, [flows, pins]);
+  const assigned = useRef(new Map<string, string>());
+  const colors = useMemo(() => {
+    const kept = new Map(
+      [...assigned.current].filter(([code]) => shown.some((series) => series.code === code)),
+    );
+    for (const series of shown)
+      if (!kept.has(series.code))
+        kept.set(
+          series.code,
+          palette.find((color) => ![...kept.values()].includes(color)) ?? palette[0]!,
+        );
+    assigned.current = kept;
+    return kept;
+  }, [shown]);
   useEffect(() => {
     if (!host.current || !shown.length) return;
     const chart = terminalChart(host.current);
     shown.forEach((series) => {
       const line = chart.addSeries(LineSeries, {
-        color: brokerColor(series.code),
+        color: colors.get(series.code),
         title: series.code,
         lineWidth: 2,
         priceLineVisible: false,
@@ -373,7 +383,7 @@ function Flow({ days }: { days: BrokerDay[] }) {
       lines.current.clear();
       chart.remove();
     };
-  }, [shown, ticker]);
+  }, [shown, colors, ticker]);
   useEffect(() => {
     for (const [code, line] of lines.current)
       line.applyOptions({ visible: !hidden.includes(code) });
@@ -406,7 +416,7 @@ function Flow({ days }: { days: BrokerDay[] }) {
                     )
                   }
                 >
-                  <i style={{ background: brokerColor(series.code) }} />
+                  <i style={{ background: colors.get(series.code) }} />
                   {series.code}{' '}
                   <span className={direction(currentValue(series))}>
                     {signed(currentValue(series), short)}

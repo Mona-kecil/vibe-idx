@@ -103,9 +103,3 @@
 .terminal-page .broker-picker > button:hover {
   background: var(--sel);
 }
-@media (max-width: 520px) {
-  .terminal-page .broker-ledgers {
-    gap: 8px;
-    min-width: 450px;
-  }
-}
