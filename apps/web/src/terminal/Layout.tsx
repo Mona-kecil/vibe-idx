@@ -23,14 +23,14 @@ export const layouts: Record<Layout, { tree: LayoutNode; slots: Record<string, F
       b: ['GP'],
       c: ['NEWS', 'SIG', 'CAL', 'CA', 'HEAT'],
       d: ['MOV', 'RISK'],
-      e: ['BRK', 'BFL'],
+      e: ['BRK', 'BFL', 'FF'],
       f: ['HDS', 'DISC', 'DES'],
     },
   },
   focus: {
     tree: { direction: 'row', sizes: [70, 30], children: ['b', 'c'] },
     slots: {
-      b: ['GP', 'DES', 'BRK', 'BFL', 'HDS', 'DISC', 'HEAT', 'MOV'],
+      b: ['GP', 'DES', 'BRK', 'BFL', 'FF', 'HDS', 'DISC', 'HEAT', 'MOV'],
       c: ['NEWS', 'SIG', 'CAL', 'CA', 'RISK', 'WL'],
     },
   },
@@ -46,7 +46,7 @@ export const layouts: Record<Layout, { tree: LayoutNode; slots: Record<string, F
     slots: {
       b: ['GP', 'DES'],
       c: ['CAL', 'CA', 'RISK'],
-      d: ['BRK', 'BFL'],
+      d: ['BRK', 'BFL', 'FF'],
       e: ['NEWS', 'WL', 'SIG'],
     },
   },

@@ -3,7 +3,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { Terminal } from './Terminal';
-import { cumulativeFlows } from './BrokerPanes';
+import { cumulativeFlows, foreignFlow } from './BrokerPanes';
 import type { BrokerDay } from '../brokers';
 
 const auth = vi.hoisted(() => ({
@@ -287,6 +287,21 @@ describe('React terminal', () => {
           { time: '2026-11-09', value: 10 },
         ],
       },
+    ]);
+  });
+  it('nets foreign client buying per day with a running total and foreign share of gross value', () => {
+    const regular = days.filter((day) => day.board === 'regular');
+    const dates = ['2026-11-06', '2026-11-09'];
+    expect(foreignFlow(regular, dates, 'VALUE')).toEqual([
+      { date: '2026-11-06', net: 400000, cumulative: 400000, share: 400000 / 1075000 },
+      { date: '2026-11-09', net: -200000, cumulative: 200000, share: 0.8 },
+    ]);
+    expect(foreignFlow(regular, dates, 'LOT').map((d) => [d.net, d.cumulative])).toEqual([
+      [20, 20],
+      [-10, 10],
+    ]);
+    expect(foreignFlow([], ['2026-11-06'], 'VALUE')).toEqual([
+      { date: '2026-11-06', net: 0, cumulative: 0, share: null },
     ]);
   });
 });

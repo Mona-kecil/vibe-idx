@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { LineSeries, type ISeriesApi } from 'lightweight-charts';
+import { HistogramSeries, LineSeries, type ISeriesApi } from 'lightweight-charts';
 import { aggregateBrokers, brokerName, edgeFills } from '../broker-data';
 import { matchesInvestor, type InvestorFilter, type BrokerDay } from '../brokers';
 import { bounds } from '../ticker/logic';
 import { nf, short, signed } from '../ticker/format';
-import { useTerminal } from './state';
+import { useTerminal, type BrokerFilters } from './state';
 import { Empty, Scroll, Segments, direction } from './ui';
 import { terminalChart, chartDate } from './charts';
 import { Attribution } from './PricePane';
@@ -33,7 +33,7 @@ function BrokerGate({ children }: { children: (days: BrokerDay[]) => ReactNode }
     );
   return children(brokers.data);
 }
-function BrokerControls({ flow = false }: { flow?: boolean }) {
+function BrokerControls({ flow = false, foreign = false }: { flow?: boolean; foreign?: boolean }) {
   const { broker, setBroker, select, selection } = useTerminal();
   return (
     <div className="broker-controls">
@@ -43,12 +43,14 @@ function BrokerControls({ flow = false }: { flow?: boolean }) {
         value={broker.board}
         onChange={(value) => setBroker('board', value)}
       />
-      <Segments
-        label="Client domicile"
-        values={['ALL', 'FOREIGN', 'DOMESTIC']}
-        value={broker.type}
-        onChange={(value) => setBroker('type', value)}
-      />
+      {!foreign && (
+        <Segments
+          label="Client domicile"
+          values={['ALL', 'FOREIGN', 'DOMESTIC']}
+          value={broker.type}
+          onChange={(value) => setBroker('type', value)}
+        />
+      )}
       {!flow && (
         <Segments
           label="Broker mode"
@@ -218,6 +220,21 @@ function Summary({ days }: { days: BrokerDay[] }) {
     <Empty>No broker summary in this view</Empty>
   );
 }
+/** The board's days inside the flow period, or inside the chart selection when there is one. */
+function flowDays(days: BrokerDay[], broker: BrokerFilters, start?: string, end?: string) {
+  const board = days.filter((day) => broker.board === 'all' || day.board === broker.board);
+  const all = [...new Set(board.map((day) => day.date))].sort();
+  const last = all.at(-1);
+  if (!last) return { dates: [], onBoard: [] };
+  const since = new Date(`${last}T00:00:00Z`);
+  if (broker.flow === 'YTD') since.setUTCMonth(0, 1);
+  else if (broker.flow === '1W') since.setUTCDate(since.getUTCDate() - 7);
+  else since.setUTCMonth(since.getUTCMonth() - parseInt(broker.flow));
+  const from = since.toISOString().slice(0, 10);
+  const dates = all.filter((date) => (start && end ? date >= start && date <= end : date >= from));
+  const selected = new Set(dates);
+  return { dates, onBoard: board.filter((day) => selected.has(day.date)) };
+}
 const palette = ['#22a6a0', '#d6b25e', '#709fe3', '#e4573f', '#b494db', '#d985a5'];
 export function BrokerFlowPane() {
   return (
@@ -276,29 +293,9 @@ function Flow({ days }: { days: BrokerDay[] }) {
     start = b?.start,
     end = b?.end;
   const flows = useMemo(() => {
-    const onBoard = days.filter((day) => broker.board === 'all' || day.board === broker.board);
-    const all = [...new Set(onBoard.map((day) => day.date))].sort();
-    const last = all.at(-1);
-    if (!last) return { dates: [], series: [] };
-    const since = new Date(`${last}T00:00:00Z`);
-    if (broker.flow === 'YTD') {
-      since.setUTCMonth(0, 1);
-    } else if (broker.flow === '1W') since.setUTCDate(since.getUTCDate() - 7);
-    else since.setUTCMonth(since.getUTCMonth() - parseInt(broker.flow));
-    const dates = all.filter((date) =>
-      start && end ? date >= start && date <= end : date >= since.toISOString().slice(0, 10),
-    );
-    const selected = new Set(dates);
-    return {
-      dates,
-      series: cumulativeFlows(
-        onBoard.filter((day) => selected.has(day.date)),
-        dates,
-        broker.unit,
-        broker.type,
-      ),
-    };
-  }, [days, broker.board, broker.flow, broker.unit, broker.type, start, end]);
+    const { dates, onBoard } = flowDays(days, broker, start, end);
+    return { dates, series: cumulativeFlows(onBoard, dates, broker.unit, broker.type) };
+  }, [days, broker, start, end]);
   const total = (series: (typeof flows.series)[number]) => series.points.at(-1)?.value ?? 0;
   const shown = useMemo(() => {
     const pinned = flows.series.filter((s) => pins.includes(s.code));
@@ -423,6 +420,106 @@ function Flow({ days }: { days: BrokerDay[] }) {
       <div className="chart-foot">
         <span>
           {broker.unit === 'LOT' ? 'Net lot' : 'Net IDR'} {flows.dates[0]} to {flows.dates.at(-1)}
+        </span>
+        <Attribution />
+      </div>
+    </div>
+  );
+}
+
+export function ForeignFlowPane() {
+  return (
+    <>
+      <BrokerControls flow foreign />
+      <BrokerGate>{(days) => <ForeignFlow days={days} />}</BrokerGate>
+    </>
+  );
+}
+/** Net buying by foreign clients per day, its running total, and foreign clients' share of gross trading. */
+export function foreignFlow(days: BrokerDay[], dates: string[], unit: 'VALUE' | 'LOT') {
+  const net = new Map<string, number>();
+  const gross = new Map<string, number>();
+  const foreign = new Map<string, number>();
+  const add = (map: Map<string, number>, date: string, amount: number) =>
+    map.set(date, (map.get(date) ?? 0) + amount);
+  for (const day of days)
+    for (const [side, sign] of [
+      ['buy', 1],
+      ['sell', -1],
+    ] as const)
+      for (const row of day[side]) {
+        const amount = unit === 'LOT' ? row.shares / 100 : row.value;
+        add(gross, day.date, amount);
+        if (row.investor !== 'foreign') continue;
+        add(foreign, day.date, amount);
+        add(net, day.date, sign * amount);
+      }
+  let cumulative = 0;
+  return dates.map((date) => {
+    const total = gross.get(date);
+    return {
+      date,
+      net: net.get(date) ?? 0,
+      cumulative: (cumulative += net.get(date) ?? 0),
+      share: total ? (foreign.get(date) ?? 0) / total : null,
+    };
+  });
+}
+function ForeignFlow({ days }: { days: BrokerDay[] }) {
+  const { broker, selection, detail, ticker } = useTerminal();
+  const [hover, setHover] = useState<string | null>(null);
+  const host = useRef<HTMLDivElement>(null);
+  const b = bounds(selection);
+  const flow = useMemo(() => {
+    const { dates, onBoard } = flowDays(days, broker, b?.start, b?.end);
+    return foreignFlow(onBoard, dates, broker.unit);
+  }, [days, broker, b?.start, b?.end]);
+  useEffect(() => {
+    if (!host.current || !flow.length) return;
+    const chart = terminalChart(host.current);
+    const style = getComputedStyle(host.current);
+    const up = style.getPropertyValue('--up').trim() || '#22a6a0';
+    const down = style.getPropertyValue('--down').trim() || '#e4573f';
+    const format = { type: 'custom' as const, formatter: short };
+    chart
+      .addSeries(HistogramSeries, { priceLineVisible: false, priceFormat: format })
+      .setData(flow.map((d) => ({ time: d.date, value: d.net, color: d.net < 0 ? down : up })));
+    chart
+      .addSeries(LineSeries, {
+        color: '#d6b25e',
+        lineWidth: 2,
+        priceScaleId: 'left',
+        priceLineVisible: false,
+        priceFormat: format,
+      })
+      .setData(flow.map((d) => ({ time: d.date, value: d.cumulative })));
+    chart.priceScale('left').applyOptions({ visible: true, borderColor: '#222826' });
+    chart.subscribeCrosshairMove((event) => setHover(chartDate(event.time)));
+    chart.timeScale().fitContent();
+    return () => chart.remove();
+  }, [flow, ticker]);
+  const day = flow.find((d) => d.date === hover) ?? flow.at(-1);
+  if (!day) return <Empty>No foreign client activity in this view</Empty>;
+  const price =
+    detail.kind === 'ready' ? detail.data.prices.find((p) => p.date === day.date) : undefined;
+  return (
+    <div className="flow-view">
+      <div className="legend">
+        <time>{day.date}</time>
+        {price && <span>C {nf(price.close)} IDR</span>}
+        <span>
+          Net <b className={direction(day.net)}>{signed(day.net, short)}</b>
+        </span>
+        <span>
+          Total <b className={direction(day.cumulative)}>{signed(day.cumulative, short)}</b>
+        </span>
+        {day.share !== null && <span>Share {(day.share * 100).toFixed(1)}%</span>}
+      </div>
+      <div className="flow-chart" ref={host} />
+      <div className="chart-foot">
+        <span>
+          Foreign clients {broker.unit === 'LOT' ? 'net lot' : 'net IDR'} {flow[0]?.date} to{' '}
+          {flow.at(-1)?.date}
         </span>
         <Attribution />
       </div>
