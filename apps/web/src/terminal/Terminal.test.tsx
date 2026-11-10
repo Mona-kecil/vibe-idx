@@ -847,7 +847,7 @@ it.each([
   { timeframe: '1H', count: 10, month: '04' },
   { timeframe: '4H', count: 20, month: '05' },
 ])(
-  'loads at most $count recent sessions for $timeframe, skips 404s, and shares the trade cache',
+  'loads an initial $count sessions for $timeframe, skips 404s, and shares the trade cache',
   async ({ timeframe, count, month }) => {
     const serve = fetcher.getMockImplementation();
     if (!serve) throw new Error('Missing fixture fetcher');

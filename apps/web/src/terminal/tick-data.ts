@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { TickBook, TickKind, TickTrades } from '../ticks';
 import { fetchTicks } from './sources';
 import { useTerminal } from './state';
@@ -75,30 +75,56 @@ export function useTicks<K extends TickKind>(kind: K, date: string | undefined):
   return state;
 }
 
-export function useTradeSessions(limit: number) {
+export function useTradeSessions(batchSize: number) {
   const { ticker, session, getToken } = useTerminal();
   const { dates } = useSession();
   const [state, setState] = useState<
     { kind: 'loading' } | { kind: 'error'; message: string } | { kind: 'ready'; data: TickTrades[] }
   >({ kind: 'loading' });
+  const requestMore = useRef<() => void>(() => {});
+  const loadMore = useCallback(() => requestMore.current(), []);
   useEffect(() => {
     if (session !== 'signed-in') return;
     let current = true;
+    let loading = false;
+    let exhausted = false;
+    let cursor = dates.length;
+    function load() {
+      if (!current || loading || exhausted) return;
+      loading = true;
+      const start = Math.max(0, cursor - batchSize);
+      void Promise.all(
+        dates.slice(start, cursor).map((date) => loadTicks(ticker, date, 'trades', getToken)),
+      )
+        .then((sessions) => {
+          if (!current) return;
+          cursor = start;
+          // A whole missing batch marks the end of collected history, even if daily prices go further back.
+          exhausted = start === 0 || sessions.every((data) => data === null);
+          const older = sessions.filter((data) => data !== null);
+          setState((previous) => ({
+            kind: 'ready',
+            data: [...older, ...(previous.kind === 'ready' ? previous.data : [])],
+          }));
+        })
+        .catch((error: unknown) => {
+          if (current)
+            setState({
+              kind: 'error',
+              message: error instanceof Error ? error.message : 'Tick data is unavailable. Retry.',
+            });
+        })
+        .finally(() => {
+          loading = false;
+        });
+    }
+    requestMore.current = load;
     setState({ kind: 'loading' });
-    void Promise.all(dates.slice(-limit).map((date) => loadTicks(ticker, date, 'trades', getToken)))
-      .then((sessions) => {
-        if (current) setState({ kind: 'ready', data: sessions.filter((data) => data !== null) });
-      })
-      .catch((error: unknown) => {
-        if (current)
-          setState({
-            kind: 'error',
-            message: error instanceof Error ? error.message : 'Tick data is unavailable. Retry.',
-          });
-      });
+    load();
     return () => {
       current = false;
+      requestMore.current = () => {};
     };
-  }, [ticker, session, getToken, dates, limit]);
-  return state;
+  }, [ticker, session, getToken, dates, batchSize]);
+  return { state, loadMore };
 }

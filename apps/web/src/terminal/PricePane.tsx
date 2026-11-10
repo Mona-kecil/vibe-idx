@@ -156,7 +156,7 @@ function IntradayHistory({
   minutes: number;
   sessions: number;
 }) {
-  const state = useTradeSessions(sessions);
+  const { state, loadMore } = useTradeSessions(sessions);
   const series = useMemo(
     () => (state.kind === 'ready' ? intradayBars(state.data, minutes) : []),
     [state, minutes],
@@ -169,7 +169,7 @@ function IntradayHistory({
       </p>
     );
   return series.length ? (
-    <PriceHistory data={series} chartType={chartType} />
+    <PriceHistory data={series} chartType={chartType} loadMore={loadMore} />
   ) : (
     <Empty>No collected regular-board trades</Empty>
   );
@@ -196,24 +196,28 @@ function PriceHistory({
   data,
   chartType,
   visibleBars = data.length,
+  loadMore,
 }: {
   data: PriceBar[];
   chartType: ChartType;
   visibleBars?: number;
+  loadMore?: () => void;
 }) {
   const { selection, select } = useTerminal();
   const host = useRef<HTMLDivElement>(null),
     chart = useRef<IChartApi | null>(null);
-  const current = useRef({ selection, select });
-  current.current = { selection, select };
+  const current = useRef({ selection, select, data, visibleBars, loadMore });
+  current.current = { selection, select, data, visibleBars, loadMore };
   const drag = useRef<PriceBar | null>(null);
   const visibleRange = useRef<LogicalRange | null>(null);
   const [hoverTime, setHoverTime] = useState<Time | null>(null);
   const hover = data.find((bar) => bar.time === hoverTime) ?? data.at(-1);
   const [band, setBand] = useState<{ left: number; width: number } | null>(null);
   const redraw = useRef<() => void>(() => {});
+  const updateData = useRef<(data: PriceBar[]) => void>(() => {});
   useEffect(() => {
     if (!host.current) return;
+    const { data, visibleBars } = current.current;
     const api = terminalChart(host.current);
     api.timeScale().applyOptions({ lockVisibleTimeRangeOnResize: true });
     if (typeof data[0]?.time === 'number') {
@@ -249,16 +253,6 @@ function PriceHistory({
             priceFormat,
           })
         : api.addSeries(LineSeries, { color: '#d9ded8', lineWidth: 2, priceFormat });
-    price.setData(
-      data.map((bar) => ({
-        time: bar.time,
-        open: bar.open,
-        high: bar.high,
-        low: bar.low,
-        close: bar.close,
-        value: bar.close,
-      })),
-    );
     price.priceScale().applyOptions({
       scaleMargins: { top: 0.08, bottom: 0.28 },
     });
@@ -268,13 +262,6 @@ function PriceHistory({
       priceLineVisible: false,
       priceFormat: { type: 'custom', formatter: short },
     });
-    volume.setData(
-      data.map((bar) => ({
-        time: bar.time,
-        value: bar.volume / 100,
-        color: bar.close >= bar.open ? '#22a6a08c' : '#e4573f8c',
-      })),
-    );
     volume.priceScale().applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
     const foreign = api.addSeries(
       HistogramSeries,
@@ -284,13 +271,6 @@ function PriceHistory({
         priceFormat: { type: 'custom', formatter: short },
       },
       1,
-    );
-    foreign.setData(
-      data.map((bar) => ({
-        time: bar.time,
-        value: bar.net_foreign,
-        color: bar.net_foreign >= 0 ? '#22a6a0' : '#e4573f',
-      })),
     );
     createTextWatermark(api.panes()[1]!, {
       horzAlign: 'left',
@@ -307,7 +287,9 @@ function PriceHistory({
     api.panes().forEach((pane, i) => pane.setStretchFactor(i === 0 ? 4 : 1));
     redraw.current = () => {
       const b = bounds(current.current.selection);
-      const selected = b ? data.filter((bar) => bar.date <= b.end && bar.endDate >= b.start) : [];
+      const selected = b
+        ? current.current.data.filter((bar) => bar.date <= b.end && bar.endDate >= b.start)
+        : [];
       const first = selected[0],
         last = selected.at(-1);
       const a = first && api.timeScale().timeToCoordinate(first.time),
@@ -316,18 +298,68 @@ function PriceHistory({
         a == null || z == null ? null : { left: Math.max(0, a - 3), width: Math.max(6, z - a + 6) },
       );
     };
-    api.timeScale().subscribeVisibleLogicalRangeChange(() => redraw.current());
+    let fitted = false;
+    let updating = false;
+    let previousRange: LogicalRange | null = null;
+    api.timeScale().subscribeVisibleLogicalRangeChange((range) => {
+      redraw.current();
+      if (
+        fitted &&
+        !updating &&
+        range &&
+        previousRange &&
+        range.from < previousRange.from &&
+        range.from <= 5
+      )
+        current.current.loadMore?.();
+      previousRange = range;
+    });
     api.timeScale().subscribeSizeChange(() => redraw.current());
     api.subscribeCrosshairMove((event) => {
-      const bar = data.find((bar) =>
+      const bar = current.current.data.find((bar) =>
         typeof event.time === 'number'
           ? bar.time === event.time
           : bar.date === chartDate(event.time),
       );
       setHoverTime(bar?.time ?? null);
     });
+    let previous: PriceBar[] = [];
+    updateData.current = (data) => {
+      const range = api.timeScale().getVisibleLogicalRange();
+      const added = previous.length ? data.findIndex((bar) => bar.time === previous[0]?.time) : 0;
+      updating = true;
+      price.setData(
+        data.map((bar) => ({
+          time: bar.time,
+          open: bar.open,
+          high: bar.high,
+          low: bar.low,
+          close: bar.close,
+          value: bar.close,
+        })),
+      );
+      volume.setData(
+        data.map((bar) => ({
+          time: bar.time,
+          value: bar.volume / 100,
+          color: bar.close >= bar.open ? '#22a6a08c' : '#e4573f8c',
+        })),
+      );
+      foreign.setData(
+        data.map((bar) => ({
+          time: bar.time,
+          value: bar.net_foreign,
+          color: bar.net_foreign >= 0 ? '#22a6a0' : '#e4573f',
+        })),
+      );
+      if (range && previous.length && added >= 0)
+        api.timeScale().setVisibleLogicalRange({ from: range.from + added, to: range.to + added });
+      previous = data;
+      previousRange = api.timeScale().getVisibleLogicalRange();
+      updating = false;
+      redraw.current();
+    };
     // Fit after the first layout, when the chart knows its pane and price-axis widths.
-    let fitted = false;
     const frame = requestAnimationFrame(() => {
       api.timeScale().setVisibleLogicalRange(
         visibleRange.current ?? {
@@ -342,9 +374,13 @@ function PriceHistory({
       if (fitted) visibleRange.current = api.timeScale().getVisibleLogicalRange();
       redraw.current = () => {};
       chart.current = null;
+      updateData.current = () => {};
       api.remove();
     };
-  }, [data, chartType, visibleBars]);
+  }, [chartType]);
+  useEffect(() => {
+    updateData.current(data);
+  }, [data, chartType]);
   useEffect(() => {
     redraw.current();
   }, [selection]);
