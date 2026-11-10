@@ -1,17 +1,13 @@
 import { gunzipSync } from 'node:zlib';
 import { publishBrokerActivity } from './broker-publication';
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
-import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { DuckDBInstance } from '@duckdb/node-api';
 import { afterEach, beforeEach, expect, it, vi } from 'vite-plus/test';
 import { brokerActivity } from './brokerActivity';
 import { brokers } from './brokers';
 import type { R2 } from './brokers';
-import { compareBrokers } from './compare-brokers';
 
 vi.mock('node:timers/promises', () => ({
   setTimeout: async (ms: number) => {
@@ -224,19 +220,14 @@ it('marks empty holiday lists listed without creating targets', async () => {
     ),
   ).toEqual([{ n: 3 }]);
 });
-it('shares one token refresh with the concurrent per-stock phase', async () => {
+it('uses one token refresh for activity and publishes only the activity source', async () => {
   const f = await fixture();
   f.objects.set('auth/stockbit.json', Buffer.from('{"refresh":"fake-refresh"}'));
   await mkdir(join(f.data, 'parquet', 'prices'), { recursive: true });
   await sql(
     `COPY (SELECT DATE '${day}' date,'BBRI' ticker,19303700 volume,1 frequency) TO '${f.data}/parquet/prices/2026.parquet' (FORMAT PARQUET)`,
   );
-  let activityStarted: () => void = () => {};
-  const concurrent = new Promise<void>((resolve) => {
-    activityStarted = resolve;
-  });
   let refreshes = 0;
-  let stockCalls = 0;
   let activityCalls = 0;
   const fetcher: typeof fetch = async (input, init) => {
     const url = new URL(input instanceof Request ? input.url : input);
@@ -250,19 +241,9 @@ it('shares one token refresh with the concurrent per-stock phase', async () => {
     if (url.pathname.endsWith('/top')) return list(url);
     if (url.pathname.endsWith('/activity')) {
       activityCalls++;
-      activityStarted();
       return Response.json(response());
     }
-    stockCalls++;
-    await concurrent;
-    return Response.json({
-      data: {
-        from: day,
-        to: day,
-        bandar_detector: { total_buyer: 0, total_seller: 0 },
-        broker_summary: { symbol: 'BBRI', brokers_buy: [], brokers_sell: [] },
-      },
-    });
+    throw new Error(`Unexpected source request: ${url.pathname}`);
   };
   const result = await brokers({
     ...f,
@@ -272,78 +253,22 @@ it('shares one token refresh with the concurrent per-stock phase', async () => {
     fetcher,
   });
   expect(refreshes).toBe(1);
-  expect(stockCalls).toBe(3);
   expect(activityCalls).toBe(2);
-  expect(result.activity?.completed).toBe(2);
+  expect(
+    JSON.parse(f.objects.get('site/market-accumulation.json')!.toString()).stocks[0].windows['1d'],
+  ).toMatchObject({ pct: 2, broker: 'XL', buy_trades: 15422, trades: 1 });
+  expect(
+    [...f.objects.keys()].some(
+      (key) => key.startsWith('parquet/brokers/') || key === 'parquet/broker-coverage.parquet',
+    ),
+  ).toBe(false);
+  expect(result.activity.completed).toBe(2);
   const published = JSON.parse(gunzipSync(f.objects.get('site/broker/BBRI.json.gz')!).toString());
   expect(published[0].buy.map((r: { investor: string }) => r.investor)).toEqual([
     'domestic',
     'foreign',
   ]);
 });
-it('compares complete parquet fixtures, reports mismatches, and excludes incomplete days', async () => {
-  const f = await fixture();
-  await brokerActivity({
-    ...f,
-    request: async (input) => {
-      const url = new URL(input);
-      return url.pathname.endsWith('/top')
-        ? list(url)
-        : Response.json(response([row(), row('XIJI')]));
-    },
-  });
-  await mkdir(join(f.data, 'parquet', 'brokers'), { recursive: true });
-  await mkdir(join(f.data, 'parquet', 'prices'), { recursive: true });
-  await sql(`COPY (SELECT date,ticker,board,side,broker,'Lokal' investor_type,sum(shares) shares,sum(value) AS value,0 avg_price,sum(freq) freq FROM read_parquet('${f.data}/parquet/broker_activity/*.parquet') WHERE ticker='BBRI' GROUP BY ALL) TO '${f.data}/parquet/brokers/2026.parquet' (FORMAT PARQUET);
-    COPY (SELECT DATE '${day}' date,'BBRI' ticker,'regular' board,true complete) TO '${f.data}/parquet/broker-coverage.parquet' (FORMAT PARQUET);
-    COPY (SELECT DATE '${day}' date,'BBRI' ticker,38607400 volume) TO '${f.data}/parquet/prices/2026.parquet' (FORMAT PARQUET)`);
-  const matched = await compareBrokers(f.data);
-  expect(matched.failed).toBe(false);
-  expect(matched.dates).toEqual([
-    { date: day, matched: 1, adjusted: 0, mismatched: 0, only_in_activity: 0, only_in_brokers: 0 },
-  ]);
-  expect(matched.activityOnly).toEqual({ instruments: 1, rows: 2 });
-  expect(matched.volumeMismatches).toEqual([]);
-  const cli = fileURLToPath(new URL('./compare-brokers.ts', import.meta.url));
-  const matchOutput = await promisify(execFile)(process.execPath, [
-    '--import',
-    'tsx',
-    cli,
-    '--data',
-    f.data,
-  ]);
-  expect(JSON.parse(matchOutput.stdout).failed).toBe(false);
-  const file = join(f.data, 'parquet', 'brokers', '2026.parquet');
-  await sql(
-    `CREATE TABLE b AS SELECT * FROM read_parquet('${file}'); UPDATE b SET shares=shares*1.033; COPY b TO '${file}' (FORMAT PARQUET)`,
-  );
-  const rescaled = await compareBrokers(f.data);
-  expect(rescaled.failed).toBe(false);
-  expect(rescaled.dates[0]).toMatchObject({ matched: 0, adjusted: 1, mismatched: 0 });
-  expect(rescaled.adjusted).toEqual([{ ticker: 'BBRI', rows: 1, first: day, last: day }]);
-  await sql(
-    `CREATE TABLE b AS SELECT * FROM read_parquet('${file}'); UPDATE b SET value=value+1000; COPY b TO '${file}' (FORMAT PARQUET)`,
-  );
-  const mismatch = await compareBrokers(f.data);
-  expect(mismatch.failed).toBe(true);
-  expect(mismatch.dates[0].mismatched).toBe(1);
-  await expect(
-    promisify(execFile)(process.execPath, ['--import', 'tsx', cli, '--data', f.data]),
-  ).rejects.toMatchObject({ code: 1 });
-  await sql(`CREATE TABLE b AS SELECT * FROM read_parquet('${file}');
-    UPDATE b SET side='sell'; COPY b TO '${file}' (FORMAT PARQUET)`);
-  const oneSided = await compareBrokers(f.data);
-  expect(oneSided.failed).toBe(true);
-  expect(oneSided.dates[0]).toMatchObject({ only_in_activity: 1, only_in_brokers: 1 });
-  await sql(
-    `COPY (SELECT DATE '${day}' date,'BBRI' ticker,'regular' board,false complete) TO '${f.data}/parquet/broker-coverage.parquet' (FORMAT PARQUET)`,
-  );
-  expect((await compareBrokers(f.data)).comparableDays).toBe(0);
-  expect(
-    (await readFile(join(f.data, 'parquet', 'broker-activity-coverage.parquet'))).length,
-  ).toBeGreaterThan(0);
-});
-
 it('replaces rows left by a checkpoint that crashed before coverage upload', async () => {
   const f = await fixture();
   const request = async (input: string) => {

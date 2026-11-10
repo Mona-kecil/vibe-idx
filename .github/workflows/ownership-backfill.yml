@@ -45,7 +45,7 @@ jobs:
       - name: Restore IDX ledger and ownership archive
         run: |
           mkdir -p "$DATA/raw"
-          aws s3 sync s3://vibe-idx-private/parquet "$DATA/parquet" --exclude "brokers/*" --exclude "broker-coverage.parquet" --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          aws s3 sync s3://vibe-idx-private/parquet "$DATA/parquet" --exclude "brokers/*" --exclude "broker-coverage.parquet" --exclude "broker_activity/*" --exclude "broker-activity-coverage.parquet" --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
           for prefix in ownership-list ownership-announcements five-pct one-pct; do
             aws s3 sync "s3://vibe-idx-private/raw/$prefix" "$DATA/raw/$prefix" --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
           done

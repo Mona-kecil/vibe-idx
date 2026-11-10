@@ -13,33 +13,10 @@ const brokerAmounts = z.object({
   freq: z.number(),
 });
 const brokerTypeSchema = z.enum(['local', 'foreign', 'government', 'unknown']);
-const legacyBrokerTypes = new Map<string, z.infer<typeof brokerTypeSchema>>(
-  Object.entries({
-    Asing: 'foreign',
-    FOREIGN: 'foreign',
-    Lokal: 'local',
-    LOCAL: 'local',
-    Pemerintah: 'government',
-    GOV: 'government',
-  }),
-);
-export const brokerRowSchema = z.union([
-  brokerAmounts.extend({
-    investor: z.enum(['domestic', 'foreign', 'unknown']),
-    broker_type: brokerTypeSchema,
-  }),
-  brokerAmounts
-    .extend({
-      investor_type: z.string(),
-      investor: z.undefined().optional(),
-      broker_type: z.undefined().optional(),
-    })
-    .transform(({ investor_type, ...row }) => ({
-      ...row,
-      investor: 'unknown' as const,
-      broker_type: legacyBrokerTypes.get(investor_type) ?? 'unknown',
-    })),
-]);
+export const brokerRowSchema = brokerAmounts.extend({
+  investor: z.enum(['domestic', 'foreign', 'unknown']),
+  broker_type: brokerTypeSchema,
+});
 export type InvestorFilter = 'ALL' | 'FOREIGN' | 'DOMESTIC';
 export function investorFilter(value: unknown): InvestorFilter {
   return value === 'FOREIGN' || value === 'DOMESTIC' ? value : 'ALL';

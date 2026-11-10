@@ -5,8 +5,7 @@ import { dirname, join, resolve } from 'node:path';
 import { setTimeout } from 'node:timers/promises';
 import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
-import { dateValue, DuckDBInstance } from '@duckdb/node-api';
-import type { DuckDBValue } from '@duckdb/node-api';
+import { DuckDBInstance } from '@duckdb/node-api';
 import { AwsClient } from 'aws4fetch';
 import { date } from './lib/rows';
 import { publishBrokerActivity } from './broker-publication';
@@ -22,16 +21,6 @@ const headers = {
   'User-Agent':
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
 };
-const boards = {
-  regular: 'MARKET_BOARD_REGULER',
-  negotiation: 'MARKET_BOARD_NEGO',
-  cash: 'MARKET_BOARD_TUNAI',
-} as const;
-type Board = keyof typeof boards;
-// Stockbit gives each ticker 10 requests, refilled at 10 a second.
-const tickerInterval = 125;
-const workers = 47;
-
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -48,18 +37,6 @@ function tokens(value: unknown, depth = 0): { access: string; refresh: string } 
   )
     return { access: value.access.token, refresh: value.refresh.token };
   if (depth < 5) return tokens(value.data, depth + 1);
-}
-
-function field(row: Record<string, unknown>, key: string): string {
-  const value = row[key];
-  if (typeof value !== 'string' || !value.trim()) throw new Error(`Invalid broker field: ${key}`);
-  return value;
-}
-
-function number(row: Record<string, unknown>, key: string): number {
-  const value = Number(field(row, key));
-  if (!Number.isFinite(value)) throw new Error(`Invalid broker number: ${key}`);
-  return value;
 }
 
 export type R2 = {
@@ -166,13 +143,7 @@ export function createR2({
   return client;
 }
 
-type BrokerSummary = {
-  activity?: ActivitySummary;
-  fetched: number;
-  completed: number;
-  pending: number;
-  failed: { ticker: string; date: string; board: Board; error: string }[];
-};
+type BrokerSummary = { activity: ActivitySummary };
 
 export class BrokerRunError extends Error {
   constructor(
@@ -191,63 +162,6 @@ class StockbitError extends Error {
     super(message, options);
     this.status = options?.status;
   }
-}
-
-function summaryRows(
-  ticker: string,
-  day: string,
-  board: Board,
-  bytes: Uint8Array,
-): DuckDBValue[][] {
-  const pair = `${ticker}/${day}/${board}`;
-  const parsed: unknown = JSON.parse(new TextDecoder().decode(bytes));
-  if (!isObject(parsed) || !isObject(parsed.data))
-    throw new Error(`Invalid broker response: ${pair}`);
-  const result = parsed.data;
-  if (result.from !== day || result.to !== day) throw new Error(`Broker date mismatch: ${pair}`);
-  const summary = result.broker_summary;
-  const counts = result.bandar_detector;
-  if (
-    !isObject(summary) ||
-    !isObject(counts) ||
-    !Array.isArray(summary.brokers_buy) ||
-    !Array.isArray(summary.brokers_sell) ||
-    !Number.isInteger(counts.total_buyer) ||
-    !Number.isInteger(counts.total_seller) ||
-    summary.brokers_buy.length !== counts.total_buyer ||
-    summary.brokers_sell.length !== counts.total_seller
-  )
-    throw new Error(`Incomplete broker summary: ${pair}`);
-  if (summary.symbol !== ticker) throw new Error(`Broker symbol mismatch: ${pair}`);
-  const sides = [
-    { side: 'buy', source: summary.brokers_buy },
-    { side: 'sell', source: summary.brokers_sell },
-  ];
-  return sides.flatMap(({ side, source }) => {
-    const prefix = side === 'buy' ? 'b' : 's';
-    const codes = new Set<string>();
-    return source.map((row: unknown) => {
-      if (!isObject(row)) throw new Error(`Invalid broker row: ${pair}`);
-      if (row.netbs_date !== day.replaceAll('-', ''))
-        throw new Error(`Broker row date mismatch: ${pair}`);
-      if (row.netbs_stock_code !== ticker) throw new Error(`Broker row symbol mismatch: ${pair}`);
-      const broker = field(row, 'netbs_broker_code');
-      if (codes.has(broker)) throw new Error(`Duplicate broker row: ${pair}`);
-      codes.add(broker);
-      return [
-        dateValue(Date.parse(day) / 86400000),
-        ticker,
-        board,
-        side,
-        broker,
-        field(row, 'type'),
-        number(row, `${prefix}lotv`),
-        number(row, `${prefix}val`),
-        number(row, `netbs_${side}_avg_price`),
-        number(row, 'freq'),
-      ];
-    });
-  });
 }
 
 export async function brokers({
@@ -348,84 +262,19 @@ export async function brokers({
     const instance = await DuckDBInstance.create(':memory:');
     const db = await instance.connect();
     const query = async (sql: string) => (await db.runAndReadAll(sql)).getRowObjectsJson();
-    let fetched = 0;
-    let completed = 0;
-    async function brokerSummary(ticker: string, day: string, board: Board) {
-      if (!(await (authentication ??= authenticate()))) return;
-      const url = new URL(`https://exodus.stockbit.com/marketdetectors/${ticker}`);
-      url.search = new URLSearchParams({
-        from: day,
-        to: day,
-        transaction_type: 'TRANSACTION_TYPE_GROSS',
-        market_board: boards[board],
-        investor_type: 'INVESTOR_TYPE_ALL',
-        limit: '200',
-      }).toString();
-      const response = await stockbit(
-        url.href,
-        { headers: { ...headers, Authorization: `Bearer ${access}` } },
-        4,
-      );
-      if (!response) return;
-      if (!response.ok)
-        throw new StockbitError(`Stockbit HTTP ${response.status}`, { status: response.status });
-      fetched++;
-      return response.bytes;
-    }
-    async function append(rows: DuckDBValue[][]) {
-      const appender = await db.createAppender('brokers');
-      const types = Array.from({ length: appender.columnCount }, (_, i) => appender.columnType(i));
-      try {
-        for (const row of rows) {
-          for (const [i, value] of row.entries()) appender.appendValue(value, types[i]);
-          appender.endRow();
-        }
-      } finally {
-        appender.closeSync();
-      }
-    }
     async function output(sql: string) {
       return (await query(`SELECT to_json(r)::VARCHAR AS json FROM (${sql}) r`)).map((r) => {
         if (typeof r.json !== 'string') throw new Error('Expected JSON from DuckDB');
         return r.json;
       });
     }
-    let activityRun: Promise<ActivitySummary> | undefined;
     try {
-      await db.run(`CREATE TABLE brokers (
-      date DATE, ticker VARCHAR, board VARCHAR, side VARCHAR, broker VARCHAR, investor_type VARCHAR,
-      shares DOUBLE, value DOUBLE, avg_price DOUBLE, freq DOUBLE,
-      PRIMARY KEY(date, ticker, board, side, broker)
-    );
-    CREATE TABLE broker_pairs (
-      date DATE, ticker VARCHAR, board VARCHAR, complete BOOLEAN, PRIMARY KEY(date, ticker, board)
-    )`);
-      const parquet = join(data, 'parquet', 'brokers');
-      if (existsSync(parquet))
-        await db.run(
-          `INSERT INTO brokers SELECT * FROM read_parquet(${literal(join(parquet, '*.parquet'))})`,
-        );
-      const coverage = join(data, 'parquet', 'broker-coverage.parquet');
-      if (existsSync(coverage))
-        await db.run(`INSERT INTO broker_pairs SELECT * FROM read_parquet(${literal(coverage)})`);
       await db.run(`CREATE TEMP VIEW prices AS
-      SELECT date, ticker, volume, frequency FROM read_parquet(${literal(join(data, 'parquet', 'prices', '*.parquet'))});
-      ${marketCalendar}
-      CREATE TEMP VIEW traded AS
-      SELECT DISTINCT date, ticker
-      FROM prices
-      WHERE volume > 0 AND date >= DATE '2026-01-01'
-        AND date <= DATE ${literal(completedThrough)};
-      INSERT INTO broker_pairs
-      SELECT date, ticker, board, false FROM traded
-      CROSS JOIN (VALUES ${Object.keys(boards)
-        .map((board) => `('${board}')`)
-        .join(', ')}) b(board)
-      ON CONFLICT DO NOTHING;
-      UPDATE broker_pairs SET complete = true
-      WHERE EXISTS (SELECT 1 FROM brokers
-        WHERE brokers.date = broker_pairs.date AND brokers.ticker = broker_pairs.ticker
-          AND brokers.board = broker_pairs.board)`);
+        SELECT date, ticker, volume, frequency FROM read_parquet(${literal(join(data, 'parquet', 'prices', '*.parquet'))});
+        ${marketCalendar}
+        CREATE TEMP VIEW traded AS SELECT DISTINCT date FROM prices
+        WHERE volume > 0 AND date >= DATE '2026-01-01'
+          AND date <= DATE ${literal(completedThrough)}`);
       const activityDates = (
         await query('SELECT DISTINCT date::VARCHAR date FROM traded ORDER BY date DESC')
       ).map((r) => {
@@ -433,7 +282,7 @@ export async function brokers({
           throw new Error('Invalid activity date');
         return r.date;
       });
-      activityRun = brokerActivity({
+      const activity = await brokerActivity({
         data,
         dates: activityDates,
         r2,
@@ -447,137 +296,29 @@ export async function brokers({
           });
         },
       });
-      // Observe failures immediately while the other phase finishes its checkpoint.
-      void activityRun.catch(() => {});
-      const entries = (
-        await query(
-          `WITH activity AS (
-            SELECT ticker, sum(frequency) frequency FROM prices
-            WHERE date >= DATE '2026-01-01' AND date < DATE '2027-01-01' GROUP BY ticker
-          )
-          SELECT ticker, date::VARCHAR date, board FROM broker_pairs
-          JOIN traded USING(date, ticker) LEFT JOIN activity USING(ticker)
-          WHERE NOT complete ORDER BY frequency DESC NULLS LAST, ticker, date DESC, board`,
-        )
-      ).map((entry) => {
-        if (
-          typeof entry.ticker !== 'string' ||
-          !/^[A-Z0-9-]+$/.test(entry.ticker) ||
-          typeof entry.date !== 'string' ||
-          date(entry.date) !== entry.date ||
-          !(typeof entry.board === 'string' && entry.board in boards)
-        )
-          throw new Error('Invalid broker target');
-        return { ticker: entry.ticker, date: entry.date, board: entry.board as Board };
-      });
-      const years = new Map<string, boolean>();
-      if (existsSync(parquet))
-        for (const file of await readdir(parquet))
-          if (file.endsWith('.parquet')) years.set(file.slice(0, -8), false);
-      let lastCheckpoint = started;
-      async function checkpoint() {
-        for (const [year, changed] of years) {
-          const file = join(parquet, `${year}.parquet`);
-          if (changed) {
-            await mkdir(dirname(file), { recursive: true });
-            await db.run(`COPY (SELECT * FROM brokers WHERE year(date) = ${Number(year)} ORDER BY ALL)
-              TO ${literal(file + '.tmp')} (FORMAT PARQUET, COMPRESSION ZSTD)`);
-            await rename(file + '.tmp', file);
-          }
-          await r2.put(`parquet/brokers/${year}.parquet`, await readFile(file));
-        }
-        await mkdir(dirname(coverage), { recursive: true });
-        await db.run(`COPY (SELECT * FROM broker_pairs ORDER BY ALL)
-          TO ${literal(coverage + '.tmp')} (FORMAT PARQUET, COMPRESSION ZSTD)`);
-        await rename(coverage + '.tmp', coverage);
-        await r2.put('parquet/broker-coverage.parquet', await readFile(coverage));
-        years.clear();
-        lastCheckpoint = Date.now();
-      }
-      let failure: Error | undefined;
-      const fail = (error: unknown) => {
-        failure ??= error instanceof Error ? error : new Error(String(error));
-      };
-      const groups = new Map<string, typeof entries>();
-      for (const entry of entries) {
-        const group = groups.get(entry.ticker) ?? [];
-        group.push(entry);
-        groups.set(entry.ticker, group);
-      }
-      const queue = [...groups];
-      const failed: BrokerSummary['failed'] = [];
-      async function save(ticker: string, rows: DuckDBValue[][], pairs: typeof entries) {
-        await db.run('BEGIN TRANSACTION');
-        try {
-          await append(rows);
-          for (const pair of pairs)
-            await db.run(`UPDATE broker_pairs SET complete = true
-              WHERE date = ${literal(pair.date)} AND ticker = ${literal(ticker)}
-                AND board = ${literal(pair.board)}`);
-          await db.run('COMMIT');
-        } catch (error) {
-          await db.run('ROLLBACK');
-          throw error;
-        }
-        if (rows.length) for (const pair of pairs) years.set(pair.date.slice(0, 4), true);
-        completed += pairs.length;
-        if (Date.now() - lastCheckpoint >= 10 * 60000) await checkpoint();
-      }
-      let saved = Promise.resolve();
-      async function worker() {
-        let next = 0;
-        while (!failure && !bounded()) {
-          const entry = queue.shift();
-          if (!entry) return;
-          const [ticker, group] = entry;
-          const rows: DuckDBValue[][] = [];
-          const pairs: typeof entries = [];
-          try {
-            for (const pair of group) {
-              if (failure) break;
-              await setTimeout(Math.min(Math.max(0, next - Date.now()), deadline - Date.now()));
-              next = Date.now() + tickerInterval;
-              const bytes = await brokerSummary(ticker, pair.date, pair.board);
-              if (!bytes) break;
-              try {
-                rows.push(...summaryRows(ticker, pair.date, pair.board, bytes));
-                pairs.push(pair);
-              } catch (error) {
-                failed.push({
-                  ...pair,
-                  error: error instanceof Error ? error.message : String(error),
-                });
-              }
-            }
-          } catch (error) {
-            fail(error);
-          }
-          if (pairs.length) saved = saved.then(() => save(ticker, rows, pairs)).catch(fail);
-        }
-      }
-      await Promise.all(Array.from({ length: workers }, worker));
-      await saved;
-      await checkpoint();
+      const parquet = join(data, 'parquet', 'broker_activity');
+      await db.run(`CREATE TEMP TABLE broker_activity (
+        date DATE, ticker VARCHAR, board VARCHAR, side VARCHAR, broker VARCHAR, shares DOUBLE, freq DOUBLE
+      )`);
+      if (existsSync(parquet) && (await readdir(parquet)).some((file) => file.endsWith('.parquet')))
+        await db.run(`INSERT INTO broker_activity SELECT date, ticker, board, side, broker, shares, freq
+          FROM read_parquet(${literal(join(parquet, '*.parquet'))})`);
+      await db.run(`CREATE TEMP VIEW broker_activity_coverage AS
+        SELECT * FROM read_parquet(${literal(join(data, 'parquet', 'broker-activity-coverage.parquet'))})`);
       await mkdir(out, { recursive: true });
       const accumulationFile = join(out, 'market-accumulation.json');
       await writeFile(accumulationFile + '.tmp', `${(await output(accumulation))[0]}\n`);
       await rename(accumulationFile + '.tmp', accumulationFile);
       await r2.put('site/market-accumulation.json', await readFile(accumulationFile));
-      const activity = await activityRun;
       await publishBrokerActivity(data, out, r2);
-      const summary = { fetched, completed, pending: entries.length - completed, failed, activity };
-      if (failure || failed.length || activity.failed.length || activity.stopped)
+      const summary = { activity };
+      if (activity.failed.length || activity.stopped)
         throw new BrokerRunError(
-          failure
-            ? failure.message
-            : (activity.stopped ??
-                `${failed.length} invalid broker pairs, ${activity.failed.length} activity failures`),
+          activity.stopped ?? `${activity.failed.length} activity failures`,
           summary,
-          { cause: failure },
         );
       return summary;
     } finally {
-      await activityRun?.catch(() => {});
       db.closeSync();
       instance.closeSync();
     }

@@ -19,7 +19,8 @@ vi.mock('@workos-inc/authkit-react', () => ({
 const dates = ['2026-10-19', '2026-10-20', '2026-10-21', '2026-10-22'];
 const row = (broker: string, shares: number) => ({
   broker,
-  investor_type: 'LOCAL',
+  investor: 'domestic',
+  broker_type: 'local',
   shares,
   value: shares * 100,
   avg_price: 100,
