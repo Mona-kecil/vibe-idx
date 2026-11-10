@@ -12,8 +12,10 @@ import { publishBrokerActivity } from './broker-publication';
 import { accumulation, marketCalendar } from './sql';
 import { brokerActivity } from './brokerActivity';
 import { checkRescales } from './rescale-check';
-import { startSentry } from './lib/sentry';
+import { reportError, startSentry } from './lib/sentry';
+import { collectTicks } from './ticks';
 import type { ActivitySummary } from './brokerActivity';
+import type { TickSummary } from './ticks';
 
 const literal = (s: string) => `'${s.replaceAll("'", "''")}'`;
 const headers = {
@@ -145,7 +147,7 @@ export function createR2({
   return client;
 }
 
-type BrokerSummary = { activity: ActivitySummary };
+type BrokerSummary = { activity: ActivitySummary; ticks?: TickSummary };
 
 export class BrokerRunError extends Error {
   constructor(
@@ -270,6 +272,7 @@ export async function brokers({
         return r.json;
       });
     }
+    let ticks: Promise<TickSummary> | undefined;
     try {
       await db.run(`CREATE TEMP VIEW prices AS
         SELECT date, ticker, volume, frequency FROM read_parquet(${literal(join(data, 'parquet', 'prices', '*.parquet'))});
@@ -283,6 +286,23 @@ export async function brokers({
         if (typeof r.date !== 'string' || date(r.date) !== r.date)
           throw new Error('Invalid activity date');
         return r.date;
+      });
+      // Running trade and order book requests use their own Stockbit rate buckets, so they run beside activity.
+      ticks = collectTicks({
+        data,
+        r2,
+        deadline,
+        request: async (url, until) => {
+          if (!(await (authentication ??= authenticate())) || Date.now() >= until) return;
+          return fetcher(url, {
+            headers: { ...headers, Authorization: `Bearer ${access}`, 'x-platform': 'web' },
+            redirect: 'error',
+            signal: AbortSignal.timeout(Math.max(1, Math.min(60000, until - Date.now()))),
+          });
+        },
+      }).catch(async (error: unknown): Promise<TickSummary> => {
+        await reportError(error, { source: 'ticks' });
+        return { published: [], pending: [], stopped: String(error) };
       });
       const activity = await brokerActivity({
         data,
@@ -321,7 +341,7 @@ export async function brokers({
       }).catch((error) =>
         console.error(JSON.stringify({ check: 'broker-rescale', error: String(error) })),
       );
-      const summary = { activity };
+      const summary = { activity, ticks: await ticks };
       if (activity.failed.length || activity.stopped)
         throw new BrokerRunError(
           activity.stopped ?? `${activity.failed.length} activity failures`,
@@ -329,6 +349,8 @@ export async function brokers({
         );
       return summary;
     } finally {
+      // The marker must outlive every Stockbit request of this run.
+      await ticks;
       db.closeSync();
       instance.closeSync();
     }

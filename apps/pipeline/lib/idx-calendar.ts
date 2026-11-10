@@ -102,3 +102,23 @@ export async function fetchCorporateActions(
   const from = new Date(now.getTime() - 7 * 864e5).toISOString().slice(0, 10);
   return corporateActions(rows, stocks, from);
 }
+
+// IDX price sessions are the repo's historical trading calendar (sql.ts marketCalendar).
+// Unlike generating weekdays, this preserves exchange holidays and exceptional closures.
+export function tradingSessions(observed: string[]) {
+  return [...new Set(observed.map((day) => z.iso.date().parse(day)))]
+    .filter((day) => day >= '2026-01-01' && day < '2027-01-01')
+    .sort();
+}
+
+export function nextPreOpen(day: string, sessions: string[]) {
+  const known = sessions.find((date) => date > day);
+  if (known) return Date.parse(`${known}T01:45:00Z`);
+  // There is no forward exchange-holiday calendar in this repository. Close the window
+  // conservatively at the next weekday instead of attributing a new session's book to an old day.
+  const next = new Date(`${day}T01:45:00Z`);
+  do {
+    next.setUTCDate(next.getUTCDate() + 1);
+  } while ([0, 6].includes(next.getUTCDay()));
+  return next.getTime();
+}

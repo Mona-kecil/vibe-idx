@@ -7,6 +7,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 import { brokers, createR2 } from './brokers';
 import type { R2 } from './brokers';
 
+vi.mock('./ticks', () => ({ collectTicks: async () => ({ published: [], pending: [] }) }));
+
 vi.mock('node:timers/promises', () => ({
   setTimeout: async (ms: number) => {
     vi.setSystemTime(Date.now() + ms);
@@ -167,6 +169,7 @@ describe('private broker pipeline', () => {
     const net = network(f.token);
     expect(await brokers({ ...f.options, fetcher: net.fetcher })).toEqual({
       activity: { completed: 0, pending: 0, failed: [] },
+      ticks: { published: [], pending: [] },
     });
     expect(net.calls.map((url) => url.pathname)).toEqual([
       '/login/refresh',
@@ -208,6 +211,7 @@ describe('private broker pipeline', () => {
     const fetcher = vi.fn<typeof fetch>();
     expect(await brokers({ ...f.options, deadline: Date.now(), fetcher })).toEqual({
       activity: { completed: 0, pending: 3, failed: [] },
+      ticks: { published: [], pending: [] },
     });
     expect(fetcher).not.toHaveBeenCalled();
     expect(f.objects.has('site/market-accumulation.json')).toBe(true);
