@@ -6,12 +6,13 @@ import {
   fetchCalendar,
   fetchHeadlines,
   fetchRisk,
+  fetchTickerNews,
   type Headline,
   type Resource,
 } from './sources';
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { ActionsPane, CalendarPane, RiskPane } from './PublicationPanes';
+import { NewsPane, CalendarPane, ActionsPane, RiskPane } from './PublicationPanes';
 import { calendarEventSchema } from './contracts';
 afterEach(() => vi.unstubAllGlobals());
 const timestamp = '2026-11-09T08:00:00Z';
@@ -156,6 +157,36 @@ function requestUrl(input: RequestInfo | URL) {
 }
 
 describe('publication source presentation', () => {
+  it('strips only a matching trailing publisher from ticker headlines', async () => {
+    const titles = [
+      'Profit rises - CNBC Indonesia',
+      'Profit - outlook improves - CNBC Indonesia',
+      'Profit rises – cnbc indonesia',
+      'Profit rises - Another publisher',
+      'CNBC Indonesia expects growth',
+    ];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        Response.json(
+          titles.map((title, i) => ({
+            title,
+            source: 'CNBC Indonesia',
+            published_at: timestamp,
+            url: `https://example.com/${i}`,
+          })),
+        ),
+      ),
+    );
+    const news = await fetchTickerNews('BBRI');
+    expect(news.kind === 'ready' && news.data.map((item) => item.title)).toEqual([
+      'Profit rises',
+      'Profit - outlook improves',
+      'Profit rises',
+      'Profit rises - Another publisher',
+      'CNBC Indonesia expects growth',
+    ]);
+  });
   it('identifies published date-only events without hiding a real midnight release', () => {
     const event = {
       ts: '2026-11-10T17:00:00Z',
@@ -268,6 +299,36 @@ describe('publication pane interactions', () => {
     if (!(button instanceof HTMLButtonElement)) throw new Error(`Missing ${selector}`);
     await act(async () => button.click());
   }
+  it('replaces the list with a reader and preserves next, previous and close controls', async () => {
+    context.filters.news = 'TICKER';
+    context.tickerNews = {
+      kind: 'ready',
+      data: [0, 1].map((i) => ({
+        ts: `2026-11-09T0${9 - i}:00:00Z`,
+        src: 'Publisher',
+        title: `Story ${i}`,
+        link: `https://example.com/${i}`,
+        region: 'TICKER',
+        sum: `Summary ${i}`,
+        tags: ['BBRI', 'BBCA'],
+      })),
+    };
+    await act(async () => root.render(createElement(NewsPane)));
+    expect(host.querySelectorAll('.tags span').length).toBe(2);
+    expect(host.querySelector('.tags')?.textContent).toBe('BBCA');
+    expect(host.querySelector('[aria-label="Open news in"]')).toBeNull();
+    await click('.news-item');
+    expect(host.querySelectorAll('.news-item')).toHaveLength(0);
+    expect(host.querySelector('.reader')?.textContent).toContain('Summary 0');
+    expect(host.querySelector('.reader .tags')?.textContent).toBe('BBCA');
+    await click('[aria-label="Next article"]');
+    expect(host.querySelector('.reader')?.textContent).toContain('Summary 1');
+    await click('[aria-label="Previous article"]');
+    expect(host.querySelector('.reader')?.textContent).toContain('Summary 0');
+    await click('[aria-label="Close reader"]');
+    expect(host.querySelector('.reader')).toBeNull();
+    expect(host.querySelectorAll('.news-item')).toHaveLength(2);
+  });
   it('expands a corporate action without switching ticker and keeps the ticker link active', async () => {
     context.publications.actions = {
       kind: 'ready',

@@ -123,7 +123,13 @@ export async function fetchTickerNews(ticker: string): Promise<Resource<Headline
       data: rows.map((row) => ({
         ts: row.published_at,
         src: row.source,
-        title: row.title,
+        title: row.title.replace(
+          new RegExp(
+            `\\s+[-–—|]\\s+${row.source.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`,
+            'i',
+          ),
+          '',
+        ),
         link: row.url,
         region: 'TICKER',
         sum: '',

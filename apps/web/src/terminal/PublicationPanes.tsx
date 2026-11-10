@@ -53,72 +53,58 @@ export function NewsPane() {
             setArticle(null);
           }}
         />
-        <Segments
-          label="Open news in"
-          values={['READER', 'NEW TAB']}
-          value={filters.open}
-          onChange={(value) => {
-            filter('open', value);
-            setArticle(null);
-          }}
-        />
       </div>
-      <Scroll reset={`${filters.news}:${ticker}`}>
-        <Availability resource={resource} name="News">
-          {() => (
-            <>
-              {publications.news.kind === 'ready' && (
-                <Publication
-                  date={publications.news.data.as_of}
-                  errors={publications.news.data.errors}
-                />
-              )}
-              {list.length ? (
-                list.map((item) => {
-                  const body = (
-                    <>
-                      <div className="news-meta">
-                        <time>{wib(item.ts)} WIB</time>
-                        <span>{item.src}</span>
-                      </div>
-                      <strong>{item.title}</strong>
-                      <div className="tags">
-                        {item.tags.map((tag) => (
-                          <span key={tag}>{tag}</span>
-                        ))}
-                      </div>
-                    </>
-                  );
-                  return filters.open === 'NEW TAB' ? (
-                    <a
-                      className="news-item"
-                      key={item.link}
-                      href={item.link}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      {body}
-                    </a>
-                  ) : (
-                    <button
-                      className={`news-item${article === item ? ' on' : ''}`}
-                      key={item.link}
-                      onClick={() => setArticle(item)}
-                    >
-                      {body}
-                    </button>
-                  );
-                })
-              ) : (
-                <Empty>No news in this view</Empty>
-              )}
-            </>
-          )}
-        </Availability>
-      </Scroll>
+      {!article && (
+        <Scroll reset={`${filters.news}:${ticker}`}>
+          <Availability resource={resource} name="News">
+            {() => (
+              <>
+                {publications.news.kind === 'ready' && (
+                  <Publication
+                    date={publications.news.data.as_of}
+                    errors={publications.news.data.errors}
+                  />
+                )}
+                {list.length ? (
+                  list.map((item) => {
+                    const body = (
+                      <>
+                        <div className="news-meta">
+                          <time>{wib(item.ts)} WIB</time>
+                          <span>{item.src}</span>
+                        </div>
+                        <strong>{item.title}</strong>
+                        <div className="tags">
+                          {item.tags
+                            .filter((tag) => filters.news !== 'TICKER' || tag !== ticker)
+                            .map((tag) => (
+                              <span key={tag}>{tag}</span>
+                            ))}
+                        </div>
+                      </>
+                    );
+                    return (
+                      <button
+                        className="news-item"
+                        key={item.link}
+                        onClick={() => setArticle(item)}
+                      >
+                        {body}
+                      </button>
+                    );
+                  })
+                ) : (
+                  <Empty>No news in this view</Empty>
+                )}
+              </>
+            )}
+          </Availability>
+        </Scroll>
+      )}
       {article && (
         <aside className="reader" aria-label="Article reader">
           <header>
+            <button onClick={() => setArticle(null)}>← Back</button>
             <span>{article.src}</span>
             <time>{wib(article.ts)} WIB</time>
             <nav>
@@ -144,9 +130,11 @@ export function NewsPane() {
           <div className="reader-body" key={article.link}>
             <h1>{article.title}</h1>
             <div className="tags">
-              {article.tags.map((tag) => (
-                <TickerLink key={tag} ticker={tag} />
-              ))}
+              {article.tags
+                .filter((tag) => filters.news !== 'TICKER' || tag !== ticker)
+                .map((tag) => (
+                  <TickerLink key={tag} ticker={tag} />
+                ))}
             </div>
             {article.sum ? <p>{article.sum}</p> : <Empty>Summary unavailable</Empty>}
           </div>
