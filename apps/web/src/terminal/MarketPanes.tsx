@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import type { Feed, Stock } from '../data';
 import { nf, short, signed, dateText } from '../ticker/format';
 import { useTerminal } from './state';
@@ -17,11 +17,41 @@ export function WatchlistPane() {
         <QuoteTable stocks={stocks} selected={ticker} />
       ) : (
         <Empty>
-          No pinned stocks. Pin stocks from <a href="/">the watchlist</a>.
+          No pinned stocks. <PinButton ticker={ticker} showTicker /> or use ☆ in MOV and SIG.
         </Empty>
       )}
     </Scroll>
   );
+}
+export function PinButton({
+  ticker,
+  showTicker = false,
+}: {
+  ticker: string;
+  showTicker?: boolean;
+}) {
+  const { pins, togglePin } = useTerminal();
+  const pinned = pins.includes(ticker);
+  const label = `${pinned ? 'Unpin' : 'Pin'} ${ticker}`;
+  return (
+    <button
+      className="pin-button"
+      aria-label={label}
+      aria-pressed={pinned}
+      title={label}
+      onClick={() => togglePin(ticker)}
+    >
+      {showTicker ? label : pinned ? '★' : '☆'}
+    </button>
+  );
+}
+function selectRow(
+  event: MouseEvent<HTMLTableRowElement>,
+  ticker: string,
+  setTicker: (ticker: string) => void,
+) {
+  if (event.target instanceof Element && event.target.closest('a,button')) return;
+  setTicker(ticker);
 }
 function QuoteTable({
   stocks,
@@ -32,6 +62,7 @@ function QuoteTable({
   selected: string;
   foreign?: boolean;
 }) {
+  const { setTicker } = useTerminal();
   return (
     <table>
       <thead>
@@ -44,8 +75,13 @@ function QuoteTable({
       </thead>
       <tbody>
         {stocks.map((stock) => (
-          <tr key={stock.ticker} className={stock.ticker === selected ? 'on' : ''}>
-            <td>
+          <tr
+            key={stock.ticker}
+            className={`ticker-row${stock.ticker === selected ? ' on' : ''}`}
+            onClick={(event) => selectRow(event, stock.ticker, setTicker)}
+          >
+            <td className="quote-ticker">
+              <PinButton ticker={stock.ticker} />
               <TickerLink ticker={stock.ticker} />
             </td>
             <td>{nf(stock.close)}</td>
@@ -65,6 +101,7 @@ function QuoteTable({
 export function MoversPane() {
   const { data, filters, filter, ticker } = useTerminal();
   const foreign = filters.mov === 'F BUY' || filters.mov === 'F SELL';
+  const date = foreign ? data.health.prices : data.summary.date;
   const quotes = new Map(data.stocks.map((stock) => [stock.ticker, stock]));
   const stocks = foreign
     ? [...data.stocks]
@@ -90,20 +127,28 @@ export function MoversPane() {
           label="Movers"
           values={['GAIN', 'LOSE', 'VALUE', 'F BUY', 'F SELL']}
           value={filters.mov}
-          onChange={(value) => filter('mov', value)}
+          onChange={(value) => {
+            filter('mov', value);
+            if (value === 'F BUY' || value === 'F SELL') filter('period', '1d');
+          }}
         />
-        <Segments
-          label="Mover period"
-          values={['1d', '3d', '5d']}
-          value={filters.period}
-          onChange={(value) => filter('period', value)}
-        />
+        <div className="seg" role="group" aria-label="Mover period">
+          {(['1d', '3d', '5d'] as const).map((period) => (
+            <button
+              key={period}
+              disabled={foreign && period !== '1d'}
+              aria-pressed={period === (foreign ? '1d' : filters.period)}
+              onClick={() => filter('period', period)}
+            >
+              {period}
+            </button>
+          ))}
+        </div>
       </div>
       <Scroll reset={`${filters.mov}:${filters.period}`}>
-        {foreign && filters.period !== '1d' && (
-          <Empty>Foreign flow is available for 1D only.</Empty>
-        )}
-        <div className="publication">{foreign ? data.health.prices : data.summary.date}</div>
+        <div className="publication">
+          {date ? `Session ending ${dateText(date)}` : 'Session date unavailable'}
+        </div>
         <QuoteTable stocks={stocks.slice(0, 30)} selected={ticker} foreign={foreign} />
       </Scroll>
     </>
@@ -151,9 +196,13 @@ function SignalDetail({ row }: { row: Feed[number] }) {
   }
 }
 export function SignalsPane() {
-  const { data, filters, filter, ticker } = useTerminal();
+  const { data, filters, filter, ticker, setTicker } = useTerminal();
   const rows = data.feed.filter(
-    (row) => filters.sig === 'ALL' || signalNames[row.kind] === filters.sig,
+    (row) =>
+      (filters.sig === 'ALL' || signalNames[row.kind] === filters.sig) &&
+      (row.kind !== 'five_pct_change' ||
+        row.numbers.pct_after === null ||
+        nf(row.numbers.pct_before, 2) !== nf(row.numbers.pct_after, 2)),
   );
   return (
     <>
@@ -172,10 +221,12 @@ export function SignalsPane() {
               {rows.map((row, i) => (
                 <tr
                   key={`${row.ticker}:${row.kind}:${row.date}:${i}`}
-                  className={row.ticker === ticker ? 'on' : ''}
+                  className={`ticker-row${row.ticker === ticker ? ' on' : ''}`}
+                  onClick={(event) => selectRow(event, row.ticker, setTicker)}
                 >
-                  <td className="mut">{dateText(row.date, false)}</td>
-                  <td>
+                  <td className="mut">{dateText(row.date)}</td>
+                  <td className="quote-ticker">
+                    <PinButton ticker={row.ticker} />
                     <TickerLink ticker={row.ticker} />
                   </td>
                   <td className="accent">{signalNames[row.kind]}</td>
@@ -194,6 +245,11 @@ export function SignalsPane() {
   );
 }
 type Tile = { stock: Stock; x: number; y: number; w: number; h: number };
+function heatColour(change: number) {
+  const strength = Math.min(1, Math.abs(change) / 4) ** 0.8;
+  const end = change >= 0 ? [20, 122, 117] : [170, 62, 44];
+  return `rgb(${[43, 48, 46].map((n, i) => Math.round(n + ((end[i] ?? 0) - n) * strength)).join(',')})`;
+}
 function treemap(stocks: Stock[], width: number, height: number): Tile[] {
   const total = stocks.reduce((sum, stock) => sum + stock.value, 0);
   if (!total || !width || !height) return [];
@@ -268,32 +324,38 @@ export function HeatmapPane() {
     .sort((a, b) => b.value - a.value)
     .slice(0, 60);
   return (
-    <div ref={ref} className="heat">
-      {treemap(stocks, size.width, size.height).map((tile) => {
-        const change = tile.stock.change_pct ?? 0;
-        const strength = Math.min(1, Math.abs(change) / 4) ** 0.8;
-        const end = change >= 0 ? [20, 122, 117] : [170, 62, 44];
-        const background = `rgb(${[43, 48, 46].map((n, i) => Math.round(n + ((end[i] ?? 0) - n) * strength)).join(',')})`;
-        return (
-          <button
-            key={tile.stock.ticker}
-            className={`tile${ticker === tile.stock.ticker ? ' on' : ''}`}
-            aria-label={`${tile.stock.ticker} ${percent(tile.stock.change_pct)}`}
-            title={`${tile.stock.name}\n${nf(tile.stock.close)} IDR\n${nf(tile.stock.value)} IDR value`}
-            onClick={() => setTicker(tile.stock.ticker)}
-            style={{
-              left: tile.x + 1,
-              top: tile.y + 1,
-              width: Math.max(0, tile.w - 2),
-              height: Math.max(0, tile.h - 2),
-              background,
-            }}
-          >
-            {tile.w > 34 && tile.h > 18 && <b>{tile.stock.ticker}</b>}
-            {tile.w > 46 && tile.h > 34 && <span>{percent(tile.stock.change_pct)}</span>}
-          </button>
-        );
-      })}
-    </div>
+    <>
+      <div className="heat-scale" aria-label="Daily price change colour scale">
+        <span className="mut">CHG</span>
+        {[-4, -2, 0, 2, 4].map((change) => (
+          <span key={change} style={{ background: heatColour(change) }}>
+            {change === -4 ? '≤−4%' : change === 4 ? '≥+4%' : `${signed(change, nf)}%`}
+          </span>
+        ))}
+      </div>
+      <div ref={ref} className="heat">
+        {treemap(stocks, size.width, size.height).map((tile) => {
+          return (
+            <button
+              key={tile.stock.ticker}
+              className={`tile${ticker === tile.stock.ticker ? ' on' : ''}`}
+              aria-label={`${tile.stock.ticker} ${tile.stock.name}, change ${percent(tile.stock.change_pct)}, last ${nf(tile.stock.close)} IDR, traded value ${nf(tile.stock.value)} IDR`}
+              title={`${tile.stock.name}\n${nf(tile.stock.close)} IDR\n${nf(tile.stock.value)} IDR value`}
+              onClick={() => setTicker(tile.stock.ticker)}
+              style={{
+                left: tile.x + 1,
+                top: tile.y + 1,
+                width: Math.max(0, tile.w - 2),
+                height: Math.max(0, tile.h - 2),
+                background: heatColour(tile.stock.change_pct ?? 0),
+              }}
+            >
+              {tile.w > 34 && tile.h > 18 && <b>{tile.stock.ticker}</b>}
+              {tile.w > 46 && tile.h > 34 && <span>{percent(tile.stock.change_pct)}</span>}
+            </button>
+          );
+        })}
+      </div>
+    </>
   );
 }

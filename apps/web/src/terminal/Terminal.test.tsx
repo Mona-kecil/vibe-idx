@@ -319,6 +319,50 @@ describe('React terminal', () => {
       ).toBe('ALL');
     },
   );
+  it('pins the current ticker in the empty watchlist and can unpin it', async () => {
+    await render();
+    expect(host.querySelector('[data-slot="a"] a[href="/"]')).toBeNull();
+    await click('[data-slot="a"] [aria-label="Pin BREN"]');
+    expect(JSON.parse(window.localStorage.getItem('vibe-idx:watchlist') ?? '[]')).toEqual(['BREN']);
+    expect(host.querySelector('[data-slot="a"] a.ticker')?.textContent).toBe('BREN');
+    await click('[data-slot="a"] [aria-label="Unpin BREN"]');
+    expect(JSON.parse(window.localStorage.getItem('vibe-idx:watchlist') ?? '[]')).toEqual([]);
+    expect(host.querySelector('[data-slot="a"] a.ticker')).toBeNull();
+  });
+  it('uses the entire mover row to select a ticker and keeps links and pin controls independent', async () => {
+    await render();
+    await click('[aria-label="Movers"] button:nth-child(4)');
+    await click('[data-slot="d"] [aria-label="Pin BBCA"]');
+    expect(window.location.search).toContain('t=BREN');
+    expect(host.querySelector('[data-slot="a"] a.ticker')?.textContent).toBe('BBCA');
+    await act(async () => {
+      host
+        .querySelector('[data-slot="d"] tbody tr:nth-child(2) td:last-child')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    expect(window.location.search).toContain('t=BBCA');
+    const link = host.querySelector('[data-slot="d"] tbody tr:nth-child(2) a.ticker');
+    const modifiedClick = new MouseEvent('click', {
+      bubbles: true,
+      cancelable: true,
+      ctrlKey: true,
+    });
+    await act(async () => link?.dispatchEvent(modifiedClick));
+    expect(modifiedClick.defaultPrevented).toBe(false);
+  });
+  it('limits foreign movers to one session and restores longer periods for price movers', async () => {
+    await render();
+    await click('[aria-label="Mover period"] button:nth-child(2)');
+    await click('[aria-label="Movers"] button:nth-child(4)');
+    expect(
+      button('[aria-label="Mover period"] button:nth-child(1)').getAttribute('aria-pressed'),
+    ).toBe('true');
+    expect(button('[aria-label="Mover period"] button:nth-child(2)').disabled).toBe(true);
+    expect(button('[aria-label="Mover period"] button:nth-child(3)').disabled).toBe(true);
+    expect(host.textContent).not.toContain('Foreign flow is available for 1D only.');
+    await click('[aria-label="Movers"] button:nth-child(1)');
+    expect(button('[aria-label="Mover period"] button:nth-child(2)').disabled).toBe(false);
+  });
   it('builds cumulative net flows from actual dates and selected broker types', () => {
     const regular = days.filter((day) => day.board === 'regular');
     const flow = cumulativeFlows(regular, ['2026-11-06', '2026-11-09'], 'VALUE', 'ALL');

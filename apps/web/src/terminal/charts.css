@@ -30,6 +30,7 @@
 }
 .terminal-page .selection-band {
   position: absolute;
+  z-index: 3;
   top: 0;
   bottom: 26px;
   pointer-events: none;
