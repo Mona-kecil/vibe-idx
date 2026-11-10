@@ -45,8 +45,7 @@ export async function compareBrokers(data: string) {
       SELECT date, board FROM coverage d WHERE broker IS NULL AND listed
       AND NOT EXISTS (SELECT 1 FROM coverage t WHERE t.date=d.date AND t.board=d.board AND t.broker IS NOT NULL AND NOT coalesce(t.complete, false))
       AND NOT EXISTS (
-        SELECT 1 FROM (SELECT date,ticker FROM prices WHERE volume > 0
-          UNION SELECT date,ticker FROM brokers) tickers
+        SELECT 1 FROM (SELECT date,ticker FROM prices WHERE volume > 0) tickers
         WHERE tickers.date=d.date AND NOT EXISTS (
           SELECT 1 FROM pairs p WHERE p.date=tickers.date AND p.ticker=tickers.ticker AND p.board=d.board AND p.complete))
       AND NOT EXISTS (SELECT 1 FROM pairs p WHERE p.date=d.date AND p.board=d.board AND NOT coalesce(p.complete, false))
