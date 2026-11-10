@@ -1,5 +1,11 @@
 import { useEffect, useRef, useState, type PointerEvent } from 'react';
-import { AreaSeries, CandlestickSeries, HistogramSeries, type IChartApi } from 'lightweight-charts';
+import {
+  AreaSeries,
+  CandlestickSeries,
+  HistogramSeries,
+  createTextWatermark,
+  type IChartApi,
+} from 'lightweight-charts';
 import type { Ticker } from '../data';
 import { nf, short, dateText, signed } from '../ticker/format';
 import { bounds } from '../ticker/logic';
@@ -59,6 +65,7 @@ function PriceHistory({ data }: { data: Ticker }) {
   useEffect(() => {
     if (!host.current) return;
     const api = terminalChart(host.current);
+    api.timeScale().applyOptions({ lockVisibleTimeRangeOnResize: true });
     chart.current = api;
     const area = api.addSeries(AreaSeries, {
       lineColor: '#d9ded8',
@@ -115,7 +122,22 @@ function PriceHistory({ data }: { data: Ticker }) {
         color: p.net_foreign >= 0 ? '#22a6a0' : '#e4573f',
       })),
     );
-    api.panes().forEach((pane, i) => pane.setStretchFactor(i === 0 ? 4 : 1));
+    api.panes().forEach((pane, i) => {
+      pane.setStretchFactor(i === 0 ? 4 : 1);
+      if (i > 0)
+        createTextWatermark(pane, {
+          horzAlign: 'left',
+          vertAlign: 'top',
+          lines: [
+            {
+              text: i === 1 ? 'VOLUME LOT' : 'FOREIGN NET EST. IDR',
+              color: '#8d9790',
+              fontSize: 10,
+              fontFamily: 'JetBrains Mono, monospace',
+            },
+          ],
+        });
+    });
     redraw.current = () => {
       const b = bounds(current.current.selection);
       const a = b && api.timeScale().timeToCoordinate(b.start),
@@ -229,14 +251,20 @@ function PriceHistory({ data }: { data: Ticker }) {
         onPointerUp={finish}
         onPointerCancel={finish}
       >
-        <div className="chart-host" ref={host} data-series={candles ? 'candles' : 'area'} />
+        <div
+          className="chart-host"
+          ref={host}
+          role="img"
+          aria-label="Price history, volume in lots and estimated foreign net flow in IDR"
+          data-series={candles ? 'candles' : 'area'}
+        />
         {band && <div className="selection-band" style={band} />}
       </div>
       <div className="chart-foot">
         <span>
           {b && (
             <>
-              {b.start} to {b.end}{' '}
+              {dateText(b.start)} to {dateText(b.end)}{' '}
               <button aria-label="Clear chart range" onClick={() => select(null)}>
                 ×
               </button>

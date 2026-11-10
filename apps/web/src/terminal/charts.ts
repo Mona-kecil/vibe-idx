@@ -16,7 +16,7 @@ export function terminalChart(host: HTMLElement) {
       vertLine: { color: '#5b6560', labelBackgroundColor: '#232a27' },
       horzLine: { color: '#5b6560', labelBackgroundColor: '#232a27' },
     },
-    rightPriceScale: { borderColor: '#222826' },
+    rightPriceScale: { borderColor: '#222826', entireTextOnly: true },
     timeScale: { borderColor: '#222826', rightOffset: 4 },
   });
 }
