@@ -12,6 +12,9 @@
   --up: #22a6a0;
   --down: #e4573f;
   --accent: #d6b25e;
+  --broker-local: #b48cf2;
+  --broker-gov: #3fb96e;
+  --broker-foreign: #ef5350;
   --font: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
   background: var(--bg);
   color: var(--ink);

@@ -34,6 +34,7 @@ export async function publishBrokerActivity(data: string, out: string, r2: R2) {
       await db.runAndReadAll('SELECT DISTINCT ticker FROM activity ORDER BY ticker')
     ).getRowObjectsJson();
     await mkdir(join(out, 'broker'), { recursive: true });
+    const changed: string[] = [];
     for (const row of tickers) {
       const ticker = z
         .string()
@@ -57,8 +58,18 @@ export async function publishBrokerActivity(data: string, out: string, r2: R2) {
       const file = join(out, 'broker', `${ticker}.json`);
       await writeFile(file + '.tmp', body);
       await rename(file + '.tmp', file);
-      await r2.put(`site/broker/${ticker}.json.gz`, gzipSync(await readFile(file)));
+      changed.push(ticker);
     }
+    // One at a time, a day's new data (about 950 tickers) took over 30 minutes to upload.
+    await Promise.all(
+      Array.from({ length: 16 }, async () => {
+        for (let ticker = changed.shift(); ticker; ticker = changed.shift())
+          await r2.put(
+            `site/broker/${ticker}.json.gz`,
+            gzipSync(await readFile(join(out, 'broker', `${ticker}.json`))),
+          );
+      }),
+    );
     // Commit hashes only after every upload, so an interrupted publication retries on the next run.
     await r2.put(manifestKey, Buffer.from(JSON.stringify(next)));
   } finally {
