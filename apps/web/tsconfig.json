@@ -19,5 +19,5 @@
     "types": ["node", "vite-plus/client", "vite-plus/test"],
     "useDefineForClassFields": true
   },
-  "include": ["src", "api", "vite.config.ts", "worker.ts", "worker-sentry.ts"]
+  "include": ["src", "api", "dev", "vite.config.ts", "worker.ts", "worker-sentry.ts"]
 }

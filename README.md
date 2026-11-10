@@ -32,6 +32,13 @@ pnpm dlx vercel dev --listen 5173 --cwd apps/web
 
 Open `http://localhost:5173`. Public pages read the published R2 JSON. The broker endpoint reads private R2 after verifying the WorkOS session. `pnpm --filter @vibe-idx/web dev` runs only the frontend and its public-data proxy.
 
+To work on the signed-in panes without WorkOS, copy the private site files once and start the fixture server. It signs every visitor in and serves `/api/brokers` from `~/.cache/vibe-idx/fixtures`, or from `VIBE_FIXTURES` when set.
+
+```sh
+apps/web/dev/pull-fixtures.sh 2026-11-10   # broker histories, plus ticks for each date given
+pnpm --filter @vibe-idx/web dev:fixtures
+```
+
 ## Run checks
 
 ```sh
