@@ -8,6 +8,8 @@ import './publication-panes.css';
 const perShare = ({ value, currency }: { value: number; currency: string }) =>
   `${new Intl.NumberFormat('en-US', { maximumFractionDigits: 4 }).format(value)} ${currency} per share`;
 
+const publicationDate = (value: string) =>
+  new Date(/T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?$/.test(value) ? `${value}+07:00` : value);
 const wib = (value: string, options: Intl.DateTimeFormatOptions = {}) =>
   new Intl.DateTimeFormat('en-GB', {
     timeZone: 'Asia/Jakarta',
@@ -17,10 +19,32 @@ const wib = (value: string, options: Intl.DateTimeFormatOptions = {}) =>
     minute: '2-digit',
     ...options,
   })
-    .format(new Date(/T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?$/.test(value) ? `${value}+07:00` : value))
+    .format(publicationDate(value))
     .replace('Sept', 'Sep');
 const calendarDate = (value: string) =>
-  new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(new Date(value));
+  new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(publicationDate(value));
+function usePublicationTimeline(data: unknown, filter: string) {
+  const scroll = useRef<HTMLDivElement>(null);
+  const now = Date.now();
+  const today = calendarDate(new Date(now).toISOString());
+  const isPast = (date: string, dateOnly = false) =>
+    dateOnly ? calendarDate(date) < today : Date.parse(date) < now;
+  useEffect(() => {
+    const body = scroll.current;
+    const event = body?.querySelector('[data-upcoming="true"]');
+    const next = event?.previousElementSibling?.classList.contains('day')
+      ? event.previousElementSibling
+      : event;
+    if (body)
+      body.scrollTop = next
+        ? next.getBoundingClientRect().top -
+          body.getBoundingClientRect().top +
+          body.scrollTop -
+          (body.querySelector('thead')?.getBoundingClientRect().height ?? 0)
+        : body.scrollHeight;
+  }, [data, filter]);
+  return { scroll, isPast };
+}
 export function NewsPane() {
   const { publications, filters, filter, ticker, tickerNews } = useTerminal();
   const [article, setArticle] = useState<Headline | null>(null);
@@ -151,33 +175,15 @@ export function NewsPane() {
 export function CalendarPane() {
   const { publications, filters, filter } = useTerminal();
   const [open, setOpen] = useState<string | null>(null);
-  const scroll = useRef<HTMLDivElement>(null);
   const data = publications.calendar.kind === 'ready' ? publications.calendar.data : null;
+  const { scroll, isPast } = usePublicationTimeline(data, filters.cal);
   const rows = (data?.cal ?? [])
     .filter(
       (item) =>
         filters.cal === 'ALL' || (filters.cal === 'HIGH' ? item.imp === 3 : item.c === 'ID'),
     )
     .sort((a, b) => a.ts.localeCompare(b.ts));
-  const now = Date.now();
-  const today = calendarDate(new Date(now).toISOString());
-  const upcoming = rows.find((item) =>
-    item.dateOnly ? calendarDate(item.ts) >= today : Date.parse(item.ts) >= now,
-  );
-  useEffect(() => {
-    const body = scroll.current;
-    const event = body?.querySelector('[data-upcoming="true"]');
-    const next = event?.previousElementSibling?.classList.contains('day')
-      ? event.previousElementSibling
-      : event;
-    if (body)
-      body.scrollTop = next
-        ? next.getBoundingClientRect().top -
-          body.getBoundingClientRect().top +
-          body.scrollTop -
-          (body.querySelector('thead')?.getBoundingClientRect().height ?? 0)
-        : body.scrollHeight;
-  }, [data, filters.cal]);
+  const upcoming = rows.find((item) => !isPast(item.ts, item.dateOnly));
   return (
     <>
       <div className="sub">
@@ -221,15 +227,7 @@ export function CalendarPane() {
                             )}
                             <tr
                               data-upcoming={item === upcoming}
-                              className={
-                                (
-                                  item.dateOnly
-                                    ? calendarDate(item.ts) < today
-                                    : Date.parse(item.ts) < now
-                                )
-                                  ? 'past'
-                                  : ''
-                              }
+                              className={isPast(item.ts, item.dateOnly) ? 'past' : ''}
                             >
                               <td>
                                 {!item.dateOnly &&
@@ -324,6 +322,20 @@ const steps = {
 export function ActionsPane() {
   const { publications, filters, filter, ticker, data: market } = useTerminal();
   const [open, setOpen] = useState<string | null>(null);
+  const data = publications.actions.kind === 'ready' ? publications.actions.data : null;
+  const { scroll, isPast } = usePublicationTimeline(
+    data,
+    `${filters.ca}:${filters.ca === 'TICKER' ? ticker : ''}`,
+  );
+  const rows = (data?.actions ?? [])
+    .filter(
+      (item) =>
+        filters.ca === 'ALL' ||
+        (filters.ca === 'TICKER' ? item.ticker === ticker : item.kind === filters.ca),
+    )
+    .flatMap((action) => action.steps.map((step) => ({ action, ...step })))
+    .sort((a, b) => a.date.localeCompare(b.date));
+  const upcoming = rows.find((row) => !isPast(row.date, true));
   return (
     <>
       <div className="sub">
@@ -334,17 +346,9 @@ export function ActionsPane() {
           onChange={(value) => filter('ca', value)}
         />
       </div>
-      <Scroll reset={`${filters.ca}:${filters.ca === 'TICKER' ? ticker : ''}`}>
+      <div className="pb" ref={scroll}>
         <Availability resource={publications.actions} name="Corporate actions">
-          {(data) => {
-            const rows = data.actions
-              .filter(
-                (item) =>
-                  filters.ca === 'ALL' ||
-                  (filters.ca === 'TICKER' ? item.ticker === ticker : item.kind === filters.ca),
-              )
-              .flatMap((action) => action.steps.map((step) => ({ action, ...step })))
-              .sort((a, b) => a.date.localeCompare(b.date));
+          {() => {
             let day = '';
             return (
               <>
@@ -363,7 +367,10 @@ export function ActionsPane() {
                                 <td colSpan={3}>{dateText(row.date)}</td>
                               </tr>
                             )}
-                            <tr className={row.action.ticker === ticker ? 'on' : ''}>
+                            <tr
+                              data-upcoming={row === upcoming}
+                              className={`${row.action.ticker === ticker ? 'on' : ''}${isPast(row.date, true) ? ' past' : ''}`}
+                            >
                               <td className="accent">{steps[row.step]}</td>
                               <td>
                                 <TickerLink ticker={row.action.ticker} />
@@ -410,7 +417,7 @@ export function ActionsPane() {
             );
           }}
         </Availability>
-      </Scroll>
+      </div>
     </>
   );
 }

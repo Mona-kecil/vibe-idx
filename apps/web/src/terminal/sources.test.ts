@@ -284,6 +284,9 @@ describe('publication pane interactions', () => {
   beforeEach(() => {
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
     context.filters.news = 'ID';
+    context.filters.ca = 'ALL';
+    context.filters.cal = 'ALL';
+    context.ticker = 'BBRI';
     context.setTicker.mockClear();
     host = document.createElement('div');
     document.body.append(host);
@@ -393,6 +396,50 @@ describe('publication pane interactions', () => {
     await click('[data-upcoming="true"] button');
     expect(host.querySelector('.details')?.textContent).toContain('Forecast5%');
     expect(host.querySelector('.details')?.textContent).toContain('Previous4%');
+  });
+  it('keeps today’s action steps upcoming in WIB and updates the target for ticker filters', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-11-10T18:00:00Z'));
+    context.publications.actions = {
+      kind: 'ready',
+      data: {
+        actions: [
+          {
+            ticker: 'BBCA',
+            kind: 'DIV',
+            label: 'Dividend',
+            amount: null,
+            steps: [
+              { step: 'cum', date: '2026-11-10T23:30' },
+              { step: 'ex', date: '2026-11-11T00:30' },
+              { step: 'pay', date: '2026-11-12' },
+            ],
+          },
+          {
+            ticker: 'BBRI',
+            kind: 'RUPS',
+            label: 'Meeting',
+            amount: null,
+            steps: [{ step: 'meeting', date: '2026-11-12' }],
+          },
+        ],
+      },
+    };
+    await act(async () => root.render(createElement(ActionsPane)));
+    expect(host.querySelectorAll('.actions .past')).toHaveLength(1);
+    expect(host.querySelector('.past')?.textContent).toContain('CUMBBCA');
+    expect(host.querySelector('[data-upcoming="true"]')?.textContent).toContain('EXBBCA');
+    context.filters.ca = 'TICKER';
+    await act(async () => root.render(createElement(ActionsPane)));
+    expect(host.querySelectorAll('.actions .ticker')).toHaveLength(1);
+    expect(host.querySelector('[data-upcoming="true"]')?.textContent).toContain('RUPSBBRI');
+    context.ticker = 'BBCA';
+    await act(async () => root.render(createElement(ActionsPane)));
+    expect(host.querySelectorAll('.actions .ticker')).toHaveLength(3);
+    expect(host.querySelector('[data-upcoming="true"]')?.textContent).toContain('EXBBCA');
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-11-13T06:00:00Z'));
+    await act(async () => root.render(createElement(ActionsPane)));
+    expect(host.querySelectorAll('.actions .past')).toHaveLength(3);
+    expect(host.querySelector('[data-upcoming="true"]')).toBeNull();
   });
   it('formats risk dates and exposes full flag meanings without hover', async () => {
     context.publications.risks = {
