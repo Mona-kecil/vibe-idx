@@ -34,3 +34,16 @@ jobs:
         run: mkdir -p "$DATA/raw" && aws s3 sync s3://vibe-idx-private/parquet "$DATA/parquet" --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
       - name: Collect private broker summaries
         run: pnpm --filter @vibe-idx/pipeline brokers -- --data "$DATA" --token "$DATA/stockbit.json" --out "$PRIVATE_OUT"
+      - name: Compare broker collectors
+        if: ${{ always() }}
+        run: |
+          status=0
+          pnpm --silent --filter @vibe-idx/pipeline compare-brokers -- --data "$DATA" > /tmp/broker-comparison.json || status=$?
+          node --input-type=module -e '
+            import fs from "node:fs";
+            const s = JSON.parse(fs.readFileSync("/tmp/broker-comparison.json", "utf8"));
+            const totals = s.dates.reduce((a, d) => ({matched:a.matched+d.matched, mismatched:a.mismatched+d.mismatched, only:a.only+d.only_in_activity+d.only_in_brokers}), {matched:0,mismatched:0,only:0});
+            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `Broker comparison: ${s.comparableDays} complete day/boards, ${totals.matched} matched, ${totals.mismatched} mismatched, ${totals.only} one-sided rows. Volume exceptions: ${s.volumeMismatches.length}.\n`);
+          '
+          cat /tmp/broker-comparison.json
+          exit "$status"

@@ -8,6 +8,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 import { BrokerRunError, brokers, createR2 } from './brokers';
 import type { R2 } from './brokers';
 
+vi.mock('./brokerActivity', () => ({
+  brokerActivity: async () => ({ completed: 0, pending: 0, failed: [] }),
+}));
+
 vi.mock('node:timers/promises', () => ({
   setTimeout: async (ms: number) => {
     vi.setSystemTime(Date.now() + ms);
@@ -290,7 +294,12 @@ describe('private broker pipeline', () => {
       ),
     );
     const options = { ...f.options, fetcher: net.fetcher };
-    expect(await brokers(options)).toEqual({ fetched: 9, completed: 9, pending: 0, failed: [] });
+    expect(await brokers(options)).toMatchObject({
+      fetched: 9,
+      completed: 9,
+      pending: 0,
+      failed: [],
+    });
     expect(net.calls.filter((call) => call === '/login/refresh')).toHaveLength(1);
     expect(net.calls.slice(1).sort()).toEqual(
       [...['AAA', 'BBB'].map((ticker) => [ticker, day] as const), ['AAA', previous] as const]
@@ -311,7 +320,12 @@ describe('private broker pipeline', () => {
     await f.restart();
     f.events.length = 0;
     net.calls.length = 0;
-    expect(await brokers(options)).toEqual({ fetched: 0, completed: 0, pending: 0, failed: [] });
+    expect(await brokers(options)).toMatchObject({
+      fetched: 0,
+      completed: 0,
+      pending: 0,
+      failed: [],
+    });
     expect(net.calls).toEqual([]);
     expect(f.events.filter((e) => e.startsWith('put site/broker/'))).toEqual([]);
   });
@@ -422,7 +436,7 @@ describe('private broker pipeline', () => {
       deadline: Date.now() + 200,
       fetcher: net.fetcher,
     });
-    expect(result).toEqual({ fetched: 2, completed: 2, pending: 7, failed: [] });
+    expect(result).toMatchObject({ fetched: 2, completed: 2, pending: 7, failed: [] });
     expect(net.calls).toEqual(['/login/refresh', `AAA/${day}/cash`, `AAA/${day}/negotiation`]);
     expect((await f.coverage()).filter((row) => row.complete)).toEqual([
       { ticker: 'AAA', date: day, board: 'cash', complete: true },
@@ -448,7 +462,7 @@ describe('private broker pipeline', () => {
       const log = vi.spyOn(console, 'error').mockImplementation(() => {});
       const result = await brokers({ ...f.options, fetcher: net.fetcher });
       log.mockRestore();
-      expect(result).toEqual({ fetched: 3, completed: 3, pending: 0, failed: [] });
+      expect(result).toMatchObject({ fetched: 3, completed: 3, pending: 0, failed: [] });
       expect(net.calls.filter((call) => call === `AAA/${day}/cash`)).toHaveLength(failures + 1);
       expect(net.starts.slice(1, failures + 2)).toEqual(
         [0, 1000, 3000].slice(0, failures + 1).map((ms) => start + ms),
@@ -469,7 +483,7 @@ describe('private broker pipeline', () => {
     });
     const deadline = Date.now() + 2000;
     const log = vi.spyOn(console, 'error').mockImplementation(() => {});
-    expect(await brokers({ ...f.options, deadline, fetcher: net.fetcher })).toEqual({
+    expect(await brokers({ ...f.options, deadline, fetcher: net.fetcher })).toMatchObject({
       fetched: 5,
       completed: 5,
       pending: 1,
@@ -611,8 +625,14 @@ describe('private broker pipeline', () => {
       f.data,
       tickers.map((ticker) => ({ ticker, date: day, volume: 1 })),
     );
+    let rejected!: () => void;
+    const failed = new Promise<void>((resolve) => (rejected = resolve));
     const net = network(f.token, async (ticker, date) => {
-      if (ticker === 'T00') return new Response('', { status: 429 });
+      if (ticker === 'T00') {
+        rejected();
+        return new Response('', { status: 429 });
+      }
+      await failed;
       await new Promise((resolve) => setImmediate(resolve));
       return Response.json(summary(ticker, date, true));
     });

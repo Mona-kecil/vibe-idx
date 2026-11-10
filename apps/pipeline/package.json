@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "brokers": "tsx brokers.ts",
+    "compare-brokers": "tsx compare-brokers.ts",
     "ingest": "tsx ingest.ts",
     "test": "CI=true vp test"
   },

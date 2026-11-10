@@ -11,6 +11,8 @@ import type { DuckDBValue } from '@duckdb/node-api';
 import { AwsClient } from 'aws4fetch';
 import { date } from './lib/rows';
 import { accumulation, marketCalendar } from './sql';
+import { brokerActivity } from './brokerActivity';
+import type { ActivitySummary } from './brokerActivity';
 
 const literal = (s: string) => `'${s.replaceAll("'", "''")}'`;
 const headers = {
@@ -164,6 +166,7 @@ export function createR2({
 }
 
 type BrokerSummary = {
+  activity?: ActivitySummary;
   fetched: number;
   completed: number;
   pending: number;
@@ -379,6 +382,7 @@ export async function brokers({
         return r.json;
       });
     }
+    let activityRun: Promise<ActivitySummary> | undefined;
     try {
       await db.run(`CREATE TABLE brokers (
       date DATE, ticker VARCHAR, board VARCHAR, side VARCHAR, broker VARCHAR, investor_type VARCHAR,
@@ -414,6 +418,29 @@ export async function brokers({
       WHERE EXISTS (SELECT 1 FROM brokers
         WHERE brokers.date = broker_pairs.date AND brokers.ticker = broker_pairs.ticker
           AND brokers.board = broker_pairs.board)`);
+      const activityDates = (
+        await query('SELECT DISTINCT date::VARCHAR date FROM traded ORDER BY date DESC')
+      ).map((r) => {
+        if (typeof r.date !== 'string' || date(r.date) !== r.date)
+          throw new Error('Invalid activity date');
+        return r.date;
+      });
+      activityRun = brokerActivity({
+        data,
+        dates: activityDates,
+        r2,
+        deadline,
+        request: async (url) => {
+          if (!(await (authentication ??= authenticate()))) return;
+          return fetcher(url, {
+            headers: { ...headers, Authorization: `Bearer ${access}` },
+            redirect: 'error',
+            signal: AbortSignal.timeout(60000),
+          });
+        },
+      });
+      // Observe failures immediately while the other phase finishes its checkpoint.
+      void activityRun.catch(() => {});
       const entries = (
         await query(
           `WITH activity AS (
@@ -550,15 +577,20 @@ export async function brokers({
       await writeFile(accumulationFile + '.tmp', `${(await output(accumulation))[0]}\n`);
       await rename(accumulationFile + '.tmp', accumulationFile);
       await r2.put('site/market-accumulation.json', await readFile(accumulationFile));
-      const summary = { fetched, completed, pending: entries.length - completed, failed };
-      if (failure || failed.length)
+      const activity = await activityRun;
+      const summary = { fetched, completed, pending: entries.length - completed, failed, activity };
+      if (failure || failed.length || activity.failed.length || activity.stopped)
         throw new BrokerRunError(
-          failure ? failure.message : `${failed.length} invalid broker pairs`,
+          failure
+            ? failure.message
+            : (activity.stopped ??
+                `${failed.length} invalid broker pairs, ${activity.failed.length} activity failures`),
           summary,
           { cause: failure },
         );
       return summary;
     } finally {
+      await activityRun?.catch(() => {});
       db.closeSync();
       instance.closeSync();
     }
