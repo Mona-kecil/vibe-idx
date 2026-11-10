@@ -16,73 +16,11 @@ import {
   type TickKind,
   type TickTrades,
 } from '../ticks';
-import { fetchTicks } from './sources';
+import { useSession, useTicks, type Loaded } from './tick-data';
 import { useTerminal } from './state';
 import { terminalChart } from './charts';
 import { Empty, Scroll, Segments, SignInPrompt } from './ui';
 import './tick-panes.css';
-
-type Loaded<K extends TickKind> = K extends 'book' ? TickBook : TickTrades;
-type TickState<K extends TickKind> =
-  | { kind: 'loading' }
-  | { kind: 'missing' }
-  | { kind: 'error'; message: string }
-  | { kind: 'ready'; data: Loaded<K> };
-
-// Past sessions never change, so every pane showing the same ticker and day shares one request.
-const cache = new Map<string, Promise<TickBook | TickTrades | null>>();
-
-/** Sessions the ticker traded in 2026, and the one the tick panes show. */
-function useSession() {
-  const { detail, tickDate, setTickDate } = useTerminal();
-  const dates = useMemo(
-    () =>
-      detail.kind === 'ready'
-        ? detail.data.prices.map((p) => p.date).filter((date) => date >= '2026-01-01')
-        : [],
-    [detail],
-  );
-  const date = tickDate && dates.includes(tickDate) ? tickDate : dates.at(-1);
-  return { dates, date, setTickDate };
-}
-
-function useTicks<K extends TickKind>(kind: K, date: string | undefined): TickState<K> {
-  const { ticker, session, getToken } = useTerminal();
-  const signedIn = session === 'signed-in';
-  const [state, setState] = useState<TickState<K>>({ kind: 'loading' });
-  useEffect(() => {
-    if (!signedIn || !date) return;
-    let current = true;
-    const key = `${ticker}:${date}:${kind}`;
-    setState({ kind: 'loading' });
-    let request = cache.get(key);
-    if (!request) {
-      request = getToken().then((token) => {
-        if (!token) throw new Error('Your session expired. Sign in again.');
-        return fetchTicks(ticker, date, kind, token);
-      });
-      cache.set(key, request);
-    }
-    request.then(
-      (data) => {
-        if (current)
-          setState(data ? { kind: 'ready', data: data as Loaded<K> } : { kind: 'missing' });
-      },
-      (error: unknown) => {
-        cache.delete(key);
-        if (current)
-          setState({
-            kind: 'error',
-            message: error instanceof Error ? error.message : 'Tick data is unavailable. Retry.',
-          });
-      },
-    );
-    return () => {
-      current = false;
-    };
-  }, [ticker, date, kind, signedIn, getToken]);
-  return state;
-}
 
 function SessionPicker() {
   const { dates, date, setTickDate } = useSession();
