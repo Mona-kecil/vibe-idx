@@ -1,4 +1,4 @@
-export async function report(dsnValue: string, source: string, failure: unknown) {
+export async function report(dsnValue: string | undefined, source: string, failure: unknown) {
   // Only our bounded error codes go out; upstream errors may embed credential-bearing URLs.
   const reason =
     failure instanceof Error &&
@@ -8,6 +8,7 @@ export async function report(dsnValue: string, source: string, failure: unknown)
       ? failure.message
       : 'Source parsing or publication failed';
   console.error(JSON.stringify({ source, reason }));
+  if (!dsnValue) return;
   try {
     const dsn = new URL(dsnValue),
       event_id = crypto.randomUUID().replaceAll('-', '');

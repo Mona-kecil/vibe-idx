@@ -2,9 +2,11 @@ import * as Sentry from '@sentry/node';
 
 export function startSentry() {
   const env = process.env;
+  // Sentry.init reads SENTRY_DSN from the environment on its own, so local runs must skip it.
+  if (env.GITHUB_ACTIONS !== 'true') return;
   Sentry.init({
     dsn: env.SENTRY_DSN,
-    environment: env.GITHUB_ACTIONS ? 'production' : 'local',
+    environment: 'production',
     release: env.GITHUB_SHA,
     initialScope: {
       tags: {

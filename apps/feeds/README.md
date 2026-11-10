@@ -29,6 +29,6 @@ For live checks, run `pnpm --filter @vibe-idx/feeds verify:live /path/to/private
 
 ## Production configuration
 
-The workflow reads `R2_ACCOUNT_ID` from the repository variables and `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `BPS_KEY`, and `SENTRY_DSN` from repository secrets. The same environment variables configure local collection. Running `collect` writes directly to the public bucket. Use `verify:live` for checks that must stay local.
+The workflow reads `R2_ACCOUNT_ID` from the repository variables and `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `BPS_KEY`, and `SENTRY_DSN` from repository secrets. The same environment variables configure local collection, except `SENTRY_DSN`: only GitHub Actions reports to Sentry, and local runs print failures to stderr. Running `collect` writes directly to the public bucket. Use `verify:live` for checks that must stay local.
 
 GitHub Actions serializes runs with the `news-calendar-feeds` concurrency group. The collector reads the last publication from R2, retains failed sources, and signs requests with the existing R2 credentials. Only a missing object (HTTP 404) starts a new publication. Other read errors prevent that document from being overwritten. Source or publication failures report credential-free diagnostics to Sentry and fail the workflow after the remaining sources finish. No Cloudflare Worker deployment is required.
