@@ -277,7 +277,8 @@ export async function collectTicks({
     }
     await alerts();
     if (!bounded() && now < nextPreOpen(latest, dates)) await closingBook(latest, tickers, dates);
-    const completed = dates.filter((day) => Date.parse(`${day}T09:30:00Z`) <= Date.now());
+    // Negotiated trades print until about 16:30 Jakarta, after which the day's trade count is final.
+    const completed = dates.filter((day) => Date.parse(`${day}T10:00:00Z`) <= Date.now());
     const recent = completed.at(-1);
     const queue = [...(recent ? [recent] : []), ...completed.filter((day) => day !== recent)];
     for (const date of queue) {

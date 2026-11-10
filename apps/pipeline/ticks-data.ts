@@ -7,6 +7,15 @@ const integer = z
   .union([z.number(), z.string().regex(/^(?:\d+|\d{1,3}(?:,\d{3})+)$/)])
   .transform((v) => (typeof v === 'string' ? Number(v.replaceAll(',', '')) : v))
   .pipe(z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER));
+// Negotiated trades can be fractional lots ("664,646.65"), so convert to exact shares (100 per lot).
+const shares = z
+  .string()
+  .regex(/^(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.\d{1,2})?$/)
+  .transform((v) => {
+    const [whole, fraction = ''] = v.replaceAll(',', '').split('.');
+    return Number(whole) * 100 + Number(fraction.padEnd(2, '0'));
+  })
+  .pipe(z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER));
 const broker = z
   .string()
   .regex(/^[A-Z0-9]+ \[[DF]\]$/)
@@ -20,7 +29,7 @@ const tradeSchema = z.object({
   action: z.enum(['buy', 'sell']),
   code: tickerCode,
   price: integer,
-  lot: integer,
+  lot: shares,
   buyer: broker,
   seller: broker,
   trade_number: integer.pipe(z.number().positive()),
@@ -50,7 +59,7 @@ export function parseTradePage(raw: unknown, date: string) {
         : 'continuous',
     action: r.action,
     price: r.price,
-    lots: r.lot,
+    shares: r.lot,
     buyer: r.buyer.code,
     buyer_domicile: r.buyer.domicile,
     buyer_type: r.buyer_type,
@@ -154,7 +163,7 @@ export type BookRow = {
 };
 
 export const tradeColumns = `date DATE, ticker VARCHAR, trade_number BIGINT PRIMARY KEY, id BIGINT, time VARCHAR,
-  session VARCHAR, action VARCHAR, price BIGINT, lots BIGINT, buyer VARCHAR, buyer_domicile VARCHAR,
+  session VARCHAR, action VARCHAR, price BIGINT, shares BIGINT, buyer VARCHAR, buyer_domicile VARCHAR,
   buyer_type VARCHAR, seller VARCHAR, seller_domicile VARCHAR, seller_type VARCHAR, board VARCHAR,
   buy_order_number BIGINT, sell_order_number BIGINT, group_order_number BIGINT, value BIGINT`;
 export const bookColumns = `date DATE, ticker VARCHAR, record_type VARCHAR, side VARCHAR, level INTEGER,
@@ -166,13 +175,13 @@ export const bookColumns = `date DATE, ticker VARCHAR, record_type VARCHAR, side
 export const doneDetailSql = `
 SELECT date, ticker, board, session, 'aggressor' AS role, action AS side,
   CASE action WHEN 'buy' THEN buy_order_number ELSE sell_order_number END AS order_number,
-  trade_number, price, lots, buyer, buyer_domicile, seller, seller_domicile
+  trade_number, price, shares, buyer, buyer_domicile, seller, seller_domicile
 FROM running_trade WHERE session = 'continuous'
 UNION ALL
 SELECT date, ticker, board, session, 'auction' AS role, 'buy' AS side, buy_order_number AS order_number,
-  trade_number, price, lots, buyer, buyer_domicile, seller, seller_domicile
+  trade_number, price, shares, buyer, buyer_domicile, seller, seller_domicile
 FROM running_trade WHERE session = 'auction'
 UNION ALL
 SELECT date, ticker, board, session, 'auction' AS role, 'sell' AS side, sell_order_number AS order_number,
-  trade_number, price, lots, buyer, buyer_domicile, seller, seller_domicile
+  trade_number, price, shares, buyer, buyer_domicile, seller, seller_domicile
 FROM running_trade WHERE session = 'auction'`;

@@ -113,7 +113,7 @@ it('parses the supplied fixtures without losing broker domicile, shares, or leve
   const trades = parseTradePage(raw, day);
   expect(trades[0]).toMatchObject({
     price: 7675,
-    lots: 1,
+    shares: 100,
     trade_number: 1199303,
     buyer: 'XL',
     buyer_domicile: 'D',
@@ -318,7 +318,7 @@ it('captures every book level first, preserves an empty book header, and then ba
   expect(levels.find((r) => r.side === 'bid' && Number(r.level) === 1)?.shares).toBe('6000');
 });
 it('waits until 16:30 WIB for the latest running trade, then visits older missing sessions oldest first', async () => {
-  vi.setSystemTime(new Date(`${day}T09:30:00Z`));
+  vi.setSystemTime(new Date(`${day}T10:00:00Z`));
   const f = await fixture({ dates: ['2026-01-02', '2026-01-05', day], tickers: ['SINI'] });
   const calls: string[] = [];
   await collectTicks({
@@ -423,4 +423,12 @@ it('shares a single broker authentication with running trades and books', async 
   expect(refreshes).toBe(1);
   expect(ticks).toBe(3);
   expect(result.ticks?.published).toEqual([`closing_book/${day}`, `running_trade/${day}`]);
+});
+
+it('stores negotiated fractional lots as exact shares', () => {
+  const [negotiated] = parseTradePage(
+    { data: { running_trade: [{ ...trade(1), market_board: 'NG', lot: '664,646.65' }] } },
+    day,
+  );
+  expect(negotiated?.shares).toBe(66464665);
 });
