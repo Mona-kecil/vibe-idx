@@ -84,3 +84,21 @@
   color: var(--muted);
   font-size: 10px;
 }
+.terminal-page .ticker-row {
+  cursor: pointer;
+}
+.terminal-page .pin-button {
+  min-width: 24px;
+  min-height: 24px;
+  color: var(--muted);
+}
+.terminal-page .pin-button[aria-pressed='true'] {
+  color: var(--accent);
+}
+.terminal-page .quote-ticker {
+  padding-top: 1px;
+  padding-bottom: 1px;
+}
+.terminal-page .seg button {
+  min-height: 24px;
+}
