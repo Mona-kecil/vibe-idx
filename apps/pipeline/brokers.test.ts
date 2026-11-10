@@ -699,8 +699,13 @@ describe('private broker pipeline', () => {
       );
       if (cut.startsWith('auth') || cut.includes('marker'))
         expect(net.calls.filter((call) => !call.startsWith('/login'))).toEqual([]);
-      if (cut === 'auth-cas')
+      if (cut === 'auth-cas') {
         expect(f.load('auth/stockbit.json').toString()).toBe('{"refresh":"other"}');
+        expect(JSON.parse(f.load('auth/stockbit-unsaved.json').toString())).toEqual({
+          access: 'synthetic-access-1',
+          refresh: 'synthetic-refresh-1',
+        });
+      } else expect(f.objects.has('auth/stockbit-unsaved.json')).toBe(false);
     }
   });
 });
@@ -781,6 +786,19 @@ describe('fetch R2 client', () => {
       '503',
     );
     expect(unavailable).toHaveBeenCalledTimes(4);
+  });
+
+  it('reads a strong ETag even where Cloudflare would compress the object', async () => {
+    const fetcher: typeof fetch = async (input) => {
+      if (!(input instanceof Request)) throw new Error('Expected signed request');
+      const identity = input.headers.get('Accept-Encoding') === 'identity';
+      return new Response('{"refresh":"r"}', {
+        headers: { ETag: identity ? '"strong"' : 'W/"strong"' },
+      });
+    };
+    expect((await createR2({ ...credentials, fetcher }).get('auth/stockbit.json'))?.etag).toBe(
+      '"strong"',
+    );
   });
 
   it('preserves ETags and bytes, handles only 404 as missing, and deletes objects', async () => {

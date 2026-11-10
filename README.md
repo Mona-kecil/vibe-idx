@@ -55,7 +55,7 @@ Run private broker collection through GitHub Actions. The workflow restores the 
 gh workflow run brokers.yml --repo Mona-kecil/vibe-idx --ref master
 ```
 
-Seed `auth/stockbit.json` in `vibe-idx-private` with `access` and `refresh` fields. Treat it as a secret. The collector reads the current cloud pair and writes its rotated replacement to R2 before collecting data. Its local token file is a checkpoint, not a seed that replaces cloud state.
+Seed `auth/stockbit.json` in `vibe-idx-private` with `access` and `refresh` fields. Treat it as a secret. The collector reads the current cloud pair and writes its rotated replacement to R2 before collecting data. Its local token file is a checkpoint, not a seed that replaces cloud state. A refresh revokes the previous pair at once, so if saving the rotated pair fails, the collector writes it to `auth/stockbit-unsaved.json`. Copy that file over `auth/stockbit.json` once no collector is running.
 
 A Cloudflare Worker dispatches IDX ingestion daily at 17:17 Jakarta and checks every ten minutes to start a broker run when none is active. Broker runs fetch the Regular, Negotiation and Cash boards separately, at 8 requests a second per ticker across at most 47 tickers, for up to 330 minutes. Stockbit allows 10 requests per ticker, refilled at 10 a second. All is the sum of the three boards. A concurrent per-broker phase collects domestic and foreign clients separately at 10 requests a second across all its requests (`BROKER_ACTIVITY_RPS` overrides the pace), sharing the same authentication. It retains separate Parquet and coverage files for comparison with the per-stock collector before any replacement.
 
