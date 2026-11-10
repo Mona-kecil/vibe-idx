@@ -77,4 +77,35 @@ describe('scheduled collector', () => {
       log.mockRestore();
     }
   });
+  it('reports to Sentry only from GitHub Actions and requires the DSN there', async () => {
+    const sentry: string[] = [];
+    const fetcher = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      if (input instanceof Request) return new Response(null, { status: 403 });
+      if (String(input).includes('sentry.example')) sentry.push(String(input));
+      return new Response(null, { status: 200 });
+    });
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const env = {
+      R2_ACCOUNT_ID: config.accountId,
+      R2_ACCESS_KEY_ID: config.accessKeyId,
+      R2_SECRET_ACCESS_KEY: config.secretAccessKey,
+      BPS_KEY: 'test-bps-key',
+      SENTRY_DSN: 'https://test-public-key@sentry.example/123',
+    };
+    try {
+      expect(await run(env)).toBe(1);
+      expect(sentry).toEqual([]);
+      expect(await run({ ...env, GITHUB_ACTIONS: 'true' })).toBe(1);
+      expect(sentry).not.toEqual([]);
+      sentry.length = 0;
+      expect(await run({ ...env, GITHUB_ACTIONS: 'true', SENTRY_DSN: undefined })).toBe(1);
+      expect(sentry).toEqual([]);
+      expect(log.mock.calls.flat().join()).toContain(
+        'Missing or invalid configuration: SENTRY_DSN',
+      );
+    } finally {
+      fetcher.mockRestore();
+      log.mockRestore();
+    }
+  });
 });

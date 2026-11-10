@@ -3,13 +3,19 @@ import { collect } from './collector';
 import { report } from './sentry';
 import { r2Bucket } from './storage';
 
-const configSchema = z.object({
-  R2_ACCOUNT_ID: z.string().regex(/^[a-f0-9]{32}$/),
-  R2_ACCESS_KEY_ID: z.string().min(1),
-  R2_SECRET_ACCESS_KEY: z.string().min(1),
-  BPS_KEY: z.string().min(1),
-  SENTRY_DSN: z.url(),
-});
+// Only GitHub Actions reports to Sentry, so local runs and tests never page anyone.
+const configSchema = z
+  .object({
+    R2_ACCOUNT_ID: z.string().regex(/^[a-f0-9]{32}$/),
+    R2_ACCESS_KEY_ID: z.string().min(1),
+    R2_SECRET_ACCESS_KEY: z.string().min(1),
+    BPS_KEY: z.string().min(1),
+    GITHUB_ACTIONS: z.string().optional(),
+    SENTRY_DSN: z.url().optional(),
+  })
+  .refine((config) => config.GITHUB_ACTIONS !== 'true' || config.SENTRY_DSN, {
+    path: ['SENTRY_DSN'],
+  });
 
 export async function run(env: NodeJS.ProcessEnv = process.env): Promise<number> {
   const config = configSchema.safeParse(env);
@@ -19,12 +25,13 @@ export async function run(env: NodeJS.ProcessEnv = process.env): Promise<number>
     );
     return 1;
   }
-  const { R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, BPS_KEY, SENTRY_DSN } =
+  const { R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, BPS_KEY, GITHUB_ACTIONS } =
     config.data;
+  const sentryDsn = GITHUB_ACTIONS === 'true' ? config.data.SENTRY_DSN : undefined;
   let failed = false;
   const reportFailure = async (source: string, failure: unknown) => {
     failed = true;
-    await report(SENTRY_DSN, source, failure);
+    await report(sentryDsn, source, failure);
   };
   try {
     await collect({
