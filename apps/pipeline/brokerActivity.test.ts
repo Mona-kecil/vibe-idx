@@ -9,6 +9,8 @@ import { brokerActivity } from './brokerActivity';
 import { brokers } from './brokers';
 import type { R2 } from './brokers';
 
+vi.mock('./ticks', () => ({ collectTicks: async () => ({ published: [], pending: [] }) }));
+
 vi.mock('node:timers/promises', () => ({
   setTimeout: async (ms: number) => {
     vi.setSystemTime(Date.now() + ms);
