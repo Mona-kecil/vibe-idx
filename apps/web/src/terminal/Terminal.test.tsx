@@ -17,6 +17,7 @@ vi.mock('./charts', async (importOriginal) => {
 });
 const auth = vi.hoisted(() => ({
   user: null as { id: string } | null,
+  isLoading: false,
   getAccessToken: vi.fn<() => Promise<string | undefined>>(async () => 'test'),
   signIn: vi.fn<() => Promise<void>>(async () => {}),
 }));
@@ -193,6 +194,7 @@ beforeEach(() => {
   window.history.replaceState(null, '', '/terminal?t=BREN&l=grid');
   window.localStorage.clear();
   auth.user = null;
+  auth.isLoading = false;
   auth.signIn.mockClear();
   fetcher.mockClear();
   newsAvailable = false;
@@ -479,5 +481,14 @@ it('identifies failed broker sources even when the publication run is fresh', as
   await render();
   expect(host.querySelector('.status .stale')?.textContent).toBe(
     'Broker flow not updated since 6 Nov 2026',
+  );
+});
+
+it('keeps sign-in hidden while AuthKit is loading with no user', async () => {
+  auth.isLoading = true;
+  await render();
+  expect(host.textContent).toContain('Checking sign-in…');
+  expect([...host.querySelectorAll('button')].some((el) => el.textContent === 'Sign in')).toBe(
+    false,
   );
 });
