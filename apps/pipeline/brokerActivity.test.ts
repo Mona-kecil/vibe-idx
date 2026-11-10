@@ -280,19 +280,22 @@ it('compares complete parquet fixtures, reports mismatches, and excludes incompl
     ...f,
     request: async (input) => {
       const url = new URL(input);
-      return url.pathname.endsWith('/top') ? list(url) : Response.json(response());
+      return url.pathname.endsWith('/top')
+        ? list(url)
+        : Response.json(response([row(), row('XIJI')]));
     },
   });
   await mkdir(join(f.data, 'parquet', 'brokers'), { recursive: true });
   await mkdir(join(f.data, 'parquet', 'prices'), { recursive: true });
-  await sql(`COPY (SELECT date,ticker,board,side,broker,'Lokal' investor_type,sum(shares) shares,sum(value) AS value,0 avg_price,sum(freq) freq FROM read_parquet('${f.data}/parquet/broker_activity/*.parquet') GROUP BY ALL) TO '${f.data}/parquet/brokers/2026.parquet' (FORMAT PARQUET);
+  await sql(`COPY (SELECT date,ticker,board,side,broker,'Lokal' investor_type,sum(shares) shares,sum(value) AS value,0 avg_price,sum(freq) freq FROM read_parquet('${f.data}/parquet/broker_activity/*.parquet') WHERE ticker='BBRI' GROUP BY ALL) TO '${f.data}/parquet/brokers/2026.parquet' (FORMAT PARQUET);
     COPY (SELECT DATE '${day}' date,'BBRI' ticker,'regular' board,true complete) TO '${f.data}/parquet/broker-coverage.parquet' (FORMAT PARQUET);
     COPY (SELECT DATE '${day}' date,'BBRI' ticker,38607400 volume) TO '${f.data}/parquet/prices/2026.parquet' (FORMAT PARQUET)`);
   const matched = await compareBrokers(f.data);
   expect(matched.failed).toBe(false);
   expect(matched.dates).toEqual([
-    { date: day, matched: 1, mismatched: 0, only_in_activity: 0, only_in_brokers: 0 },
+    { date: day, matched: 1, adjusted: 0, mismatched: 0, only_in_activity: 0, only_in_brokers: 0 },
   ]);
+  expect(matched.activityOnly).toEqual({ instruments: 1, rows: 2 });
   expect(matched.volumeMismatches).toEqual([]);
   const cli = fileURLToPath(new URL('./compare-brokers.ts', import.meta.url));
   const matchOutput = await promisify(execFile)(process.execPath, [
@@ -304,6 +307,13 @@ it('compares complete parquet fixtures, reports mismatches, and excludes incompl
   ]);
   expect(JSON.parse(matchOutput.stdout).failed).toBe(false);
   const file = join(f.data, 'parquet', 'brokers', '2026.parquet');
+  await sql(
+    `CREATE TABLE b AS SELECT * FROM read_parquet('${file}'); UPDATE b SET shares=shares*1.033; COPY b TO '${file}' (FORMAT PARQUET)`,
+  );
+  const rescaled = await compareBrokers(f.data);
+  expect(rescaled.failed).toBe(false);
+  expect(rescaled.dates[0]).toMatchObject({ matched: 0, adjusted: 1, mismatched: 0 });
+  expect(rescaled.adjusted).toEqual([{ ticker: 'BBRI', rows: 1, first: day, last: day }]);
   await sql(
     `CREATE TABLE b AS SELECT * FROM read_parquet('${file}'); UPDATE b SET value=value+1000; COPY b TO '${file}' (FORMAT PARQUET)`,
   );
