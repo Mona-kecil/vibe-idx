@@ -6,11 +6,20 @@ import { Terminal } from './Terminal';
 import { cumulativeFlows, foreignFlow } from './BrokerPanes';
 import type { BrokerDay } from '../brokers';
 
+const crosshair = vi.hoisted(() => ({ move: (_event: { time?: number }) => {} }));
+
 // jsdom has no canvas, so charts become an object that accepts any call.
 vi.mock('./charts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./charts')>();
   const chart: object = new Proxy(() => chart, {
-    get: (_, key) => (key === 'then' ? undefined : chart),
+    get: (_, key) =>
+      key === 'subscribeCrosshairMove'
+        ? (listener: typeof crosshair.move) => {
+            crosshair.move = listener;
+          }
+        : key === 'then'
+          ? undefined
+          : chart,
     apply: () => chart,
   });
   return { ...actual, terminalChart: () => chart };
@@ -273,6 +282,18 @@ describe('React terminal', () => {
       true,
     );
   });
+  it.each(['BRK', 'BFL', 'FF', 'OB', 'RT', 'DD', 'TB', 'ID'])(
+    'hides %s filters while signed out',
+    async (pane) => {
+      await render();
+      await command(`FOCUS BREN ${pane}`);
+      expect(host.querySelector('.broker-controls')).toBeNull();
+      expect(host.textContent).toContain('Sign in to see broker and trade data');
+      expect(fetcher.mock.calls.every(([path]) => !requestUrl(path).includes('/api/brokers'))).toBe(
+        true,
+      );
+    },
+  );
   it('runs layout and ticker commands together and reads ticker news through the existing API', async () => {
     await render();
     await command('FOCUS BBCA NEWS');
@@ -304,7 +325,86 @@ describe('React terminal', () => {
     expect(host.querySelector('.broker-ledger.buy')?.textContent).toContain('AA');
     expect(host.querySelector('.broker-ledger.buy')?.textContent).not.toContain('BB');
     await click('[aria-label="Market board"] button:nth-child(3)');
-    expect(host.textContent).toContain('No broker summary in this view');
+    expect(host.textContent).toContain('No trades');
+  });
+  it('renders NET broker codes as text and keeps GROSS pairing interactive', async () => {
+    auth.user = { id: 'test-user' };
+    await render();
+    expect(host.querySelector('.broker-ledger button')).toBeNull();
+    expect(host.querySelector('.broker-ledger td.l span')?.getAttribute('title')).toContain(
+      'LOCAL',
+    );
+    await click('[aria-label="Broker mode"] button:nth-child(2)');
+    await click('.broker-ledger.buy button');
+    expect(host.querySelector('.broker-ledger button[aria-pressed="true"]')).not.toBeNull();
+  });
+  it('shows broker dates and warns about older data above BRK, BFL and FF content', async () => {
+    const serve = fetcher.getMockImplementation();
+    if (!serve) throw new Error('Missing fixture fetcher');
+    auth.user = { id: 'test-user' };
+    await fetcher.withImplementation(
+      async (input, init) => {
+        const response = await serve(input, init);
+        if (!requestUrl(input).includes('health.json')) return response;
+        return Response.json({ ...(await response.json()), prices: '2026-11-10' });
+      },
+      async () => {
+        await render();
+        await click('[aria-label="Broker period"] button:nth-child(2)');
+        expect(host.querySelector('.broker-date')?.textContent).toContain('6–9 Nov 2026');
+        for (const pane of ['BRK', 'BFL', 'FF']) {
+          await command(`FOCUS BREN ${pane}`);
+          const date = host.querySelector('.broker-date');
+          expect(date?.getAttribute('role')).toBe('status');
+          expect(date?.textContent).toContain('Behind prices');
+          expect(date?.nextElementSibling?.className).toMatch(/pb|flow-view/);
+        }
+      },
+    );
+  });
+  it('counts market sessions for 20D and shows No trades for a thin board with no recent trades', async () => {
+    const serve = fetcher.getMockImplementation();
+    if (!serve) throw new Error('Missing fixture fetcher');
+    auth.user = { id: 'test-user' };
+    const history = Array.from({ length: 40 }, (_, i) => {
+      const date = new Date('2026-11-09T00:00:00Z');
+      date.setUTCDate(date.getUTCDate() - i);
+      return date;
+    })
+      .filter((date) => date.getUTCDay() !== 0 && date.getUTCDay() !== 6)
+      .map((date) => ({
+        date: date.toISOString().slice(0, 10),
+        close: 100,
+        change: 0,
+        change_pct: 0,
+      }));
+    await fetcher.withImplementation(
+      async (input, init) => {
+        const path = requestUrl(input);
+        if (path.includes('market.json'))
+          return Response.json({ date: '2026-11-09', up: 0, down: 0, history });
+        if (path.includes('/api/brokers'))
+          return Response.json({
+            ticker: 'BREN',
+            days: [
+              { ...days[0], date: '2026-09-01' },
+              { ...days[0], date: '2026-09-01', board: 'cash' },
+              { ...days[1], date: '2026-09-02' },
+              { ...days[1], date: '2026-11-09' },
+            ],
+          });
+        return serve(input, init);
+      },
+      async () => {
+        await render();
+        await click('[aria-label="Broker period"] button:nth-child(3)');
+        expect(host.querySelector('.broker-ledger.buy')?.textContent).toContain('50.0K');
+        expect(host.querySelector('.broker-ledger.buy')?.textContent).not.toContain('200.0K');
+        await click('[aria-label="Market board"] button:nth-child(3)');
+        expect(host.textContent).toContain('No trades');
+        expect(host.querySelector('.broker-ledger')).toBeNull();
+      },
+    );
   });
   it.each(['LOCAL', 'GOV'])(
     'falls back to ALL with obsolete stored %s broker preferences',
@@ -363,6 +463,37 @@ describe('React terminal', () => {
     await click('[aria-label="Movers"] button:nth-child(1)');
     expect(button('[aria-label="Mover period"] button:nth-child(2)').disabled).toBe(false);
   });
+  it('keeps broker flow colours stable across pins and closes the picker on Escape', async () => {
+    auth.user = { id: 'test-user' };
+    await render();
+    await command('FOCUS BREN BFL');
+    const colours = () =>
+      new Map(
+        [...host.querySelectorAll<HTMLElement>('.broker-key')].map((key) => [
+          key.textContent?.slice(0, 2),
+          key.querySelector('i')?.style.background,
+        ]),
+      );
+    const before = colours();
+    await click('[aria-label="Add broker"]');
+    await act(async () =>
+      host
+        .querySelector('input[aria-label="Find a broker"]')
+        ?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })),
+    );
+    expect(host.querySelector('.broker-picker')).toBeNull();
+    expect(document.activeElement?.getAttribute('aria-label')).toBe('Add broker');
+    await click('[aria-label="Add broker"]');
+    await act(async () =>
+      [...host.querySelectorAll<HTMLButtonElement>('.broker-picker > button')]
+        .find((button) => button.textContent?.startsWith('CC '))
+        ?.click(),
+    );
+    expect(host.querySelector('[aria-label="Remove CC"]')).not.toBeNull();
+    expect(colours()).toEqual(before);
+    for (const colour of colours().values())
+      expect(colour).not.toMatch(/34, 166, 160|214, 178, 94|228, 87, 63/);
+  });
   it('builds cumulative net flows from actual dates and selected broker types', () => {
     const regular = days.filter((day) => day.board === 'regular');
     const flow = cumulativeFlows(regular, ['2026-11-06', '2026-11-09'], 'VALUE', 'ALL');
@@ -402,16 +533,110 @@ describe('React terminal', () => {
       { date: '2026-11-06', net: 0, cumulative: 0, share: null },
     ]);
   });
+  it('shows session OHLC and volume at rest, a bar on hover, and restores the summary on leave', async () => {
+    const serve = fetcher.getMockImplementation();
+    if (!serve) throw new Error('Missing fixture fetcher');
+    auth.user = { id: 'test-user' };
+    const trades = {
+      date: '2026-11-10',
+      ticker: 'BBCA',
+      time: [32700, 43200, 58200],
+      price: [100, 120, 90],
+      shares: [100, 200, 300],
+      side: ['b', 'b', 's'],
+      auction: [false, false, true],
+      board: ['RG', 'RG', 'RG'],
+      buyer: ['AA', 'AA', 'BB'],
+      buyer_foreign: [false, false, true],
+      seller: ['CC', 'CC', 'AA'],
+      seller_foreign: [true, false, false],
+      buy_order: [1, 2, 3],
+      sell_order: [4, 5, 6],
+    };
+    await fetcher.withImplementation(
+      async (input, init) => {
+        const path = requestUrl(input);
+        if (path.includes('ticker/BBCA'))
+          return Response.json({
+            ticker: 'BBCA',
+            name: 'BBCA',
+            prices: [{ date: '2026-11-10', close: 90, volume: 600, value: 61000, net_foreign: 0 }],
+            holders: [],
+            changes: [],
+          });
+        if (path.includes('view=ticks') && path.includes('ticker=BBCA'))
+          return Response.json(trades);
+        return serve(input, init);
+      },
+      async () => {
+        await render();
+        await command('FOCUS BBCA ID');
+        const header = () => host.querySelector('.flow-view .legend');
+        expect(header()?.textContent).toContain('O 100H 120L 90C 906 lot');
+        expect(header()?.querySelector('time')).toBeNull();
+        expect(host.querySelector('.tick-session time')?.textContent).toBe('10 Nov 2026');
+        const midnight = Date.parse('2026-11-10T00:00:00Z') / 1000;
+        await act(async () => crosshair.move({ time: midnight + 43200 }));
+        expect(header()?.textContent).toContain('12:00 WIBO 120H 120L 120C 1202 lot');
+        await act(async () =>
+          host
+            .querySelector('.flow-chart')
+            ?.dispatchEvent(new Event('pointerout', { bubbles: true })),
+        );
+        expect(header()?.textContent).toContain('O 100H 120L 90C 906 lot');
+      },
+    );
+  });
+  it('draws order-book depth only on populated levels', async () => {
+    const serve = fetcher.getMockImplementation();
+    if (!serve) throw new Error('Missing fixture fetcher');
+    auth.user = { id: 'test-user' };
+    await fetcher.withImplementation(
+      async (input, init) => {
+        const path = requestUrl(input);
+        if (path.includes('ticker/BBCA'))
+          return Response.json({
+            ticker: 'BBCA',
+            name: 'BBCA',
+            prices: [{ date: '2026-11-10', close: 90, volume: 600, value: 61000, net_foreign: 0 }],
+            holders: [],
+            changes: [],
+          });
+        if (path.includes('view=ticks') && path.includes('kind=book'))
+          return Response.json({
+            date: '2026-11-10',
+            ticker: 'BBCA',
+            close: 100,
+            bid: [[99, 1, 100]],
+            offer: [
+              [100, 1, 200],
+              [101, 2, 300],
+              [102, 3, 400],
+            ],
+          });
+        return serve(input, init);
+      },
+      async () => {
+        await render();
+        await command('FOCUS BBCA OB');
+        expect(host.querySelectorAll('.tick-book .depth.bid')).toHaveLength(1);
+        expect(host.querySelectorAll('.tick-book .depth.offer')).toHaveLength(3);
+        expect(
+          [...host.querySelectorAll('.tick-book td.depth')].every((cell) => cell.textContent),
+        ).toBe(true);
+      },
+    );
+  });
   it('shows the closing book for the latest session, steps back, and filters running trades by broker', async () => {
     tickSessions = true;
     auth.user = { id: 'test-user' };
     await render();
     await command('BREN OB');
-    expect(host.querySelector('.tick-session time')?.textContent).toBe('2026-11-09');
+    expect(host.querySelector('.tick-session time')?.textContent).toBe('9 Nov 2026');
     expect(host.querySelector('.tick-book tbody td.up')?.textContent).toBe('7,650');
     expect(host.querySelector('.tick-book tbody td.depth.offer')?.textContent).toBe('90');
     await click('[aria-label="Previous session"]');
-    expect(host.textContent).toContain('Not collected for 2026-11-06');
+    expect(host.textContent).toContain('Not collected for 6 Nov 2026');
     await click('[aria-label="Next session"]');
     await command('BREN RT');
     expect(host.querySelectorAll('.tick-table:not(.tick-book) tbody tr')).toHaveLength(2);

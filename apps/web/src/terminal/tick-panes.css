@@ -9,6 +9,7 @@
 }
 .terminal-page .tick-filter {
   width: 52px;
+  min-height: 24px;
   font-size: 10px;
   padding: 2px 4px;
   text-transform: uppercase;
@@ -29,7 +30,10 @@
 }
 .terminal-page .tick-table small {
   color: var(--muted);
-  font-size: 9px;
+  font-size: 10px;
+}
+.terminal-page .tick-table th {
+  font-size: 10px;
 }
 .terminal-page .tick-foreign {
   color: var(--broker-foreign);

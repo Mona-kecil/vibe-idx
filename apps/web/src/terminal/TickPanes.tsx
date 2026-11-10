@@ -5,7 +5,7 @@ import {
   type CandlestickData,
   type UTCTimestamp,
 } from 'lightweight-charts';
-import { nf, short } from '../ticker/format';
+import { dateText, nf, short } from '../ticker/format';
 import {
   bars,
   clock,
@@ -96,7 +96,7 @@ function SessionPicker() {
       >
         ‹
       </button>
-      <time>{date ?? '—'}</time>
+      <time>{date ? dateText(date) : '—'}</time>
       <button
         aria-label="Next session"
         disabled={index < 0 || index >= dates.length - 1}
@@ -120,11 +120,11 @@ function TickPane<K extends TickKind>({
   const { session } = useTerminal();
   const { date } = useSession();
   const state = useTicks(kind, date);
+  if (session !== 'signed-in') return <SignInPrompt />;
   let body: ReactNode;
-  if (session !== 'signed-in') body = <SignInPrompt />;
-  else if (!date) body = <Empty>No 2026 sessions for this ticker</Empty>;
-  else if (state.kind === 'loading') body = <Empty>Loading {date}…</Empty>;
-  else if (state.kind === 'missing') body = <Empty>Not collected for {date}</Empty>;
+  if (!date) body = <Empty>No 2026 sessions for this ticker</Empty>;
+  else if (state.kind === 'loading') body = <Empty>Loading {dateText(date)}…</Empty>;
+  else if (state.kind === 'missing') body = <Empty>Not collected for {dateText(date)}</Empty>;
   else if (state.kind === 'error')
     body = (
       <p className="empty" role="alert">
@@ -177,12 +177,12 @@ function Ladder({ book }: { book: TickBook }) {
             return (
               <tr key={i}>
                 <td>{bid && nf(bid[1])}</td>
-                <td className="depth bid" style={bid && depth(bid[2])}>
+                <td className={bid ? 'depth bid' : undefined} style={bid && depth(bid[2])}>
                   {bid && lots(bid[2])}
                 </td>
                 <td className="up">{bid && nf(bid[0])}</td>
                 <td className="dn">{offer && nf(offer[0])}</td>
-                <td className="depth offer" style={offer && depth(offer[2])}>
+                <td className={offer ? 'depth offer' : undefined} style={offer && depth(offer[2])}>
                   {offer && lots(offer[2])}
                 </td>
                 <td>{offer && nf(offer[1])}</td>
@@ -449,6 +449,7 @@ export function IntradayPane() {
 function Intraday({ trades, minutes }: { trades: TickTrades; minutes: number }) {
   const host = useRef<HTMLDivElement>(null);
   const series = useMemo(() => bars(trades, minutes), [trades, minutes]);
+  const summary = useMemo(() => bars(trades, 24 * 60)[0], [trades]);
   const [hover, setHover] = useState<number | null>(null);
   // The chart runs in UTC, so offsetting by the session's midnight shows Jakarta clock times.
   const midnight = Date.parse(`${trades.date}T00:00:00Z`) / 1000;
@@ -498,12 +499,13 @@ function Intraday({ trades, minutes }: { trades: TickTrades; minutes: number }) 
     chart.timeScale().fitContent();
     return () => chart.remove();
   }, [series, midnight]);
-  const bar = series.find((b) => b.time === hover) ?? series.at(-1);
+  const hovered = series.find((b) => b.time === hover);
+  const bar = hovered ?? summary;
   if (!bar) return <Empty>No regular-board trades</Empty>;
   return (
     <div className="flow-view">
       <div className="legend">
-        <time>{clock(bar.time)}</time>
+        {hovered && <time>{clock(bar.time).slice(0, 5)} WIB</time>}
         <span>O {nf(bar.open)}</span>
         <span>H {nf(bar.high)}</span>
         <span>L {nf(bar.low)}</span>
@@ -513,7 +515,7 @@ function Intraday({ trades, minutes }: { trades: TickTrades; minutes: number }) 
           F {lots(bar.foreignBuy)} buy {lots(bar.foreignSell)} sell
         </span>
       </div>
-      <div className="flow-chart" ref={host} />
+      <div className="flow-chart" ref={host} onPointerLeave={() => setHover(null)} />
     </div>
   );
 }
