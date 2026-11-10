@@ -1,3 +1,5 @@
+import { gunzipSync } from 'node:zlib';
+import { publishBrokerActivity } from './broker-publication';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { execFile } from 'node:child_process';
@@ -273,6 +275,11 @@ it('shares one token refresh with the concurrent per-stock phase', async () => {
   expect(stockCalls).toBe(3);
   expect(activityCalls).toBe(2);
   expect(result.activity?.completed).toBe(2);
+  const published = JSON.parse(gunzipSync(f.objects.get('site/broker/BBRI.json.gz')!).toString());
+  expect(published[0].buy.map((r: { investor: string }) => r.investor)).toEqual([
+    'domestic',
+    'foreign',
+  ]);
 });
 it('compares complete parquet fixtures, reports mismatches, and excludes incomplete days', async () => {
   const f = await fixture();
@@ -391,4 +398,67 @@ it('stops the phase once on a failing login instead of failing every target', as
   expect(result.stopped).toMatch(/Stockbit auth HTTP 401/);
   expect(result.failed).toEqual([]);
   expect(requests).toBe(4);
+});
+
+it('publishes per-investor rows only after complete day-boards and bootstraps unchanged activity', async () => {
+  const f = await fixture();
+  const out = join(f.data, 'out');
+  let broken = true;
+  const request = async (input: string) => {
+    const url = new URL(input);
+    if (url.pathname.endsWith('/top')) return list(url);
+    if (broken && url.searchParams.get('investor_type') === 'INVESTOR_TYPE_FOREIGN')
+      return Response.json(response([{ ...row(), lot: -1 }]));
+    return Response.json(response([row(), row('XIJI')]));
+  };
+  await brokerActivity({ ...f, request });
+  await publishBrokerActivity(f.data, out, f.r2);
+  const read = (ticker: string) =>
+    JSON.parse(gunzipSync(f.objects.get(`site/broker/${ticker}.json.gz`)!).toString());
+  expect(read('BBRI')).toEqual([]);
+  broken = false;
+  await brokerActivity({ ...f, request });
+  const activityFile = join(f.data, 'parquet', 'broker_activity', '2026.parquet');
+  const coverageFile = join(f.data, 'parquet', 'broker-activity-coverage.parquet');
+  await sql(`CREATE TABLE a AS SELECT * FROM read_parquet('${activityFile}')
+    UNION ALL SELECT * REPLACE (DATE '2025-12-31' AS date, 'OLD' AS ticker) FROM read_parquet('${activityFile}')
+    UNION ALL SELECT * REPLACE (DATE '2026-11-06' AS date, 'UNLISTED' AS ticker) FROM read_parquet('${activityFile}');
+    COPY a TO '${activityFile}' (FORMAT PARQUET);
+    CREATE TABLE c AS SELECT * FROM read_parquet('${coverageFile}')
+    UNION ALL SELECT * REPLACE (DATE '2025-12-31' AS date) FROM read_parquet('${coverageFile}')
+    UNION ALL SELECT * REPLACE (DATE '2026-11-06' AS date, false AS listed) FROM read_parquet('${coverageFile}');
+    COPY c TO '${coverageFile}' (FORMAT PARQUET)`);
+  await publishBrokerActivity(f.data, out, f.r2);
+  expect(f.objects.has('site/broker/OLD.json.gz')).toBe(false);
+  expect(read('UNLISTED')).toEqual([]);
+  const buy = ['domestic', 'foreign'].map((investor) => ({
+    broker: 'XL',
+    investor,
+    broker_type: 'local',
+    shares: 19303700,
+    value: 54255203000,
+    avg_price: 2810.611592596238,
+    freq: 7711,
+  }));
+  expect(read('BBRI')).toEqual([{ date: day, board: 'regular', buy, sell: [] }]);
+  expect(read('XIJI')).toEqual(read('BBRI'));
+  expect(
+    read('BBRI')[0].buy.reduce((sum: number, r: { shares: number }) => sum + r.shares, 0),
+  ).toBe(38607400);
+  f.objects.delete('site/broker-activity-publication.json');
+  f.objects.delete('site/broker/BBRI.json.gz');
+  const upload = f.r2.put.bind(f.r2);
+  const interrupted = vi.spyOn(f.r2, 'put').mockImplementation(async (key, bytes, condition) => {
+    if (key === 'site/broker/XIJI.json.gz') throw new Error('interrupted upload');
+    return upload(key, bytes, condition);
+  });
+  await expect(publishBrokerActivity(f.data, out, f.r2)).rejects.toThrow('interrupted upload');
+  expect(f.objects.has('site/broker-activity-publication.json')).toBe(false);
+  interrupted.mockRestore();
+  await publishBrokerActivity(f.data, out, f.r2);
+  expect(read('BBRI')[0].buy).toEqual(buy);
+  const put = vi.spyOn(f.r2, 'put');
+  await publishBrokerActivity(f.data, out, f.r2);
+  expect(put.mock.calls.map(([key]) => key)).toEqual(['site/broker-activity-publication.json']);
+  put.mockRestore();
 });

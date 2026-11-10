@@ -4,12 +4,12 @@ import { chmod, mkdir, readFile, readdir, rename, writeFile } from 'node:fs/prom
 import { dirname, join, resolve } from 'node:path';
 import { setTimeout } from 'node:timers/promises';
 import { pathToFileURL } from 'node:url';
-import { gzipSync } from 'node:zlib';
 import { parseArgs } from 'node:util';
 import { dateValue, DuckDBInstance } from '@duckdb/node-api';
 import type { DuckDBValue } from '@duckdb/node-api';
 import { AwsClient } from 'aws4fetch';
 import { date } from './lib/rows';
+import { publishBrokerActivity } from './broker-publication';
 import { accumulation, marketCalendar } from './sql';
 import { brokerActivity } from './brokerActivity';
 import type { ActivitySummary } from './brokerActivity';
@@ -498,26 +498,6 @@ export async function brokers({
       const fail = (error: unknown) => {
         failure ??= error instanceof Error ? error : new Error(String(error));
       };
-      const uploads: Promise<unknown>[] = [];
-      async function publish(ticker: string) {
-        const rows = await output(`SELECT date, board,
-        coalesce(list(struct_pack(broker := broker, investor_type := investor_type,
-          shares := shares, value := value, avg_price := avg_price, freq := freq) ORDER BY broker)
-          FILTER (WHERE side = 'buy'), []) buy,
-        coalesce(list(struct_pack(broker := broker, investor_type := investor_type,
-          shares := shares, value := value, avg_price := avg_price, freq := freq) ORDER BY broker)
-          FILTER (WHERE side = 'sell'), []) sell
-        FROM brokers
-        WHERE ticker = ${literal(ticker)} AND date >= DATE '2026-01-01'
-        GROUP BY date, board ORDER BY date DESC, board`);
-        await mkdir(join(out, 'broker'), { recursive: true });
-        const file = join(out, 'broker', `${ticker}.json`);
-        await writeFile(file + '.tmp', `[${rows.join(',')}]\n`);
-        await rename(file + '.tmp', file);
-        uploads.push(
-          r2.put(`site/broker/${ticker}.json.gz`, gzipSync(await readFile(file))).catch(fail),
-        );
-      }
       const groups = new Map<string, typeof entries>();
       for (const entry of entries) {
         const group = groups.get(entry.ticker) ?? [];
@@ -542,7 +522,6 @@ export async function brokers({
         if (rows.length) for (const pair of pairs) years.set(pair.date.slice(0, 4), true);
         completed += pairs.length;
         if (Date.now() - lastCheckpoint >= 10 * 60000) await checkpoint();
-        await publish(ticker);
       }
       let saved = Promise.resolve();
       async function worker() {
@@ -578,7 +557,6 @@ export async function brokers({
       }
       await Promise.all(Array.from({ length: workers }, worker));
       await saved;
-      await Promise.all(uploads);
       await checkpoint();
       await mkdir(out, { recursive: true });
       const accumulationFile = join(out, 'market-accumulation.json');
@@ -586,6 +564,7 @@ export async function brokers({
       await rename(accumulationFile + '.tmp', accumulationFile);
       await r2.put('site/market-accumulation.json', await readFile(accumulationFile));
       const activity = await activityRun;
+      await publishBrokerActivity(data, out, r2);
       const summary = { fetched, completed, pending: entries.length - completed, failed, activity };
       if (failure || failed.length || activity.failed.length || activity.stopped)
         throw new BrokerRunError(

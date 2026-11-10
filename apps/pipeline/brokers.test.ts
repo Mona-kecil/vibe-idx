@@ -2,7 +2,6 @@ import { createHash } from 'node:crypto';
 import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { gunzipSync } from 'node:zlib';
 import { DuckDBInstance } from '@duckdb/node-api';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { BrokerRunError, brokers, createR2 } from './brokers';
@@ -249,25 +248,8 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
-const buy = {
-  broker: 'AA',
-  investor_type: 'Asing',
-  shares: 1250,
-  value: 625000,
-  avg_price: 500,
-  freq: 3,
-};
-const sell = {
-  broker: 'BB',
-  investor_type: 'Lokal',
-  shares: 500,
-  value: 255000,
-  avg_price: 510,
-  freq: 2,
-};
-
 describe('private broker pipeline', () => {
-  it('fetches every board once authenticated and publishes only the boards that traded', async () => {
+  it('fetches every board for comparison without publishing per-stock broker rows', async () => {
     const f = await fixture();
     await prices(f.data, [
       { ticker: 'AAA', date: day, volume: 1 },
@@ -308,11 +290,7 @@ describe('private broker pipeline', () => {
         )
         .sort(),
     );
-    expect(JSON.parse(gunzipSync(f.load('site/broker/AAA.json.gz')).toString())).toEqual([
-      { date: day, board: 'negotiation', buy: [buy], sell: [sell] },
-      { date: day, board: 'regular', buy: [buy], sell: [sell] },
-      { date: previous, board: 'regular', buy: [buy], sell: [sell] },
-    ]);
+    expect(f.objects.has('site/broker/AAA.json.gz')).toBe(false);
     expect(f.load('parquet/brokers/2024.parquet')).toEqual(history);
     expect(f.objects.has('broker-run.json')).toBe(false);
     expect(f.objects.has('site/market-accumulation.json')).toBe(true);
@@ -346,30 +324,6 @@ describe('private broker pipeline', () => {
     );
     const firstCalls = net.calls.filter((call) => call.endsWith(`${day}/cash`));
     expect(firstCalls.at(-1)).toBe(`T47/${day}/cash`);
-  });
-
-  it('uploads changed tickers at once', async () => {
-    const f = await fixture();
-    const tickers = ['AAA', 'BBB', 'CCC'];
-    await prices(
-      f.data,
-      tickers.map((ticker) => ({ ticker, date: day, volume: 1 })),
-    );
-    let release = () => {};
-    const allStarted = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    let started = 0;
-    f.hooks.before = async (operation, key) => {
-      if (operation !== 'put' || !key.startsWith('site/broker/')) return;
-      if (++started === tickers.length) release();
-      await allStarted;
-    };
-    const net = network(f.token, (ticker, date) => Response.json(summary(ticker, date, true)));
-    await brokers({ ...f.options, fetcher: net.fetcher });
-    expect(tickers.filter((ticker) => f.objects.has(`site/broker/${ticker}.json.gz`))).toEqual(
-      tickers,
-    );
   });
 
   it('holds each ticker to eight requests a second', async () => {
@@ -422,7 +376,7 @@ describe('private broker pipeline', () => {
     expect(net.calls).toHaveLength(4);
   });
 
-  it('stops new requests at the deadline and checkpoints and publishes the partial ticker', async () => {
+  it('stops new requests at the deadline and checkpoints the partial ticker without publishing it', async () => {
     const f = await fixture();
     await prices(
       f.data,
@@ -442,9 +396,7 @@ describe('private broker pipeline', () => {
       { ticker: 'AAA', date: day, board: 'cash', complete: true },
       { ticker: 'AAA', date: day, board: 'negotiation', complete: true },
     ]);
-    expect(f.events.filter((e) => e.startsWith('put site/broker/'))).toEqual([
-      'put site/broker/AAA.json.gz',
-    ]);
+    expect(f.events.filter((e) => e.startsWith('put site/broker/'))).toEqual([]);
     expect(f.objects.has('site/market-accumulation.json')).toBe(true);
     expect(f.objects.has('broker-run.json')).toBe(false);
   });
@@ -499,7 +451,7 @@ describe('private broker pipeline', () => {
       { ticker: 'AAA', date: previous, board: 'negotiation', complete: true },
       { ticker: 'AAA', date: previous, board: 'regular', complete: false },
     ]);
-    expect(f.objects.has('site/broker/AAA.json.gz')).toBe(true);
+    expect(f.objects.has('site/broker/AAA.json.gz')).toBe(false);
     expect(f.objects.has('broker-run.json')).toBe(false);
   });
 
@@ -610,9 +562,7 @@ describe('private broker pipeline', () => {
         .filter((line) => line.attempt !== undefined);
       expect(retries).toHaveLength(attempts - 1);
       log.mockRestore();
-      expect(JSON.parse(gunzipSync(f.load('site/broker/AAA.json.gz')).toString())).toEqual([
-        { date: day, board: 'regular', buy: [buy], sell: [sell] },
-      ]);
+      expect(f.objects.has('site/broker/AAA.json.gz')).toBe(false);
       expect(f.objects.has('site/market-accumulation.json')).toBe(true);
       expect(f.objects.has('broker-run.json')).toBe(false);
     }
@@ -672,7 +622,7 @@ describe('private broker pipeline', () => {
             {
               year: `parquet/brokers/${year}.parquet`,
               coverage: 'parquet/broker-coverage.parquet',
-              site: 'site/broker/AAA.json.gz',
+              site: 'site/market-accumulation.json',
             }[cut]
         )
           throw new Error('storage failed');
