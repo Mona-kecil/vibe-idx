@@ -87,6 +87,15 @@
   flex: none;
   font-weight: 500;
 }
+.terminal-page .holder-name {
+  overflow-wrap: anywhere;
+}
+.terminal-page .holder-role {
+  display: inline-block;
+  margin-left: 8px;
+  color: var(--accent);
+  font-size: 10px;
+}
 .terminal-page .holder-plot {
   display: flex;
   gap: 8px;
