@@ -1,13 +1,15 @@
-import { Fragment, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { useTerminal } from './state';
 import type { Headline, Risk, Resource } from './sources';
-import { Availability, Empty, Publication, RiskFlags, Scroll, Segments, TickerLink } from './ui';
+import { Availability, Empty, Publication, Scroll, Segments, TickerLink } from './ui';
 import { dateText } from '../ticker/format';
 import './publication-panes.css';
 
 const perShare = ({ value, currency }: { value: number; currency: string }) =>
   `${new Intl.NumberFormat('en-US', { maximumFractionDigits: 4 }).format(value)} ${currency} per share`;
 
+const publicationDate = (value: string) =>
+  new Date(/T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?$/.test(value) ? `${value}+07:00` : value);
 const wib = (value: string, options: Intl.DateTimeFormatOptions = {}) =>
   new Intl.DateTimeFormat('en-GB', {
     timeZone: 'Asia/Jakarta',
@@ -16,7 +18,33 @@ const wib = (value: string, options: Intl.DateTimeFormatOptions = {}) =>
     hour: '2-digit',
     minute: '2-digit',
     ...options,
-  }).format(new Date(value));
+  })
+    .format(publicationDate(value))
+    .replace('Sept', 'Sep');
+const calendarDate = (value: string) =>
+  new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(publicationDate(value));
+function usePublicationTimeline(data: unknown, filter: string) {
+  const scroll = useRef<HTMLDivElement>(null);
+  const now = Date.now();
+  const today = calendarDate(new Date(now).toISOString());
+  const isPast = (date: string, dateOnly = false) =>
+    dateOnly ? calendarDate(date) < today : Date.parse(date) < now;
+  useEffect(() => {
+    const body = scroll.current;
+    const event = body?.querySelector('[data-upcoming="true"]');
+    const next = event?.previousElementSibling?.classList.contains('day')
+      ? event.previousElementSibling
+      : event;
+    if (body)
+      body.scrollTop = next
+        ? next.getBoundingClientRect().top -
+          body.getBoundingClientRect().top +
+          body.scrollTop -
+          (body.querySelector('thead')?.getBoundingClientRect().height ?? 0)
+        : body.scrollHeight;
+  }, [data, filter]);
+  return { scroll, isPast };
+}
 export function NewsPane() {
   const { publications, filters, filter, ticker, tickerNews } = useTerminal();
   const [article, setArticle] = useState<Headline | null>(null);
@@ -49,72 +77,58 @@ export function NewsPane() {
             setArticle(null);
           }}
         />
-        <Segments
-          label="Open news in"
-          values={['READER', 'NEW TAB']}
-          value={filters.open}
-          onChange={(value) => {
-            filter('open', value);
-            setArticle(null);
-          }}
-        />
       </div>
-      <Scroll reset={`${filters.news}:${ticker}`}>
-        <Availability resource={resource} name="News">
-          {() => (
-            <>
-              {publications.news.kind === 'ready' && (
-                <Publication
-                  date={publications.news.data.as_of}
-                  errors={publications.news.data.errors}
-                />
-              )}
-              {list.length ? (
-                list.map((item) => {
-                  const body = (
-                    <>
-                      <div className="news-meta">
-                        <time>{wib(item.ts)} WIB</time>
-                        <span>{item.src}</span>
-                      </div>
-                      <strong>{item.title}</strong>
-                      <div className="tags">
-                        {item.tags.map((tag) => (
-                          <span key={tag}>{tag}</span>
-                        ))}
-                      </div>
-                    </>
-                  );
-                  return filters.open === 'NEW TAB' ? (
-                    <a
-                      className="news-item"
-                      key={item.link}
-                      href={item.link}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      {body}
-                    </a>
-                  ) : (
-                    <button
-                      className={`news-item${article === item ? ' on' : ''}`}
-                      key={item.link}
-                      onClick={() => setArticle(item)}
-                    >
-                      {body}
-                    </button>
-                  );
-                })
-              ) : (
-                <Empty>No news in this view</Empty>
-              )}
-            </>
-          )}
-        </Availability>
-      </Scroll>
+      {!article && (
+        <Scroll reset={`${filters.news}:${ticker}`}>
+          <Availability resource={resource} name="News">
+            {() => (
+              <>
+                {publications.news.kind === 'ready' && (
+                  <Publication
+                    date={publications.news.data.as_of}
+                    errors={publications.news.data.errors}
+                  />
+                )}
+                {list.length ? (
+                  list.map((item) => {
+                    const body = (
+                      <>
+                        <div className="news-meta">
+                          <time>{wib(item.ts)} WIB</time>
+                          <span>{item.src}</span>
+                        </div>
+                        <strong>{item.title}</strong>
+                        <div className="tags">
+                          {item.tags
+                            .filter((tag) => filters.news !== 'TICKER' || tag !== ticker)
+                            .map((tag) => (
+                              <span key={tag}>{tag}</span>
+                            ))}
+                        </div>
+                      </>
+                    );
+                    return (
+                      <button
+                        className="news-item"
+                        key={item.link}
+                        onClick={() => setArticle(item)}
+                      >
+                        {body}
+                      </button>
+                    );
+                  })
+                ) : (
+                  <Empty>No news in this view</Empty>
+                )}
+              </>
+            )}
+          </Availability>
+        </Scroll>
+      )}
       {article && (
         <aside className="reader" aria-label="Article reader">
           <header>
+            <button onClick={() => setArticle(null)}>← Back</button>
             <span>{article.src}</span>
             <time>{wib(article.ts)} WIB</time>
             <nav>
@@ -140,9 +154,11 @@ export function NewsPane() {
           <div className="reader-body" key={article.link}>
             <h1>{article.title}</h1>
             <div className="tags">
-              {article.tags.map((tag) => (
-                <TickerLink key={tag} ticker={tag} />
-              ))}
+              {article.tags
+                .filter((tag) => filters.news !== 'TICKER' || tag !== ticker)
+                .map((tag) => (
+                  <TickerLink key={tag} ticker={tag} />
+                ))}
             </div>
             {article.sum ? <p>{article.sum}</p> : <Empty>Summary unavailable</Empty>}
           </div>
@@ -159,6 +175,15 @@ export function NewsPane() {
 export function CalendarPane() {
   const { publications, filters, filter } = useTerminal();
   const [open, setOpen] = useState<string | null>(null);
+  const data = publications.calendar.kind === 'ready' ? publications.calendar.data : null;
+  const { scroll, isPast } = usePublicationTimeline(data, filters.cal);
+  const rows = (data?.cal ?? [])
+    .filter(
+      (item) =>
+        filters.cal === 'ALL' || (filters.cal === 'HIGH' ? item.imp === 3 : item.c === 'ID'),
+    )
+    .sort((a, b) => a.ts.localeCompare(b.ts));
+  const upcoming = rows.find((item) => !isPast(item.ts, item.dateOnly));
   return (
     <>
       <div className="sub">
@@ -169,20 +194,14 @@ export function CalendarPane() {
           onChange={(value) => filter('cal', value)}
         />
       </div>
-      <Scroll reset={filters.cal}>
+      {data && <Publication errors={data.errors} />}
+      <div className="pb" ref={scroll}>
         <Availability resource={publications.calendar} name="Calendar">
           {(data) => {
-            const rows = data.cal
-              .filter(
-                (item) =>
-                  filters.cal === 'ALL' ||
-                  (filters.cal === 'HIGH' ? item.imp === 3 : item.c === 'ID'),
-              )
-              .sort((a, b) => a.ts.localeCompare(b.ts));
             let day = '';
             return (
               <>
-                <Publication date={data.as_of} errors={data.errors} />
+                <Publication date={data.as_of} />
                 {rows.length ? (
                   <table className="calendar">
                     <thead>
@@ -191,17 +210,11 @@ export function CalendarPane() {
                         <th>CTRY</th>
                         <th>EVENT</th>
                         <th>IMP</th>
-                        <th>FCST</th>
-                        <th>PREV</th>
                       </tr>
                     </thead>
                     <tbody>
                       {rows.map((item) => {
-                        const date = wib(item.ts, {
-                          hour: undefined,
-                          minute: undefined,
-                          year: 'numeric',
-                        });
+                        const date = dateText(calendarDate(item.ts));
                         const heading = day !== date;
                         day = date;
                         const key = item.ts + item.ev;
@@ -209,11 +222,17 @@ export function CalendarPane() {
                           <Fragment key={key}>
                             {heading && (
                               <tr className="day">
-                                <td colSpan={6}>{date}</td>
+                                <td colSpan={4}>{date}</td>
                               </tr>
                             )}
-                            <tr className={Date.parse(item.ts) < Date.now() ? 'past' : ''}>
-                              <td>{wib(item.ts, { day: undefined, month: undefined })}</td>
+                            <tr
+                              data-upcoming={item === upcoming}
+                              className={isPast(item.ts, item.dateOnly) ? 'past' : ''}
+                            >
+                              <td>
+                                {!item.dateOnly &&
+                                  wib(item.ts, { day: undefined, month: undefined })}
+                              </td>
                               <td>{item.c}</td>
                               <td className="l">
                                 <button
@@ -233,12 +252,10 @@ export function CalendarPane() {
                                   ))}
                                 </span>
                               </td>
-                              <td>{item.f}</td>
-                              <td className="mut">{item.p}</td>
                             </tr>
                             {open === key && (
                               <tr className="details">
-                                <td colSpan={6}>
+                                <td colSpan={4}>
                                   <a href={item.url} target="_blank" rel="noreferrer">
                                     {item.by}
                                   </a>
@@ -247,8 +264,30 @@ export function CalendarPane() {
                                       {item.sBy ?? 'Schedule'}
                                     </a>
                                   )}
+                                  {(item.f || item.p) && (
+                                    <dl>
+                                      {item.f && (
+                                        <div>
+                                          <dt>Forecast</dt>
+                                          <dd>{item.f}</dd>
+                                        </div>
+                                      )}
+                                      {item.p && (
+                                        <div>
+                                          <dt>Previous</dt>
+                                          <dd>{item.p}</dd>
+                                        </div>
+                                      )}
+                                    </dl>
+                                  )}
                                   {item.note && <p>{item.note}</p>}
-                                  {item.est && <p>{item.est}</p>}
+                                  {item.est && (
+                                    <p>
+                                      {/^Date only/i.test(item.est)
+                                        ? 'Release time not published by source'
+                                        : item.est}
+                                    </p>
+                                  )}
                                 </td>
                               </tr>
                             )}
@@ -264,7 +303,7 @@ export function CalendarPane() {
             );
           }}
         </Availability>
-      </Scroll>
+      </div>
     </>
   );
 }
@@ -281,8 +320,22 @@ const steps = {
   delisting: 'DELIST',
 };
 export function ActionsPane() {
-  const { publications, filters, filter, ticker, setTicker, data: market } = useTerminal();
+  const { publications, filters, filter, ticker, data: market } = useTerminal();
   const [open, setOpen] = useState<string | null>(null);
+  const data = publications.actions.kind === 'ready' ? publications.actions.data : null;
+  const { scroll, isPast } = usePublicationTimeline(
+    data,
+    `${filters.ca}:${filters.ca === 'TICKER' ? ticker : ''}`,
+  );
+  const rows = (data?.actions ?? [])
+    .filter(
+      (item) =>
+        filters.ca === 'ALL' ||
+        (filters.ca === 'TICKER' ? item.ticker === ticker : item.kind === filters.ca),
+    )
+    .flatMap((action) => action.steps.map((step) => ({ action, ...step })))
+    .sort((a, b) => a.date.localeCompare(b.date));
+  const upcoming = rows.find((row) => !isPast(row.date, true));
   return (
     <>
       <div className="sub">
@@ -293,17 +346,9 @@ export function ActionsPane() {
           onChange={(value) => filter('ca', value)}
         />
       </div>
-      <Scroll reset={`${filters.ca}:${filters.ca === 'TICKER' ? ticker : ''}`}>
+      <div className="pb" ref={scroll}>
         <Availability resource={publications.actions} name="Corporate actions">
-          {(data) => {
-            const rows = data.actions
-              .filter(
-                (item) =>
-                  filters.ca === 'ALL' ||
-                  (filters.ca === 'TICKER' ? item.ticker === ticker : item.kind === filters.ca),
-              )
-              .flatMap((action) => action.steps.map((step) => ({ action, ...step })))
-              .sort((a, b) => a.date.localeCompare(b.date));
+          {() => {
             let day = '';
             return (
               <>
@@ -322,7 +367,10 @@ export function ActionsPane() {
                                 <td colSpan={3}>{dateText(row.date)}</td>
                               </tr>
                             )}
-                            <tr className={row.action.ticker === ticker ? 'on' : ''}>
+                            <tr
+                              data-upcoming={row === upcoming}
+                              className={`${row.action.ticker === ticker ? 'on' : ''}${isPast(row.date, true) ? ' past' : ''}`}
+                            >
                               <td className="accent">{steps[row.step]}</td>
                               <td>
                                 <TickerLink ticker={row.action.ticker} />
@@ -330,10 +378,7 @@ export function ActionsPane() {
                               <td className="l">
                                 <button
                                   aria-expanded={open === key}
-                                  onClick={() => {
-                                    setOpen(open === key ? null : key);
-                                    setTicker(row.action.ticker);
-                                  }}
+                                  onClick={() => setOpen(open === key ? null : key)}
                                 >
                                   {row.action.label}
                                 </button>
@@ -351,7 +396,7 @@ export function ActionsPane() {
                                         <dt>{steps[step.step]}</dt>
                                         <dd>
                                           {step.date.length > 10
-                                            ? `${dateText(step.date)} ${step.date.slice(11, 16)} WIB`
+                                            ? `${wib(step.date)} WIB`
                                             : dateText(step.date)}
                                         </dd>
                                       </div>
@@ -372,7 +417,7 @@ export function ActionsPane() {
             );
           }}
         </Availability>
-      </Scroll>
+      </div>
     </>
   );
 }
@@ -388,6 +433,7 @@ const hasRisk = (risk: Risk, filter: string) =>
           : risk.notes.length > 0;
 export function RiskPane() {
   const { publications, filters, filter, ticker, data: market } = useTerminal();
+  const [open, setOpen] = useState<string | null>(null);
   return (
     <>
       <div className="sub">
@@ -413,29 +459,88 @@ export function RiskPane() {
               <>
                 <Publication date={market.health.risk} />
                 {rows.length ? (
-                  <table>
+                  <table className="risk-table">
+                    <colgroup>
+                      <col className="risk-ticker" />
+                      <col className="risk-flags" />
+                      <col className="risk-date" />
+                      <col />
+                    </colgroup>
                     <tbody>
-                      {rows.map(([code, risk]) => (
-                        <tr key={code} className={ticker === code ? 'on' : ''}>
-                          <td>
-                            <TickerLink ticker={code} />
-                          </td>
-                          <td>
-                            <RiskFlags risk={risk} />
-                          </td>
-                          <td className="mut">{risk.susp?.since ?? risk.uma?.date}</td>
-                          <td className="l">
-                            {[
-                              risk.susp?.reason,
-                              ...risk.notes
-                                .filter((note) => note.code !== 'X')
-                                .map((note) => note.text),
-                            ]
-                              .filter(Boolean)
-                              .join('; ')}
-                          </td>
-                        </tr>
-                      ))}
+                      {rows.map(([code, risk]) => {
+                        const date = risk.susp?.since ?? risk.uma?.date;
+                        const flags = [
+                          ...(risk.susp
+                            ? [{ code: 'SUSP', text: 'Suspended', url: risk.susp.url }]
+                            : []),
+                          ...(risk.uma
+                            ? [{ code: 'UMA', text: 'Unusual market activity', url: risk.uma.url }]
+                            : []),
+                          ...risk.notes.map((note) => ({
+                            ...note,
+                            code: note.code === 'X' ? 'FCA' : note.code,
+                            url: undefined,
+                          })),
+                        ];
+                        const reason = [risk.susp?.reason, ...risk.notes.map((note) => note.text)]
+                          .filter(Boolean)
+                          .join('; ');
+                        return (
+                          <Fragment key={code}>
+                            <tr className={ticker === code ? 'on' : ''}>
+                              <td>
+                                <TickerLink ticker={code} />
+                              </td>
+                              <td>
+                                <button
+                                  aria-label={`Risk details for ${code}`}
+                                  aria-expanded={open === code}
+                                  onClick={() => setOpen(open === code ? null : code)}
+                                >
+                                  <span className="flags">
+                                    {flags.map((flag) => (
+                                      <span
+                                        className={`flag${flag.code === 'SUSP' ? ' sus' : flag.code === 'UMA' ? ' uma' : ''}`}
+                                        key={flag.code}
+                                        aria-label={`${flag.code}: ${flag.text}`}
+                                      >
+                                        {flag.code}
+                                      </span>
+                                    ))}
+                                  </span>
+                                </button>
+                              </td>
+                              <td className="mut">{date && dateText(date)}</td>
+                              <td className="l">
+                                <span className="risk-reason">{reason}</span>
+                              </td>
+                            </tr>
+                            {open === code && (
+                              <tr className="details">
+                                <td colSpan={4}>
+                                  <dl>
+                                    {flags.map((flag) => (
+                                      <div key={flag.code}>
+                                        <dt>{flag.code}</dt>
+                                        <dd>
+                                          {flag.url ? (
+                                            <a href={flag.url} target="_blank" rel="noreferrer">
+                                              {flag.text}
+                                            </a>
+                                          ) : (
+                                            flag.text
+                                          )}
+                                        </dd>
+                                      </div>
+                                    ))}
+                                  </dl>
+                                  {risk.susp?.reason && <p>{risk.susp.reason}</p>}
+                                </td>
+                              </tr>
+                            )}
+                          </Fragment>
+                        );
+                      })}
                     </tbody>
                   </table>
                 ) : (

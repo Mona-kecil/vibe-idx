@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { Stale } from '../Stale';
 import type { Resource, Risk } from './sources';
 import { useTerminal } from './state';
 import { dateText, nf, short, signed } from '../ticker/format';
@@ -12,17 +13,50 @@ export function Segments<T extends string>({
   values,
   value,
   onChange,
+  disabled = [],
+  renderOption,
+  optionLabel,
 }: {
   label: string;
   values: readonly T[];
   value: T;
   onChange: (value: T) => void;
+  disabled?: readonly T[];
+  renderOption?: (option: T) => ReactNode;
+  optionLabel?: (option: T) => string;
 }) {
+  const enabled = values.filter((option) => !disabled.includes(option));
   return (
     <div className="seg" role="group" aria-label={label}>
       {values.map((option) => (
-        <button key={option} aria-pressed={option === value} onClick={() => onChange(option)}>
-          {option}
+        <button
+          key={option}
+          aria-pressed={option === value}
+          aria-label={optionLabel?.(option)}
+          disabled={disabled.includes(option)}
+          tabIndex={option === value ? 0 : -1}
+          onClick={() => onChange(option)}
+          onKeyDown={(event) => {
+            if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+            event.preventDefault();
+            const index = enabled.indexOf(option);
+            const target =
+              enabled[
+                event.key === 'Home'
+                  ? 0
+                  : event.key === 'End'
+                    ? enabled.length - 1
+                    : (index + (event.key === 'ArrowRight' ? 1 : -1) + enabled.length) %
+                      enabled.length
+              ];
+            if (target === undefined) return;
+            onChange(target);
+            event.currentTarget.parentElement
+              ?.querySelectorAll<HTMLButtonElement>('button')
+              [values.indexOf(target)]?.focus();
+          }}
+        >
+          {renderOption ? renderOption(option) : option}
         </button>
       ))}
     </div>
@@ -52,6 +86,20 @@ export function Empty({ children }: { children: ReactNode }) {
     <p className="empty" role="status">
       {children}
     </p>
+  );
+}
+export function SignInPrompt() {
+  const { session, signIn } = useTerminal();
+  return (
+    <Empty>
+      {session === 'checking' ? (
+        'Checking sign-in…'
+      ) : (
+        <>
+          <button onClick={signIn}>Sign in</button> to see broker and trade data
+        </>
+      )}
+    </Empty>
   );
 }
 export function Availability<T>({
@@ -136,6 +184,7 @@ export function StatusBar() {
   const { data, publications } = useTerminal();
   const [clock] = useClock();
   const last = data.market.history.at(-1);
+  const asof = data.health.prices ?? data.market.date;
   const next =
     publications.calendar.kind === 'ready'
       ? [...publications.calendar.data.cal]
@@ -185,7 +234,10 @@ export function StatusBar() {
           {next.c} {next.ev} {dateText(next.ts)}
         </span>
       )}
-      <time className="asof">EOD {data.health.prices ?? data.market.date ?? 'unavailable'}</time>
+      <div className="asof">
+        <Stale health={data.health} />
+        <time dateTime={asof ?? undefined}>EOD {asof ? dateText(asof) : 'unavailable'}</time>
+      </div>
     </footer>
   );
 }

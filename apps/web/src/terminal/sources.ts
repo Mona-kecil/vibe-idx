@@ -9,6 +9,7 @@ import { z } from 'zod';
 import { load, loadNews, corporateActionsSchema, risksSchema, riskSchema } from '../data';
 import { brokerHistorySchema, brokerTickerSchema } from '../brokers';
 import { headlineSchema, calendarEventSchema } from './contracts';
+import { dateText } from '../ticker/format';
 
 export type Resource<T> =
   | { kind: 'loading' }
@@ -16,6 +17,22 @@ export type Resource<T> =
   | { kind: 'ready'; data: T };
 export type Headline = z.infer<typeof headlineSchema>;
 export type Risk = z.infer<typeof riskSchema>;
+const sourceStatus = z.object({
+  as_of: z.string().nullable(),
+  attempted_at: z.string(),
+  status: z.enum(['ready', 'stale', 'unavailable']),
+});
+const sourceNames: Record<string, string> = {
+  bps: 'BPS releases',
+  bi: 'Bank Indonesia decisions',
+  forexfactory: 'Global economic events',
+  'cnbc-id': 'CNBC Indonesia news',
+  antara: 'Antara news',
+  bloomberg: 'Bloomberg news',
+  'cnbc-world': 'CNBC news',
+  'cnbc-top': 'CNBC news',
+  wsj: 'WSJ news',
+};
 const publication = {
   as_of: z
     .string()
@@ -23,9 +40,30 @@ const publication = {
     .nullable()
     .optional(),
   errors: z.array(z.string()).default([]),
+  sources: z.record(z.string(), sourceStatus).default({}),
 };
-const newsSchema = z.object({ ...publication, news: z.array(headlineSchema) });
-const calendarSchema = z.object({ ...publication, cal: z.array(calendarEventSchema) });
+function publicationWarnings(data: {
+  sources: Record<string, z.infer<typeof sourceStatus>>;
+  errors: string[];
+}) {
+  const failed = Object.entries(data.sources).filter(([, source]) => source.status !== 'ready');
+  return failed.length
+    ? failed.map(([id, source]) =>
+        source.status === 'stale'
+          ? `${sourceNames[id] ?? 'Some publication sources'} not updated${source.as_of ? ` since ${dateText(source.as_of)}` : ''}`
+          : `${sourceNames[id] ?? 'Some publication sources'} missing`,
+      )
+    : data.errors.map((error) => {
+        const id = error.match(/^(.*?) (?:feed|calendar) unavailable$/)?.[1];
+        return `${sourceNames[id ?? ''] ?? 'Some publication sources'} missing`;
+      });
+}
+const newsSchema = z
+  .object({ ...publication, news: z.array(headlineSchema) })
+  .transform((data) => ({ ...data, errors: publicationWarnings(data) }));
+const calendarSchema = z
+  .object({ ...publication, cal: z.array(calendarEventSchema) })
+  .transform((data) => ({ ...data, errors: publicationWarnings(data) }));
 const actionsSchema = corporateActionsSchema.transform((actions) => ({ actions }));
 const risks = risksSchema.transform((risk) => ({ risk }));
 
@@ -85,7 +123,13 @@ export async function fetchTickerNews(ticker: string): Promise<Resource<Headline
       data: rows.map((row) => ({
         ts: row.published_at,
         src: row.source,
-        title: row.title,
+        title: row.title.replace(
+          new RegExp(
+            `\\s+[-–—|]\\s+${row.source.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`,
+            'i',
+          ),
+          '',
+        ),
         link: row.url,
         region: 'TICKER',
         sum: '',

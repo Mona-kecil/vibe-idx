@@ -1,4 +1,5 @@
 import './styles.css';
+import './terminal/terminal.css';
 import { lazy, Suspense, useEffect, useState, useSyncExternalStore } from 'react';
 import { LocaleProvider, useLocale, type Locale } from './locale';
 import { LoginPage } from './BrokerPanel';
@@ -49,7 +50,15 @@ function TerminalRoute() {
     () => true,
   );
   return wide ? (
-    <Suspense fallback={<p role="status">Loading terminal…</p>}>
+    <Suspense
+      fallback={
+        <div className="terminal-page">
+          <p className="empty" role="status">
+            Loading terminal…
+          </p>
+        </div>
+      }
+    >
       <Terminal />
     </Suspense>
   ) : (

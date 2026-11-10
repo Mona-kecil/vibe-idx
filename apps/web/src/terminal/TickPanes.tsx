@@ -1,13 +1,6 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
+import { dateText, nf } from '../ticker/format';
 import {
-  CandlestickSeries,
-  HistogramSeries,
-  type CandlestickData,
-  type UTCTimestamp,
-} from 'lightweight-charts';
-import { nf, short } from '../ticker/format';
-import {
-  bars,
   clock,
   doneDetail,
   tradeBook,
@@ -16,72 +9,10 @@ import {
   type TickKind,
   type TickTrades,
 } from '../ticks';
-import { fetchTicks } from './sources';
+import { useSession, useTicks, type Loaded } from './tick-data';
 import { useTerminal } from './state';
-import { terminalChart } from './charts';
-import { Empty, Scroll, Segments } from './ui';
+import { Empty, Scroll, Segments, SignInPrompt } from './ui';
 import './tick-panes.css';
-
-type Loaded<K extends TickKind> = K extends 'book' ? TickBook : TickTrades;
-type TickState<K extends TickKind> =
-  | { kind: 'loading' }
-  | { kind: 'missing' }
-  | { kind: 'error'; message: string }
-  | { kind: 'ready'; data: Loaded<K> };
-
-// Past sessions never change, so every pane showing the same ticker and day shares one request.
-const cache = new Map<string, Promise<TickBook | TickTrades | null>>();
-
-/** Sessions the ticker traded in 2026, and the one the tick panes show. */
-function useSession() {
-  const { detail, tickDate, setTickDate } = useTerminal();
-  const dates = useMemo(
-    () =>
-      detail.kind === 'ready'
-        ? detail.data.prices.map((p) => p.date).filter((date) => date >= '2026-01-01')
-        : [],
-    [detail],
-  );
-  const date = tickDate && dates.includes(tickDate) ? tickDate : dates.at(-1);
-  return { dates, date, setTickDate };
-}
-
-function useTicks<K extends TickKind>(kind: K, date: string | undefined): TickState<K> {
-  const { ticker, signedIn, getToken } = useTerminal();
-  const [state, setState] = useState<TickState<K>>({ kind: 'loading' });
-  useEffect(() => {
-    if (!signedIn || !date) return;
-    let current = true;
-    const key = `${ticker}:${date}:${kind}`;
-    setState({ kind: 'loading' });
-    let request = cache.get(key);
-    if (!request) {
-      request = getToken().then((token) => {
-        if (!token) throw new Error('Your session expired. Sign in again.');
-        return fetchTicks(ticker, date, kind, token);
-      });
-      cache.set(key, request);
-    }
-    request.then(
-      (data) => {
-        if (current)
-          setState(data ? { kind: 'ready', data: data as Loaded<K> } : { kind: 'missing' });
-      },
-      (error: unknown) => {
-        cache.delete(key);
-        if (current)
-          setState({
-            kind: 'error',
-            message: error instanceof Error ? error.message : 'Tick data is unavailable. Retry.',
-          });
-      },
-    );
-    return () => {
-      current = false;
-    };
-  }, [ticker, date, kind, signedIn, getToken]);
-  return state;
-}
 
 function SessionPicker() {
   const { dates, date, setTickDate } = useSession();
@@ -95,7 +26,7 @@ function SessionPicker() {
       >
         ‹
       </button>
-      <time>{date ?? '—'}</time>
+      <time>{date ? dateText(date) : '—'}</time>
       <button
         aria-label="Next session"
         disabled={index < 0 || index >= dates.length - 1}
@@ -116,19 +47,14 @@ function TickPane<K extends TickKind>({
   controls?: ReactNode;
   children: (data: Loaded<K>) => ReactNode;
 }) {
-  const { signedIn, signIn } = useTerminal();
+  const { session } = useTerminal();
   const { date } = useSession();
   const state = useTicks(kind, date);
+  if (session !== 'signed-in') return <SignInPrompt />;
   let body: ReactNode;
-  if (!signedIn)
-    body = (
-      <Empty>
-        <button onClick={signIn}>Sign in</button>
-      </Empty>
-    );
-  else if (!date) body = <Empty>No 2026 sessions for this ticker</Empty>;
-  else if (state.kind === 'loading') body = <Empty>Loading {date}…</Empty>;
-  else if (state.kind === 'missing') body = <Empty>Not collected for {date}</Empty>;
+  if (!date) body = <Empty>No 2026 sessions for this ticker</Empty>;
+  else if (state.kind === 'loading') body = <Empty>Loading {dateText(date)}…</Empty>;
+  else if (state.kind === 'missing') body = <Empty>Not collected for {dateText(date)}</Empty>;
   else if (state.kind === 'error')
     body = (
       <p className="empty" role="alert">
@@ -181,12 +107,12 @@ function Ladder({ book }: { book: TickBook }) {
             return (
               <tr key={i}>
                 <td>{bid && nf(bid[1])}</td>
-                <td className="depth bid" style={bid && depth(bid[2])}>
+                <td className={bid ? 'depth bid' : undefined} style={bid && depth(bid[2])}>
                   {bid && lots(bid[2])}
                 </td>
                 <td className="up">{bid && nf(bid[0])}</td>
                 <td className="dn">{offer && nf(offer[0])}</td>
-                <td className="depth offer" style={offer && depth(offer[2])}>
+                <td className={offer ? 'depth offer' : undefined} style={offer && depth(offer[2])}>
                   {offer && lots(offer[2])}
                 </td>
                 <td>{offer && nf(offer[1])}</td>
@@ -428,96 +354,5 @@ function PriceLevels({ trades }: { trades: TickTrades }) {
         </tbody>
       </table>
     </Scroll>
-  );
-}
-
-const sizes = { '1M': 1, '5M': 5, '15M': 15, '1H': 60 } as const;
-export function IntradayPane() {
-  const [size, setSize] = useState<keyof typeof sizes>('5M');
-  return (
-    <TickPane
-      kind="trades"
-      controls={
-        <Segments
-          label="Bar size"
-          values={Object.keys(sizes) as (keyof typeof sizes)[]}
-          value={size}
-          onChange={setSize}
-        />
-      }
-    >
-      {(trades) => <Intraday trades={trades} minutes={sizes[size]} />}
-    </TickPane>
-  );
-}
-function Intraday({ trades, minutes }: { trades: TickTrades; minutes: number }) {
-  const host = useRef<HTMLDivElement>(null);
-  const series = useMemo(() => bars(trades, minutes), [trades, minutes]);
-  const [hover, setHover] = useState<number | null>(null);
-  // The chart runs in UTC, so offsetting by the session's midnight shows Jakarta clock times.
-  const midnight = Date.parse(`${trades.date}T00:00:00Z`) / 1000;
-  useEffect(() => {
-    if (!host.current || !series.length) return;
-    const chart = terminalChart(host.current);
-    chart.applyOptions({ timeScale: { timeVisible: true, secondsVisible: false } });
-    const candles = chart.addSeries(CandlestickSeries, {
-      upColor: '#22a6a0',
-      downColor: '#e4573f',
-      borderVisible: false,
-      wickUpColor: '#22a6a0',
-      wickDownColor: '#e4573f',
-      priceFormat: { type: 'custom', minMove: 1, formatter: (value: number) => nf(value) },
-    });
-    candles.setData(
-      series.map(
-        (bar): CandlestickData<UTCTimestamp> => ({
-          time: (midnight + bar.time) as UTCTimestamp,
-          open: bar.open,
-          high: bar.high,
-          low: bar.low,
-          close: bar.close,
-        }),
-      ),
-    );
-    chart
-      .addSeries(
-        HistogramSeries,
-        {
-          lastValueVisible: false,
-          priceLineVisible: false,
-          priceFormat: { type: 'custom', formatter: short },
-        },
-        1,
-      )
-      .setData(
-        series.map((bar) => ({
-          time: (midnight + bar.time) as UTCTimestamp,
-          value: bar.shares / 100,
-          color: bar.close >= bar.open ? '#22a6a08c' : '#e4573f8c',
-        })),
-      );
-    chart.subscribeCrosshairMove((event) =>
-      setHover(typeof event.time === 'number' ? event.time - midnight : null),
-    );
-    chart.timeScale().fitContent();
-    return () => chart.remove();
-  }, [series, midnight]);
-  const bar = series.find((b) => b.time === hover) ?? series.at(-1);
-  if (!bar) return <Empty>No regular-board trades</Empty>;
-  return (
-    <div className="flow-view">
-      <div className="legend">
-        <time>{clock(bar.time)}</time>
-        <span>O {nf(bar.open)}</span>
-        <span>H {nf(bar.high)}</span>
-        <span>L {nf(bar.low)}</span>
-        <span>C {nf(bar.close)}</span>
-        <span>{lots(bar.shares)} lot</span>
-        <span className="tick-foreign">
-          F {lots(bar.foreignBuy)} buy {lots(bar.foreignSell)} sell
-        </span>
-      </div>
-      <div className="flow-chart" ref={host} />
-    </div>
   );
 }

@@ -1,7 +1,9 @@
 import { useTerminal } from './state';
-import { Availability, Empty, Scroll, direction } from './ui';
+import { Availability, Empty, Scroll } from './ui';
+import type { Ticker } from '../data';
+import { PinButton } from './MarketPanes';
 import { dateText, nf, short, signed } from '../ticker/format';
-import { inRange, registryAt } from '../ticker/logic';
+import { bounds, holderRole, inRange, registryAt } from '../ticker/logic';
 import { FilingAttachments } from '../ticker/Feeds';
 
 export function DescriptionPane() {
@@ -21,7 +23,7 @@ export function DescriptionPane() {
                 ? `${signed(last.close - previous.close, nf)} (${nf((last.close / previous.close - 1) * 100, 2)}%)`
                 : '—',
             ],
-            ['PRICES', last?.date ?? '—'],
+            ['PRICE DATE', last ? dateText(last.date) : '—'],
             ['VALUE IDR', last ? short(last.value) : '—'],
             ['VOLUME SHARES', last ? short(last.volume) : '—'],
             ['NET FOREIGN EST. IDR', last ? signed(last.net_foreign, short) : '—'],
@@ -31,11 +33,14 @@ export function DescriptionPane() {
             ],
             ['SID COUNT', registry?.sid_count == null ? '—' : nf(registry.sid_count)],
             ['ISSUED SHARES', registry?.issued_shares == null ? '—' : nf(registry.issued_shares)],
-            ['REGISTRY', registry?.date ?? '—'],
+            ['REGISTRY DATE', registry ? dateText(registry.date) : '—'],
           ];
           return (
             <div className="description">
-              <h1>{data.name}</h1>
+              <div className="key-heading">
+                <h1>{data.name}</h1>
+                <PinButton ticker={ticker} showTicker />
+              </div>
               <dl>
                 {fields.map(([key, value]) => (
                   <div key={key}>
@@ -51,53 +56,211 @@ export function DescriptionPane() {
     </Scroll>
   );
 }
-export function HoldersPane() {
-  const { detail, ticker, selection } = useTerminal();
+type HolderPoint = { date: string; shares: number | null } & (
+  | { pct: number }
+  | { pct: null; below: 1 | 5 }
+);
+type HolderHistory = { key: string; name: string; points: HolderPoint[] };
+function holderHistories(data: Ticker, date: string | null) {
+  const histories = new Map<string, HolderHistory>();
+  function add(key: string, name: string, point: HolderPoint) {
+    const history = histories.get(key) ?? { key, name, points: [] };
+    history.name = name;
+    history.points = history.points.filter((p) => p.date !== point.date);
+    history.points.push(point);
+    histories.set(key, history);
+  }
+  for (const snapshot of [...data.registry_history].sort((a, b) => a.date.localeCompare(b.date)))
+    for (const holder of snapshot.holders)
+      if (holder.pct >= 1)
+        add(holder.holder_key, holder.investor, {
+          date: snapshot.date,
+          pct: holder.pct,
+          shares: null,
+        });
+  const monthly = data.one_pct_history.filter((s) => s.date !== data.one_pct.date);
+  if (data.one_pct.date) monthly.push({ date: data.one_pct.date, holders: data.one_pct.holders });
+  let previousAccounts: string[] = [];
+  for (const snapshot of monthly.sort((a, b) => a.date.localeCompare(b.date))) {
+    const accounts = new Map<string, Ticker['holders'][number]>();
+    for (const holder of snapshot.holders) {
+      const combined = accounts.get(holder.holder_key);
+      accounts.set(holder.holder_key, {
+        ...holder,
+        pct: (combined?.pct ?? 0) + holder.pct,
+        shares: (combined?.shares ?? 0) + holder.shares,
+      });
+    }
+    for (const key of previousAccounts) {
+      const history = histories.get(key);
+      if (history && !accounts.has(key))
+        add(key, history.name, { date: snapshot.date, pct: null, shares: null, below: 1 });
+    }
+    previousAccounts = [...accounts.keys()];
+    for (const holder of accounts.values()) {
+      const history = histories.get(holder.holder_key);
+      // Monthly account totals supersede rounded registry percentages for that month.
+      if (history)
+        history.points = history.points.filter(
+          (p) => p.date.slice(0, 7) !== snapshot.date.slice(0, 7),
+        );
+      add(holder.holder_key, holder.investor, {
+        date: snapshot.date,
+        pct: holder.pct,
+        shares: holder.shares,
+      });
+    }
+  }
+  for (const row of [...data.changes].sort((a, b) => a.date.localeCompare(b.date)))
+    add(row.holder_key, row.investor, {
+      date: row.date,
+      ...(row.pct_after === null ? { pct: null, below: 5 } : { pct: row.pct_after }),
+      shares: row.shares_after,
+    });
+  if (date)
+    for (const holder of data.holders)
+      add(holder.holder_key, holder.investor, { date, pct: holder.pct, shares: holder.shares });
+  return [...histories.values()].map((history) => ({
+    ...history,
+    points: history.points.sort((a, b) => a.date.localeCompare(b.date)),
+  }));
+}
+function HolderChart({
+  history,
+  role,
+}: {
+  history: HolderHistory;
+  role: ReturnType<typeof holderRole>;
+}) {
+  const first = history.points[0],
+    last = history.points.at(-1);
+  if (!first || !last) return null;
+  const values = history.points.flatMap((p) => (p.pct === null ? [] : [p.pct]));
+  const low = Math.min(...values),
+    high = Math.max(...values);
+  const span = Date.parse(last.date) - Date.parse(first.date) || 1;
+  const x = (point: HolderPoint) =>
+    4 + ((Date.parse(point.date) - Date.parse(first.date)) / span) * 292;
+  const y = (pct: number) => 54 - ((pct - low) / (high - low || 1)) * 44;
+  const path = history.points
+    .map((point, i, all) =>
+      point.pct === null
+        ? ''
+        : `${i === 0 || all[i - 1]?.pct === null ? 'M' : 'L'}${x(point)},${y(point.pct)}`,
+    )
+    .join(' ');
   return (
-    <Scroll reset={`${ticker}:${selection?.anchor}:${selection?.end}`}>
-      <Availability resource={detail} name="Ownership">
-        {(data) => (
-          <>
-            {data.holders.length ? (
+    <section className="holder-history" aria-label={history.name}>
+      <div className="holder-title">
+        <span className="holder-name">
+          {history.name}
+          {role && (
+            <span className="holder-role" aria-label={role} title={role}>
+              {role === 'Controller' ? 'CTRL' : 'AFFIL'}
+            </span>
+          )}
+        </span>
+        <b>{last.pct === null ? `Below ${last.below}%` : `${nf(last.pct, 2)}%`}</b>
+      </div>
+      {values.length > 0 && (
+        <div className="holder-plot">
+          <svg
+            viewBox="0 0 300 64"
+            preserveAspectRatio="none"
+            role="img"
+            aria-label={`${history.name} reported holding percentage from ${dateText(first.date)} to ${dateText(last.date)}, ${nf(low, 2)}% to ${nf(high, 2)}%`}
+          >
+            <path d={path} fill="none" stroke="currentColor" vectorEffect="non-scaling-stroke" />
+            {history.points.map((point) =>
+              point.pct === null ? null : (
+                <circle key={point.date} cx={x(point)} cy={y(point.pct)} r="2">
+                  <title>
+                    {dateText(point.date)} {nf(point.pct, 2)}%
+                  </title>
+                </circle>
+              ),
+            )}
+          </svg>
+          <div className="holder-scale">
+            <span>{nf(high, 2)}%</span>
+            <span>{nf(low, 2)}%</span>
+          </div>
+        </div>
+      )}
+      <div className="holder-dates">
+        <time>{dateText(first.date)}</time>
+        {first.date !== last.date && <time>{dateText(last.date)}</time>}
+      </div>
+      <details>
+        <summary>Reported values ({history.points.length})</summary>
+        <table>
+          <thead>
+            <tr>
+              <th>DATE</th>
+              <th>HOLDING</th>
+              <th>SHARES</th>
+            </tr>
+          </thead>
+          <tbody>
+            {[...history.points].reverse().map((point) => (
+              <tr key={point.date}>
+                <td>{dateText(point.date)}</td>
+                <td>{point.pct === null ? `Below ${point.below}%` : `${nf(point.pct, 2)}%`}</td>
+                <td>{point.shares === null ? '—' : nf(point.shares)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </details>
+    </section>
+  );
+}
+export function HoldersPane() {
+  const { data: market, detail, ticker, selection, select } = useTerminal();
+  const range = bounds(selection);
+  return (
+    <>
+      {range && (
+        <div className="holder-range" role="status">
+          <span>
+            Chart range {dateText(range.start)} to {dateText(range.end)}
+          </span>
+          <button onClick={() => select(null)}>Clear chart range</button>
+        </div>
+      )}
+      <Scroll reset={`${ticker}:${selection?.anchor}:${selection?.end}`}>
+        <Availability resource={detail} name="Ownership">
+          {(data) => {
+            const snapshot = registryAt(
+              data,
+              range?.end ?? market.health.five_pct ?? data.prices.at(-1)?.date ?? '',
+            );
+            const histories = holderHistories(data, market.health.five_pct)
+              .map((history) => ({
+                ...history,
+                points: history.points.filter((point) => inRange(point.date, selection)),
+              }))
+              .filter((history) => history.points.length > 0)
+              .sort((a, b) => (b.points.at(-1)?.pct ?? 0) - (a.points.at(-1)?.pct ?? 0));
+            return histories.length ? (
               <div className="holders">
-                {data.holders.map((holder) => (
-                  <div className="holder-row" key={holder.holder_key}>
-                    <span title={holder.investor}>{holder.investor}</span>
-                    <meter
-                      min="0"
-                      max={Math.max(...data.holders.map((h) => h.pct))}
-                      value={holder.pct}
-                    />
-                    <span>{nf(holder.pct, 2)}%</span>
-                  </div>
+                {histories.map((history) => (
+                  <HolderChart
+                    key={history.key}
+                    history={history}
+                    role={holderRole(snapshot, history.key)}
+                  />
                 ))}
               </div>
             ) : (
-              <Empty>No 5% holders reported</Empty>
-            )}
-            <table>
-              <tbody>
-                {[...data.changes]
-                  .filter((row) => inRange(row.date, selection))
-                  .sort((a, b) => b.date.localeCompare(a.date))
-                  .map((row, index) => (
-                    <tr key={`${row.holder_key}:${row.date}:${index}`}>
-                      <td className="mut">{dateText(row.date, false)}</td>
-                      <td className="l">{row.investor}</td>
-                      <td>
-                        {nf(row.pct_before, 2)}% →{' '}
-                        <span className={direction((row.pct_after ?? 0) - row.pct_before)}>
-                          {row.pct_after === null ? 'Below 5%' : `${nf(row.pct_after, 2)}%`}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-              </tbody>
-            </table>
-          </>
-        )}
-      </Availability>
-    </Scroll>
+              <Empty>
+                {range ? 'No holder reports in this chart range' : 'No holders reported'}
+              </Empty>
+            );
+          }}
+        </Availability>
+      </Scroll>
+    </>
   );
 }
 export function DisclosuresPane() {
@@ -107,7 +270,7 @@ export function DisclosuresPane() {
       <Availability resource={detail} name="Disclosures">
         {(data) =>
           data.disclosures.length ? (
-            <table>
+            <table className="disclosures-table">
               <tbody>
                 {[...data.disclosures]
                   .sort((a, b) => b.published_at.localeCompare(a.published_at))

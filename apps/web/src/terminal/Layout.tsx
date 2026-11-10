@@ -20,36 +20,21 @@ export const layouts: Record<Layout, { tree: LayoutNode; slots: Record<string, F
     },
     slots: {
       a: ['WL'],
-      b: ['GP', 'ID'],
+      b: ['GP'],
       c: ['NEWS', 'SIG', 'CAL', 'CA', 'HEAT'],
       d: ['MOV', 'RISK'],
       e: ['BRK', 'BFL', 'FF', 'RT', 'DD'],
-      f: ['HDS', 'DISC', 'DES', 'OB', 'TB'],
+      f: ['HDS', 'DISC', 'KEY', 'OB', 'TB'],
     },
   },
   focus: {
     tree: { direction: 'row', sizes: [70, 30], children: ['b', 'c'] },
     slots: {
-      b: [
-        'GP',
-        'ID',
-        'DES',
-        'BRK',
-        'BFL',
-        'FF',
-        'RT',
-        'DD',
-        'OB',
-        'TB',
-        'HDS',
-        'DISC',
-        'HEAT',
-        'MOV',
-      ],
+      b: ['GP', 'KEY', 'BRK', 'BFL', 'FF', 'RT', 'DD', 'OB', 'TB', 'HDS', 'DISC', 'HEAT', 'MOV'],
       c: ['NEWS', 'SIG', 'CAL', 'CA', 'RISK', 'WL'],
     },
   },
-  live: {
+  flow: {
     tree: {
       direction: 'row',
       sizes: [60, 40],
@@ -59,7 +44,7 @@ export const layouts: Record<Layout, { tree: LayoutNode; slots: Record<string, F
       ],
     },
     slots: {
-      b: ['GP', 'ID', 'DES'],
+      b: ['GP', 'KEY'],
       c: ['CAL', 'CA', 'RISK', 'OB', 'TB'],
       d: ['BRK', 'BFL', 'FF', 'RT', 'DD'],
       e: ['NEWS', 'WL', 'SIG'],

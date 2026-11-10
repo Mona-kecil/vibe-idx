@@ -5,16 +5,23 @@
   padding: 4px 6px;
 }
 .terminal-page .broker-controls .seg button {
-  font-size: 9px;
+  font-size: 10px;
   padding: 3px 5px;
+}
+.terminal-page .broker-controls button {
+  min-height: 24px;
 }
 .terminal-page .broker-ledgers {
   display: grid;
+  align-items: start;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 12px;
 }
 .terminal-page .broker-ledger {
   font-size: 11px;
+}
+.terminal-page .broker-ledger th {
+  font-size: 10px;
 }
 .terminal-page .broker-ledger td,
 .terminal-page .broker-ledger th {
@@ -38,13 +45,16 @@
 .terminal-page .broker-ledger .type-FOREIGN {
   color: var(--broker-foreign);
 }
-.terminal-page .broker-foot {
+.terminal-page .broker-date {
   display: flex;
-  justify-content: space-between;
+  flex: none;
   gap: 12px;
   font-size: 10px;
   color: var(--muted);
-  padding: 8px;
+  padding: 4px 8px;
+}
+.terminal-page .broker-date.lagging {
+  color: var(--accent);
 }
 .terminal-page .broker-key {
   display: inline-flex;
@@ -69,6 +79,8 @@
   right: 8px;
   max-height: 80%;
   overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #354139 transparent;
   background: var(--head);
   padding: 8px;
   z-index: 8;
@@ -90,10 +102,4 @@
 }
 .terminal-page .broker-picker > button:hover {
   background: var(--sel);
-}
-@media (max-width: 520px) {
-  .terminal-page .broker-ledgers {
-    gap: 8px;
-    min-width: 450px;
-  }
 }

@@ -7,7 +7,37 @@ import {
   type Layout,
   useTerminal,
 } from './state';
+import type { Stock } from '../data';
 import './command.css';
+
+export function commandSuggestions(
+  stocks: readonly Pick<Stock, 'ticker' | 'name' | 'value'>[],
+  query: string,
+) {
+  if (!query) return [];
+  const rank = (item: { code: string; label: string }) =>
+    item.code === query
+      ? 0
+      : item.code.startsWith(query)
+        ? 1
+        : query.length >= 3 &&
+            item.label
+              .toUpperCase()
+              .split(/\s+/)
+              .some((word) => word.startsWith(query))
+          ? 2
+          : 3;
+  return [
+    ...Object.entries(functions).map(([code, label]) => ({ code, label })),
+    ...['GRID', 'FOCUS', 'FLOW', 'HELP'].map((code) => ({ code, label: '' })),
+    ...[...stocks]
+      .sort((a, b) => b.value - a.value)
+      .map((stock) => ({ code: stock.ticker, label: stock.name })),
+  ]
+    .filter((item) => rank(item) < 3)
+    .sort((a, b) => rank(a) - rank(b))
+    .slice(0, 8);
+}
 
 export function CommandBar({
   layout,
@@ -22,31 +52,14 @@ export function CommandBar({
 }) {
   const { data, setTicker, pins, ticker, select, selection, filter } = useTerminal();
   const input = useRef<HTMLInputElement>(null);
+  const helpButton = useRef<HTMLButtonElement>(null);
   const [text, setText] = useState(''),
     [active, setActive] = useState(0),
     [focused, setFocused] = useState(false),
     [help, setHelp] = useState(false),
     [error, setError] = useState('');
   const last = text.trim().toUpperCase().split(/\s+/).at(-1) ?? '';
-  const suggestions = last
-    ? [
-        ...Object.entries(functions).map(([code, label]) => ({ code, label })),
-        ...['GRID', 'FOCUS', 'LIVE', 'HELP'].map((code) => ({ code, label: '' })),
-        ...[...data.stocks]
-          .sort((a, b) => b.value - a.value)
-          .map((stock) => ({ code: stock.ticker, label: stock.name })),
-      ]
-        .filter(
-          (item) =>
-            item.code.startsWith(last) ||
-            (last.length >= 3 &&
-              item.label
-                .toUpperCase()
-                .split(/\s+/)
-                .some((word) => word.startsWith(last))),
-        )
-        .slice(0, 8)
-    : [];
+  const suggestions = commandSuggestions(data.stocks, last);
   function run(command: string) {
     setError('');
     const tokens = command.toUpperCase().trim().split(/\s+/);
@@ -93,6 +106,10 @@ export function CommandBar({
   }
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
+      if (help) {
+        if (event.key === 'Escape') setHelp(false);
+        return;
+      }
       if (
         event.metaKey ||
         event.ctrlKey ||
@@ -110,7 +127,7 @@ export function CommandBar({
           : event.key === '2'
             ? 'focus'
             : event.key === '3'
-              ? 'live'
+              ? 'flow'
               : null;
       if (isLayout(next)) {
         setLayout(next);
@@ -146,6 +163,9 @@ export function CommandBar({
   return (
     <>
       <header className="cmd">
+        <a className="home-link" href="/" aria-label="Home">
+          HOME
+        </a>
         <span className="prompt" aria-hidden="true">
           &gt;
         </span>
@@ -188,7 +208,7 @@ export function CommandBar({
               setError('');
               dismiss();
             } else if (!text && ['1', '2', '3'].includes(event.key)) {
-              const next = ['grid', 'focus', 'live'][Number(event.key) - 1];
+              const next = ['grid', 'focus', 'flow'][Number(event.key) - 1];
               if (next && isLayout(next)) {
                 event.preventDefault();
                 setLayout(next);
@@ -219,14 +239,19 @@ export function CommandBar({
           ))}
         </div>
         <nav className="lay" aria-label="Layout">
-          {(['grid', 'focus', 'live'] as const).map((value, index) => (
+          {(['grid', 'focus', 'flow'] as const).map((value, index) => (
             <button key={value} aria-pressed={layout === value} onClick={() => setLayout(value)}>
               <kbd>{index + 1}</kbd>
               {value.toUpperCase()}
             </button>
           ))}
         </nav>
-        <button className="helpbtn" aria-label="Keyboard reference" onClick={() => setHelp(!help)}>
+        <button
+          ref={helpButton}
+          className="helpbtn"
+          aria-label="Keyboard reference"
+          onClick={() => setHelp(!help)}
+        >
           ?
         </button>
       </header>
@@ -245,7 +270,25 @@ export function CommandBar({
           aria-modal="true"
           aria-label="Keyboard reference"
           onKeyDown={(event) => {
-            if (event.key === 'Escape') setHelp(false);
+            if (event.key === 'Escape') {
+              event.stopPropagation();
+              setHelp(false);
+              helpButton.current?.focus();
+            }
+            if (event.key === 'Tab') {
+              const targets = Array.from(
+                event.currentTarget.querySelectorAll<HTMLElement>('button,a[href]'),
+              );
+              const first = targets[0],
+                last = targets.at(-1);
+              if (event.shiftKey && document.activeElement === first) {
+                event.preventDefault();
+                last?.focus();
+              } else if (!event.shiftKey && document.activeElement === last) {
+                event.preventDefault();
+                first?.focus();
+              }
+            }
           }}
         >
           <div>
@@ -253,7 +296,10 @@ export function CommandBar({
               className="close-help"
               autoFocus
               aria-label="Close keyboard reference"
-              onClick={() => setHelp(false)}
+              onClick={() => {
+                setHelp(false);
+                helpButton.current?.focus();
+              }}
             >
               ×
             </button>
@@ -270,7 +316,7 @@ export function CommandBar({
               <dt>Up Down</dt>
               <dd>Move through suggestions, watchlist or articles</dd>
               <dt>1 2 3</dt>
-              <dd>GRID FOCUS LIVE</dd>
+              <dd>GRID FOCUS FLOW</dd>
               <dt>Esc</dt>
               <dd>Clear selection, close reader or restore pane</dd>
               <dt>Drag borders</dt>

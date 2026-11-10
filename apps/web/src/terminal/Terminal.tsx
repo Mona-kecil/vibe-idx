@@ -3,8 +3,7 @@ import { useAuth } from '@workos-inc/authkit-react';
 import type { Ticker } from '../data';
 import type { BrokerDay } from '../brokers';
 import type { Selection } from '../ticker/logic';
-import type { Period } from '../ticker/PriceChart';
-import { initialPins } from '../watchlist';
+import { initialPins, writeStorage } from '../watchlist';
 import {
   fetchBrokers,
   fetchDetail,
@@ -19,27 +18,21 @@ import {
   functions,
   initialFilters,
   initialBrokerFilters,
-  isLayout,
+  parseLayout,
   usePublications,
   useTerminal,
   type Filters,
   type BrokerFilters,
   type FunctionId,
   type Layout,
+  type Timeframe,
 } from './state';
 import { CommandBar } from './CommandBar';
 import { SplitLayout, layouts } from './Layout';
-import { Empty, RiskFlags, StatusBar, direction, percent } from './ui';
-import { nf } from '../ticker/format';
+import { Empty, RiskFlags, StatusBar } from './ui';
 import { PricePane } from './PricePane';
 import { BrokerSummaryPane, BrokerFlowPane, ForeignFlowPane } from './BrokerPanes';
-import {
-  DoneDetailPane,
-  IntradayPane,
-  OrderBookPane,
-  RunningTradePane,
-  TradeBookPane,
-} from './TickPanes';
+import { DoneDetailPane, OrderBookPane, RunningTradePane, TradeBookPane } from './TickPanes';
 import { WatchlistPane, MoversPane, SignalsPane, HeatmapPane } from './MarketPanes';
 import { DescriptionPane, HoldersPane, DisclosuresPane } from './TickerPanes';
 import { NewsPane, CalendarPane, ActionsPane, RiskPane } from './PublicationPanes';
@@ -105,11 +98,10 @@ function TerminalWorkspace({ data }: { data: TerminalData }) {
     );
   });
   const [layout, changeLayout] = useState<Layout>(() => {
-    const value = query.get('l');
-    return isLayout(value) ? value : 'grid';
+    return parseLayout(query.get('l')) ?? 'grid';
   });
   const [selection, select] = useState<Selection>(null),
-    [range, setRange] = useState<Period>('3M');
+    [timeframe, setTimeframe] = useState<Timeframe>('D');
   const [filters, setFilters] = useState(initialFilters),
     [broker, changeBroker] = useState(initialBrokerFilters);
   const [detail, setDetail] = useState<Resource<Ticker>>({ kind: 'loading' });
@@ -137,7 +129,7 @@ function TerminalWorkspace({ data }: { data: TerminalData }) {
   const [slots, setSlots] = useState<Record<Layout, Record<string, FunctionId[]>>>(() => ({
     grid: layouts.grid.slots,
     focus: layouts.focus.slots,
-    live: layouts.live.slots,
+    flow: layouts.flow.slots,
   }));
   const [active, setActive] = useState<Record<string, FunctionId>>({});
   const publications = usePublications();
@@ -149,6 +141,15 @@ function TerminalWorkspace({ data }: { data: TerminalData }) {
       setPins(initialPins().filter((pin) => data.stocks.some((stock) => stock.ticker === pin)));
     window.addEventListener('storage', update);
     return () => window.removeEventListener('storage', update);
+  }, []);
+  const togglePin = useCallback((value: string) => {
+    setPins((previous) => {
+      const next = previous.includes(value)
+        ? previous.filter((pin) => pin !== value)
+        : [...previous, value];
+      writeStorage('vibe-idx:watchlist', JSON.stringify(next));
+      return next;
+    });
   }, []);
   const setTicker = useCallback(
     (value: string) => {
@@ -168,19 +169,23 @@ function TerminalWorkspace({ data }: { data: TerminalData }) {
     setFilters((previous) => ({ ...previous, [key]: value }));
   const setBroker = <K extends keyof BrokerFilters>(key: K, value: BrokerFilters[K]) =>
     changeBroker((previous) => ({ ...previous, [key]: value }));
+  const historyTicker = useRef(ticker);
   useEffect(() => {
     const url = new URL(window.location.href);
+    const push = historyTicker.current !== ticker && url.searchParams.get('t') !== ticker;
     url.searchParams.set('t', ticker);
     url.searchParams.set('l', layout);
-    window.history.replaceState(null, '', url);
+    if (push) window.history.pushState(null, '', url);
+    else window.history.replaceState(null, '', url);
+    historyTicker.current = ticker;
   }, [ticker, layout]);
   useEffect(() => {
     const pop = () => {
       const params = new URLSearchParams(window.location.search),
-        value = params.get('l');
+        value = parseLayout(params.get('l'));
       const target = params.get('t');
       if (target) setTicker(target);
-      if (isLayout(value)) setLayout(value);
+      if (value) setLayout(value);
     };
     window.addEventListener('popstate', pop);
     return () => window.removeEventListener('popstate', pop);
@@ -243,6 +248,7 @@ function TerminalWorkspace({ data }: { data: TerminalData }) {
           [slot]: [id, ...(previous[targetLayout][slot] ?? [])],
         },
       }));
+    if (max && max !== slot) setMax(null);
     setActive((previous) => ({ ...previous, [`${targetLayout}:${slot}`]: id }));
     setFocused(slot);
   }
@@ -270,7 +276,29 @@ function TerminalWorkspace({ data }: { data: TerminalData }) {
                 key={fn}
                 role="tab"
                 title={functions[fn]}
+                id={`tab-${layout}-${slot}-${fn}`}
+                aria-controls={`panel-${layout}-${slot}`}
                 aria-selected={fn === id}
+                tabIndex={fn === id ? 0 : -1}
+                onKeyDown={(event) => {
+                  if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+                  event.preventDefault();
+                  const tabs = Array.from(
+                    event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>(
+                      '[role="tab"]',
+                    ) ?? [],
+                  );
+                  const index = tabs.indexOf(event.currentTarget);
+                  const next =
+                    event.key === 'Home'
+                      ? 0
+                      : event.key === 'End'
+                        ? tabs.length - 1
+                        : (index + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) %
+                          tabs.length;
+                  tabs[next]?.click();
+                  tabs[next]?.focus();
+                }}
                 onClick={() =>
                   setActive((previous) => ({ ...previous, [`${layout}:${slot}`]: fn }))
                 }
@@ -288,7 +316,13 @@ function TerminalWorkspace({ data }: { data: TerminalData }) {
             {max === slot ? '↙' : '□'}
           </button>
         </header>
-        <div className="pane-view" role="tabpanel" key={id}>
+        <div
+          className="pane-view"
+          role="tabpanel"
+          id={`panel-${layout}-${slot}`}
+          aria-labelledby={`tab-${layout}-${slot}-${id}`}
+          key={id}
+        >
           <PaneView id={id} />
         </div>
       </section>
@@ -302,17 +336,18 @@ function TerminalWorkspace({ data }: { data: TerminalData }) {
         setTicker,
         detail,
         pins,
+        togglePin,
         selection,
         select,
-        range,
-        setRange,
+        timeframe,
+        setTimeframe,
         filters,
         filter,
         broker,
         setBroker,
         brokers,
         brokerError,
-        signedIn: !!auth.user,
+        session: auth.isLoading ? 'checking' : auth.user ? 'signed-in' : 'signed-out',
         signIn,
         getToken,
         tickDate,
@@ -342,10 +377,9 @@ function TerminalWorkspace({ data }: { data: TerminalData }) {
   );
 }
 function PaneContext({ id }: { id: FunctionId }) {
-  const { data, ticker, publications } = useTerminal();
-  if (!['GP', 'DES', 'BRK', 'BFL', 'FF', 'OB', 'RT', 'DD', 'TB', 'ID', 'HDS', 'DISC'].includes(id))
+  const { ticker, publications } = useTerminal();
+  if (!['GP', 'KEY', 'BRK', 'BFL', 'FF', 'OB', 'RT', 'DD', 'TB', 'HDS', 'DISC'].includes(id))
     return <span className="ctx" />;
-  const quote = data.stocks.find((stock) => stock.ticker === ticker);
   return (
     <div className="ctx">
       <b>{ticker}</b>
@@ -354,11 +388,6 @@ function PaneContext({ id }: { id: FunctionId }) {
           publications.risks.kind === 'ready' ? publications.risks.data.risk[ticker] : undefined
         }
       />
-      {quote && (
-        <span className={direction(quote.change_pct)}>
-          {nf(quote.close)} {percent(quote.change_pct)}
-        </span>
-      )}
     </div>
   );
 }
@@ -368,7 +397,7 @@ function PaneView({ id }: { id: FunctionId }) {
       return <WatchlistPane />;
     case 'GP':
       return <PricePane />;
-    case 'DES':
+    case 'KEY':
       return <DescriptionPane />;
     case 'BRK':
       return <BrokerSummaryPane />;
@@ -384,8 +413,6 @@ function PaneView({ id }: { id: FunctionId }) {
       return <DoneDetailPane />;
     case 'TB':
       return <TradeBookPane />;
-    case 'ID':
-      return <IntradayPane />;
     case 'HDS':
       return <HoldersPane />;
     case 'DISC':

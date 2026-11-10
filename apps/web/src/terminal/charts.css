@@ -30,6 +30,7 @@
 }
 .terminal-page .selection-band {
   position: absolute;
+  z-index: 3;
   top: 0;
   bottom: 26px;
   pointer-events: none;
@@ -59,4 +60,18 @@
   flex: 1;
   min-height: 80px;
   position: relative;
+}
+.terminal-page .chart-controls {
+  gap: 6px 14px;
+}
+.terminal-page .chart-ohlc {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.terminal-page .chart-controls svg {
+  display: block;
+}
+.terminal-page .chart-ohlc {
+  gap: 12px;
 }

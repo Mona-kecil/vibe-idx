@@ -3,21 +3,16 @@ import { HistogramSeries, LineSeries, type ISeriesApi } from 'lightweight-charts
 import { aggregateBrokers, brokerName, edgeFills } from '../broker-data';
 import { matchesInvestor, type InvestorFilter, type BrokerDay } from '../brokers';
 import { bounds } from '../ticker/logic';
-import { nf, short, signed } from '../ticker/format';
+import { dateText, rangeText, nf, short, signed } from '../ticker/format';
 import { useTerminal, type BrokerFilters } from './state';
-import { Empty, Scroll, Segments, direction } from './ui';
+import { Empty, Scroll, Segments, SignInPrompt, direction } from './ui';
 import { terminalChart, chartDate } from './charts';
 import { Attribution } from './PricePane';
 import './broker-panes.css';
 
 function BrokerGate({ children }: { children: (days: BrokerDay[]) => ReactNode }) {
-  const { brokers, signedIn, signIn, brokerError, retryBrokers } = useTerminal();
-  if (!signedIn)
-    return (
-      <Empty>
-        <button onClick={signIn}>Sign in</button>
-      </Empty>
-    );
+  const { brokers, session, signIn, brokerError, retryBrokers } = useTerminal();
+  if (session !== 'signed-in') return <SignInPrompt />;
   if (brokerError)
     return (
       <p className="empty" role="alert">
@@ -34,7 +29,8 @@ function BrokerGate({ children }: { children: (days: BrokerDay[]) => ReactNode }
   return children(brokers.data);
 }
 function BrokerControls({ flow = false, foreign = false }: { flow?: boolean; foreign?: boolean }) {
-  const { broker, setBroker, select, selection } = useTerminal();
+  const { broker, setBroker, select, selection, session } = useTerminal();
+  if (session !== 'signed-in') return null;
   return (
     <div className="broker-controls">
       <Segments
@@ -89,39 +85,72 @@ function BrokerControls({ flow = false, foreign = false }: { flow?: boolean; for
     </div>
   );
 }
+function BrokerDates({ days, dates }: { days: BrokerDay[]; dates: string[] }) {
+  const { data, detail, broker } = useTerminal();
+  const latest = days
+    .filter((day) => broker.board === 'all' || day.board === broker.board)
+    .map((day) => day.date)
+    .sort()
+    .at(-1);
+  if (!latest) return null;
+  const prices = [
+    data.health.prices,
+    ...(detail.kind === 'ready' ? detail.data.prices.map((p) => p.date) : []),
+  ]
+    .filter((date) => date !== null)
+    .sort()
+    .at(-1);
+  const lagging = prices && latest < prices;
+  const first = dates[0],
+    last = dates.at(-1);
+  return (
+    <div
+      className={`broker-date${lagging ? ' lagging' : ''}`}
+      role={lagging ? 'status' : undefined}
+    >
+      <span>
+        Broker data {first && last ? rangeText(first, last, true) : `through ${dateText(latest)}`}
+      </span>
+      {lagging && <span title={`Prices through ${dateText(prices)}`}>Behind prices</span>}
+    </div>
+  );
+}
 export function BrokerSummaryPane() {
   const { broker, ticker, selection } = useTerminal();
   return (
     <>
       <BrokerControls />
-      <Scroll reset={`${ticker}:${JSON.stringify(broker)}:${JSON.stringify(selection)}`}>
-        <BrokerGate>
-          {(days) => (
-            <Summary
-              key={`${ticker}:${JSON.stringify(broker)}:${JSON.stringify(selection)}`}
-              days={days}
-            />
-          )}
-        </BrokerGate>
-      </Scroll>
+      <BrokerGate>
+        {(days) => (
+          <Summary
+            key={`${ticker}:${JSON.stringify(broker)}:${JSON.stringify(selection)}`}
+            days={days}
+          />
+        )}
+      </BrokerGate>
     </>
   );
 }
 function Summary({ days }: { days: BrokerDay[] }) {
-  const { broker, selection } = useTerminal();
+  const { broker, selection, data, detail, ticker } = useTerminal();
   const [pair, setPair] = useState<string | null>(null);
   const onBoard = days.filter((day) => broker.board === 'all' || day.board === broker.board);
   const b = bounds(selection);
-  const dates = [...new Set(onBoard.map((day) => day.date))].sort().reverse();
+  const dates = [
+    ...new Set([
+      ...data.market.history.map((day) => day.date),
+      ...(detail.kind === 'ready' ? detail.data.prices.map((day) => day.date) : []),
+      ...days.map((day) => day.date),
+      ...(data.health.prices ? [data.health.prices] : []),
+    ]),
+  ].sort();
   const selected = new Set(
     b
       ? dates.filter((date) => date >= b.start && date <= b.end)
-      : dates.slice(0, parseInt(broker.period)),
+      : dates.slice(-parseInt(broker.period)),
   );
-  const totals = aggregateBrokers(
-    onBoard.filter((day) => selected.has(day.date)),
-    broker.type,
-  );
+  const inWindow = onBoard.filter((day) => selected.has(day.date));
+  const totals = aggregateBrokers(inWindow, broker.type);
   const lots = broker.unit === 'LOT',
     gross = broker.mode === 'GROSS';
   const side = (which: 'buy' | 'sell') =>
@@ -169,16 +198,23 @@ function Summary({ days }: { days: BrokerDay[] }) {
               className={pair && pair !== row.code ? 'dim' : pair === row.code ? 'on' : ''}
             >
               <td className="l">
-                <button
-                  title={`${brokerName(row.code)}\n${row.type}`}
-                  className={`type-${row.type}`}
-                  aria-pressed={pair === row.code}
-                  onClick={() => {
-                    if (gross) setPair(pair === row.code ? null : row.code);
-                  }}
-                >
-                  {row.code}
-                </button>
+                {gross ? (
+                  <button
+                    title={`${brokerName(row.code)}\n${row.type}`}
+                    className={`type-${row.type}`}
+                    aria-pressed={pair === row.code}
+                    onClick={() => setPair(pair === row.code ? null : row.code)}
+                  >
+                    {row.code}
+                  </button>
+                ) : (
+                  <span
+                    title={`${brokerName(row.code)}\n${row.type}`}
+                    className={`type-${row.type}`}
+                  >
+                    {row.code}
+                  </span>
+                )}
               </td>
               <td
                 className={lots ? '' : `bar ${which === 'BUY' ? 'up' : 'dn'}`}
@@ -203,21 +239,20 @@ function Summary({ days }: { days: BrokerDay[] }) {
       </table>
     );
   }
-  return totals.length ? (
+  return (
     <>
-      <div className={`broker-ledgers${gross ? ' pairable' : ''}`}>
-        {ledger(buyers, 'BUY')}
-        {ledger(sellers, 'SELL')}
-      </div>
-      <div className="broker-foot">
-        {selected.size} trading days{' '}
-        <span>
-          {[...selected].sort()[0]} to {[...selected].sort().at(-1)}
-        </span>
-      </div>
+      <BrokerDates days={days} dates={[...new Set(inWindow.map((day) => day.date))].sort()} />
+      <Scroll reset={`${ticker}:${JSON.stringify(broker)}:${JSON.stringify(selection)}`}>
+        {totals.length ? (
+          <div className={`broker-ledgers${gross ? ' pairable' : ''}`}>
+            {ledger(buyers, 'BUY')}
+            {ledger(sellers, 'SELL')}
+          </div>
+        ) : (
+          <Empty>No trades</Empty>
+        )}
+      </Scroll>
     </>
-  ) : (
-    <Empty>No broker summary in this view</Empty>
   );
 }
 /** The board's days inside the flow period, or inside the chart selection when there is one. */
@@ -235,7 +270,8 @@ function flowDays(days: BrokerDay[], broker: BrokerFilters, start?: string, end?
   const selected = new Set(dates);
   return { dates, onBoard: board.filter((day) => selected.has(day.date)) };
 }
-const palette = ['#22a6a0', '#d6b25e', '#709fe3', '#e4573f', '#b494db', '#d985a5'];
+// Teal, red and gold mean up, down and accent elsewhere, so broker lines avoid them.
+const palette = ['#6f9be8', '#b28ae6', '#e58bb8', '#79d2f0', '#cfd3d8', '#9a7f5c'];
 export function BrokerFlowPane() {
   return (
     <>
@@ -288,6 +324,7 @@ function Flow({ days }: { days: BrokerDay[] }) {
   const lines = useRef(new Map<string, ISeriesApi<'Line'>>());
   const [adding, setAdding] = useState(false),
     [query, setQuery] = useState('');
+  const addBroker = useRef<HTMLButtonElement>(null);
   const host = useRef<HTMLDivElement>(null);
   const b = bounds(selection),
     start = b?.start,
@@ -312,12 +349,26 @@ function Flow({ days }: { days: BrokerDay[] }) {
         .slice(0, 3),
     ].slice(0, 6);
   }, [flows, pins]);
+  const assigned = useRef(new Map<string, string>());
+  const colors = useMemo(() => {
+    const kept = new Map(
+      [...assigned.current].filter(([code]) => shown.some((series) => series.code === code)),
+    );
+    for (const series of shown)
+      if (!kept.has(series.code))
+        kept.set(
+          series.code,
+          palette.find((color) => ![...kept.values()].includes(color)) ?? palette[0]!,
+        );
+    assigned.current = kept;
+    return kept;
+  }, [shown]);
   useEffect(() => {
     if (!host.current || !shown.length) return;
     const chart = terminalChart(host.current);
-    shown.forEach((series, index) => {
+    shown.forEach((series) => {
       const line = chart.addSeries(LineSeries, {
-        color: palette[index % palette.length],
+        color: colors.get(series.code),
         title: series.code,
         lineWidth: 2,
         priceLineVisible: false,
@@ -332,7 +383,7 @@ function Flow({ days }: { days: BrokerDay[] }) {
       lines.current.clear();
       chart.remove();
     };
-  }, [shown, ticker]);
+  }, [shown, colors, ticker]);
   useEffect(() => {
     for (const [code, line] of lines.current)
       line.applyOptions({ visible: !hidden.includes(code) });
@@ -342,88 +393,102 @@ function Flow({ days }: { days: BrokerDay[] }) {
     detail.kind === 'ready' ? detail.data.prices.find((p) => p.date === date) : undefined;
   const currentValue = (series: (typeof flows.series)[number]) =>
     series.points.find((p) => p.time === date)?.value ?? total(series);
-  if (!flows.dates.length || !flows.series.length)
-    return <Empty>No broker summary in this view</Empty>;
   return (
-    <div className="flow-view">
-      <div className="legend">
-        <time>{date}</time>
-        {price && <span>C {nf(price.close)} IDR</span>}
-        {shown.map((series, index) => (
-          <span className="broker-key" key={series.code}>
-            <button
-              aria-pressed={!hidden.includes(series.code)}
-              title={brokerName(series.code)}
-              onClick={() =>
-                setHidden(
-                  hidden.includes(series.code)
-                    ? hidden.filter((code) => code !== series.code)
-                    : [...hidden, series.code],
-                )
-              }
-            >
-              <i style={{ background: palette[index % palette.length] }} />
-              {series.code}{' '}
-              <span className={direction(currentValue(series))}>
-                {signed(currentValue(series), short)}
+    <>
+      <BrokerDates days={days} dates={flows.dates} />
+      {!flows.dates.length || !flows.series.length ? (
+        <Empty>No trades</Empty>
+      ) : (
+        <div className="flow-view">
+          <div className="legend">
+            <time>{date && dateText(date)}</time>
+            {price && <span>C {nf(price.close)} IDR</span>}
+            {shown.map((series) => (
+              <span className="broker-key" key={series.code}>
+                <button
+                  aria-pressed={!hidden.includes(series.code)}
+                  title={brokerName(series.code)}
+                  onClick={() =>
+                    setHidden(
+                      hidden.includes(series.code)
+                        ? hidden.filter((code) => code !== series.code)
+                        : [...hidden, series.code],
+                    )
+                  }
+                >
+                  <i style={{ background: colors.get(series.code) }} />
+                  {series.code}{' '}
+                  <span className={direction(currentValue(series))}>
+                    {signed(currentValue(series), short)}
+                  </span>
+                </button>
+                {pins.includes(series.code) && (
+                  <button
+                    aria-label={`Remove ${series.code}`}
+                    onClick={() => setPins(pins.filter((code) => code !== series.code))}
+                  >
+                    ×
+                  </button>
+                )}
               </span>
-            </button>
-            {pins.includes(series.code) && (
-              <button
-                aria-label={`Remove ${series.code}`}
-                onClick={() => setPins(pins.filter((code) => code !== series.code))}
-              >
-                ×
-              </button>
-            )}
-          </span>
-        ))}
-        <button
-          aria-label="Add broker"
-          disabled={pins.length >= 6}
-          onClick={() => setAdding(!adding)}
-        >
-          +
-        </button>
-      </div>
-      {adding && (
-        <div className="broker-picker">
-          <input
-            aria-label="Find a broker"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            autoFocus
-          />
-          {flows.series
-            .filter(
-              (series) =>
-                !pins.includes(series.code) &&
-                `${series.code} ${brokerName(series.code)}`
-                  .toLowerCase()
-                  .includes(query.toLowerCase()),
-            )
-            .map((series) => (
-              <button
-                key={series.code}
-                onClick={() => {
-                  setPins([...pins, series.code]);
-                  setHidden(hidden.filter((code) => code !== series.code));
-                  setAdding(false);
-                }}
-              >
-                {series.code} {brokerName(series.code)}
-              </button>
             ))}
+            <button
+              ref={addBroker}
+              aria-label="Add broker"
+              disabled={pins.length >= 6}
+              onClick={() => setAdding(!adding)}
+            >
+              +
+            </button>
+          </div>
+          {adding && (
+            <div
+              className="broker-picker"
+              role="dialog"
+              aria-label="Choose broker"
+              onKeyDown={(event) => {
+                if (event.key !== 'Escape') return;
+                event.stopPropagation();
+                setAdding(false);
+                addBroker.current?.focus();
+              }}
+            >
+              <input
+                aria-label="Find a broker"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                autoFocus
+              />
+              {flows.series
+                .filter(
+                  (series) =>
+                    !pins.includes(series.code) &&
+                    `${series.code} ${brokerName(series.code)}`
+                      .toLowerCase()
+                      .includes(query.toLowerCase()),
+                )
+                .map((series) => (
+                  <button
+                    key={series.code}
+                    onClick={() => {
+                      setPins([...pins, series.code]);
+                      setHidden(hidden.filter((code) => code !== series.code));
+                      setAdding(false);
+                    }}
+                  >
+                    {series.code} {brokerName(series.code)}
+                  </button>
+                ))}
+            </div>
+          )}
+          <div className="flow-chart" ref={host} />
+          <div className="chart-foot">
+            <span>{broker.unit === 'LOT' ? 'Net lot' : 'Net IDR'}</span>
+            <Attribution />
+          </div>
         </div>
       )}
-      <div className="flow-chart" ref={host} />
-      <div className="chart-foot">
-        <span>
-          {broker.unit === 'LOT' ? 'Net lot' : 'Net IDR'} {flows.dates[0]} to {flows.dates.at(-1)}
-        </span>
-        <Attribution />
-      </div>
-    </div>
+    </>
   );
 }
 
@@ -499,30 +564,33 @@ function ForeignFlow({ days }: { days: BrokerDay[] }) {
     return () => chart.remove();
   }, [flow, ticker]);
   const day = flow.find((d) => d.date === hover) ?? flow.at(-1);
-  if (!day) return <Empty>No foreign client activity in this view</Empty>;
   const price =
-    detail.kind === 'ready' ? detail.data.prices.find((p) => p.date === day.date) : undefined;
+    detail.kind === 'ready' ? detail.data.prices.find((p) => p.date === day?.date) : undefined;
   return (
-    <div className="flow-view">
-      <div className="legend">
-        <time>{day.date}</time>
-        {price && <span>C {nf(price.close)} IDR</span>}
-        <span>
-          Net <b className={direction(day.net)}>{signed(day.net, short)}</b>
-        </span>
-        <span>
-          Total <b className={direction(day.cumulative)}>{signed(day.cumulative, short)}</b>
-        </span>
-        {day.share !== null && <span>Share {(day.share * 100).toFixed(1)}%</span>}
-      </div>
-      <div className="flow-chart" ref={host} />
-      <div className="chart-foot">
-        <span>
-          Foreign clients {broker.unit === 'LOT' ? 'net lot' : 'net IDR'} {flow[0]?.date} to{' '}
-          {flow.at(-1)?.date}
-        </span>
-        <Attribution />
-      </div>
-    </div>
+    <>
+      <BrokerDates days={days} dates={flow.map((d) => d.date)} />
+      {!day ? (
+        <Empty>No trades</Empty>
+      ) : (
+        <div className="flow-view">
+          <div className="legend">
+            <time>{dateText(day.date)}</time>
+            {price && <span>C {nf(price.close)} IDR</span>}
+            <span>
+              Net <b className={direction(day.net)}>{signed(day.net, short)}</b>
+            </span>
+            <span>
+              Total <b className={direction(day.cumulative)}>{signed(day.cumulative, short)}</b>
+            </span>
+            {day.share !== null && <span>Share {(day.share * 100).toFixed(1)}%</span>}
+          </div>
+          <div className="flow-chart" ref={host} />
+          <div className="chart-foot">
+            <span>Foreign clients {broker.unit === 'LOT' ? 'net lot' : 'net IDR'}</span>
+            <Attribution />
+          </div>
+        </div>
+      )}
+    </>
   );
 }

@@ -2,7 +2,6 @@ import { createContext, useContext, useEffect, useState } from 'react';
 import type { Ticker } from '../data';
 import type { BrokerDay, BrokerBoard, InvestorFilter } from '../brokers';
 import type { Selection } from '../ticker/logic';
-import type { Period } from '../ticker/PriceChart';
 import {
   fetchHeadlines,
   fetchCalendar,
@@ -16,7 +15,7 @@ import {
 export const functions = {
   WL: 'Watchlist',
   GP: 'Price history',
-  DES: 'Description',
+  KEY: 'Key figures',
   BRK: 'Broker summary',
   BFL: 'Broker flow',
   FF: 'Foreign flow',
@@ -24,7 +23,6 @@ export const functions = {
   RT: 'Running trade',
   DD: 'Done detail',
   TB: 'Trade book',
-  ID: 'Intraday chart',
   HDS: '5% holders and changes',
   DISC: 'IDX disclosures',
   SIG: 'Signals feed',
@@ -37,9 +35,13 @@ export const functions = {
 };
 export type FunctionId = keyof typeof functions;
 export const isFunction = (value: string): value is FunctionId => Object.hasOwn(functions, value);
-export type Layout = 'grid' | 'focus' | 'live';
+export type Layout = 'grid' | 'focus' | 'flow';
 export const isLayout = (value: string | null): value is Layout =>
-  value === 'grid' || value === 'focus' || value === 'live';
+  value === 'grid' || value === 'focus' || value === 'flow';
+export const parseLayout = (value: string | null): Layout | null =>
+  value === 'live' ? 'flow' : isLayout(value) ? value : null;
+export type Timeframe = 'W' | 'D' | '4H' | '1H' | '15M';
+export type Session = 'checking' | 'signed-in' | 'signed-out';
 export type BrokerFilters = {
   board: BrokerBoard | 'all';
   type: InvestorFilter;
@@ -50,7 +52,6 @@ export type BrokerFilters = {
 };
 export type Filters = {
   news: 'ID' | 'WORLD' | 'TICKER';
-  open: 'READER' | 'NEW TAB';
   cal: 'ALL' | 'HIGH' | 'ID';
   ca: 'ALL' | 'DIV' | 'RIGHTS' | 'RUPS' | 'TICKER';
   risk: 'ALL' | 'SUSP' | 'UMA' | 'FCA' | 'NOTES';
@@ -60,7 +61,6 @@ export type Filters = {
 };
 export const initialFilters: Filters = {
   news: 'ID',
-  open: 'READER',
   cal: 'ALL',
   ca: 'ALL',
   risk: 'ALL',
@@ -101,17 +101,18 @@ type TerminalContextValue = {
   ticker: string;
   setTicker: (ticker: string) => void;
   pins: string[];
+  togglePin: (ticker: string) => void;
   selection: Selection;
   select: (selection: Selection) => void;
-  range: Period;
-  setRange: (range: Period) => void;
+  timeframe: Timeframe;
+  setTimeframe: (timeframe: Timeframe) => void;
   filters: Filters;
   filter: <K extends keyof Filters>(key: K, value: Filters[K]) => void;
   broker: BrokerFilters;
   setBroker: <K extends keyof BrokerFilters>(key: K, value: BrokerFilters[K]) => void;
   brokers: Resource<BrokerDay[]>;
   brokerError: string;
-  signedIn: boolean;
+  session: Session;
   signIn: () => void;
   getToken: () => Promise<string | undefined>;
   tickDate: string | null;
