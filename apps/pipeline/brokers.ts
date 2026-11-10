@@ -142,7 +142,8 @@ export function createR2({
   }
   const client: R2 = {
     async get(key) {
-      const result = await request('GET', key);
+      // A compressed response carries a weak ETag, which a later If-Match put can never satisfy.
+      const result = await request('GET', key, { headers: { 'Accept-Encoding': 'identity' } });
       if (result.status === 404) return;
       check(result.status, key);
       return { bytes: result.bytes, etag: etag(result.headers, key) };
@@ -333,7 +334,14 @@ export async function brokers({
       await writeFile(token + '.tmp', JSON.stringify(rotated) + '\n', { mode: 0o600 });
       await chmod(token + '.tmp', 0o600);
       await rename(token + '.tmp', token);
-      await r2.put('auth/stockbit.json', await readFile(token), { ifMatch: saved.etag });
+      const rotatedBytes = await readFile(token);
+      try {
+        await r2.put('auth/stockbit.json', rotatedBytes, { ifMatch: saved.etag });
+      } catch (error) {
+        // The refresh already revoked the stored pair, so keep the new one for an operator to restore.
+        await r2.put('auth/stockbit-unsaved.json', rotatedBytes).catch(() => {});
+        throw error;
+      }
       access = rotated.access;
       return true;
     }
