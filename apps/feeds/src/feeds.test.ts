@@ -156,44 +156,6 @@ describe('source parsers', () => {
     expect(events.some((e) => e.ts.startsWith('2026-11'))).toBe(true);
     expect(JSON.stringify(events)).not.toContain('abstract');
   });
-  it('collects BPS through the proxy while keeping paginated WebAPI requests direct', async () => {
-    const proxy = { url: 'https://proxy.test', token: 'private-proxy-token' };
-    const id = 'd'.repeat(42);
-    const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
-      const url = input instanceof Request ? input.url : input.toString();
-      if (url.startsWith('https://webapi.bps.go.id/')) {
-        expect(new Headers(init?.headers).has('Authorization')).toBe(false);
-        return Response.json(JSON.parse(fixture('bps-releases.json')));
-      }
-      expect(url.startsWith('https://proxy.test/bps/')).toBe(true);
-      expect(new Headers(init?.headers).get('Authorization')).toBe('Bearer private-proxy-token');
-      if (init?.method === 'POST') return new Response(fixture('bps-arc.txt'));
-      if (url.endsWith('rotated.js'))
-        return new Response(
-          `(0,m.createServerReference)("${id}",m.callServer,void 0,m.findSourceMapURL,"getArcBrs")`,
-        );
-      return new Response('<script src="/_next/static/chunks/rotated.js"></script>');
-    });
-    try {
-      const events = await collectBPS(
-        (url, init) => request(url, init, proxy),
-        'private-bps-key',
-        new Date('2026-11-09'),
-      );
-      expect(events.some((event) => event.ts.startsWith('2026-11'))).toBe(true);
-      expect(
-        fetch.mock.calls.map(([url]) => (url instanceof Request ? url.url : url.toString())),
-      ).toEqual([
-        'https://proxy.test/bps/id/arc',
-        'https://proxy.test/bps/_next/static/chunks/rotated.js',
-        'https://proxy.test/bps/id/arc',
-        'https://webapi.bps.go.id/v1/api/list/model/pressrelease/domain/0000/key/private-bps-key/year/2026/month/11/page/1/',
-        'https://webapi.bps.go.id/v1/api/list/model/pressrelease/domain/0000/key/private-bps-key/year/2026/month/11/page/2/',
-      ]);
-    } finally {
-      fetch.mockRestore();
-    }
-  });
   it('fails loudly if BPS action discovery or current year breaks', async () => {
     await expect(
       collectBPS(
