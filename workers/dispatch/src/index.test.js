@@ -1,99 +1,147 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import worker from './index.js';
 
-const env = { BPS_PROXY_TOKEN: 'worker-test-secret' };
-const auth = { Authorization: `Bearer ${env.BPS_PROXY_TOKEN}` };
+const now = Date.parse('2026-12-31T17:10:00Z');
+const controller = { cron: '*/10 * * * *', scheduledTime: now };
+const action = 'c'.repeat(42);
+const body = '1:[{"title":"Scheduled release","date":"2027-01-01"}]';
 let upstream;
+let env;
 beforeEach(() => {
-  upstream = vi.spyOn(globalThis, 'fetch').mockImplementation(
-    async () =>
-      new Response('upstream body', {
-        status: 202,
-        headers: { 'Content-Type': 'text/x-component', 'Set-Cookie': 'private=1' },
-      }),
-  );
+  vi.useFakeTimers();
+  vi.setSystemTime(now);
+  vi.spyOn(console, 'error').mockImplementation(() => {});
+  env = {
+    GITHUB_TOKEN: 'test-token',
+    SENTRY_DSN: 'https://public@sentry.test/123',
+    PRIVATE: { get: vi.fn().mockResolvedValue(null), put: vi.fn().mockResolvedValue(undefined) },
+  };
+  upstream = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
+    if (url.includes('/runs?')) return Response.json({ workflow_runs: [] });
+    if (url.endsWith('/dispatches') || url.startsWith('https://sentry.test/'))
+      return new Response(null, { status: 204 });
+    if (url === 'https://www.bps.go.id/id/arc') {
+      if (init?.method === 'POST') {
+        expect(init.headers['Next-Action']).toBe(action);
+        expect(init.body).toBe('["id","2027"]');
+        return new Response(body);
+      }
+      return new Response(
+        '<script src="https://evil.test/x.js"></script><script src="/_next/static/chunks/new.js"></script>',
+      );
+    }
+    if (url === 'https://www.bps.go.id/_next/static/chunks/new.js')
+      return new Response(
+        `(0,m.createServerReference)("${action}",m.callServer,void 0,m.findSourceMapURL,"getArcBrs")`,
+      );
+    throw new Error('Unexpected request');
+  });
 });
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.useRealTimers();
+});
+async function scheduled() {
+  const run = worker.scheduled(controller, env);
+  await vi.runAllTimersAsync();
+  await run;
+}
+const dispatched = () =>
+  expect(upstream).toHaveBeenCalledWith(
+    expect.stringContaining('/brokers.yml/dispatches'),
+    expect.objectContaining({ method: 'POST' }),
+  );
 
-describe('BPS proxy', () => {
-  it.each([
-    ['/bps/id/arc', 'GET', {}],
-    ['/bps/id/arc', 'GET', { Authorization: 'Bearer wrong' }],
-    ['/bps/id/arc', 'GET', { Authorization: 'Basic worker-test-secret' }],
-    ['/bps/id/arc', 'PUT', auth],
-    ['/bps/id/other', 'GET', auth],
-    ['/bps/id/arc/extra', 'GET', auth],
-    ['/bps/_next/static/', 'GET', auth],
-    ['/bps/https://evil.test/', 'GET', auth],
-    ['/bps/_next/static/../../../other', 'GET', auth],
-    ['/id/arc', 'GET', auth],
-    ['/', 'GET', auth],
-  ])('rejects %s %s without contacting upstream', async (path, method, headers) => {
-    const response = await worker.fetch(
-      new Request(`https://proxy.test${path}`, { method, headers }),
-      env,
-    );
-    expect(response.status).toBe(404);
-    expect(upstream).not.toHaveBeenCalled();
-  });
-  it('fails closed when the Worker secret is missing', async () => {
-    const response = await worker.fetch(
-      new Request('https://proxy.test/bps/id/arc', { headers: auth }),
-      {},
-    );
-    expect(response.status).toBe(404);
-    expect(upstream).not.toHaveBeenCalled();
-  });
-  it.each([
-    ['/id/arc?year=2026', 'GET'],
-    ['/en/arc', 'POST'],
-    ['/_next/static/chunks/app.js', 'GET'],
-  ])('forwards %s %s with only permitted headers', async (path, method) => {
-    const body = method === 'POST' ? '["en","2026"]' : undefined;
-    const response = await worker.fetch(
-      new Request(`https://proxy.test/bps${path}`, {
-        method,
-        headers: {
-          ...auth,
-          'Next-Action': 'action-id',
-          'Content-Type': 'text/plain',
-          Accept: 'text/x-component',
-          Origin: 'https://evil.test',
-          'User-Agent': 'caller-agent',
-          Cookie: 'private=1',
-          'X-Extra': 'discard',
-        },
+describe('scheduled BPS copy', () => {
+  it.each([null, { fetched_at: new Date(now - 3600e3).toISOString(), year: 2027, body: 'old' }])(
+    'stores a missing or expired copy for the Jakarta year and dispatches brokers',
+    async (copy) => {
+      env.PRIVATE.get.mockResolvedValue(copy ? { json: async () => copy } : null);
+      await scheduled();
+      expect(env.PRIVATE.get).toHaveBeenCalledWith('bps/calendar-2027.json');
+      expect(env.PRIVATE.put).toHaveBeenCalledWith(
+        'bps/calendar-2027.json',
+        JSON.stringify({
+          fetched_at: '2026-12-31T17:10:00.000Z',
+          year: 2027,
+          body,
+        }),
+        expect.objectContaining({ httpMetadata: { contentType: 'application/json' } }),
+      );
+      dispatched();
+    },
+  );
+  it('skips a fresh copy without contacting BPS', async () => {
+    env.PRIVATE.get.mockResolvedValue({
+      json: async () => ({
+        fetched_at: new Date(now - 3599e3).toISOString(),
+        year: 2027,
         body,
       }),
-      env,
-    );
-    expect(upstream).toHaveBeenCalledOnce();
-    const [url, init] = upstream.mock.calls[0];
-    expect(url).toBe(`https://www.bps.go.id${path}`);
-    expect(init.method).toBe(method);
-    expect(init.redirect).toBe('manual');
-    expect(Object.fromEntries(init.headers)).toEqual({
-      accept: 'text/x-component',
-      'content-type': 'text/plain',
-      'next-action': 'action-id',
-      origin: 'https://www.bps.go.id',
-      'user-agent': expect.stringMatching(/^Mozilla\/5\.0/),
     });
-    expect(init.body ? new TextDecoder().decode(init.body) : undefined).toBe(body);
-    expect(response.status).toBe(202);
-    expect(await response.text()).toBe('upstream body');
-    expect([...response.headers]).toEqual([['content-type', 'text/x-component']]);
+    await scheduled();
+    expect(env.PRIVATE.put).not.toHaveBeenCalled();
+    expect(upstream.mock.calls.some(([url]) => url.includes('bps.go.id'))).toBe(false);
+    dispatched();
   });
-  it('returns redirects without following them or forwarding their location', async () => {
-    upstream.mockResolvedValue(
-      new Response(null, { status: 302, headers: { Location: 'https://evil.test' } }),
+  it('reports a BPS challenge without overwriting the copy or blocking brokers', async () => {
+    const normal = upstream.getMockImplementation();
+    upstream.mockImplementation((url, init) =>
+      url.includes('bps.go.id')
+        ? Promise.resolve(new Response('challenge', { status: 403 }))
+        : normal(url, init),
     );
-    const response = await worker.fetch(
-      new Request('https://proxy.test/bps/id/arc', { headers: auth }),
-      env,
+    await scheduled();
+    dispatched();
+    expect(env.PRIVATE.put).not.toHaveBeenCalled();
+    expect(upstream).toHaveBeenCalledWith(
+      'https://sentry.test/api/123/envelope/',
+      expect.objectContaining({
+        body: expect.stringContaining('BPS calendar refresh failed: BPS calendar HTTP 403'),
+      }),
     );
-    expect(response.status).toBe(302);
-    expect(response.headers.has('Location')).toBe(false);
-    expect(upstream).toHaveBeenCalledOnce();
   });
+  it('finishes the BPS copy even when broker dispatch fails', async () => {
+    const normal = upstream.getMockImplementation();
+    upstream.mockImplementation((url, init) =>
+      url.endsWith('/dispatches')
+        ? Promise.resolve(new Response(null, { status: 403 }))
+        : normal(url, init),
+    );
+    const run = worker.scheduled(controller, env).catch((error) => error);
+    await vi.runAllTimersAsync();
+    expect(await run).toEqual(new Error('GitHub dispatch brokers.yml HTTP 403'));
+    expect(env.PRIVATE.put).toHaveBeenCalledWith(
+      'bps/calendar-2027.json',
+      expect.stringContaining(body.replaceAll('"', '\\"')),
+      expect.anything(),
+    );
+  });
+  it('reports failed R2 reads and still dispatches brokers', async () => {
+    env.PRIVATE.get.mockRejectedValue(new Error('R2 unavailable'));
+    await scheduled();
+    dispatched();
+    expect(env.PRIVATE.put).not.toHaveBeenCalled();
+    expect(upstream).toHaveBeenCalledWith(
+      'https://sentry.test/api/123/envelope/',
+      expect.objectContaining({
+        body: expect.stringContaining('BPS calendar refresh failed: R2 unavailable'),
+      }),
+    );
+  });
+  it('does not refresh BPS on the ingest cron', async () => {
+    const run = worker.scheduled({ ...controller, cron: '17 10 * * *' }, env);
+    await vi.runAllTimersAsync();
+    await run;
+    expect(env.PRIVATE.get).not.toHaveBeenCalled();
+    expect(upstream).toHaveBeenCalledWith(
+      expect.stringContaining('/ingest.yml/dispatches'),
+      expect.anything(),
+    );
+  });
+});
+it.each(['/', '/bps/id/arc', '/bps/_next/static/chunks/new.js'])('returns 404 for %s', (path) => {
+  const response = worker.fetch(new Request(`https://worker.test${path}`), env);
+  expect(response.status).toBe(404);
+  expect(upstream).not.toHaveBeenCalled();
 });

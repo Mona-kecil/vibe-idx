@@ -120,55 +120,60 @@ async function checkFreshness(env, now) {
   }
 }
 
-export default {
-  async fetch(request, env) {
-    const url = new URL(request.url);
-    const path = url.pathname.slice('/bps'.length);
-    if (
-      !url.pathname.startsWith('/bps/') ||
-      !/^(?:\/(?:id|en)\/arc|\/_next\/static\/.+)$/.test(path) ||
-      !['GET', 'POST'].includes(request.method) ||
-      !env.BPS_PROXY_TOKEN
-    )
-      return new Response(null, { status: 404 });
-    const encode = (value) => new TextEncoder().encode(value);
-    const key = await crypto.subtle.importKey(
-      'raw',
-      encode(env.BPS_PROXY_TOKEN),
-      { name: 'HMAC', hash: 'SHA-256' },
-      false,
-      ['sign', 'verify'],
-    );
-    // Web Crypto verifies the MAC in constant time instead of comparing secret strings.
-    const signature = await crypto.subtle.sign(
-      'HMAC',
-      key,
-      encode(`Bearer ${env.BPS_PROXY_TOKEN}`),
-    );
-    if (
-      !(await crypto.subtle.verify(
-        'HMAC',
-        key,
-        signature,
-        encode(request.headers.get('Authorization') ?? ''),
-      ))
-    )
-      return new Response(null, { status: 404 });
-    const headers = new Headers({ Origin: 'https://www.bps.go.id', 'User-Agent': UA });
-    for (const name of ['Next-Action', 'Content-Type', 'Accept']) {
-      const value = request.headers.get(name);
-      if (value !== null) headers.set(name, value);
-    }
-    const response = await fetch(`https://www.bps.go.id${path}${url.search}`, {
-      method: request.method,
-      headers,
-      body: request.method === 'POST' ? await request.arrayBuffer() : undefined,
-      redirect: 'manual',
+function bpsScripts(html) {
+  const scripts = [...html.matchAll(/<script\b[^>]*\bsrc="([^"?#]+)[^"]*"/g)]
+    .map((m) => m[1])
+    .filter((s) => !!s && s.startsWith('/_next/static/chunks/') && s.endsWith('.js'));
+  if (!scripts.length) throw new Error('BPS calendar scripts missing');
+  return [...new Set(scripts)];
+}
+function bpsAction(script) {
+  return /createServerReference\)\("([a-f0-9]{40,})",[^;]{0,250}?"getArcBrs"\)/.exec(script)?.[1];
+}
+const BPS_URL = 'https://www.bps.go.id/id/arc';
+
+async function refreshBPS(env, now) {
+  const year = new Date(now + 7 * HOUR).getUTCFullYear();
+  const key = `bps/calendar-${year}.json`;
+  const object = await env.PRIVATE.get(key);
+  const copy = object ? await object.json() : null;
+  const age = now - Date.parse(copy?.fetched_at);
+  if (copy?.year === year && typeof copy.body === 'string' && age >= 0 && age < HOUR) return;
+  const get = (url, init) =>
+    request('BPS calendar', url, {
+      ...init,
+      headers: { 'User-Agent': UA, ...init?.headers },
+      signal: AbortSignal.timeout(25000),
     });
-    const responseHeaders = new Headers();
-    const contentType = response.headers.get('Content-Type');
-    if (contentType !== null) responseHeaders.set('Content-Type', contentType);
-    return new Response(response.body, { status: response.status, headers: responseHeaders });
+  const scripts = bpsScripts(await (await get(BPS_URL)).text());
+  let action;
+  for (const script of scripts.reverse()) {
+    action = bpsAction(await (await get(new URL(script, BPS_URL).href)).text());
+    if (action) break;
+  }
+  if (!action) throw new Error('BPS calendar action discovery failed');
+  const response = await get(BPS_URL, {
+    method: 'POST',
+    headers: {
+      'Next-Action': action,
+      'Content-Type': 'text/plain;charset=UTF-8',
+      Origin: 'https://www.bps.go.id',
+    },
+    body: JSON.stringify(['id', String(year)]),
+  });
+  const body = await response.text();
+  await env.PRIVATE.put(
+    key,
+    JSON.stringify({ fetched_at: new Date(now).toISOString(), year, body }),
+    {
+      httpMetadata: { contentType: 'application/json' },
+    },
+  );
+}
+
+export default {
+  fetch() {
+    return new Response(null, { status: 404 });
   },
   async scheduled(controller, env) {
     const job =
@@ -177,18 +182,31 @@ export default {
         : controller.cron === '17 10 * * *'
           ? 'ingest.yml'
           : 'brokers.yml';
-    try {
-      if (job === 'freshness') await checkFreshness(env, controller.scheduledTime);
-      else if (job === 'ingest.yml' || !(await running(env, job))) await dispatch(env, job);
-    } catch (error) {
-      await report(
-        env,
-        `${job === 'freshness' ? 'Freshness check' : `Dispatch ${job}`} failed: ${error.message}`,
-        {
-          check: job,
-        },
-      );
-      throw error;
-    }
+    const results = await Promise.allSettled([
+      (async () => {
+        if (controller.cron !== '*/10 * * * *') return;
+        try {
+          await refreshBPS(env, controller.scheduledTime);
+        } catch (error) {
+          await report(env, `BPS calendar refresh failed: ${error.message}`, { check: 'bps' });
+        }
+      })(),
+      (async () => {
+        try {
+          if (job === 'freshness') await checkFreshness(env, controller.scheduledTime);
+          else if (job === 'ingest.yml' || !(await running(env, job))) await dispatch(env, job);
+        } catch (error) {
+          await report(
+            env,
+            `${job === 'freshness' ? 'Freshness check' : `Dispatch ${job}`} failed: ${error.message}`,
+            {
+              check: job,
+            },
+          );
+          throw error;
+        }
+      })(),
+    ]);
+    for (const result of results) if (result.status === 'rejected') throw result.reason;
   },
 };

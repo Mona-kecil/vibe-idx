@@ -2,6 +2,7 @@
   "name": "vibe-idx-dispatch",
   "main": "src/index.js",
   "compatibility_date": "2026-10-01",
+  "r2_buckets": [{ "binding": "PRIVATE", "bucket_name": "vibe-idx-private" }],
   "triggers": {
     "crons": ["*/10 * * * *", "17 10 * * *", "0 12 * * *"],
   },
