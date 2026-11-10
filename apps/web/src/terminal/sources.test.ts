@@ -11,7 +11,8 @@ import {
 } from './sources';
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { RiskPane } from './PublicationPanes';
+import { CalendarPane, RiskPane } from './PublicationPanes';
+import { calendarEventSchema } from './contracts';
 afterEach(() => vi.unstubAllGlobals());
 const timestamp = '2026-11-09T08:00:00Z';
 describe('terminal publications', () => {
@@ -154,6 +155,70 @@ function requestUrl(input: RequestInfo | URL) {
   return input instanceof Request ? input.url : input.toString();
 }
 
+describe('publication source presentation', () => {
+  it('identifies published date-only events without hiding a real midnight release', () => {
+    const event = {
+      ts: '2026-11-10T17:00:00Z',
+      c: 'ID',
+      imp: 3,
+      ev: 'Decision',
+      url: 'https://example.com',
+      by: 'Publisher',
+    };
+    expect(calendarEventSchema.parse({ ...event, source_id: 'bi' }).dateOnly).toBe(true);
+    expect(
+      calendarEventSchema.parse({ ...event, source_id: 'bps', est: 'Expected release' }).dateOnly,
+    ).toBe(true);
+    expect(
+      calendarEventSchema.parse({ ...event, est: 'Date only; release time not published' })
+        .dateOnly,
+    ).toBe(true);
+    expect(calendarEventSchema.parse({ ...event, source_id: 'forexfactory' }).dateOnly).toBe(false);
+    expect(calendarEventSchema.parse({ ...event, source_id: 'bi', dateOnly: false }).dateOnly).toBe(
+      false,
+    );
+  });
+  it('keeps partial rows and explains missing and stale sources with their last update', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        Response.json({
+          as_of: timestamp,
+          sources: {
+            bps: { status: 'unavailable', as_of: null, attempted_at: timestamp },
+            bi: { status: 'stale', as_of: timestamp, attempted_at: '2026-11-10T08:00:00Z' },
+          },
+          errors: ['bps calendar unavailable', 'bi calendar unavailable'],
+          cal: [
+            {
+              ts: timestamp,
+              c: 'ID',
+              imp: 3,
+              ev: 'Decision',
+              url: 'https://example.com',
+              by: 'Publisher',
+            },
+          ],
+        }),
+      ),
+    );
+    const calendar = await fetchCalendar();
+    expect(calendar.kind === 'ready' && calendar.data.cal).toHaveLength(1);
+    expect(calendar.kind === 'ready' && calendar.data.errors).toEqual([
+      'BPS releases missing',
+      'Bank Indonesia decisions not updated since 9 Nov 2026',
+    ]);
+  });
+  it('translates legacy failure text when no source status is published', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => Response.json({ cal: [], errors: ['bps calendar unavailable'] })),
+    );
+    const calendar = await fetchCalendar();
+    expect(calendar.kind === 'ready' && calendar.data.errors).toEqual(['BPS releases missing']);
+  });
+});
+
 const context: {
   publications: {
     news: Awaited<ReturnType<typeof fetchHeadlines>>;
@@ -203,6 +268,43 @@ describe('publication pane interactions', () => {
     if (!(button instanceof HTMLButtonElement)) throw new Error(`Missing ${selector}`);
     await act(async () => button.click());
   }
+  it('leaves date-only times empty, keeps past rows and reveals forecast values on expansion', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-11-11T06:00:00Z'));
+    const event = { c: 'ID', imp: 3, ev: 'Decision', url: 'https://example.com', by: 'Publisher' };
+    context.publications.calendar = {
+      kind: 'ready',
+      data: {
+        as_of: timestamp,
+        errors: [],
+        sources: {},
+        cal: [
+          calendarEventSchema.parse({ ...event, ts: '2026-11-09T17:00:00Z', source_id: 'bi' }),
+          calendarEventSchema.parse({
+            ...event,
+            ts: '2026-11-10T17:00:00Z',
+            source_id: 'bi',
+            f: '5%',
+            p: '4%',
+          }),
+          calendarEventSchema.parse({
+            ...event,
+            ts: '2026-11-11T17:00:00Z',
+            source_id: 'forexfactory',
+          }),
+        ],
+      },
+    };
+    await act(async () => root.render(createElement(CalendarPane)));
+    expect(host.querySelectorAll('.past')).toHaveLength(1);
+    expect(host.querySelector('[data-upcoming="true"] td')?.textContent).toBe('');
+    expect(host.querySelector('.day')?.textContent).toBe('10 Nov 2026');
+    const rows = host.querySelectorAll('tbody tr:not(.day)');
+    expect(rows[2]?.querySelector('td')?.textContent).toBe('00:00');
+    expect(host.querySelectorAll('th')).toHaveLength(4);
+    await click('[data-upcoming="true"] button');
+    expect(host.querySelector('.details')?.textContent).toContain('Forecast5%');
+    expect(host.querySelector('.details')?.textContent).toContain('Previous4%');
+  });
   it('formats risk dates and exposes full flag meanings without hover', async () => {
     context.publications.risks = {
       kind: 'ready',

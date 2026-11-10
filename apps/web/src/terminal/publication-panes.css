@@ -138,6 +138,9 @@
   background: var(--accent);
 }
 
+.terminal-page .calendar th {
+  font-size: 10px;
+}
 .terminal-page .risk-table {
   table-layout: fixed;
 }

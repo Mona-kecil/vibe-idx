@@ -1,4 +1,4 @@
-import { Fragment, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { useTerminal } from './state';
 import type { Headline, Risk, Resource } from './sources';
 import { Availability, Empty, Publication, Scroll, Segments, TickerLink } from './ui';
@@ -16,7 +16,11 @@ const wib = (value: string, options: Intl.DateTimeFormatOptions = {}) =>
     hour: '2-digit',
     minute: '2-digit',
     ...options,
-  }).format(new Date(value));
+  })
+    .format(new Date(/T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?$/.test(value) ? `${value}+07:00` : value))
+    .replace('Sept', 'Sep');
+const calendarDate = (value: string) =>
+  new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(new Date(value));
 export function NewsPane() {
   const { publications, filters, filter, ticker, tickerNews } = useTerminal();
   const [article, setArticle] = useState<Headline | null>(null);
@@ -159,6 +163,33 @@ export function NewsPane() {
 export function CalendarPane() {
   const { publications, filters, filter } = useTerminal();
   const [open, setOpen] = useState<string | null>(null);
+  const scroll = useRef<HTMLDivElement>(null);
+  const data = publications.calendar.kind === 'ready' ? publications.calendar.data : null;
+  const rows = (data?.cal ?? [])
+    .filter(
+      (item) =>
+        filters.cal === 'ALL' || (filters.cal === 'HIGH' ? item.imp === 3 : item.c === 'ID'),
+    )
+    .sort((a, b) => a.ts.localeCompare(b.ts));
+  const now = Date.now();
+  const today = calendarDate(new Date(now).toISOString());
+  const upcoming = rows.find((item) =>
+    item.dateOnly ? calendarDate(item.ts) >= today : Date.parse(item.ts) >= now,
+  );
+  useEffect(() => {
+    const body = scroll.current;
+    const event = body?.querySelector('[data-upcoming="true"]');
+    const next = event?.previousElementSibling?.classList.contains('day')
+      ? event.previousElementSibling
+      : event;
+    if (body)
+      body.scrollTop = next
+        ? next.getBoundingClientRect().top -
+          body.getBoundingClientRect().top +
+          body.scrollTop -
+          (body.querySelector('thead')?.getBoundingClientRect().height ?? 0)
+        : body.scrollHeight;
+  }, [data, filters.cal]);
   return (
     <>
       <div className="sub">
@@ -169,20 +200,14 @@ export function CalendarPane() {
           onChange={(value) => filter('cal', value)}
         />
       </div>
-      <Scroll reset={filters.cal}>
+      {data && <Publication errors={data.errors} />}
+      <div className="pb" ref={scroll}>
         <Availability resource={publications.calendar} name="Calendar">
           {(data) => {
-            const rows = data.cal
-              .filter(
-                (item) =>
-                  filters.cal === 'ALL' ||
-                  (filters.cal === 'HIGH' ? item.imp === 3 : item.c === 'ID'),
-              )
-              .sort((a, b) => a.ts.localeCompare(b.ts));
             let day = '';
             return (
               <>
-                <Publication date={data.as_of} errors={data.errors} />
+                <Publication date={data.as_of} />
                 {rows.length ? (
                   <table className="calendar">
                     <thead>
@@ -191,17 +216,11 @@ export function CalendarPane() {
                         <th>CTRY</th>
                         <th>EVENT</th>
                         <th>IMP</th>
-                        <th>FCST</th>
-                        <th>PREV</th>
                       </tr>
                     </thead>
                     <tbody>
                       {rows.map((item) => {
-                        const date = wib(item.ts, {
-                          hour: undefined,
-                          minute: undefined,
-                          year: 'numeric',
-                        });
+                        const date = dateText(calendarDate(item.ts));
                         const heading = day !== date;
                         day = date;
                         const key = item.ts + item.ev;
@@ -209,11 +228,25 @@ export function CalendarPane() {
                           <Fragment key={key}>
                             {heading && (
                               <tr className="day">
-                                <td colSpan={6}>{date}</td>
+                                <td colSpan={4}>{date}</td>
                               </tr>
                             )}
-                            <tr className={Date.parse(item.ts) < Date.now() ? 'past' : ''}>
-                              <td>{wib(item.ts, { day: undefined, month: undefined })}</td>
+                            <tr
+                              data-upcoming={item === upcoming}
+                              className={
+                                (
+                                  item.dateOnly
+                                    ? calendarDate(item.ts) < today
+                                    : Date.parse(item.ts) < now
+                                )
+                                  ? 'past'
+                                  : ''
+                              }
+                            >
+                              <td>
+                                {!item.dateOnly &&
+                                  wib(item.ts, { day: undefined, month: undefined })}
+                              </td>
                               <td>{item.c}</td>
                               <td className="l">
                                 <button
@@ -233,12 +266,10 @@ export function CalendarPane() {
                                   ))}
                                 </span>
                               </td>
-                              <td>{item.f}</td>
-                              <td className="mut">{item.p}</td>
                             </tr>
                             {open === key && (
                               <tr className="details">
-                                <td colSpan={6}>
+                                <td colSpan={4}>
                                   <a href={item.url} target="_blank" rel="noreferrer">
                                     {item.by}
                                   </a>
@@ -247,8 +278,30 @@ export function CalendarPane() {
                                       {item.sBy ?? 'Schedule'}
                                     </a>
                                   )}
+                                  {(item.f || item.p) && (
+                                    <dl>
+                                      {item.f && (
+                                        <div>
+                                          <dt>Forecast</dt>
+                                          <dd>{item.f}</dd>
+                                        </div>
+                                      )}
+                                      {item.p && (
+                                        <div>
+                                          <dt>Previous</dt>
+                                          <dd>{item.p}</dd>
+                                        </div>
+                                      )}
+                                    </dl>
+                                  )}
                                   {item.note && <p>{item.note}</p>}
-                                  {item.est && <p>{item.est}</p>}
+                                  {item.est && (
+                                    <p>
+                                      {/^Date only/i.test(item.est)
+                                        ? 'Release time not published by source'
+                                        : item.est}
+                                    </p>
+                                  )}
                                 </td>
                               </tr>
                             )}
@@ -264,7 +317,7 @@ export function CalendarPane() {
             );
           }}
         </Availability>
-      </Scroll>
+      </div>
     </>
   );
 }
