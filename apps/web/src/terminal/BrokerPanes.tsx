@@ -29,7 +29,8 @@ function BrokerGate({ children }: { children: (days: BrokerDay[]) => ReactNode }
   return children(brokers.data);
 }
 function BrokerControls({ flow = false, foreign = false }: { flow?: boolean; foreign?: boolean }) {
-  const { broker, setBroker, select, selection } = useTerminal();
+  const { broker, setBroker, select, selection, session } = useTerminal();
+  if (session !== 'signed-in') return null;
   return (
     <div className="broker-controls">
       <Segments
@@ -164,16 +165,23 @@ function Summary({ days }: { days: BrokerDay[] }) {
               className={pair && pair !== row.code ? 'dim' : pair === row.code ? 'on' : ''}
             >
               <td className="l">
-                <button
-                  title={`${brokerName(row.code)}\n${row.type}`}
-                  className={`type-${row.type}`}
-                  aria-pressed={pair === row.code}
-                  onClick={() => {
-                    if (gross) setPair(pair === row.code ? null : row.code);
-                  }}
-                >
-                  {row.code}
-                </button>
+                {gross ? (
+                  <button
+                    title={`${brokerName(row.code)}\n${row.type}`}
+                    className={`type-${row.type}`}
+                    aria-pressed={pair === row.code}
+                    onClick={() => setPair(pair === row.code ? null : row.code)}
+                  >
+                    {row.code}
+                  </button>
+                ) : (
+                  <span
+                    title={`${brokerName(row.code)}\n${row.type}`}
+                    className={`type-${row.type}`}
+                  >
+                    {row.code}
+                  </span>
+                )}
               </td>
               <td
                 className={lots ? '' : `bar ${which === 'BUY' ? 'up' : 'dn'}`}

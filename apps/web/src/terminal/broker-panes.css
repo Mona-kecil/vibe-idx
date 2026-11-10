@@ -5,16 +5,23 @@
   padding: 4px 6px;
 }
 .terminal-page .broker-controls .seg button {
-  font-size: 9px;
+  font-size: 10px;
   padding: 3px 5px;
+}
+.terminal-page .broker-controls button {
+  min-height: 24px;
 }
 .terminal-page .broker-ledgers {
   display: grid;
+  align-items: start;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 12px;
 }
 .terminal-page .broker-ledger {
   font-size: 11px;
+}
+.terminal-page .broker-ledger th {
+  font-size: 10px;
 }
 .terminal-page .broker-ledger td,
 .terminal-page .broker-ledger th {

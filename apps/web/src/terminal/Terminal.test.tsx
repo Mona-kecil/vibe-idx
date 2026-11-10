@@ -267,6 +267,18 @@ describe('React terminal', () => {
       true,
     );
   });
+  it.each(['BRK', 'BFL', 'FF', 'OB', 'RT', 'DD', 'TB', 'ID'])(
+    'hides %s filters while signed out',
+    async (pane) => {
+      await render();
+      await command(`FOCUS BREN ${pane}`);
+      expect(host.querySelector('.broker-controls')).toBeNull();
+      expect(host.textContent).toContain('Sign in to see broker and trade data');
+      expect(fetcher.mock.calls.every(([path]) => !requestUrl(path).includes('/api/brokers'))).toBe(
+        true,
+      );
+    },
+  );
   it('runs layout and ticker commands together and reads ticker news through the existing API', async () => {
     await render();
     await command('FOCUS BBCA NEWS');
@@ -299,6 +311,17 @@ describe('React terminal', () => {
     expect(host.querySelector('.broker-ledger.buy')?.textContent).not.toContain('BB');
     await click('[aria-label="Market board"] button:nth-child(3)');
     expect(host.textContent).toContain('No broker summary in this view');
+  });
+  it('renders NET broker codes as text and keeps GROSS pairing interactive', async () => {
+    auth.user = { id: 'test-user' };
+    await render();
+    expect(host.querySelector('.broker-ledger button')).toBeNull();
+    expect(host.querySelector('.broker-ledger td.l span')?.getAttribute('title')).toContain(
+      'LOCAL',
+    );
+    await click('[aria-label="Broker mode"] button:nth-child(2)');
+    await click('.broker-ledger.buy button');
+    expect(host.querySelector('.broker-ledger button[aria-pressed="true"]')).not.toBeNull();
   });
   it.each(['LOCAL', 'GOV'])(
     'falls back to ALL with obsolete stored %s broker preferences',

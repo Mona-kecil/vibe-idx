@@ -120,9 +120,9 @@ function TickPane<K extends TickKind>({
   const { session } = useTerminal();
   const { date } = useSession();
   const state = useTicks(kind, date);
+  if (session !== 'signed-in') return <SignInPrompt />;
   let body: ReactNode;
-  if (session !== 'signed-in') body = <SignInPrompt />;
-  else if (!date) body = <Empty>No 2026 sessions for this ticker</Empty>;
+  if (!date) body = <Empty>No 2026 sessions for this ticker</Empty>;
   else if (state.kind === 'loading') body = <Empty>Loading {date}…</Empty>;
   else if (state.kind === 'missing') body = <Empty>Not collected for {date}</Empty>;
   else if (state.kind === 'error')
