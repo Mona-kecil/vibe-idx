@@ -132,23 +132,16 @@ export function MoversPane() {
             if (value === 'F BUY' || value === 'F SELL') filter('period', '1d');
           }}
         />
-        <div className="seg" role="group" aria-label="Mover period">
-          {(['1d', '3d', '5d'] as const).map((period) => (
-            <button
-              key={period}
-              disabled={foreign && period !== '1d'}
-              aria-pressed={period === (foreign ? '1d' : filters.period)}
-              onClick={() => filter('period', period)}
-            >
-              {period}
-            </button>
-          ))}
-        </div>
+        <Segments
+          label="Mover period"
+          values={['1d', '3d', '5d']}
+          value={foreign ? '1d' : filters.period}
+          disabled={foreign ? ['3d', '5d'] : []}
+          onChange={(value) => filter('period', value)}
+        />
       </div>
       <Scroll reset={`${filters.mov}:${filters.period}`}>
-        <div className="publication">
-          {date ? `Session ending ${dateText(date)}` : 'Session date unavailable'}
-        </div>
+        <div className="publication">{date ? `As of ${dateText(date)}` : 'Date unavailable'}</div>
         <QuoteTable stocks={stocks.slice(0, 30)} selected={ticker} foreign={foreign} />
       </Scroll>
     </>

@@ -13,35 +13,42 @@ export function Segments<T extends string>({
   values,
   value,
   onChange,
+  disabled = [],
 }: {
   label: string;
   values: readonly T[];
   value: T;
   onChange: (value: T) => void;
+  disabled?: readonly T[];
 }) {
+  const enabled = values.filter((option) => !disabled.includes(option));
   return (
     <div className="seg" role="group" aria-label={label}>
       {values.map((option) => (
         <button
           key={option}
           aria-pressed={option === value}
+          disabled={disabled.includes(option)}
           tabIndex={option === value ? 0 : -1}
           onClick={() => onChange(option)}
           onKeyDown={(event) => {
             if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
             event.preventDefault();
-            const index = values.indexOf(option);
-            const next =
-              event.key === 'Home'
-                ? 0
-                : event.key === 'End'
-                  ? values.length - 1
-                  : (index + (event.key === 'ArrowRight' ? 1 : -1) + values.length) % values.length;
-            const target = values[next];
-            if (target !== undefined) onChange(target);
+            const index = enabled.indexOf(option);
+            const target =
+              enabled[
+                event.key === 'Home'
+                  ? 0
+                  : event.key === 'End'
+                    ? enabled.length - 1
+                    : (index + (event.key === 'ArrowRight' ? 1 : -1) + enabled.length) %
+                      enabled.length
+              ];
+            if (target === undefined) return;
+            onChange(target);
             event.currentTarget.parentElement
               ?.querySelectorAll<HTMLButtonElement>('button')
-              [next]?.focus();
+              [values.indexOf(target)]?.focus();
           }}
         >
           {option}

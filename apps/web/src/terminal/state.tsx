@@ -53,7 +53,6 @@ export type BrokerFilters = {
 };
 export type Filters = {
   news: 'ID' | 'WORLD' | 'TICKER';
-  open: 'READER' | 'NEW TAB';
   cal: 'ALL' | 'HIGH' | 'ID';
   ca: 'ALL' | 'DIV' | 'RIGHTS' | 'RUPS' | 'TICKER';
   risk: 'ALL' | 'SUSP' | 'UMA' | 'FCA' | 'NOTES';
@@ -63,7 +62,6 @@ export type Filters = {
 };
 export const initialFilters: Filters = {
   news: 'ID',
-  open: 'READER',
   cal: 'ALL',
   ca: 'ALL',
   risk: 'ALL',
