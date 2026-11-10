@@ -9,7 +9,6 @@
     "check": "CI=true vp check",
     "dev": "CI=true vp dev",
     "dev:web": "CI=true vp dev",
-    "dev:fixtures": "CI=true VIBE_FIXTURES=${VIBE_FIXTURES:-$HOME/.cache/vibe-idx/fixtures} vp dev",
     "preview": "vp preview",
     "test": "CI=true vp test"
   },
