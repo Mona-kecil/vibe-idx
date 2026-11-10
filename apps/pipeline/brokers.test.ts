@@ -625,8 +625,14 @@ describe('private broker pipeline', () => {
       f.data,
       tickers.map((ticker) => ({ ticker, date: day, volume: 1 })),
     );
+    let rejected!: () => void;
+    const failed = new Promise<void>((resolve) => (rejected = resolve));
     const net = network(f.token, async (ticker, date) => {
-      if (ticker === 'T00') return new Response('', { status: 429 });
+      if (ticker === 'T00') {
+        rejected();
+        return new Response('', { status: 429 });
+      }
+      await failed;
       await new Promise((resolve) => setImmediate(resolve));
       return Response.json(summary(ticker, date, true));
     });
