@@ -121,54 +121,8 @@ async function checkFreshness(env, now) {
 }
 
 export default {
-  async fetch(request, env) {
-    const url = new URL(request.url);
-    const path = url.pathname.slice('/bps'.length);
-    if (
-      !url.pathname.startsWith('/bps/') ||
-      !/^(?:\/(?:id|en)\/arc|\/_next\/static\/.+)$/.test(path) ||
-      !['GET', 'POST'].includes(request.method) ||
-      !env.BPS_PROXY_TOKEN
-    )
-      return new Response(null, { status: 404 });
-    const encode = (value) => new TextEncoder().encode(value);
-    const key = await crypto.subtle.importKey(
-      'raw',
-      encode(env.BPS_PROXY_TOKEN),
-      { name: 'HMAC', hash: 'SHA-256' },
-      false,
-      ['sign', 'verify'],
-    );
-    // Web Crypto verifies the MAC in constant time instead of comparing secret strings.
-    const signature = await crypto.subtle.sign(
-      'HMAC',
-      key,
-      encode(`Bearer ${env.BPS_PROXY_TOKEN}`),
-    );
-    if (
-      !(await crypto.subtle.verify(
-        'HMAC',
-        key,
-        signature,
-        encode(request.headers.get('Authorization') ?? ''),
-      ))
-    )
-      return new Response(null, { status: 404 });
-    const headers = new Headers({ Origin: 'https://www.bps.go.id', 'User-Agent': UA });
-    for (const name of ['Next-Action', 'Content-Type', 'Accept']) {
-      const value = request.headers.get(name);
-      if (value !== null) headers.set(name, value);
-    }
-    const response = await fetch(`https://www.bps.go.id${path}${url.search}`, {
-      method: request.method,
-      headers,
-      body: request.method === 'POST' ? await request.arrayBuffer() : undefined,
-      redirect: 'manual',
-    });
-    const responseHeaders = new Headers();
-    const contentType = response.headers.get('Content-Type');
-    if (contentType !== null) responseHeaders.set('Content-Type', contentType);
-    return new Response(response.body, { status: response.status, headers: responseHeaders });
+  fetch() {
+    return new Response(null, { status: 404 });
   },
   async scheduled(controller, env) {
     const job =

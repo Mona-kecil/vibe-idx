@@ -47,12 +47,7 @@ export const FEEDS = [
   { id: 'wsj', url: 'https://feeds.a.dj.com/rss/RSSMarketsMain.xml', src: 'WSJ', region: 'WORLD' },
 ] satisfies { id: string; url: string; src: string; region: 'ID' | 'WORLD' }[];
 export type Request = (url: string, init?: RequestInit) => Promise<Response>;
-export type BPSProxy = { url: string; token: string };
-export async function request(
-  url: string,
-  init?: RequestInit,
-  bpsProxy?: BPSProxy,
-): Promise<Response> {
+export async function request(url: string, init?: RequestInit): Promise<Response> {
   try {
     const headers = new Headers(init?.headers);
     headers.set(
@@ -62,18 +57,11 @@ export async function request(
     if (!headers.has('Accept'))
       headers.set('Accept', 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8');
     if (!headers.has('Accept-Language')) headers.set('Accept-Language', 'id-ID,id;q=0.9,en;q=0.8');
-    const target = new URL(url);
-    const proxied = bpsProxy && target.origin === 'https://www.bps.go.id';
-    if (proxied) headers.set('Authorization', `Bearer ${bpsProxy.token}`);
-    const response = await fetch(
-      proxied ? `${bpsProxy.url.replace(/\/+$/, '')}/bps${target.pathname}${target.search}` : url,
-      {
-        ...init,
-        headers,
-        signal: AbortSignal.timeout(25000),
-        ...(proxied ? { redirect: 'manual' } : {}),
-      },
-    );
+    const response = await fetch(url, {
+      ...init,
+      headers,
+      signal: AbortSignal.timeout(25000),
+    });
     if (!response.ok) {
       await response.body?.cancel();
       throw new Error(`HTTP ${response.status} ${new URL(url).hostname} ${init?.method ?? 'GET'}`);

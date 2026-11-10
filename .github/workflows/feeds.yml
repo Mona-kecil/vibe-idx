@@ -20,8 +20,6 @@ jobs:
       R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
       R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
       R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-      BPS_PROXY_URL: ${{ vars.BPS_PROXY_URL }}
-      BPS_PROXY_TOKEN: ${{ secrets.BPS_PROXY_TOKEN }}
       BPS_KEY: ${{ secrets.BPS_KEY }}
       SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
     steps:
