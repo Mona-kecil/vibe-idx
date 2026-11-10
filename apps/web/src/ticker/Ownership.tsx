@@ -4,6 +4,7 @@ import {
   bounds,
   composition,
   holderLabel,
+  holderRole,
   inRange,
   registryAt,
   pctAt,
@@ -163,7 +164,7 @@ export function Ownership({
               </thead>
               <tbody id="holders">
                 {holders.map(({ s, shares, pct }) => {
-                  const role = snapshot?.holders.find((h) => h.holder_key === s.holder_key);
+                  const role = holderRole(snapshot, s.holder_key);
                   const changed = !!selection && s.events.some((e) => inRange(e.date, selection));
                   const before = sharesAt(s, previous),
                     source =
@@ -181,11 +182,7 @@ export function Ownership({
                         ) : (
                           s.name
                         )}
-                        {(role?.controller || role?.controller_affiliate) && (
-                          <span className="role">
-                            {role.controller ? 'Controller' : 'Controller affiliate'}
-                          </span>
-                        )}
+                        {role && <span className="role">{role}</span>}
                       </td>
                       <td className="num" title={nf(shares) + ' shares'}>
                         {changed ? (
