@@ -89,6 +89,10 @@
 .terminal-page .past {
   color: var(--muted);
 }
+.terminal-page .actions .past .accent,
+.terminal-page .actions .past .ticker {
+  color: inherit;
+}
 .terminal-page .details td {
   white-space: normal;
   padding: 12px;
