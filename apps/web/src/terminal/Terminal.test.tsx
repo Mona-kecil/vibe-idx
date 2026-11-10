@@ -310,7 +310,7 @@ describe('React terminal', () => {
     expect(host.querySelector('.broker-ledger.buy')?.textContent).toContain('AA');
     expect(host.querySelector('.broker-ledger.buy')?.textContent).not.toContain('BB');
     await click('[aria-label="Market board"] button:nth-child(3)');
-    expect(host.textContent).toContain('No broker summary in this view');
+    expect(host.textContent).toContain('No trades');
   });
   it('renders NET broker codes as text and keeps GROSS pairing interactive', async () => {
     auth.user = { id: 'test-user' };
@@ -322,6 +322,73 @@ describe('React terminal', () => {
     await click('[aria-label="Broker mode"] button:nth-child(2)');
     await click('.broker-ledger.buy button');
     expect(host.querySelector('.broker-ledger button[aria-pressed="true"]')).not.toBeNull();
+  });
+  it('shows broker dates and warns about older data above BRK, BFL and FF content', async () => {
+    const serve = fetcher.getMockImplementation();
+    if (!serve) throw new Error('Missing fixture fetcher');
+    auth.user = { id: 'test-user' };
+    await fetcher.withImplementation(
+      async (input, init) => {
+        const response = await serve(input, init);
+        if (!requestUrl(input).includes('health.json')) return response;
+        return Response.json({ ...(await response.json()), prices: '2026-11-10' });
+      },
+      async () => {
+        await render();
+        await click('[aria-label="Broker period"] button:nth-child(2)');
+        expect(host.querySelector('.broker-date')?.textContent).toContain('6–9 Nov 2026');
+        for (const pane of ['BRK', 'BFL', 'FF']) {
+          await command(`FOCUS BREN ${pane}`);
+          const date = host.querySelector('.broker-date');
+          expect(date?.getAttribute('role')).toBe('status');
+          expect(date?.textContent).toContain('Behind prices');
+          expect(date?.nextElementSibling?.className).toMatch(/pb|flow-view/);
+        }
+      },
+    );
+  });
+  it('counts market sessions for 20D and shows No trades for a thin board with no recent trades', async () => {
+    const serve = fetcher.getMockImplementation();
+    if (!serve) throw new Error('Missing fixture fetcher');
+    auth.user = { id: 'test-user' };
+    const history = Array.from({ length: 40 }, (_, i) => {
+      const date = new Date('2026-11-09T00:00:00Z');
+      date.setUTCDate(date.getUTCDate() - i);
+      return date;
+    })
+      .filter((date) => date.getUTCDay() !== 0 && date.getUTCDay() !== 6)
+      .map((date) => ({
+        date: date.toISOString().slice(0, 10),
+        close: 100,
+        change: 0,
+        change_pct: 0,
+      }));
+    await fetcher.withImplementation(
+      async (input, init) => {
+        const path = requestUrl(input);
+        if (path.includes('market.json'))
+          return Response.json({ date: '2026-11-09', up: 0, down: 0, history });
+        if (path.includes('/api/brokers'))
+          return Response.json({
+            ticker: 'BREN',
+            days: [
+              { ...days[0], date: '2026-09-01' },
+              { ...days[1], date: '2026-09-02' },
+              { ...days[1], date: '2026-11-09' },
+            ],
+          });
+        return serve(input, init);
+      },
+      async () => {
+        await render();
+        await click('[aria-label="Broker period"] button:nth-child(3)');
+        expect(host.querySelector('.broker-ledger.buy')?.textContent).toContain('50.0K');
+        expect(host.querySelector('.broker-ledger.buy')?.textContent).not.toContain('200.0K');
+        await click('[aria-label="Market board"] button:nth-child(3)');
+        expect(host.textContent).toContain('No trades');
+        expect(host.querySelector('.broker-ledger')).toBeNull();
+      },
+    );
   });
   it.each(['LOCAL', 'GOV'])(
     'falls back to ALL with obsolete stored %s broker preferences',

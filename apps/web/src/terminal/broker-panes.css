@@ -45,13 +45,16 @@
 .terminal-page .broker-ledger .type-FOREIGN {
   color: var(--broker-foreign);
 }
-.terminal-page .broker-foot {
+.terminal-page .broker-date {
   display: flex;
-  justify-content: space-between;
+  flex: none;
   gap: 12px;
   font-size: 10px;
   color: var(--muted);
-  padding: 8px;
+  padding: 4px 8px;
+}
+.terminal-page .broker-date.lagging {
+  color: var(--accent);
 }
 .terminal-page .broker-key {
   display: inline-flex;
