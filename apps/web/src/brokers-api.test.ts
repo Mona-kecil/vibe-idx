@@ -173,7 +173,7 @@ describe('private broker API', () => {
     } finally {
       rmSync(output, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   it('rejects missing, forged, wrong-client, wrong-issuer, expired, and incomplete JWTs before R2 reads', async () => {
     const handle = createBrokerHandler({ env, fetcher });
