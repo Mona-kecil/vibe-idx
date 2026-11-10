@@ -381,3 +381,24 @@ describe('React terminal', () => {
 function requestUrl(input: RequestInfo | URL) {
   return input instanceof Request ? input.url : input.toString();
 }
+
+it('pushes ticker navigation, replaces layout navigation and restores on popstate', async () => {
+  const push = vi.spyOn(window.history, 'pushState');
+  const replace = vi.spyOn(window.history, 'replaceState');
+  await render();
+  expect(push).not.toHaveBeenCalled();
+  await command('BBCA');
+  expect(push).toHaveBeenCalledOnce();
+  await command('FOCUS');
+  expect(push).toHaveBeenCalledOnce();
+  expect(replace).toHaveBeenCalled();
+  await act(async () => {
+    window.history.replaceState(null, '', '/terminal?t=BREN&l=grid');
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  });
+  expect(host.querySelector('[data-slot="b"] .ctx b')?.textContent).toBe('BREN');
+  expect(host.querySelectorAll('.pane')).toHaveLength(6);
+  expect(push).toHaveBeenCalledOnce();
+  push.mockRestore();
+  replace.mockRestore();
+});

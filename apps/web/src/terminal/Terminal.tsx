@@ -176,11 +176,15 @@ function TerminalWorkspace({ data }: { data: TerminalData }) {
     setFilters((previous) => ({ ...previous, [key]: value }));
   const setBroker = <K extends keyof BrokerFilters>(key: K, value: BrokerFilters[K]) =>
     changeBroker((previous) => ({ ...previous, [key]: value }));
+  const historyTicker = useRef(ticker);
   useEffect(() => {
     const url = new URL(window.location.href);
+    const push = historyTicker.current !== ticker && url.searchParams.get('t') !== ticker;
     url.searchParams.set('t', ticker);
     url.searchParams.set('l', layout);
-    window.history.replaceState(null, '', url);
+    if (push) window.history.pushState(null, '', url);
+    else window.history.replaceState(null, '', url);
+    historyTicker.current = ticker;
   }, [ticker, layout]);
   useEffect(() => {
     const pop = () => {
