@@ -41,13 +41,29 @@ export function Attribution() {
 }
 
 const chartTypes = ['CANDLE', 'LINE'] as const;
-const volumeModes = ['OFF', 'OVERLAY', 'PANE'] as const;
-const foreignModes = ['OFF', 'ON'] as const;
-type ChartSettings = {
-  chartType: (typeof chartTypes)[number];
-  volumeMode: (typeof volumeModes)[number];
-  foreignMode: (typeof foreignModes)[number];
-};
+type ChartType = (typeof chartTypes)[number];
+function chartGlyph(type: ChartType) {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      width="1em"
+      height="1em"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      aria-hidden="true"
+    >
+      {type === 'CANDLE' ? (
+        <>
+          <path d="M4 1v3m0 6v5M12 1v5m0 6v3" />
+          <path d="M2 4h4v6H2zM10 6h4v6h-4z" />
+        </>
+      ) : (
+        <path d="m1 13 4-5 4 2 6-8" />
+      )}
+    </svg>
+  );
+}
 function useChartSetting<T extends string>(key: string, values: readonly T[], fallback: T) {
   const [value, setValue] = useState(() => {
     const saved = readStorage(key);
@@ -68,13 +84,6 @@ const intraday = {
 export function PricePane() {
   const { detail, timeframe, setTimeframe, ticker, session } = useTerminal();
   const [chartType, setChartType] = useChartSetting('terminal:chart:type', chartTypes, 'CANDLE');
-  const [volumeMode, setVolumeMode] = useChartSetting('terminal:chart:volume', volumeModes, 'PANE');
-  const [foreignMode, setForeignMode] = useChartSetting(
-    'terminal:chart:foreign',
-    foreignModes,
-    'ON',
-  );
-  const settings = { chartType, volumeMode, foreignMode };
   return (
     <>
       <div className="sub chart-controls">
@@ -89,25 +98,9 @@ export function PricePane() {
           values={chartTypes}
           value={chartType}
           onChange={setChartType}
+          renderOption={chartGlyph}
+          optionLabel={(type) => (type === 'CANDLE' ? 'Candlestick' : 'Line')}
         />
-        <div className="chart-option">
-          <span>VOL</span>
-          <Segments
-            label="Chart volume"
-            values={volumeModes}
-            value={volumeMode}
-            onChange={setVolumeMode}
-          />
-        </div>
-        <div className="chart-option">
-          <span>FGN</span>
-          <Segments
-            label="Chart foreign net"
-            values={foreignModes}
-            value={foreignMode}
-            onChange={setForeignMode}
-          />
-        </div>
       </div>
       {timeframe !== 'D' && timeframe !== 'W' && session !== 'signed-in' ? (
         <SignInPrompt />
@@ -118,13 +111,13 @@ export function PricePane() {
               <DailyHistory
                 key={`${ticker}:${timeframe}`}
                 data={data}
-                settings={settings}
+                chartType={chartType}
                 weekly={timeframe === 'W'}
               />
             ) : (
               <IntradayHistory
                 key={`${ticker}:${timeframe}`}
-                settings={settings}
+                chartType={chartType}
                 {...intraday[timeframe]}
               />
             )
@@ -137,11 +130,11 @@ export function PricePane() {
 
 function DailyHistory({
   data,
-  settings,
+  chartType,
   weekly,
 }: {
   data: Ticker;
-  settings: ChartSettings;
+  chartType: ChartType;
   weekly: boolean;
 }) {
   const series = useMemo(
@@ -149,17 +142,17 @@ function DailyHistory({
     [data, weekly],
   );
   return series.length ? (
-    <PriceHistory data={series} settings={settings} visibleBars={weekly ? 52 : 126} />
+    <PriceHistory data={series} chartType={chartType} visibleBars={weekly ? 52 : 126} />
   ) : (
     <Empty>No price history</Empty>
   );
 }
 function IntradayHistory({
-  settings,
+  chartType,
   minutes,
   sessions,
 }: {
-  settings: ChartSettings;
+  chartType: ChartType;
   minutes: number;
   sessions: number;
 }) {
@@ -176,7 +169,7 @@ function IntradayHistory({
       </p>
     );
   return series.length ? (
-    <PriceHistory data={series} settings={settings} />
+    <PriceHistory data={series} chartType={chartType} />
   ) : (
     <Empty>No collected regular-board trades</Empty>
   );
@@ -201,11 +194,11 @@ function barTime(time: Time) {
 
 function PriceHistory({
   data,
-  settings: { chartType, volumeMode, foreignMode },
+  chartType,
   visibleBars = data.length,
 }: {
   data: PriceBar[];
-  settings: ChartSettings;
+  chartType: ChartType;
   visibleBars?: number;
 }) {
   const { selection, select } = useTerminal();
@@ -267,60 +260,50 @@ function PriceHistory({
       })),
     );
     price.priceScale().applyOptions({
-      scaleMargins: { top: 0.08, bottom: volumeMode === 'OVERLAY' ? 0.28 : 0.08 },
+      scaleMargins: { top: 0.08, bottom: 0.28 },
     });
-    let paneIndex = 1;
-    function label(index: number, text: string) {
-      createTextWatermark(api.panes()[index]!, {
-        horzAlign: 'left',
-        vertAlign: 'top',
-        lines: [{ text, color: '#8d9790', fontSize: 10, fontFamily: 'JetBrains Mono, monospace' }],
-      });
-    }
-    if (volumeMode !== 'OFF') {
-      const index = volumeMode === 'PANE' ? paneIndex++ : 0;
-      const volume = api.addSeries(
-        HistogramSeries,
+    const volume = api.addSeries(HistogramSeries, {
+      priceScaleId: 'volume',
+      lastValueVisible: false,
+      priceLineVisible: false,
+      priceFormat: { type: 'custom', formatter: short },
+    });
+    volume.setData(
+      data.map((bar) => ({
+        time: bar.time,
+        value: bar.volume / 100,
+        color: bar.close >= bar.open ? '#22a6a08c' : '#e4573f8c',
+      })),
+    );
+    volume.priceScale().applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
+    const foreign = api.addSeries(
+      HistogramSeries,
+      {
+        lastValueVisible: false,
+        priceLineVisible: false,
+        priceFormat: { type: 'custom', formatter: short },
+      },
+      1,
+    );
+    foreign.setData(
+      data.map((bar) => ({
+        time: bar.time,
+        value: bar.net_foreign,
+        color: bar.net_foreign >= 0 ? '#22a6a0' : '#e4573f',
+      })),
+    );
+    createTextWatermark(api.panes()[1]!, {
+      horzAlign: 'left',
+      vertAlign: 'top',
+      lines: [
         {
-          priceScaleId: volumeMode === 'OVERLAY' ? 'volume' : 'right',
-          lastValueVisible: false,
-          priceLineVisible: false,
-          priceFormat: { type: 'custom', formatter: short },
+          text: typeof data[0]?.time === 'number' ? 'FOREIGN NET IDR' : 'FOREIGN NET EST. IDR',
+          color: '#8d9790',
+          fontSize: 10,
+          fontFamily: 'JetBrains Mono, monospace',
         },
-        index,
-      );
-      volume.setData(
-        data.map((bar) => ({
-          time: bar.time,
-          value: bar.volume / 100,
-          color: bar.close >= bar.open ? '#22a6a08c' : '#e4573f8c',
-        })),
-      );
-      if (volumeMode === 'OVERLAY')
-        volume.priceScale().applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
-      else label(index, 'VOLUME LOT');
-    }
-    if (foreignMode === 'ON') {
-      const index = paneIndex++;
-      api
-        .addSeries(
-          HistogramSeries,
-          {
-            lastValueVisible: false,
-            priceLineVisible: false,
-            priceFormat: { type: 'custom', formatter: short },
-          },
-          index,
-        )
-        .setData(
-          data.map((bar) => ({
-            time: bar.time,
-            value: bar.net_foreign,
-            color: bar.net_foreign >= 0 ? '#22a6a0' : '#e4573f',
-          })),
-        );
-      label(index, typeof data[0]?.time === 'number' ? 'FOREIGN NET IDR' : 'FOREIGN NET EST. IDR');
-    }
+      ],
+    });
     api.panes().forEach((pane, i) => pane.setStretchFactor(i === 0 ? 4 : 1));
     redraw.current = () => {
       const b = bounds(current.current.selection);
@@ -361,7 +344,7 @@ function PriceHistory({
       chart.current = null;
       api.remove();
     };
-  }, [data, chartType, volumeMode, foreignMode, visibleBars]);
+  }, [data, chartType, visibleBars]);
   useEffect(() => {
     redraw.current();
   }, [selection]);
@@ -420,13 +403,11 @@ function PriceHistory({
               </span>
             )}
             <span>C {nf(hover.close)} IDR</span>
-            {volumeMode !== 'OFF' && <span>LOT {short(hover.volume / 100)}</span>}
-            {foreignMode === 'ON' && (
-              <span>
-                F NET {typeof hover.time !== 'number' && 'EST. '}
-                {signed(hover.net_foreign, short)} IDR
-              </span>
-            )}
+            <span>LOT {short(hover.volume / 100)}</span>
+            <span>
+              F NET {typeof hover.time !== 'number' && 'EST. '}
+              {signed(hover.net_foreign, short)} IDR
+            </span>
           </>
         )}
       </div>
@@ -456,8 +437,6 @@ function PriceHistory({
           aria-label="Price history in IDR"
           data-series={chartType === 'CANDLE' ? 'candles' : 'line'}
           data-bars={data.length}
-          data-volume={volumeMode}
-          data-foreign={foreignMode}
         />
         {band && <div className="selection-band" style={band} />}
       </div>

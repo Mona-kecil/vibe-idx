@@ -790,39 +790,40 @@ it.each(['4H', '1H', '15M'])(
   },
 );
 
-it('defaults to candles and separate volume and foreign panes, and remembers each viewer preference on remount', async () => {
+it('keeps two compact control groups, fixed volume and foreign data, and remembers the icon choice', async () => {
   tickSessions = true;
   await render();
   const series = () => host.querySelector('.chart-host');
   expect(series()?.getAttribute('data-series')).toBe('candles');
-  expect(series()?.getAttribute('data-volume')).toBe('PANE');
-  expect(series()?.getAttribute('data-foreign')).toBe('ON');
-  await click('[aria-label="Chart type"] button:last-child');
-  await click('[aria-label="Chart volume"] button:nth-child(2)');
-  await click('[aria-label="Chart foreign net"] button:first-child');
+  expect(host.querySelectorAll('.chart-controls [role="group"]')).toHaveLength(2);
+  const candle = button('[aria-label="Candlestick"]');
+  expect(candle.querySelector('svg')).not.toBeNull();
+  expect(candle.textContent).toBe('');
+  candle.focus();
+  await act(async () =>
+    candle.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })),
+  );
+  expect(document.activeElement).toBe(button('[aria-label="Line"]'));
+  expect(button('[aria-label="Line"]').getAttribute('aria-pressed')).toBe('true');
+  expect(candle.tabIndex).toBe(-1);
   await click('[aria-label="Chart timeframe"] button:first-child');
   await act(async () => root.unmount());
   root = createRoot(host);
   await render();
   expect(series()?.getAttribute('data-series')).toBe('line');
-  expect(series()?.getAttribute('data-volume')).toBe('OVERLAY');
-  expect(series()?.getAttribute('data-foreign')).toBe('OFF');
+  expect(window.localStorage.getItem('terminal:chart:type')).toBe('LINE');
+  expect(host.querySelector('.legend')?.textContent).toContain('LOT');
+  expect(host.querySelector('.legend')?.textContent).toContain('F NET EST.');
   expect(
     host.querySelector('[aria-label="Chart timeframe"] [aria-pressed="true"]')?.textContent,
   ).toBe('D');
-  expect(host.querySelector('.legend')?.textContent).not.toContain('F NET');
-  await click('[aria-label="Chart volume"] button:first-child');
-  expect(series()?.getAttribute('data-volume')).toBe('OFF');
-  expect(host.querySelector('.legend')?.textContent).not.toContain('LOT');
 });
 
-it('ignores invalid preferences and still works when localStorage is blocked', async () => {
+it('ignores invalid chart type preferences and still works when localStorage is blocked', async () => {
   tickSessions = true;
   window.localStorage.setItem('terminal:chart:type', 'area');
-  window.localStorage.setItem('terminal:chart:volume', 'broken');
   await render();
   expect(host.querySelector('.chart-host')?.getAttribute('data-series')).toBe('candles');
-  expect(host.querySelector('.chart-host')?.getAttribute('data-volume')).toBe('PANE');
   const get = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
     throw new Error('blocked');
   });
@@ -833,9 +834,7 @@ it('ignores invalid preferences and still works when localStorage is blocked', a
     await act(async () => root.unmount());
     root = createRoot(host);
     await render();
-    await click('[aria-label="Chart type"] button:last-child');
-    await click('[aria-label="Chart volume"] button:nth-child(2)');
-    await click('[aria-label="Chart foreign net"] button:first-child');
+    await click('[aria-label="Line"]');
     expect(host.querySelector('.chart-host')?.getAttribute('data-series')).toBe('line');
   } finally {
     get.mockRestore();

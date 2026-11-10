@@ -14,12 +14,16 @@ export function Segments<T extends string>({
   value,
   onChange,
   disabled = [],
+  renderOption,
+  optionLabel,
 }: {
   label: string;
   values: readonly T[];
   value: T;
   onChange: (value: T) => void;
   disabled?: readonly T[];
+  renderOption?: (option: T) => ReactNode;
+  optionLabel?: (option: T) => string;
 }) {
   const enabled = values.filter((option) => !disabled.includes(option));
   return (
@@ -28,6 +32,7 @@ export function Segments<T extends string>({
         <button
           key={option}
           aria-pressed={option === value}
+          aria-label={optionLabel?.(option)}
           disabled={disabled.includes(option)}
           tabIndex={option === value ? 0 : -1}
           onClick={() => onChange(option)}
@@ -51,7 +56,7 @@ export function Segments<T extends string>({
               [values.indexOf(target)]?.focus();
           }}
         >
-          {option}
+          {renderOption ? renderOption(option) : option}
         </button>
       ))}
     </div>

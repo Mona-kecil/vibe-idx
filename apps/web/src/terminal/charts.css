@@ -64,15 +64,13 @@
 .terminal-page .chart-controls {
   gap: 6px 14px;
 }
-.terminal-page .chart-option,
 .terminal-page .chart-ohlc {
   display: flex;
   align-items: center;
   gap: 6px;
 }
-.terminal-page .chart-option > span {
-  color: var(--muted);
-  font-size: 10px;
+.terminal-page .chart-controls svg {
+  display: block;
 }
 .terminal-page .chart-ohlc {
   gap: 12px;
