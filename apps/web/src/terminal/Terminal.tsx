@@ -255,6 +255,7 @@ function TerminalWorkspace({ data }: { data: TerminalData }) {
           [slot]: [id, ...(previous[targetLayout][slot] ?? [])],
         },
       }));
+    if (max && max !== slot) setMax(null);
     setActive((previous) => ({ ...previous, [`${targetLayout}:${slot}`]: id }));
     setFocused(slot);
   }

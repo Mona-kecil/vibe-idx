@@ -402,3 +402,11 @@ it('pushes ticker navigation, replaces layout navigation and restores on popstat
   push.mockRestore();
   replace.mockRestore();
 });
+
+it('restores the layout when a command targets a different maximized pane', async () => {
+  await render();
+  await click('[data-slot="b"] .maxb');
+  await command('SIG');
+  expect(host.querySelector('.pane.max')).toBeNull();
+  expect(host.querySelector('[data-slot="c"] [aria-selected="true"]')?.textContent).toBe('SIG');
+});
