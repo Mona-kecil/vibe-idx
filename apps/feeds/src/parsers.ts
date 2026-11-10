@@ -118,7 +118,6 @@ export function parseForexFactory(raw: unknown): CalendarEvent[] {
       }),
     );
 }
-export const BPS_URL = 'https://www.bps.go.id/id/arc';
 export const BI_URL = 'https://www.bi.go.id/id/publikasi/Kalender/Default.aspx';
 const dateSchema = z.iso.date();
 function indonesianEvent(
@@ -140,43 +139,6 @@ function indonesianEvent(
     ...(note ? { note } : {}),
   });
 }
-export function bpsScripts(html: string): string[] {
-  const scripts = [...html.matchAll(/<script\b[^>]*\bsrc="([^"?#]+)[^"]*"/g)]
-    .map((m) => m[1])
-    .filter((s): s is string => !!s && s.startsWith('/_next/static/chunks/') && s.endsWith('.js'));
-  if (!scripts.length) throw new Error('BPS calendar scripts missing');
-  return [...new Set(scripts)];
-}
-export function bpsAction(script: string): string | undefined {
-  return /createServerReference\)\("([a-f0-9]{40,})",[^;]{0,250}?"getArcBrs"\)/.exec(script)?.[1];
-}
-const arcSchema = z
-  .array(
-    z.object({
-      title: z.string(),
-      date: dateSchema,
-      type: z.literal('brs'),
-      url: z.string(),
-      status: z.string(),
-    }),
-  )
-  .min(1);
-export function parseBPSCalendar(text: string, year: number): CalendarEvent[] {
-  const results = text.split('\n').flatMap((line) => {
-    if (!/^[a-f\d]+:\[/.test(line)) return [];
-    const parsed = arcSchema.safeParse(JSON.parse(line.slice(line.indexOf(':') + 1)));
-    return parsed.success ? parsed.data : [];
-  });
-  const rows = results
-    .filter((e) => e.date.startsWith(`${year}-`) && !/batal/i.test(e.status))
-    .map((e) => {
-      const url = e.url ? new URL(e.url, BPS_URL) : new URL(BPS_URL);
-      if (url.origin !== 'https://www.bps.go.id') throw new Error('Unexpected BPS event URL');
-      return indonesianEvent(e.date, cleanHTML(e.title), 'bps', url.href);
-    });
-  if (!rows.length) throw new Error('BPS calendar missing current year');
-  return rows;
-}
 const bpsReleaseSchema = z.object({
   status: z.literal('OK'),
   'data-availability': z.literal('available'),
@@ -192,7 +154,14 @@ const bpsReleaseSchema = z.object({
   ]),
 });
 export function parseBPSReleases(raw: unknown) {
-  const data = bpsReleaseSchema.parse(raw).data;
+  const parsed = z
+    .union([
+      bpsReleaseSchema,
+      z.object({ status: z.literal('OK'), 'data-availability': z.literal('not-available') }),
+    ])
+    .parse(raw);
+  if (!('data' in parsed)) return { pages: 0, events: [] };
+  const data = parsed.data;
   return {
     pages: data[0].pages,
     events: data[1].map((e) =>

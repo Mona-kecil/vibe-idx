@@ -1,18 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vite-plus/test';
-import {
-  cleanHTML,
-  parseRSS,
-  parseForexFactory,
-  parseBI,
-  bpsScripts,
-  bpsAction,
-  parseBPSCalendar,
-  parseBPSReleases,
-} from './parsers';
+import { cleanHTML, parseRSS, parseForexFactory, parseBI, parseBPSReleases } from './parsers';
 import { tickerTagger } from './tagging';
 import { collect, refresh, type Bucket, type Source } from './collector';
-import { collectBPS, newsSources, request } from './sources';
+import { newsSources, request } from './sources';
 import { report as sentryReport } from './sentry';
 import { newsSchema } from './contracts';
 
@@ -106,64 +97,11 @@ describe('source parsers', () => {
     expect(() => parseBI(fixture('bi.html'), 2027)).toThrow();
     expect(() => parseBI(fixture('bi.html').replace('17-18', 'missing'), 2026)).toThrow();
   });
-  it('discovers redeployed BPS action ids rather than pinning hashes', () => {
-    expect(
-      bpsScripts(
-        '<script src="/_next/static/chunks/new.js" async></script><script src="https://evil.test/x.js"></script>',
-      ),
-    ).toEqual(['/_next/static/chunks/new.js']);
-    for (const id of ['a'.repeat(40), 'b'.repeat(42)])
-      expect(
-        bpsAction(
-          `let x=(0,m.createServerReference)("${id}",m.callServer,void 0,m.findSourceMapURL,"getArcBrs");`,
-        ),
-      ).toBe(id);
-    expect(bpsAction('changed layout')).toBeUndefined();
-  });
-  it('parses BPS ARC and WebAPI public metadata', () => {
-    expect(parseBPSCalendar(fixture('bps-arc.txt'), 2026).length).toBeGreaterThan(0);
+  it('parses BPS WebAPI public metadata', () => {
     const result = parseBPSReleases(JSON.parse(fixture('bps-releases.json')));
     expect(result.pages).toBe(2);
     expect(result.events).toHaveLength(2);
-    expect(() => parseBPSCalendar('1:[]', 2026)).toThrow();
     expect(() => parseBPSReleases({ status: 'Error', data: [] })).toThrow();
-  });
-  it('collects a rediscovered BPS action and every WebAPI page without abstracts', async () => {
-    const calls: string[] = [];
-    const id = 'c'.repeat(42);
-    const events = await collectBPS(
-      async (url, init) => {
-        calls.push(url);
-        if (url.includes('webapi.bps.go.id')) {
-          const data: unknown = JSON.parse(fixture('bps-releases.json'));
-          return Response.json(data);
-        }
-        if (init?.method === 'POST') {
-          expect(new Headers(init.headers).get('Next-Action')).toBe(id);
-          expect(init.body).toBe(JSON.stringify(['id', '2026']));
-          return new Response(fixture('bps-arc.txt'));
-        }
-        if (url.endsWith('rotated.js'))
-          return new Response(
-            `(0,m.createServerReference)("${id}",m.callServer,void 0,m.findSourceMapURL,"getArcBrs")`,
-          );
-        return new Response('<script src="/_next/static/chunks/rotated.js"></script>');
-      },
-      'private-test-token',
-      new Date('2026-11-09T00:00:00Z'),
-    );
-    expect(calls.filter((url) => url.includes('webapi.bps.go.id'))).toHaveLength(2);
-    expect(events.some((e) => e.ts.startsWith('2026-11'))).toBe(true);
-    expect(JSON.stringify(events)).not.toContain('abstract');
-  });
-  it('fails loudly if BPS action discovery or current year breaks', async () => {
-    await expect(
-      collectBPS(
-        async () => new Response('<script src="/_next/static/chunks/new.js"></script>'),
-        'test-key',
-        new Date('2026-11-09'),
-      ),
-    ).rejects.toThrow('discovery failed');
   });
 });
 const now = new Date('2026-11-09T06:00:00Z');

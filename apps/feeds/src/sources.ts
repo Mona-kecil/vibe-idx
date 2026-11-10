@@ -1,16 +1,6 @@
-import { tickerSchema, type Ticker } from './contracts';
-import {
-  bpsAction,
-  bpsScripts,
-  BPS_URL,
-  BI_URL,
-  FF_URL,
-  parseBI,
-  parseBPSCalendar,
-  parseBPSReleases,
-  parseForexFactory,
-  parseRSS,
-} from './parsers';
+import { BPS_HOLIDAYS_URL, expectedBPS, parsePublicHolidays } from './bps';
+import { tickerSchema, type CalendarEvent, type Ticker } from './contracts';
+import { BI_URL, FF_URL, parseBI, parseBPSReleases, parseForexFactory, parseRSS } from './parsers';
 import { tickerTagger } from './tagging';
 
 export const FEEDS = [
@@ -93,23 +83,8 @@ export async function collectBPS(get: Request, key: string, now: Date) {
   const local = new Date(now.getTime() + 7 * 3600e3);
   const year = local.getUTCFullYear(),
     month = local.getUTCMonth() + 1;
-  const scripts = bpsScripts(await (await get(BPS_URL)).text());
-  let action: string | undefined;
-  for (const script of scripts.reverse()) {
-    action = bpsAction(await (await get(new URL(script, BPS_URL).href)).text());
-    if (action) break;
-  }
-  if (!action) throw new Error('BPS calendar action discovery failed');
-  const response = await get(BPS_URL, {
-    method: 'POST',
-    headers: {
-      'Next-Action': action,
-      'Content-Type': 'text/plain;charset=UTF-8',
-      Origin: 'https://www.bps.go.id',
-    },
-    body: JSON.stringify(['id', String(year)]),
-  });
-  const events = parseBPSCalendar(await response.text(), year);
+  const holidays = parsePublicHolidays(await (await get(BPS_HOLIDAYS_URL)).text());
+  const events: CalendarEvent[] = [];
   let pages = 1;
   for (let page = 1; page <= pages; page++) {
     const url = `https://webapi.bps.go.id/v1/api/list/model/pressrelease/domain/0000/key/${encodeURIComponent(key)}/year/${year}/month/${month}/page/${page}/`;
@@ -121,15 +96,7 @@ export async function collectBPS(get: Request, key: string, now: Date) {
       if (!events.some((e) => e.url.split('/').includes(id ?? ''))) events.push(event);
     }
   }
-  if (
-    !events.some(
-      (e) =>
-        new Date(e.ts).getTime() >= Date.UTC(year, month - 1, 1) - 7 * 3600e3 &&
-        new Date(e.ts).getTime() < Date.UTC(year, month, 1) - 7 * 3600e3,
-    )
-  )
-    throw new Error('BPS current month missing');
-  return events;
+  return [...events, ...expectedBPS(now, holidays, events)];
 }
 export function calendarSources(get: Request, key: string, now: Date) {
   return [
