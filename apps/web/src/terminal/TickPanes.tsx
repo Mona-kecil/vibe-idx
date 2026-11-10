@@ -1,13 +1,6 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
+import { dateText, nf } from '../ticker/format';
 import {
-  CandlestickSeries,
-  HistogramSeries,
-  type CandlestickData,
-  type UTCTimestamp,
-} from 'lightweight-charts';
-import { dateText, nf, short } from '../ticker/format';
-import {
-  bars,
   clock,
   doneDetail,
   tradeBook,
@@ -18,7 +11,6 @@ import {
 } from '../ticks';
 import { useSession, useTicks, type Loaded } from './tick-data';
 import { useTerminal } from './state';
-import { terminalChart } from './charts';
 import { Empty, Scroll, Segments, SignInPrompt } from './ui';
 import './tick-panes.css';
 
@@ -362,98 +354,5 @@ function PriceLevels({ trades }: { trades: TickTrades }) {
         </tbody>
       </table>
     </Scroll>
-  );
-}
-
-const sizes = { '1M': 1, '5M': 5, '15M': 15, '1H': 60 } as const;
-export function IntradayPane() {
-  const [size, setSize] = useState<keyof typeof sizes>('5M');
-  return (
-    <TickPane
-      kind="trades"
-      controls={
-        <Segments
-          label="Bar size"
-          values={Object.keys(sizes) as (keyof typeof sizes)[]}
-          value={size}
-          onChange={setSize}
-        />
-      }
-    >
-      {(trades) => <Intraday trades={trades} minutes={sizes[size]} />}
-    </TickPane>
-  );
-}
-function Intraday({ trades, minutes }: { trades: TickTrades; minutes: number }) {
-  const host = useRef<HTMLDivElement>(null);
-  const series = useMemo(() => bars(trades, minutes), [trades, minutes]);
-  const summary = useMemo(() => bars(trades, 24 * 60)[0], [trades]);
-  const [hover, setHover] = useState<number | null>(null);
-  // The chart runs in UTC, so offsetting by the session's midnight shows Jakarta clock times.
-  const midnight = Date.parse(`${trades.date}T00:00:00Z`) / 1000;
-  useEffect(() => {
-    if (!host.current || !series.length) return;
-    const chart = terminalChart(host.current);
-    chart.applyOptions({ timeScale: { timeVisible: true, secondsVisible: false } });
-    const candles = chart.addSeries(CandlestickSeries, {
-      upColor: '#22a6a0',
-      downColor: '#e4573f',
-      borderVisible: false,
-      wickUpColor: '#22a6a0',
-      wickDownColor: '#e4573f',
-      priceFormat: { type: 'custom', minMove: 1, formatter: (value: number) => nf(value) },
-    });
-    candles.setData(
-      series.map(
-        (bar): CandlestickData<UTCTimestamp> => ({
-          time: (midnight + bar.time) as UTCTimestamp,
-          open: bar.open,
-          high: bar.high,
-          low: bar.low,
-          close: bar.close,
-        }),
-      ),
-    );
-    chart
-      .addSeries(
-        HistogramSeries,
-        {
-          lastValueVisible: false,
-          priceLineVisible: false,
-          priceFormat: { type: 'custom', formatter: short },
-        },
-        1,
-      )
-      .setData(
-        series.map((bar) => ({
-          time: (midnight + bar.time) as UTCTimestamp,
-          value: bar.shares / 100,
-          color: bar.close >= bar.open ? '#22a6a08c' : '#e4573f8c',
-        })),
-      );
-    chart.subscribeCrosshairMove((event) =>
-      setHover(typeof event.time === 'number' ? event.time - midnight : null),
-    );
-    chart.timeScale().fitContent();
-    return () => chart.remove();
-  }, [series, midnight]);
-  const hovered = series.find((b) => b.time === hover);
-  const bar = hovered ?? summary;
-  if (!bar) return <Empty>No regular-board trades</Empty>;
-  return (
-    <div className="flow-view">
-      <div className="legend">
-        {hovered && <time>{clock(bar.time).slice(0, 5)} WIB</time>}
-        <span>O {nf(bar.open)}</span>
-        <span>H {nf(bar.high)}</span>
-        <span>L {nf(bar.low)}</span>
-        <span>C {nf(bar.close)}</span>
-        <span>{lots(bar.shares)} lot</span>
-        <span className="tick-foreign">
-          F {lots(bar.foreignBuy)} buy {lots(bar.foreignSell)} sell
-        </span>
-      </div>
-      <div className="flow-chart" ref={host} onPointerLeave={() => setHover(null)} />
-    </div>
   );
 }

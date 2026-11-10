@@ -282,7 +282,7 @@ describe('React terminal', () => {
       true,
     );
   });
-  it.each(['BRK', 'BFL', 'FF', 'OB', 'RT', 'DD', 'TB', 'ID'])(
+  it.each(['BRK', 'BFL', 'FF', 'OB', 'RT', 'DD', 'TB'])(
     'hides %s filters while signed out',
     async (pane) => {
       await render();
@@ -533,7 +533,7 @@ describe('React terminal', () => {
       { date: '2026-11-06', net: 0, cumulative: 0, share: null },
     ]);
   });
-  it('shows session OHLC and volume at rest, a bar on hover, and restores the summary on leave', async () => {
+  it('shows intraday OHLC and volume, inspects a bar on hover, and restores the latest bar on leave', async () => {
     const serve = fetcher.getMockImplementation();
     if (!serve) throw new Error('Missing fixture fetcher');
     auth.user = { id: 'test-user' };
@@ -570,20 +570,19 @@ describe('React terminal', () => {
       },
       async () => {
         await render();
-        await command('FOCUS BBCA ID');
-        const header = () => host.querySelector('.flow-view .legend');
-        expect(header()?.textContent).toContain('O 100H 120L 90C 906 lot');
-        expect(header()?.querySelector('time')).toBeNull();
-        expect(host.querySelector('.tick-session time')?.textContent).toBe('10 Nov 2026');
-        const midnight = Date.parse('2026-11-10T00:00:00Z') / 1000;
+        await command('FOCUS BBCA GP');
+        await click('[aria-label="Chart timeframe"] button:nth-child(4)');
+        const header = () => host.querySelector('.price-view .legend');
+        expect(header()?.textContent).toContain('16:00 WIBO 90H 90L 90C 90 IDRLOT 3');
+        const midnight = Date.parse('2026-11-10T00:00:00+07:00') / 1000;
         await act(async () => crosshair.move({ time: midnight + 43200 }));
-        expect(header()?.textContent).toContain('12:00 WIBO 120H 120L 120C 1202 lot');
+        expect(header()?.textContent).toContain('12:00 WIBO 120H 120L 120C 120 IDRLOT 2');
         await act(async () =>
           host
-            .querySelector('.flow-chart')
+            .querySelector('.price-chart-wrap')
             ?.dispatchEvent(new Event('pointerout', { bubbles: true })),
         );
-        expect(header()?.textContent).toContain('O 100H 120L 90C 906 lot');
+        expect(header()?.textContent).toContain('16:00 WIBO 90H 90L 90C 90 IDRLOT 3');
       },
     );
   });
@@ -698,13 +697,13 @@ it('uses one tab stop per pane tablist and segment group with arrow navigation',
   for (const list of host.querySelectorAll('.tabs, .seg')) {
     expect([...list.querySelectorAll('button')].filter((el) => el.tabIndex === 0)).toHaveLength(1);
   }
-  const tab = button('[data-slot="b"] [aria-selected="true"]');
+  const tab = button('[data-slot="c"] [aria-selected="true"]');
   await act(async () => {
     tab.focus();
     tab.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
   });
-  expect(document.activeElement?.textContent).toBe('ID');
-  const panel = host.querySelector('[data-slot="b"] [role="tabpanel"]');
+  expect(document.activeElement?.textContent).toBe('SIG');
+  const panel = host.querySelector('[data-slot="c"] [role="tabpanel"]');
   expect(document.activeElement?.getAttribute('aria-controls')).toBe(panel?.id);
   expect(panel?.getAttribute('aria-labelledby')).toBe(document.activeElement?.id);
   const segment = button('[aria-label="Movers"] button');

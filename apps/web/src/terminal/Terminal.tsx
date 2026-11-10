@@ -3,7 +3,6 @@ import { useAuth } from '@workos-inc/authkit-react';
 import type { Ticker } from '../data';
 import type { BrokerDay } from '../brokers';
 import type { Selection } from '../ticker/logic';
-import type { Period } from '../ticker/PriceChart';
 import { initialPins, writeStorage } from '../watchlist';
 import {
   fetchBrokers,
@@ -26,19 +25,14 @@ import {
   type BrokerFilters,
   type FunctionId,
   type Layout,
+  type Timeframe,
 } from './state';
 import { CommandBar } from './CommandBar';
 import { SplitLayout, layouts } from './Layout';
 import { Empty, RiskFlags, StatusBar } from './ui';
 import { PricePane } from './PricePane';
 import { BrokerSummaryPane, BrokerFlowPane, ForeignFlowPane } from './BrokerPanes';
-import {
-  DoneDetailPane,
-  IntradayPane,
-  OrderBookPane,
-  RunningTradePane,
-  TradeBookPane,
-} from './TickPanes';
+import { DoneDetailPane, OrderBookPane, RunningTradePane, TradeBookPane } from './TickPanes';
 import { WatchlistPane, MoversPane, SignalsPane, HeatmapPane } from './MarketPanes';
 import { DescriptionPane, HoldersPane, DisclosuresPane } from './TickerPanes';
 import { NewsPane, CalendarPane, ActionsPane, RiskPane } from './PublicationPanes';
@@ -107,7 +101,7 @@ function TerminalWorkspace({ data }: { data: TerminalData }) {
     return parseLayout(query.get('l')) ?? 'grid';
   });
   const [selection, select] = useState<Selection>(null),
-    [range, setRange] = useState<Period>('3M');
+    [timeframe, setTimeframe] = useState<Timeframe>('D');
   const [filters, setFilters] = useState(initialFilters),
     [broker, changeBroker] = useState(initialBrokerFilters);
   const [detail, setDetail] = useState<Resource<Ticker>>({ kind: 'loading' });
@@ -345,8 +339,8 @@ function TerminalWorkspace({ data }: { data: TerminalData }) {
         togglePin,
         selection,
         select,
-        range,
-        setRange,
+        timeframe,
+        setTimeframe,
         filters,
         filter,
         broker,
@@ -384,7 +378,7 @@ function TerminalWorkspace({ data }: { data: TerminalData }) {
 }
 function PaneContext({ id }: { id: FunctionId }) {
   const { ticker, publications } = useTerminal();
-  if (!['GP', 'KEY', 'BRK', 'BFL', 'FF', 'OB', 'RT', 'DD', 'TB', 'ID', 'HDS', 'DISC'].includes(id))
+  if (!['GP', 'KEY', 'BRK', 'BFL', 'FF', 'OB', 'RT', 'DD', 'TB', 'HDS', 'DISC'].includes(id))
     return <span className="ctx" />;
   return (
     <div className="ctx">
@@ -419,8 +413,6 @@ function PaneView({ id }: { id: FunctionId }) {
       return <DoneDetailPane />;
     case 'TB':
       return <TradeBookPane />;
-    case 'ID':
-      return <IntradayPane />;
     case 'HDS':
       return <HoldersPane />;
     case 'DISC':

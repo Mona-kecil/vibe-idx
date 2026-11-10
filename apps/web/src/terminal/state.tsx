@@ -2,7 +2,6 @@ import { createContext, useContext, useEffect, useState } from 'react';
 import type { Ticker } from '../data';
 import type { BrokerDay, BrokerBoard, InvestorFilter } from '../brokers';
 import type { Selection } from '../ticker/logic';
-import type { Period } from '../ticker/PriceChart';
 import {
   fetchHeadlines,
   fetchCalendar,
@@ -24,7 +23,6 @@ export const functions = {
   RT: 'Running trade',
   DD: 'Done detail',
   TB: 'Trade book',
-  ID: 'Intraday chart',
   HDS: '5% holders and changes',
   DISC: 'IDX disclosures',
   SIG: 'Signals feed',
@@ -42,6 +40,7 @@ export const isLayout = (value: string | null): value is Layout =>
   value === 'grid' || value === 'focus' || value === 'flow';
 export const parseLayout = (value: string | null): Layout | null =>
   value === 'live' ? 'flow' : isLayout(value) ? value : null;
+export type Timeframe = 'W' | 'D' | '4H' | '1H' | '15M';
 export type Session = 'checking' | 'signed-in' | 'signed-out';
 export type BrokerFilters = {
   board: BrokerBoard | 'all';
@@ -105,8 +104,8 @@ type TerminalContextValue = {
   togglePin: (ticker: string) => void;
   selection: Selection;
   select: (selection: Selection) => void;
-  range: Period;
-  setRange: (range: Period) => void;
+  timeframe: Timeframe;
+  setTimeframe: (timeframe: Timeframe) => void;
   filters: Filters;
   filter: <K extends keyof Filters>(key: K, value: Filters[K]) => void;
   broker: BrokerFilters;

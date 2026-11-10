@@ -20,7 +20,7 @@ export const layouts: Record<Layout, { tree: LayoutNode; slots: Record<string, F
     },
     slots: {
       a: ['WL'],
-      b: ['GP', 'ID'],
+      b: ['GP'],
       c: ['NEWS', 'SIG', 'CAL', 'CA', 'HEAT'],
       d: ['MOV', 'RISK'],
       e: ['BRK', 'BFL', 'FF', 'RT', 'DD'],
@@ -30,22 +30,7 @@ export const layouts: Record<Layout, { tree: LayoutNode; slots: Record<string, F
   focus: {
     tree: { direction: 'row', sizes: [70, 30], children: ['b', 'c'] },
     slots: {
-      b: [
-        'GP',
-        'ID',
-        'KEY',
-        'BRK',
-        'BFL',
-        'FF',
-        'RT',
-        'DD',
-        'OB',
-        'TB',
-        'HDS',
-        'DISC',
-        'HEAT',
-        'MOV',
-      ],
+      b: ['GP', 'KEY', 'BRK', 'BFL', 'FF', 'RT', 'DD', 'OB', 'TB', 'HDS', 'DISC', 'HEAT', 'MOV'],
       c: ['NEWS', 'SIG', 'CAL', 'CA', 'RISK', 'WL'],
     },
   },
@@ -59,7 +44,7 @@ export const layouts: Record<Layout, { tree: LayoutNode; slots: Record<string, F
       ],
     },
     slots: {
-      b: ['GP', 'ID', 'KEY'],
+      b: ['GP', 'KEY'],
       c: ['CAL', 'CA', 'RISK', 'OB', 'TB'],
       d: ['BRK', 'BFL', 'FF', 'RT', 'DD'],
       e: ['NEWS', 'WL', 'SIG'],
