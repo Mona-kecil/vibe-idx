@@ -1,6 +1,7 @@
 import { mkdtemp, mkdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { gunzipSync } from 'node:zlib';
 import { DuckDBInstance } from '@duckdb/node-api';
 import { afterEach, beforeEach, expect, it, vi } from 'vite-plus/test';
 import type { R2 } from './brokers';
@@ -223,9 +224,17 @@ it('deduplicates non-monotonic market pages and re-reads skipped seconds before 
     { ticker: 'SINI', n: 205, status: 'complete' },
     { ticker: 'ZERO', n: 0, status: 'no_trades' },
   ]);
-  expect(
-    [...f.objects.keys()].every((k) => k.startsWith('ticks/') || k.startsWith('staging/ticks/')),
-  ).toBe(true);
+  expect([...f.objects.keys()].every((k) => /^(ticks|staging\/ticks|site\/ticks)\//.test(k))).toBe(
+    true,
+  );
+  const site = JSON.parse(
+    gunzipSync(f.objects.get(`site/ticks/SINI/${day}.trades.json.gz`)!).toString(),
+  );
+  expect(site).toMatchObject({ date: day, ticker: 'SINI' });
+  expect(site.time).toHaveLength(205);
+  expect(site.shares[0]).toBe(100);
+  expect(site.buyer_foreign[0]).toBe(false);
+  expect(site.seller_foreign[0]).toBe(true);
 });
 it('resumes a budgeted market crawl on a fresh runner without refreshing its closing sequence', async () => {
   const f = await fixture();
@@ -339,6 +348,13 @@ it('captures every book level first, preserves an empty book header, and then ba
   expect(levels.filter((r) => r.ticker === 'ZERO')).toHaveLength(1);
   expect(levels.filter((r) => r.ticker === 'ZERO')[0].record_type).toBe('snapshot');
   expect(levels.find((r) => r.side === 'bid' && Number(r.level) === 1)?.shares).toBe('6000');
+  const published = JSON.parse(
+    gunzipSync(f.objects.get(`site/ticks/SINI/${day}.book.json.gz`)!).toString(),
+  );
+  expect(published.bid[0]).toEqual([7650, 2, 6000]);
+  expect(
+    JSON.parse(gunzipSync(f.objects.get(`site/ticks/ZERO/${day}.book.json.gz`)!).toString()),
+  ).toMatchObject({ bid: [], offer: [] });
 });
 it('waits until 16:30 WIB for the latest running trade, then visits older missing sessions oldest first', async () => {
   vi.setSystemTime(new Date(`${day}T10:00:00Z`));

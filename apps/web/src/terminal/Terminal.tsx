@@ -33,6 +33,13 @@ import { Empty, RiskFlags, StatusBar, direction, percent } from './ui';
 import { nf } from '../ticker/format';
 import { PricePane } from './PricePane';
 import { BrokerSummaryPane, BrokerFlowPane, ForeignFlowPane } from './BrokerPanes';
+import {
+  DoneDetailPane,
+  IntradayPane,
+  OrderBookPane,
+  RunningTradePane,
+  TradeBookPane,
+} from './TickPanes';
 import { WatchlistPane, MoversPane, SignalsPane, HeatmapPane } from './MarketPanes';
 import { DescriptionPane, HoldersPane, DisclosuresPane } from './TickerPanes';
 import { NewsPane, CalendarPane, ActionsPane, RiskPane } from './PublicationPanes';
@@ -109,6 +116,8 @@ function TerminalWorkspace({ data }: { data: TerminalData }) {
   const [brokers, setBrokers] = useState<Resource<BrokerDay[]>>({ kind: 'loading' }),
     [brokerError, setBrokerError] = useState(''),
     [attempt, retry] = useState(0);
+  const [tickDate, setTickDate] = useState<string | null>(null);
+  const getToken = useCallback(() => authRef.current.getAccessToken(), []);
   const [flowPins, setFlowPins] = useState<string[]>([]),
     [flowHidden, setFlowHidden] = useState<string[]>([]);
   const [tickerNews, setTickerNews] = useState<Resource<Headline[]>>({ kind: 'loading' });
@@ -305,6 +314,9 @@ function TerminalWorkspace({ data }: { data: TerminalData }) {
         brokerError,
         signedIn: !!auth.user,
         signIn,
+        getToken,
+        tickDate,
+        setTickDate,
         retryBrokers: () => retry(attempt + 1),
         publications,
         tickerNews,
@@ -331,7 +343,7 @@ function TerminalWorkspace({ data }: { data: TerminalData }) {
 }
 function PaneContext({ id }: { id: FunctionId }) {
   const { data, ticker, publications } = useTerminal();
-  if (!['GP', 'DES', 'BRK', 'BFL', 'FF', 'HDS', 'DISC'].includes(id))
+  if (!['GP', 'DES', 'BRK', 'BFL', 'FF', 'OB', 'RT', 'DD', 'TB', 'ID', 'HDS', 'DISC'].includes(id))
     return <span className="ctx" />;
   const quote = data.stocks.find((stock) => stock.ticker === ticker);
   return (
@@ -364,6 +376,16 @@ function PaneView({ id }: { id: FunctionId }) {
       return <BrokerFlowPane />;
     case 'FF':
       return <ForeignFlowPane />;
+    case 'OB':
+      return <OrderBookPane />;
+    case 'RT':
+      return <RunningTradePane />;
+    case 'DD':
+      return <DoneDetailPane />;
+    case 'TB':
+      return <TradeBookPane />;
+    case 'ID':
+      return <IntradayPane />;
     case 'HDS':
       return <HoldersPane />;
     case 'DISC':

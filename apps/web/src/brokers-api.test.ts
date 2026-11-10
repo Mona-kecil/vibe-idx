@@ -214,6 +214,43 @@ describe('private broker API', () => {
     expect(storageReads).toHaveLength(1);
   });
 
+  it('passes a session tick file through gzipped and rejects malformed tick targets', async () => {
+    const keys: string[] = [];
+    const stored = gzipSync(JSON.stringify({ date: '2026-11-10', ticker: 'BBCA' }));
+    const handle = createBrokerHandler({
+      env: { WORKOS_CLIENT_ID: clientId },
+      fetcher,
+      store: async (key) => {
+        keys.push(key);
+        return key.endsWith('.book.json.gz')
+          ? new Response(stored)
+          : new Response('', { status: 404 });
+      },
+    });
+    const auth = await token();
+    const book = await handle(
+      request({ token: auth, query: 'view=ticks&ticker=BBCA&date=2026-11-10&kind=book' }),
+    );
+    expect(book.status).toBe(200);
+    expect(book.headers.get('Content-Encoding')).toBe('gzip');
+    expect(Buffer.from(await book.arrayBuffer()).equals(stored)).toBe(true);
+    const trades = await handle(
+      request({ token: auth, query: 'view=ticks&ticker=BBCA&date=2026-11-10&kind=trades' }),
+    );
+    expect(trades.status).toBe(404);
+    expect(keys).toEqual([
+      'site/ticks/BBCA/2026-11-10.book.json.gz',
+      'site/ticks/BBCA/2026-11-10.trades.json.gz',
+    ]);
+    for (const query of [
+      'view=ticks&ticker=BBCA&date=2026-11-10',
+      'view=ticks&ticker=BBCA&date=11-10-2026&kind=book',
+      'view=ticks&ticker=BBCA&date=2026-11-10&kind=../broker',
+      'view=other&ticker=BBCA',
+    ])
+      expect((await handle(request({ token: auth, query }))).status).toBe(400);
+  });
+
   it('reads broker history from an injected store without R2 credentials', async () => {
     const keys: string[] = [];
     const handle = createBrokerHandler({

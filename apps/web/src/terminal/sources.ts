@@ -1,3 +1,10 @@
+import {
+  tickBookSchema,
+  tickTradesSchema,
+  type TickBook,
+  type TickKind,
+  type TickTrades,
+} from '../ticks';
 import { z } from 'zod';
 import { load, loadNews, corporateActionsSchema, risksSchema, riskSchema } from '../data';
 import { brokerHistorySchema, brokerTickerSchema } from '../brokers';
@@ -88,4 +95,25 @@ export async function fetchTickerNews(ticker: string): Promise<Resource<Headline
   } catch {
     return { kind: 'unavailable' };
   }
+}
+
+export async function fetchTicks<K extends TickKind>(
+  ticker: string,
+  date: string,
+  kind: K,
+  token: string,
+  signal?: AbortSignal,
+): Promise<(K extends 'book' ? TickBook : TickTrades) | null> {
+  const query = new URLSearchParams({ view: 'ticks', ticker, date, kind });
+  const response = await fetch(`/api/brokers?${query}`, {
+    headers: { Authorization: `Bearer ${token}` },
+    cache: 'no-store',
+    signal,
+  });
+  if (response.status === 401) throw new Error('Your session expired. Sign in again.');
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error('Tick data is unavailable. Retry.');
+  const parsed = (kind === 'book' ? tickBookSchema : tickTradesSchema).parse(await response.json());
+  if (parsed.ticker !== ticker || parsed.date !== date) throw new Error('Tick data mismatch.');
+  return parsed as K extends 'book' ? TickBook : TickTrades;
 }

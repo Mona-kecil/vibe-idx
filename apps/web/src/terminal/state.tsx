@@ -20,6 +20,11 @@ export const functions = {
   BRK: 'Broker summary',
   BFL: 'Broker flow',
   FF: 'Foreign flow',
+  OB: 'Closing order book',
+  RT: 'Running trade',
+  DD: 'Done detail',
+  TB: 'Trade book',
+  ID: 'Intraday chart',
   HDS: '5% holders and changes',
   DISC: 'IDX disclosures',
   SIG: 'Signals feed',
@@ -108,6 +113,9 @@ type TerminalContextValue = {
   brokerError: string;
   signedIn: boolean;
   signIn: () => void;
+  getToken: () => Promise<string | undefined>;
+  tickDate: string | null;
+  setTickDate: (date: string | null) => void;
   retryBrokers: () => void;
   publications: ReturnType<typeof usePublications>;
   tickerNews: Resource<Headline[]>;
