@@ -58,6 +58,7 @@ const days: BrokerDay[] = [
 let root: Root, host: HTMLDivElement;
 let newsAvailable = false;
 let tickSessions = false;
+let sourceFailed = false;
 const fetcher = vi.fn<typeof fetch>(async (input) => {
   const path = requestUrl(input);
   if (path.includes('tickers.json'))
@@ -78,7 +79,9 @@ const fetcher = vi.fn<typeof fetch>(async (input) => {
       indices: '2026-11-09',
       five_pct: null,
       issuers: null,
-      run_at: '2026-11-09',
+      run_at: sourceFailed ? new Date().toISOString() : '2026-11-09',
+      brokers: '2026-11-06',
+      failed: sourceFailed ? ['brokers'] : [],
     });
   if (path.includes('market-summary.json'))
     return Response.json({ date: '2026-11-09', stocks: [] });
@@ -185,6 +188,7 @@ async function command(text: string) {
 }
 beforeEach(() => {
   tickSessions = false;
+  sourceFailed = false;
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
   window.history.replaceState(null, '', '/terminal?t=BREN&l=grid');
   window.localStorage.clear();
@@ -463,4 +467,17 @@ it('traps keyboard focus in help and restores focus on Escape', async () => {
   );
   expect(host.querySelector('[role="dialog"]')).toBeNull();
   expect(document.activeElement).toBe(button('[aria-label="Keyboard reference"]'));
+});
+
+it('shows stale source warnings in the status bar', async () => {
+  await render();
+  expect(host.querySelector('.status .stale')?.textContent).toContain('Not updated since');
+});
+
+it('identifies failed broker sources even when the publication run is fresh', async () => {
+  sourceFailed = true;
+  await render();
+  expect(host.querySelector('.status .stale')?.textContent).toBe(
+    'Broker flow not updated since 6 Nov 2026',
+  );
 });

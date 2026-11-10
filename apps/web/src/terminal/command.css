@@ -145,25 +145,8 @@
 .terminal-page .command-error button {
   margin-left: 12px;
 }
-@media (max-width: 600px) {
-  .terminal-page .cmd {
-    gap: 5px;
-    padding: 0 5px;
-  }
-  .terminal-page .cmd input {
-    font-size: 11px;
-  }
-  .terminal-page .cmd input::placeholder {
-    font-size: 10px;
-  }
-  .terminal-page .lay kbd {
-    display: none;
-  }
-  .terminal-page .lay button {
-    padding: 4px 5px;
-    font-size: 10px;
-  }
-  .terminal-page .help dl {
-    grid-template-columns: 90px 1fr;
-  }
+.terminal-page .home-link {
+  flex: none;
+  color: var(--muted);
+  font-size: 10px;
 }

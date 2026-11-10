@@ -1,5 +1,6 @@
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
 .terminal-page {
+  color-scheme: dark;
   --bg: #0a0c0b;
   --pane: #101312;
   --head: #141816;
@@ -33,6 +34,8 @@
   overflow: hidden;
 }
 .terminal-page button {
+  min-width: 24px;
+  min-height: 24px;
   font: inherit;
   color: inherit;
   background: none;
@@ -46,6 +49,10 @@
   cursor: default;
 }
 .terminal-page a {
+  display: inline-flex;
+  align-items: center;
+  min-width: 24px;
+  min-height: 24px;
   color: inherit;
   text-decoration: none;
 }
@@ -124,7 +131,7 @@
 .terminal-page th {
   color: var(--muted);
   font-weight: 500;
-  font-size: 9px;
+  font-size: 10px;
   text-align: right;
   padding: 5px 7px;
   position: sticky;
@@ -159,7 +166,7 @@
 }
 .terminal-page .status {
   display: flex;
-  gap: 18px;
+  gap: 12px;
   align-items: center;
   padding: 0 10px;
   background: var(--head);
@@ -169,7 +176,18 @@
   overflow: hidden;
 }
 .terminal-page .status .asof {
+  display: flex;
+  flex: none;
+  gap: 12px;
+  align-items: center;
   margin-left: auto;
+}
+.terminal-page .status .stale {
+  color: var(--accent);
+}
+.terminal-page .status > .hidenarrow {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .terminal-page .status .spark {
   flex: none;
@@ -183,7 +201,7 @@
   padding: 0 3px;
   color: var(--accent);
   background: #d6b25e12;
-  font-size: 9px;
+  font-size: 10px;
 }
 .terminal-page .flag.sus {
   color: var(--down);
@@ -191,34 +209,9 @@
 .terminal-page .flag.uma {
   color: #b494db;
 }
-@media (max-width: 900px) {
-  .terminal-page .term {
-    height: auto;
-    min-height: 100dvh;
-    grid-template-rows: 38px auto 26px;
-    overflow: visible;
-  }
-  .terminal-page .status {
-    position: sticky;
-    bottom: 0;
-    z-index: 20;
-  }
-  .terminal-page .hidenarrow {
-    display: none;
-  }
-}
-@media (max-width: 520px) {
-  .terminal-page .status {
-    gap: 9px;
-    font-size: 9px;
-  }
+@media (max-width: 1150px) {
+  .terminal-page .status .hidenarrow,
   .terminal-page .status .spark {
     display: none;
-  }
-  .terminal-page table {
-    font-size: 11px;
-  }
-  .terminal-page td {
-    padding: 4px 6px;
   }
 }

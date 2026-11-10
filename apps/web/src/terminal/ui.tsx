@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { Stale } from '../Stale';
 import type { Resource, Risk } from './sources';
 import { useTerminal } from './state';
 import { dateText, nf, short, signed } from '../ticker/format';
@@ -171,6 +172,7 @@ export function StatusBar() {
   const { data, publications } = useTerminal();
   const [clock] = useClock();
   const last = data.market.history.at(-1);
+  const asof = data.health.prices ?? data.market.date;
   const next =
     publications.calendar.kind === 'ready'
       ? [...publications.calendar.data.cal]
@@ -220,7 +222,10 @@ export function StatusBar() {
           {next.c} {next.ev} {dateText(next.ts)}
         </span>
       )}
-      <time className="asof">EOD {data.health.prices ?? data.market.date ?? 'unavailable'}</time>
+      <div className="asof">
+        <Stale health={data.health} />
+        <time dateTime={asof ?? undefined}>EOD {asof ? dateText(asof) : 'unavailable'}</time>
+      </div>
     </footer>
   );
 }
