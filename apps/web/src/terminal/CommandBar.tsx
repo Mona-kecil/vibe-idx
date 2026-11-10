@@ -21,7 +21,10 @@ export function commandSuggestions(
       : item.code.startsWith(query)
         ? 1
         : query.length >= 3 &&
-            item.label.toUpperCase().split(/\s+/).some((word) => word.startsWith(query))
+            item.label
+              .toUpperCase()
+              .split(/\s+/)
+              .some((word) => word.startsWith(query))
           ? 2
           : 3;
   return [
@@ -49,6 +52,7 @@ export function CommandBar({
 }) {
   const { data, setTicker, pins, ticker, select, selection, filter } = useTerminal();
   const input = useRef<HTMLInputElement>(null);
+  const helpButton = useRef<HTMLButtonElement>(null);
   const [text, setText] = useState(''),
     [active, setActive] = useState(0),
     [focused, setFocused] = useState(false),
@@ -102,6 +106,10 @@ export function CommandBar({
   }
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
+      if (help) {
+        if (event.key === 'Escape') setHelp(false);
+        return;
+      }
       if (
         event.metaKey ||
         event.ctrlKey ||
@@ -155,6 +163,9 @@ export function CommandBar({
   return (
     <>
       <header className="cmd">
+        <a className="home-link" href="/" aria-label="Home">
+          HOME
+        </a>
         <span className="prompt" aria-hidden="true">
           &gt;
         </span>
@@ -235,7 +246,12 @@ export function CommandBar({
             </button>
           ))}
         </nav>
-        <button className="helpbtn" aria-label="Keyboard reference" onClick={() => setHelp(!help)}>
+        <button
+          ref={helpButton}
+          className="helpbtn"
+          aria-label="Keyboard reference"
+          onClick={() => setHelp(!help)}
+        >
           ?
         </button>
       </header>
@@ -254,7 +270,25 @@ export function CommandBar({
           aria-modal="true"
           aria-label="Keyboard reference"
           onKeyDown={(event) => {
-            if (event.key === 'Escape') setHelp(false);
+            if (event.key === 'Escape') {
+              event.stopPropagation();
+              setHelp(false);
+              helpButton.current?.focus();
+            }
+            if (event.key === 'Tab') {
+              const targets = Array.from(
+                event.currentTarget.querySelectorAll<HTMLElement>('button,a[href]'),
+              );
+              const first = targets[0],
+                last = targets.at(-1);
+              if (event.shiftKey && document.activeElement === first) {
+                event.preventDefault();
+                last?.focus();
+              } else if (!event.shiftKey && document.activeElement === last) {
+                event.preventDefault();
+                first?.focus();
+              }
+            }
           }}
         >
           <div>
@@ -262,7 +296,10 @@ export function CommandBar({
               className="close-help"
               autoFocus
               aria-label="Close keyboard reference"
-              onClick={() => setHelp(false)}
+              onClick={() => {
+                setHelp(false);
+                helpButton.current?.focus();
+              }}
             >
               ×
             </button>

@@ -6,7 +6,7 @@ import tickers from './fixtures/tickers.json';
 describe('command ranking', () => {
   it('puts every published ticker ahead of code prefixes and company name matches', () => {
     for (const stock of tickers) {
-      expect(commandSuggestions(tickers, stock.ticker)[0]?.code, stock.ticker).toBe(stock.ticker);
+      expect(commandSuggestions(tickers, stock.ticker)[0]?.code).toBe(stock.ticker);
     }
     expect(commandSuggestions(tickers, 'CA')[0]).toEqual({
       code: 'CA',

@@ -282,7 +282,29 @@ function TerminalWorkspace({ data }: { data: TerminalData }) {
                 key={fn}
                 role="tab"
                 title={functions[fn]}
+                id={`tab-${layout}-${slot}-${fn}`}
+                aria-controls={`panel-${layout}-${slot}`}
                 aria-selected={fn === id}
+                tabIndex={fn === id ? 0 : -1}
+                onKeyDown={(event) => {
+                  if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+                  event.preventDefault();
+                  const tabs = Array.from(
+                    event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>(
+                      '[role="tab"]',
+                    ) ?? [],
+                  );
+                  const index = tabs.indexOf(event.currentTarget);
+                  const next =
+                    event.key === 'Home'
+                      ? 0
+                      : event.key === 'End'
+                        ? tabs.length - 1
+                        : (index + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) %
+                          tabs.length;
+                  tabs[next]?.click();
+                  tabs[next]?.focus();
+                }}
                 onClick={() =>
                   setActive((previous) => ({ ...previous, [`${layout}:${slot}`]: fn }))
                 }
@@ -300,7 +322,13 @@ function TerminalWorkspace({ data }: { data: TerminalData }) {
             {max === slot ? '↙' : '□'}
           </button>
         </header>
-        <div className="pane-view" role="tabpanel" key={id}>
+        <div
+          className="pane-view"
+          role="tabpanel"
+          id={`panel-${layout}-${slot}`}
+          aria-labelledby={`tab-${layout}-${slot}-${id}`}
+          key={id}
+        >
           <PaneView id={id} />
         </div>
       </section>

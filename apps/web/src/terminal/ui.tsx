@@ -21,7 +21,28 @@ export function Segments<T extends string>({
   return (
     <div className="seg" role="group" aria-label={label}>
       {values.map((option) => (
-        <button key={option} aria-pressed={option === value} onClick={() => onChange(option)}>
+        <button
+          key={option}
+          aria-pressed={option === value}
+          tabIndex={option === value ? 0 : -1}
+          onClick={() => onChange(option)}
+          onKeyDown={(event) => {
+            if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+            event.preventDefault();
+            const index = values.indexOf(option);
+            const next =
+              event.key === 'Home'
+                ? 0
+                : event.key === 'End'
+                  ? values.length - 1
+                  : (index + (event.key === 'ArrowRight' ? 1 : -1) + values.length) % values.length;
+            const target = values[next];
+            if (target !== undefined) onChange(target);
+            event.currentTarget.parentElement
+              ?.querySelectorAll<HTMLButtonElement>('button')
+              [next]?.focus();
+          }}
+        >
           {option}
         </button>
       ))}

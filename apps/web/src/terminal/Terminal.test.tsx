@@ -417,3 +417,50 @@ it('keeps ticker identity without duplicating the price in pane headers', async 
   expect(contexts).toHaveLength(3);
   expect(contexts.every((el) => el.textContent === 'BREN')).toBe(true);
 });
+
+it('uses one tab stop per pane tablist and segment group with arrow navigation', async () => {
+  await render();
+  for (const list of host.querySelectorAll('.tabs, .seg')) {
+    expect([...list.querySelectorAll('button')].filter((el) => el.tabIndex === 0)).toHaveLength(1);
+  }
+  const tab = button('[data-slot="b"] [aria-selected="true"]');
+  await act(async () => {
+    tab.focus();
+    tab.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+  });
+  expect(document.activeElement?.textContent).toBe('ID');
+  const panel = host.querySelector('[data-slot="b"] [role="tabpanel"]');
+  expect(document.activeElement?.getAttribute('aria-controls')).toBe(panel?.id);
+  expect(panel?.getAttribute('aria-labelledby')).toBe(document.activeElement?.id);
+  const segment = button('[aria-label="Movers"] button');
+  await act(async () => {
+    segment.focus();
+    segment.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
+  });
+  expect(document.activeElement?.getAttribute('aria-pressed')).toBe('true');
+  expect(document.activeElement?.textContent).toBe('F SELL');
+});
+
+it('traps keyboard focus in help and restores focus on Escape', async () => {
+  await render();
+  await click('[aria-label="Keyboard reference"]');
+  const dialog = host.querySelector('[role="dialog"]');
+  const close = button('[aria-label="Close keyboard reference"]');
+  const last = dialog?.querySelector('a:last-child');
+  await act(async () => {
+    close.focus();
+    close.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true }),
+    );
+  });
+  expect(document.activeElement).toBe(last);
+  await act(async () =>
+    last?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true })),
+  );
+  expect(document.activeElement).toBe(close);
+  await act(async () =>
+    close.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })),
+  );
+  expect(host.querySelector('[role="dialog"]')).toBeNull();
+  expect(document.activeElement).toBe(button('[aria-label="Keyboard reference"]'));
+});
