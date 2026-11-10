@@ -1,4 +1,5 @@
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { gzipSync } from 'node:zlib';
 import { dirname, join } from 'node:path';
 import { DuckDBInstance } from '@duckdb/node-api';
 import type { DuckDBConnection } from '@duckdb/node-api';
@@ -6,6 +7,7 @@ import { z } from 'zod';
 import type { R2 } from './brokers';
 import {
   bookColumns,
+  siteSql,
   sessionDate,
   sqlLiteral as lit,
   tickerCode,
@@ -170,7 +172,25 @@ export class TickStore {
     ).map((r) => ({ time: z.string().parse(r.time), anchor: Number(r.anchor) }));
     return { missing, seconds };
   }
+  /** Uploads the per-ticker files the terminal reads; rerun on every recovery, so it must stay idempotent. */
+  private async publishSite(date: string, dataset: Dataset) {
+    const kind = dataset === 'running_trade' ? 'trades' : 'book';
+    const files = (await this.query(siteSql[dataset])).map((r) => ({
+      ticker: tickerCode.parse(r.ticker),
+      json: z.string().parse(r.json),
+    }));
+    await Promise.all(
+      Array.from({ length: 16 }, async () => {
+        for (let file = files.pop(); file; file = files.pop())
+          await this.r2.put(
+            `site/ticks/${file.ticker}/${date}.${kind}.json.gz`,
+            gzipSync(file.json),
+          );
+      }),
+    );
+  }
   private async finish(date: string, dataset: Dataset) {
+    await this.publishSite(date, dataset);
     const tickers = (await this.query(`SELECT DISTINCT ticker FROM ${dataset}`)).map((r) =>
       tickerCode.parse(r.ticker),
     );

@@ -185,3 +185,23 @@ UNION ALL
 SELECT date, ticker, board, session, 'auction' AS role, 'sell' AS side, sell_order_number AS order_number,
   trade_number, price, shares, buyer, buyer_domicile, seller, seller_domicile
 FROM running_trade WHERE session = 'auction'`;
+
+// One private site file per ticker and session. Trades are columnar so a busy stock stays a few hundred KB gzipped.
+export const siteSql = {
+  running_trade: `SELECT ticker, to_json({
+    date: any_value(date)::VARCHAR, ticker: ticker,
+    time: list(extract('hour' FROM time::TIME) * 3600 + extract('minute' FROM time::TIME) * 60
+      + extract('second' FROM time::TIME) ORDER BY trade_number),
+    price: list(price ORDER BY trade_number), shares: list(shares ORDER BY trade_number),
+    side: list(left(action, 1) ORDER BY trade_number), auction: list(session = 'auction' ORDER BY trade_number),
+    board: list(board ORDER BY trade_number),
+    buyer: list(buyer ORDER BY trade_number), buyer_foreign: list(buyer_domicile = 'F' ORDER BY trade_number),
+    seller: list(seller ORDER BY trade_number), seller_foreign: list(seller_domicile = 'F' ORDER BY trade_number),
+    buy_order: list(buy_order_number ORDER BY trade_number), sell_order: list(sell_order_number ORDER BY trade_number)
+  })::VARCHAR AS json FROM running_trade GROUP BY ticker`,
+  closing_book: `SELECT ticker, to_json({
+    date: any_value(date)::VARCHAR, ticker: ticker, close: max(close),
+    bid: coalesce(list([price, orders, shares] ORDER BY level) FILTER (WHERE side = 'bid'), []),
+    offer: coalesce(list([price, orders, shares] ORDER BY level) FILTER (WHERE side = 'offer'), [])
+  })::VARCHAR AS json FROM closing_book GROUP BY ticker`,
+};

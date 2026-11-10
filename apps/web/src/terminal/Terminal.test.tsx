@@ -6,6 +6,15 @@ import { Terminal } from './Terminal';
 import { cumulativeFlows, foreignFlow } from './BrokerPanes';
 import type { BrokerDay } from '../brokers';
 
+// jsdom has no canvas, so charts become an object that accepts any call.
+vi.mock('./charts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./charts')>();
+  const chart: object = new Proxy(() => chart, {
+    get: (_, key) => (key === 'then' ? undefined : chart),
+    apply: () => chart,
+  });
+  return { ...actual, terminalChart: () => chart };
+});
 const auth = vi.hoisted(() => ({
   user: null as { id: string } | null,
   getAccessToken: vi.fn<() => Promise<string | undefined>>(async () => 'test'),
@@ -48,6 +57,7 @@ const days: BrokerDay[] = [
 ];
 let root: Root, host: HTMLDivElement;
 let newsAvailable = false;
+let tickSessions = false;
 const fetcher = vi.fn<typeof fetch>(async (input) => {
   const path = requestUrl(input);
   if (path.includes('tickers.json'))
@@ -80,7 +90,15 @@ const fetcher = vi.fn<typeof fetch>(async (input) => {
     return Response.json({
       ticker,
       name: `Company ${ticker}`,
-      prices: [],
+      prices: tickSessions
+        ? ['2026-11-06', '2026-11-09'].map((date) => ({
+            date,
+            close: 7675,
+            volume: 100,
+            value: 767500,
+            net_foreign: 0,
+          }))
+        : [],
       holders: [],
       changes: [],
     });
@@ -94,6 +112,35 @@ const fetcher = vi.fn<typeof fetch>(async (input) => {
         source: 'Publisher',
       },
     ]);
+  if (path.includes('view=ticks')) {
+    if (!path.includes('date=2026-11-09')) return new Response('', { status: 404 });
+    return Response.json(
+      path.includes('kind=book')
+        ? {
+            date: '2026-11-09',
+            ticker: 'BREN',
+            close: 7675,
+            bid: [[7650, 2, 6000]],
+            offer: [[7675, 3, 9000]],
+          }
+        : {
+            date: '2026-11-09',
+            ticker: 'BREN',
+            time: [32729, 32731],
+            price: [7650, 7675],
+            shares: [145000, 2000],
+            side: ['s', 'b'],
+            auction: [false, false],
+            board: ['RG', 'RG'],
+            buyer: ['YP', 'AK'],
+            buyer_foreign: [true, true],
+            seller: ['XL', 'CC'],
+            seller_foreign: [false, false],
+            buy_order: [11, 120],
+            sell_order: [99, 12],
+          },
+    );
+  }
   if (path.includes('/api/brokers'))
     return Response.json({ ticker: path.includes('BBCA') ? 'BBCA' : 'BREN', days });
   if (path === '/data/news.json' && newsAvailable)
@@ -137,6 +184,7 @@ async function command(text: string) {
   );
 }
 beforeEach(() => {
+  tickSessions = false;
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
   window.history.replaceState(null, '', '/terminal?t=BREN&l=grid');
   window.localStorage.clear();
@@ -303,6 +351,30 @@ describe('React terminal', () => {
     expect(foreignFlow([], ['2026-11-06'], 'VALUE')).toEqual([
       { date: '2026-11-06', net: 0, cumulative: 0, share: null },
     ]);
+  });
+  it('shows the closing book for the latest session, steps back, and filters running trades by broker', async () => {
+    tickSessions = true;
+    auth.user = { id: 'test-user' };
+    await render();
+    await command('BREN OB');
+    expect(host.querySelector('.tick-session time')?.textContent).toBe('2026-11-09');
+    expect(host.querySelector('.tick-book tbody td.up')?.textContent).toBe('7,650');
+    expect(host.querySelector('.tick-book tbody td.depth.offer')?.textContent).toBe('90');
+    await click('[aria-label="Previous session"]');
+    expect(host.textContent).toContain('Not collected for 2026-11-06');
+    await click('[aria-label="Next session"]');
+    await command('BREN RT');
+    expect(host.querySelectorAll('.tick-table:not(.tick-book) tbody tr')).toHaveLength(2);
+    await act(async () => {
+      const input = host.querySelector('input[aria-label="Filter by broker"]');
+      if (!(input instanceof HTMLInputElement)) throw new Error('Missing broker filter');
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(input, 'xl');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    const rows = host.querySelectorAll('.tick-table:not(.tick-book) tbody tr');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.textContent).toContain('1,450');
+    expect(rows[0]?.querySelector('.tick-foreign')?.textContent).toBe('YP');
   });
 });
 

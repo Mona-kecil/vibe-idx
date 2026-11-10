@@ -2,6 +2,7 @@ import { AwsClient } from 'aws4fetch';
 import { createRemoteJWKSet, customFetch, errors, jwtVerify } from 'jose';
 import { z } from 'zod';
 import { accumulationSchema, brokerDaySchema, brokerTickerSchema } from '../src/brokers.js';
+import { tickKinds } from '../src/ticks.js';
 
 const clientIdSchema = z.string().regex(/^client_[a-zA-Z0-9]+$/);
 const storageConfigSchema = z.object({
@@ -69,10 +70,24 @@ export function createBrokerHandler({
     }
 
     const params = new URL(request.url).searchParams;
-    const isMarket = params.getAll('view').length === 1 && params.get('view') === 'market';
-    const tickers = params.getAll('ticker');
-    const ticker = brokerTickerSchema.safeParse(tickers.length === 1 ? tickers[0] : undefined);
-    const target = isMarket ? 'market' : ticker.success ? { ticker: ticker.data } : null;
+    const one = (name: string) => (params.getAll(name).length === 1 ? params.get(name) : null);
+    const view = one('view');
+    const ticker = brokerTickerSchema.safeParse(one('ticker') ?? undefined);
+    const tick = z
+      .object({ date: z.iso.date(), kind: z.enum(tickKinds) })
+      .safeParse({ date: one('date'), kind: one('kind') });
+    const target =
+      view === 'market'
+        ? 'market'
+        : !ticker.success
+          ? null
+          : view === 'ticks'
+            ? tick.success
+              ? { ticker: ticker.data, ...tick.data }
+              : null
+            : view === null
+              ? { ticker: ticker.data }
+              : null;
     if (!target) return json({ error: 'invalid_ticker' }, 400);
 
     const bearer = /^Bearer (\S+)$/i.exec(request.headers.get('Authorization') ?? '');
@@ -121,7 +136,9 @@ export function createBrokerHandler({
       const key =
         target === 'market'
           ? 'site/market-accumulation.json'
-          : `site/broker/${target.ticker}.json.gz`;
+          : 'kind' in target
+            ? `site/ticks/${target.ticker}/${target.date}.${target.kind}.json.gz`
+            : `site/broker/${target.ticker}.json.gz`;
       const response = await read(key);
       if (response.status === 404) return json({ error: 'not_found' }, 404);
       if (!response.ok) {
@@ -132,6 +149,19 @@ export function createBrokerHandler({
         return json({ error: 'unavailable' }, 503);
       }
       if (target === 'market') return json(accumulationSchema.parse(await response.json()), 200);
+      // A busy stock's trades are megabytes as JSON, so pass the stored gzip through for the browser to inflate.
+      if ('kind' in target)
+        return new Response(response.body, {
+          status: 200,
+          headers: {
+            'Cache-Control': 'private, no-store',
+            Vary: 'Authorization',
+            'Content-Type': 'application/json',
+            'Content-Encoding': 'gzip',
+          },
+          // Cloudflare Workers would otherwise compress the already gzipped body again.
+          encodeBody: 'manual',
+        } as ResponseInit);
       const source = new Response(response.body?.pipeThrough(new DecompressionStream('gzip')));
       const days = sourceSchema.parse(await source.json());
       days.sort((a, b) => b.date.localeCompare(a.date));
