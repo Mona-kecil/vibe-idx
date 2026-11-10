@@ -29,8 +29,7 @@ import {
 } from './state';
 import { CommandBar } from './CommandBar';
 import { SplitLayout, layouts } from './Layout';
-import { Empty, RiskFlags, StatusBar, direction, percent } from './ui';
-import { nf } from '../ticker/format';
+import { Empty, RiskFlags, StatusBar } from './ui';
 import { PricePane } from './PricePane';
 import { BrokerSummaryPane, BrokerFlowPane, ForeignFlowPane } from './BrokerPanes';
 import {
@@ -356,10 +355,9 @@ function TerminalWorkspace({ data }: { data: TerminalData }) {
   );
 }
 function PaneContext({ id }: { id: FunctionId }) {
-  const { data, ticker, publications } = useTerminal();
+  const { ticker, publications } = useTerminal();
   if (!['GP', 'KEY', 'BRK', 'BFL', 'FF', 'OB', 'RT', 'DD', 'TB', 'ID', 'HDS', 'DISC'].includes(id))
     return <span className="ctx" />;
-  const quote = data.stocks.find((stock) => stock.ticker === ticker);
   return (
     <div className="ctx">
       <b>{ticker}</b>
@@ -368,11 +366,6 @@ function PaneContext({ id }: { id: FunctionId }) {
           publications.risks.kind === 'ready' ? publications.risks.data.risk[ticker] : undefined
         }
       />
-      {quote && (
-        <span className={direction(quote.change_pct)}>
-          {nf(quote.close)} {percent(quote.change_pct)}
-        </span>
-      )}
     </div>
   );
 }

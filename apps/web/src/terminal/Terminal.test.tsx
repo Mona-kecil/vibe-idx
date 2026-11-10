@@ -410,3 +410,10 @@ it('restores the layout when a command targets a different maximized pane', asyn
   expect(host.querySelector('.pane.max')).toBeNull();
   expect(host.querySelector('[data-slot="c"] [aria-selected="true"]')?.textContent).toBe('SIG');
 });
+
+it('keeps ticker identity without duplicating the price in pane headers', async () => {
+  await render();
+  const contexts = [...host.querySelectorAll('.ctx')].filter((el) => el.querySelector('b'));
+  expect(contexts).toHaveLength(3);
+  expect(contexts.every((el) => el.textContent === 'BREN')).toBe(true);
+});
