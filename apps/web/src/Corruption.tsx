@@ -327,14 +327,6 @@ export function Corruption({
           context.stroke();
         }
       }
-      context.shadowBlur = 0;
-      const radius = 10;
-      const flare = context.createRadialGradient(...corner, 0, ...corner, radius);
-      flare.addColorStop(0, `rgba(255, 240, 235, ${0.9 * strength})`);
-      flare.addColorStop(0.35, `rgba(255, 70, 55, ${0.45 * strength})`);
-      flare.addColorStop(1, 'rgba(255, 40, 30, 0)');
-      context.fillStyle = flare;
-      context.fillRect(corner[0] - radius, corner[1] - radius, radius * 2, radius * 2);
       context.restore();
     }
 
