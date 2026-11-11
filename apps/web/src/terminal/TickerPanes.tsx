@@ -135,13 +135,19 @@ function holdingChange(first: HolderPoint, last: HolderPoint) {
     const value = last.pct - first.pct;
     return { text: `${signed(value, (v) => nf(v, 2))} pp`, value };
   }
+  // A holding below the reporting threshold is unknown, so only a bound on the change is known.
+  // Show it when it fixes the direction; otherwise even the direction is unknown.
   if (first.pct !== null && last.pct === null) {
     const bound = last.below - first.pct;
-    return { text: `< ${signed(bound, (v) => nf(v, 2))} pp`, value: bound <= 0 ? -1 : null };
+    return bound <= 0
+      ? { text: `${signed(bound, (v) => nf(v, 2))} pp or more`, value: -1 }
+      : { text: '—', value: null };
   }
   if (first.pct === null && last.pct !== null) {
     const bound = last.pct - first.below;
-    return { text: `> ${signed(bound, (v) => nf(v, 2))} pp`, value: bound >= 0 ? 1 : null };
+    return bound >= 0
+      ? { text: `${signed(bound, (v) => nf(v, 2))} pp or more`, value: 1 }
+      : { text: '—', value: null };
   }
   return { text: '—', value: null };
 }

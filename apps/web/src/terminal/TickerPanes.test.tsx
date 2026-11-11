@@ -270,7 +270,7 @@ it('ends a monthly history below 1% when the holder leaves subsequent snapshots'
   const holder = host.querySelector('[aria-label="Monthly exit"]');
   expect(holder?.querySelector('b')?.textContent).toBe('Below 1%');
   expect(host.querySelectorAll('[data-holder="exit"] circle')).toHaveLength(1);
-  expect(holder?.querySelector('.holder-change')?.textContent).toBe('< −0.20 pp');
+  expect(holder?.querySelector('.holder-change')?.textContent).toBe('−0.20 pp or more');
   expect(holder?.querySelector('tbody tr')?.textContent).toBe('30 Oct 2026Below 1%—');
   selection = { anchor: '2026-09-01', end: '2026-09-30' };
   await act(async () => root.render(<HoldersPane />));
@@ -316,10 +316,10 @@ it('keeps ten key figures with formatted price and registry dates and current-ti
 });
 
 it.each([
-  { first: 14.72, last: null, text: '< −9.72 pp', direction: 'dn' },
-  { first: null, last: 14.72, text: '> +9.72 pp', direction: 'up' },
-  { first: 4, last: null, text: '< +1.00 pp', direction: 'mut' },
-  { first: null, last: 4, text: '> −1.00 pp', direction: 'mut' },
+  { first: 14.72, last: null, text: '−9.72 pp or more', direction: 'dn' },
+  { first: null, last: 14.72, text: '+9.72 pp or more', direction: 'up' },
+  { first: 4, last: null, text: '—', direction: 'mut' },
+  { first: null, last: 4, text: '—', direction: 'mut' },
   { first: null, last: null, text: '—', direction: 'mut' },
 ])(
   'preserves the strict change bound for $first to $last',

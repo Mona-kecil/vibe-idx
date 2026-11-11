@@ -108,7 +108,7 @@
 }
 .terminal-page .holder-title {
   display: grid;
-  grid-template-columns: 8px minmax(0, 46ch) 88px 98px;
+  grid-template-columns: 8px minmax(0, 46ch) 88px 136px;
   align-items: center;
   gap: 8px;
   min-height: 28px;
