@@ -1,6 +1,6 @@
 # Terminal UI hillclimb plan
 
-Status on 11 November 2026: the baseline is 181 steps and the total is now 168, after attempts 1 to 5. The owner confirmed the question list and the stop.
+Status on 11 November 2026: the baseline is 181 steps and the total is now 177, after attempts 1 to 6. The owner confirmed the question list and the stop.
 
 ## Goal
 
@@ -121,7 +121,7 @@ One change each, measured, then kept or reverted, with one commit per kept chang
 3. Kept, 172. Fold KEY into the panes that already show its facts. The registry facts head HDS, and the company name sits in GP's header, because GP's legend row already shows the latest bar.
 4. Kept, 172 to 165. Rebuild HDS. The owner compared rows with sparklines, one chart for all holders, and 100% ownership bars, and chose one chart on a log scale with a holder list below it.
 5. Kept, 165 to 168. The owner rejected the first FLOW and designed the one in the table above.
-6. Merge RT and DD. Decide how to show non-regular boards, which DD drops, and auction matches, which appear under both orders.
+6. Kept, 168 to 177. Link DD to RT instead of merging them. DD and RT share columns, a DD row drills into its highlighted fills in RT, and RT heads them with a counterparty summary. The owner chose to keep RT in front after a drill-down, which costs question 10 a tab.
 7. Make a click on an FF or GP day set the trade session.
 8. Share one broker filter across panes.
 9. Give FF a price line and a common zero for bars and running total.
