@@ -328,6 +328,29 @@ describe('React terminal', () => {
     await click('.news-item');
     expect(host.querySelector('.reader')?.textContent).toContain('Summary unavailable');
   });
+  it('opens the ticker feed without filters and keeps every publication function command available', async () => {
+    await render();
+    await command('FOCUS BBCA FEED');
+    expect(host.querySelectorAll('.pane')).toHaveLength(3);
+    for (const id of ['GP', 'HDS', 'FEED'])
+      expect(host.querySelector(`[role="tabpanel"][aria-labelledby$="-${id}"]`)).not.toBeNull();
+    expect(host.querySelector('[aria-label="News region"]')).toBeNull();
+    expect(host.querySelector('[data-feed-kind="news"] a')?.getAttribute('href')).toBe(
+      'https://example.com/ticker-news',
+    );
+    expect(
+      fetcher.mock.calls.some(([path]) => requestUrl(path).includes('/api/news?ticker=BBCA')),
+    ).toBe(true);
+    await command('GRID');
+    await command('FOCUS');
+    expect(
+      fetcher.mock.calls.filter(([path]) => requestUrl(path).includes('/api/news?ticker=BBCA')),
+    ).toHaveLength(1);
+    for (const id of ['DISC', 'NEWS', 'CA']) {
+      await command(id);
+      expect(host.querySelector(`[role="tabpanel"][aria-labelledby$="-${id}"]`)).not.toBeNull();
+    }
+  });
   it('filters broker boards, types and units, pairs gross rows and mutes edge prices', async () => {
     auth.user = { id: 'test-user' };
     await render();

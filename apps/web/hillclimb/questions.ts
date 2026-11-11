@@ -102,26 +102,30 @@ export const questions: Question[] = [
   {
     text: 'What has the company disclosed?',
     async ask(ui) {
-      const disc = await ui.open('DISC');
-      await ui.see(top(body(disc.getByRole('table'))));
+      const feed = await ui.open('FEED');
+      await ui.see(top(feed.locator('[data-feed-kind="disclosure"]')));
     },
   },
   {
     text: 'What is its news, and which corporate action dates are coming?',
     async ask(ui) {
-      const news = await ui.open('NEWS');
-      await ui.press(news, 'TICKER');
-      await ui.see(
-        top(
-          news
-            .getByRole('button')
-            .filter({ has: ui.page.locator('time') })
-            .or(news.getByRole('status')),
-        ),
+      const feed = await ui.open('FEED');
+      // Preserve NEWS's frozen answer set, which ranks the original source date strings.
+      const news = await Promise.all(
+        (await feed.locator('[data-feed-kind="news"]').all()).map(async (row) => ({
+          row,
+          date: (await row.getAttribute('data-source-date')) ?? '',
+        })),
       );
-      const ca = await ui.open('CA');
-      await ui.press(ca, 'TICKER');
-      await ui.see(ca.getByRole('row').or(ca.getByRole('status')));
+      news.sort((a, b) => b.date.localeCompare(a.date));
+      await ui.see(
+        ...(news.length
+          ? news.slice(0, 10).map(({ row }) => row)
+          : [feed.locator('[data-feed-empty="news"]')]),
+      );
+      await ui.see(
+        feed.locator('[data-feed-kind="action"]').or(feed.locator('[data-feed-empty="action"]')),
+      );
     },
   },
 ];

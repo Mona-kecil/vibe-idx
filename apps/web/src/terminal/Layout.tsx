@@ -28,13 +28,13 @@ export const layouts: Record<Layout, { tree: LayoutNode; slots: Record<string, F
   focus: {
     tree: {
       direction: 'row',
-      sizes: [60, 40],
-      children: [{ direction: 'col', sizes: [65, 35], children: ['b', 'c'] }, 'f'],
+      sizes: [64, 36],
+      children: [{ direction: 'col', sizes: [50, 50], children: ['b', 'f'] }, 'c'],
     },
     slots: {
       b: ['GP'],
-      c: ['DISC', 'NEWS'],
-      f: ['HDS', 'CA'],
+      c: ['FEED'],
+      f: ['HDS'],
     },
   },
   flow: {

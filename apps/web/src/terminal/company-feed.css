@@ -1,0 +1,57 @@
+.terminal-page .company-feed table {
+  white-space: normal;
+  table-layout: fixed;
+}
+.terminal-page .feed-mark-column {
+  width: 32px;
+}
+.terminal-page .feed-date-column {
+  width: 108px;
+}
+.terminal-page .company-feed td:first-child {
+  height: 32px;
+  padding-top: 9px;
+}
+.terminal-page .feed-type {
+  display: block;
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.2;
+  color: var(--muted);
+}
+.terminal-page [data-feed-kind='action'] .feed-type {
+  color: var(--accent);
+}
+.terminal-page .company-feed .feed-date {
+  text-align: left;
+  color: var(--muted);
+  padding-top: 10px;
+  white-space: nowrap;
+}
+.terminal-page .feed-content {
+  overflow-wrap: anywhere;
+}
+.terminal-page .feed-content a {
+  display: block;
+  min-height: 24px;
+}
+.terminal-page .feed-time {
+  white-space: nowrap;
+}
+.terminal-page .company-feed .feed-heading th {
+  position: static;
+  text-align: left;
+  padding: 7px;
+}
+.terminal-page .feed-status {
+  padding: 4px 8px;
+}
+.terminal-page .feed-status .empty {
+  padding: 4px 0;
+}
+.terminal-page .feed-asof {
+  color: var(--muted);
+  font-size: 10px;
+}

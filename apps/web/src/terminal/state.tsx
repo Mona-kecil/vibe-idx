@@ -26,6 +26,7 @@ export const functions = {
   TB: 'Trade book',
   HDS: '5% holders and changes',
   DISC: 'IDX disclosures',
+  FEED: 'Company feed',
   SIG: 'Signals feed',
   HEAT: 'Heatmap by value',
   MOV: 'Market movers',

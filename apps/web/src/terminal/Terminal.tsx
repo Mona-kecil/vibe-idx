@@ -36,6 +36,7 @@ import { BrokerSummaryPane, BrokerFlowPane, ForeignFlowPane } from './BrokerPane
 import { DoneDetailPane, OrderBookPane, RunningTradePane, TradeBookPane } from './TickPanes';
 import { WatchlistPane, MoversPane, SignalsPane, HeatmapPane } from './MarketPanes';
 import { DescriptionPane, HoldersPane, DisclosuresPane } from './TickerPanes';
+import { CompanyFeedPane } from './CompanyFeedPane';
 import { NewsPane, CalendarPane, ActionsPane, RiskPane } from './PublicationPanes';
 import './terminal.css';
 
@@ -128,7 +129,6 @@ function TerminalWorkspace({ data }: { data: TerminalData }) {
     [flowHidden, setFlowHidden] = useState<string[]>([]);
   const [tickerNews, setTickerNews] = useState<Resource<Headline[]>>({ kind: 'loading' });
   useEffect(() => {
-    if (filters.news !== 'TICKER') return;
     let current = true;
     setTickerNews({ kind: 'loading' });
     void fetchTickerNews(ticker).then((value) => {
@@ -137,7 +137,7 @@ function TerminalWorkspace({ data }: { data: TerminalData }) {
     return () => {
       current = false;
     };
-  }, [ticker, filters.news]);
+  }, [ticker]);
   const [max, setMax] = useState<string | null>(null),
     [focused, setFocused] = useState('b');
   const [slots, setSlots] = useState<Record<Layout, Record<string, FunctionId[]>>>(() => ({
@@ -404,7 +404,9 @@ function TerminalWorkspace({ data }: { data: TerminalData }) {
 }
 function PaneContext({ id }: { id: FunctionId }) {
   const { ticker, detail, publications } = useTerminal();
-  if (!['GP', 'KEY', 'BRK', 'BFL', 'FF', 'OB', 'RT', 'DD', 'TB', 'HDS', 'DISC'].includes(id))
+  if (
+    !['GP', 'KEY', 'BRK', 'BFL', 'FF', 'OB', 'RT', 'DD', 'TB', 'HDS', 'DISC', 'FEED'].includes(id)
+  )
     return <span className="ctx" />;
   return (
     <div className="ctx">
@@ -448,6 +450,8 @@ function PaneView({ id }: { id: FunctionId }) {
       return <HoldersPane />;
     case 'DISC':
       return <DisclosuresPane />;
+    case 'FEED':
+      return <CompanyFeedPane />;
     case 'SIG':
       return <SignalsPane />;
     case 'MOV':
