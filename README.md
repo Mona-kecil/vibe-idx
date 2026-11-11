@@ -49,15 +49,21 @@ CI runs package checks, tests, and the client build on pull requests and pushes 
 pnpm --filter @vibe-idx/pipeline ingest -- --data /tmp/idx-data --out /tmp/idx-public
 ```
 
-Run private broker collection through GitHub Actions. The workflow restores prices and the broker activity ledger after entering its own queue; a fresh local data directory lacks the history needed for safe cloud publication.
+Run private Stockbit collection on one machine only. A token refresh revokes the previous pair, and Stockbit rate-limits each account, so a second collector breaks the first. `apps/pipeline/collector/run.sh` restores prices, corporate actions, and the broker activity ledger from R2 into a fresh directory, then runs `brokers` until its deadline. A systemd user unit runs it from a master worktree, with Node 24 and the credentials in `~/.config/vibe-idx/env`, and starts the next run a minute after each one ends. After a failed run, the script waits up to 30 minutes before collecting again. Put `SENTRY_DSN` and `VIBE_IDX_SENTRY_HOST` in `~/.config/vibe-idx/collector.env`, which only the unit loads, never in the shared env file.
 
 ```sh
-gh workflow run brokers.yml --repo Mona-kecil/vibe-idx --ref master
+git worktree add --detach ~/.local/share/vibe-idx-collector origin/master
+pnpm --dir ~/.local/share/vibe-idx-collector install --frozen-lockfile
+install -D -m 644 apps/pipeline/collector/vibe-idx-collector.service ~/.config/systemd/user/vibe-idx-collector.service
+systemctl --user daemon-reload
+systemctl --user enable --now vibe-idx-collector
 ```
+
+To deploy a new master, fetch, run `git -C ~/.local/share/vibe-idx-collector checkout --detach origin/master`, then repeat the install, unit copy, and `daemon-reload` steps and run `systemctl --user restart vibe-idx-collector`. Follow a run with `journalctl --user -u vibe-idx-collector -f`.
 
 Seed `auth/stockbit.json` in `vibe-idx-private` with `access` and `refresh` fields. Treat it as a secret. The collector reads the current cloud pair and writes its rotated replacement to R2 before collecting data. A refresh revokes the previous pair at once, so if saving the rotated pair fails, the collector writes it to `auth/stockbit-unsaved.json`. It also keeps the rotated pair in its local token file. When Stockbit rejects the cloud pair with HTTP 401 or 403, the next run refreshes with the local pair and saves the result to R2.
 
-A Cloudflare Worker dispatches IDX ingestion daily at 17:17 Jakarta and checks every ten minutes to start a broker run when none is active. Broker activity is the only broker source. Runs process dates with positive-volume prices since January 1, 2026, newest first, through the latest session completed by 17:17 Jakarta. For each Regular, Negotiation, and Cash board, the collector lists active brokers and fetches their domestic and foreign client activity separately. Requests share a pace of 10 starts a second (`BROKER_ACTIVITY_RPS` overrides it), with a 330-minute run deadline. All boards is the sum of the three boards.
+A Cloudflare Worker dispatches IDX ingestion daily at 17:17 Jakarta. Broker activity is the only broker source. Runs process dates with positive-volume prices since January 1, 2026, newest first, through the latest session completed by 17:17 Jakarta. For each Regular, Negotiation, and Cash board, the collector lists active brokers and fetches their domestic and foreign client activity separately. Requests share a pace of 10 starts a second (`BROKER_ACTIVITY_RPS` overrides it), within the run deadline (`BROKER_DEADLINE_MINUTES`, 240 in the unit). All boards is the sum of the three boards.
 
 The collector authenticates only when it needs Stockbit and conditionally saves the rotated token before requesting activity. It retries activity network failures, HTTP 429, and transient 5xx responses up to three times. A persistent request failure stops the activity phase. Invalid responses remain pending while collection continues. Rows and target completion commit together. Checkpoints upload changed activity years before coverage. Only complete day-boards enter ticker JSON and regular-board concentration. Concentration sums domestic and foreign rows per broker and retains the existing 1-, 3-, and 5-session output.
 
