@@ -16,6 +16,15 @@ vi.mock('@workos-inc/authkit-react', () => ({
   useAuth: () => ({ ...auth, isLoading: false }),
   LoginRequiredError: class extends Error {},
 }));
+// Exercise the workspace without the chart library's browser-only canvas APIs.
+vi.mock('./terminal/charts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./terminal/charts')>();
+  const chart: object = new Proxy(() => chart, {
+    get: (_, key) => (key === 'then' ? undefined : chart),
+    apply: () => chart,
+  });
+  return { ...actual, terminalChart: () => chart };
+});
 const dates = ['2026-10-19', '2026-10-20', '2026-10-21', '2026-10-22'];
 const row = (broker: string, shares: number) => ({
   broker,
@@ -425,6 +434,117 @@ describe('daily briefing', () => {
 });
 
 describe('terminal availability', () => {
+  function desktop(reducedMotion = false) {
+    const matchMedia = window.matchMedia.bind(window);
+    vi.spyOn(window, 'matchMedia').mockImplementation((query) => {
+      const media = matchMedia(query);
+      vi.spyOn(media, 'matches', 'get').mockReturnValue(
+        query === '(prefers-reduced-motion: reduce)' ? reducedMotion : true,
+      );
+      return media;
+    });
+    window.history.replaceState(null, '', '/terminal');
+  }
+  async function openTerminal() {
+    await render();
+    await act(async () => {
+      await vi.dynamicImportSettled();
+    });
+  }
+  async function advance(ms: number) {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(ms);
+    });
+  }
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('covers the desktop load with one loading announcement and keeps fast loads through the minimum and fade', async () => {
+    vi.useFakeTimers();
+    desktop();
+    await openTerminal();
+    expect(host.querySelector('.terminal-boot canvas[aria-hidden="true"]')).not.toBeNull();
+    expect(
+      [...host.querySelectorAll('[role="status"]')].filter(
+        (node) => node.textContent === 'Loading terminal…',
+      ),
+    ).toHaveLength(1);
+    expect(host.querySelector('.term')).not.toBeNull();
+    expect(host.querySelector('.term')?.closest('[inert]')).not.toBeNull();
+    await advance(1399);
+    expect(host.querySelector('.terminal-boot')).not.toBeNull();
+    await advance(1);
+    expect(host.querySelector('.terminal-boot')).not.toBeNull();
+    await advance(449);
+    expect(host.querySelector('.terminal-boot')).not.toBeNull();
+    await advance(1);
+    expect(host.querySelector('.terminal-boot')).toBeNull();
+    expect(host.querySelector('.term')).not.toBeNull();
+    expect(host.querySelector('[inert]')).toBeNull();
+    expect(host.textContent).not.toContain('Loading terminal…');
+  });
+
+  it('waits for slow data even after the minimum has elapsed', async () => {
+    vi.useFakeTimers();
+    desktop();
+    let release = () => {};
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const baseFetch = fetcher.getMockImplementation();
+    if (!baseFetch) throw new Error('Missing fixture fetcher');
+    fetcher.mockImplementationOnce(async (input) => {
+      await pending;
+      return baseFetch(input);
+    });
+    await openTerminal();
+    await advance(2000);
+    expect(host.querySelector('.terminal-boot')).not.toBeNull();
+    await act(async () => {
+      release();
+    });
+    await advance(450);
+    expect(host.querySelector('.terminal-boot')).toBeNull();
+    expect(host.querySelector('.term')).not.toBeNull();
+  });
+
+  it('reveals the workspace immediately when reduced motion is requested', async () => {
+    vi.useFakeTimers();
+    desktop(true);
+    await openTerminal();
+    expect(host.querySelector('.terminal-boot')).toBeNull();
+    expect(host.querySelector('.term')).not.toBeNull();
+    expect(host.querySelector('[inert]')).toBeNull();
+  });
+
+  it('reveals the failed data request and keeps retry loading plain', async () => {
+    vi.useFakeTimers();
+    desktop();
+    fetcher.mockRejectedValueOnce(new Error('Offline'));
+    await openTerminal();
+    expect(host.querySelector('.terminal-boot')).not.toBeNull();
+    await advance(1400);
+    await advance(450);
+    expect(host.querySelector('.terminal-boot')).toBeNull();
+    expect(host.querySelector('[inert]')).toBeNull();
+    expect(host.textContent).toContain('Terminal data unavailable');
+    expect(host.querySelector('.empty button')?.textContent).toBe('Retry');
+    let fail = (_error: Error) => {};
+    fetcher.mockReturnValueOnce(
+      new Promise<Response>((_resolve, reject) => {
+        fail = reject;
+      }),
+    );
+    await click('.empty button');
+    expect(host.querySelector('.terminal-boot')).toBeNull();
+    expect(host.querySelector('[role="status"]')?.textContent).toBe('Loading terminal…');
+    await act(async () => {
+      fail(new Error('Still offline'));
+    });
+    expect(host.textContent).toContain('Terminal data unavailable');
+  });
+
   it('blocks mobile data requests and reacts when the desktop media query changes', async () => {
     const media = window.matchMedia('(min-width: 901px)');
     const matches = vi.spyOn(media, 'matches', 'get').mockReturnValue(false);
@@ -433,8 +553,8 @@ describe('terminal availability', () => {
     await render();
     expect(host.textContent).toContain('The terminal is not available on mobile yet.');
     expect(host.querySelector('a')?.getAttribute('href')).toBe('/');
+    expect(host.querySelector('.terminal-boot')).toBeNull();
     expect(fetcher).not.toHaveBeenCalled();
-    // The chart library needs canvas APIs that happy-dom does not implement.
     fetcher.mockRejectedValueOnce(new Error('Offline'));
     await act(async () => {
       matches.mockReturnValue(true);

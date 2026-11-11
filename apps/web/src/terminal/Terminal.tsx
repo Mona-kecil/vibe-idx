@@ -40,9 +40,19 @@ import { CompanyFeedPane } from './CompanyFeedPane';
 import { NewsPane, CalendarPane, ActionsPane, RiskPane } from './PublicationPanes';
 import './terminal.css';
 
-export function Terminal() {
+export function Terminal({
+  onSettled,
+  booting = false,
+}: { onSettled?: () => void; booting?: boolean } = {}) {
   const [state, setState] = useState<Resource<TerminalData>>({ kind: 'loading' });
   const [attempt, retry] = useState(0);
+  const notified = useRef(false);
+  useEffect(() => {
+    if (state.kind !== 'loading' && !notified.current) {
+      notified.current = true;
+      onSettled?.();
+    }
+  }, [state.kind, onSettled]);
   useEffect(() => {
     let active = true;
     document.title = 'Terminal  Vibe IDX';
@@ -63,7 +73,7 @@ export function Terminal() {
     <div className="terminal-page">
       {state.kind === 'ready' ? (
         <TerminalWorkspace data={state.data} />
-      ) : (
+      ) : state.kind === 'loading' && booting ? null : (
         <Empty>
           {state.kind === 'loading' ? (
             'Loading terminal…'
