@@ -176,8 +176,10 @@
   width: max-content;
   pointer-events: none;
 }
-.terminal-page .tick-split {
+.terminal-page .tick-table .tick-split {
   width: 40%;
+  text-align: left;
+  padding-left: 12px;
 }
 .terminal-page .tick-split i {
   display: inline-block;
