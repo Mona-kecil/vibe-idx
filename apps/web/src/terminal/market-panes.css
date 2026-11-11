@@ -216,6 +216,7 @@
 .terminal-page .movers {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 24px;
   flex: 1;
   min-height: 0;
 }
