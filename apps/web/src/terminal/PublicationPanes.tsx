@@ -334,7 +334,10 @@ export function ActionsPane() {
                                   {row.action.label}
                                 </button>
                                 {row.action.amount && (
-                                  <span className="mut"> {perShare(row.action.amount)}</span>
+                                  <span className="mut action-amount">
+                                    {' '}
+                                    {perShare(row.action.amount)}
+                                  </span>
                                 )}
                               </td>
                             </tr>

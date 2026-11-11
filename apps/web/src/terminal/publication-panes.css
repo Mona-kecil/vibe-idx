@@ -30,6 +30,18 @@
   color: var(--accent);
   font-size: 10px;
 }
+.terminal-page .actions td:not([colspan]):nth-child(-n + 2) {
+  width: 1%;
+}
+.terminal-page .actions td:not([colspan]):first-child {
+  white-space: normal;
+}
+.terminal-page .actions td:nth-child(3) {
+  text-wrap: pretty;
+}
+.terminal-page .actions .action-amount {
+  white-space: nowrap;
+}
 .terminal-page .calendar td:nth-child(3),
 .terminal-page .actions td:nth-child(3) {
   white-space: normal;
