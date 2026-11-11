@@ -30,9 +30,11 @@ type Block = {
   depth: number;
   layer: number;
   pulse: number;
-  flare: number;
+  edges: Edges;
   traces: Point[][];
 };
+type Tier = 0 | 1 | 2;
+type Edges = { levels: [number, number, number]; tiers: Tier[] };
 type Spark = { x: number; y: number; speed: number; size: number; phase: number };
 
 const spots: Point[] = [
@@ -68,8 +70,16 @@ function shuffled<T>(items: readonly T[], next: () => number) {
   return copy;
 }
 
-function flare(next: () => number) {
-  return next() < 0.15 ? 1.5 + next() * 0.4 : 0.55 + next() * 0.45;
+function litEdges(next: () => number): Edges {
+  const levels: Edges['levels'] = [0.15 + next() * 0.2, 0.6 + next() * 0.3, 1.3 + next() * 0.6];
+  const tiers = Array.from({ length: 12 }, (): Tier => (next() < 0.55 ? 0 : 1));
+  if (next() < 0.6) {
+    const corner = Math.floor(next() * 4);
+    tiers[corner] = 2;
+    tiers[(corner + 3) % 4] = 2;
+    tiers[4 + corner] = 2;
+  }
+  return { levels, tiers };
 }
 
 function trace(next: () => number): Point[] {
@@ -126,7 +136,7 @@ function growBlocks(width: number, height: number, ox: number, oy: number) {
       depth: size / (0.8 * width),
       layer: near(x + size / 2, y + size / 2),
       pulse: next() * Math.PI * 2,
-      flare: flare(next),
+      edges: litEdges(next),
       traces: Array.from({ length: size > 280 ? 2 : size >= 200 ? 1 : 0 }, () => trace(next)),
     };
     blocks.push(block);
@@ -191,7 +201,7 @@ function growBlocks(width: number, height: number, ox: number, oy: number) {
         depth: size / (0.8 * width),
         layer: parent.layer + 0.0001,
         pulse: next() * Math.PI * 2,
-        flare: flare(next),
+        edges: litEdges(next),
         traces: [],
       });
     }
@@ -305,8 +315,7 @@ export function Corruption({
       };
       const light = 0.12 + 0.88 * Math.min(block.layer, 1) ** 1.6;
       const fog = `rgba(0, 0, 0, ${0.65 * (1 - light)})`;
-      const edge = light * block.flare;
-      const bloom = clamp((block.layer - 0.55) / 0.45) * block.flare;
+      const outer = clamp((block.layer - 0.55) / 0.45);
       const [[left, top], [right], [, bottom]] = corners;
       const walls: [number, number, string, boolean][] = [
         [0, 1, 'rgb(60, 8, 10)', top > vy],
@@ -314,6 +323,13 @@ export function Corruption({
         [2, 3, 'rgb(22, 3, 4)', bottom < vy],
         [3, 0, 'rgb(42, 5, 7)', left > vx],
       ];
+      const edges: [Path2D, Path2D, Path2D] = [new Path2D(), new Path2D(), new Path2D()];
+      const line = (index: number, from: Point | undefined, to: Point | undefined) => {
+        const path = edges[block.edges.tiers[index] ?? 0];
+        if (!from || !to) return;
+        path.moveTo(...from);
+        path.lineTo(...to);
+      };
       for (const [from, to, fill, facing] of walls) {
         if (!facing) continue;
         const a = corners[from],
@@ -326,14 +342,23 @@ export function Corruption({
         context.fill(wall);
         context.fillStyle = fog;
         context.fill(wall);
-        strokeNeon(wall, 0.9 * edge, bloom);
       }
       const face = quad([...corners]);
       context.fillStyle = sheen;
       context.fill(face);
       context.fillStyle = fog;
       context.fill(face);
-      strokeNeon(face, 0.9 * edge, bloom);
+      for (let side = 0; side < 4; side++) {
+        const after = (side + 1) % 4,
+          before = (side + 3) % 4;
+        line(side, corners[side], corners[after]);
+        if (walls[side]?.[3] || walls[before]?.[3]) line(4 + side, corners[side], behind[side]);
+        if (walls[side]?.[3]) line(8 + side, behind[side], behind[after]);
+      }
+      for (const tier of [0, 1, 2] as const) {
+        const level = block.edges.levels[tier];
+        strokeNeon(edges[tier], 0.9 * light * level, outer * level);
+      }
 
       const [x0, y0] = corners[0];
       const size = corners[1][0] - x0;
