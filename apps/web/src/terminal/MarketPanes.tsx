@@ -157,7 +157,7 @@ export function MoversPane() {
             />
           </div>
           <Scroll reset={`${filters.mov}:${filters.period}`}>
-            <QuoteTable stocks={changeStocks.slice(0, 30)} selected={ticker} columns="change" />
+            <QuoteTable stocks={changeStocks.slice(0, 100)} selected={ticker} columns="change" />
           </Scroll>
         </section>
         <section className="mover-list" aria-label="Value movers">
@@ -175,7 +175,7 @@ export function MoversPane() {
           {date !== data.summary.date && <div className="publication">{asOf(date)}</div>}
           <Scroll reset={`${filters.movValue}:${filters.period}`}>
             <QuoteTable
-              stocks={valueStocks.slice(0, 30)}
+              stocks={valueStocks.slice(0, 100)}
               selected={ticker}
               columns="value"
               foreign={foreign}

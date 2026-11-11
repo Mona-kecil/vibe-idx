@@ -298,3 +298,44 @@ it('places the reporting date below the shared controls and preserves a differen
     ).toBeNull();
   });
 });
+
+it('keeps more than thirty movers available in both scrolling rankings', async () => {
+  const stockCount = moverStocks.length;
+  const summaryCount = moverSummary.stocks.length;
+  const extra: Stock[] = Array.from({ length: 35 }, (_, i) => ({
+    ticker: `EXTRA${i}`,
+    name: `Extra ${i}`,
+    close: 100,
+    change_pct: 0,
+    value: 1,
+    volume: 1,
+    net_foreign: 0,
+  }));
+  moverStocks.push(...extra);
+  moverSummary.stocks.push(
+    ...extra.map((stock) => ({
+      ticker: stock.ticker,
+      name: stock.name,
+      close: stock.close,
+      windows: {
+        '1d': { change_pct: 0, value: 1, rel_volume: 1 },
+        '3d': { change_pct: 0, value: 1, rel_volume: 1 },
+        '5d': { change_pct: 0, value: 1, rel_volume: 1 },
+      },
+    })),
+  );
+  try {
+    await withMovers(async (host) => {
+      for (const name of ['Change', 'Value'] as const) {
+        expect(ranking(host, name)).toHaveLength(38);
+        expect(ranking(host, name)).toContain('EXTRA34');
+      }
+      await press(host, 'F BUY');
+      expect(ranking(host, 'Value')).toHaveLength(38);
+      expect(ranking(host, 'Value')).toContain('EXTRA34');
+    });
+  } finally {
+    moverStocks.splice(stockCount);
+    moverSummary.stocks.splice(summaryCount);
+  }
+});
