@@ -195,6 +195,10 @@
 .terminal-page .tick-split i.mut {
   background: var(--muted);
 }
+.terminal-page .tick-levels th:last-child,
+.terminal-page .tick-levels td:last-child {
+  padding-right: 7px;
+}
 .terminal-page .tick-more {
   display: block;
   margin: 6px auto;
