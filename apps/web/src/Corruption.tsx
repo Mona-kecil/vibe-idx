@@ -35,7 +35,8 @@ type Block = {
   traces: Point[][];
 };
 type Tier = 0 | 1 | 2;
-type Edges = { levels: [number, number, number]; tiers: Tier[]; spans: Point[] };
+type Hot = { corner: number; reach: [number, number, number] };
+type Edges = { levels: [number, number, number]; tiers: Tier[]; hot: Hot | null };
 type Speck = [u: number, v: number, size: number, phase: number];
 type Spark = { x: number; y: number; speed: number; size: number; phase: number };
 
@@ -73,19 +74,15 @@ function shuffled<T>(items: readonly T[], next: () => number) {
 }
 
 function litEdges(next: () => number): Edges {
-  const levels: Edges['levels'] = [0.08 + next() * 0.12, 0.3 + next() * 0.2, 1.3 + next() * 0.6];
+  const levels: Edges['levels'] = [0.2 + next() * 0.12, 0.4 + next() * 0.2, 1.3 + next() * 0.6];
   const tiers = Array.from({ length: 12 }, (): Tier => (next() < 0.55 ? 0 : 1));
-  if (next() < 0.35) {
-    const corner = Math.floor(next() * 4);
-    tiers[corner] = 2;
-    tiers[(corner + 3) % 4] = 2;
-    tiers[4 + corner] = 2;
-  }
-  const spans = Array.from({ length: 12 }, (): Point => {
-    const start = next() * 0.5;
-    return [start, Math.min(start + 0.4 + next() * 0.4, 1)];
-  });
-  return { levels, tiers, spans };
+  if (next() >= 0.35) return { levels, tiers, hot: null };
+  const corner = Math.floor(next() * 4);
+  tiers[corner] = 2;
+  tiers[(corner + 3) % 4] = 2;
+  tiers[4 + corner] = 2;
+  const reach = () => 0.35 + next() * 0.4;
+  return { levels, tiers, hot: { corner, reach: [reach(), reach(), reach()] } };
 }
 
 function speckle(next: () => number, count: number): Speck[] {
@@ -301,41 +298,43 @@ export function Corruption({
       }
     }
 
-    function glowSegment(from: Point, to: Point, [start, end]: Point, glow: number, bloom: number) {
+    function glowCorner(corner: Point, ends: [Point, number][], glow: number, bloom: number) {
       if (!context) return;
-      const along = (share: number): Point => [
-        from[0] + (to[0] - from[0]) * share,
-        from[1] + (to[1] - from[1]) * share,
-      ];
-      const [a, b] = [along(start), along(end)];
       const strength = Math.min(glow, 1);
-      const fade = (rgb: string, alpha: number) => {
-        const gradient = context.createLinearGradient(...a, ...b);
-        gradient.addColorStop(0, `rgba(${rgb}, 0)`);
-        gradient.addColorStop(0.35, `rgba(${rgb}, ${alpha})`);
-        gradient.addColorStop(0.65, `rgba(${rgb}, ${alpha})`);
-        gradient.addColorStop(1, `rgba(${rgb}, 0)`);
-        return gradient;
-      };
-      const path = new Path2D();
-      path.moveTo(...a);
-      path.lineTo(...b);
       context.save();
       context.lineCap = 'round';
-      if (bloom > 0) {
-        context.shadowColor = `rgba(255, 36, 28, ${Math.min(0.7 * bloom, 1)})`;
-        context.shadowBlur = 16;
-      }
       for (const [rgb, alpha, lineWidth] of [
         ['255, 80, 70', strength, 3],
         ['255, 70, 60', 0.18 * strength, 7],
         ['255, 245, 240', 0.95 * strength, 1.6],
       ] as const) {
-        context.strokeStyle = fade(rgb, alpha);
+        context.shadowColor = `rgba(255, 36, 28, ${Math.min(0.7 * bloom, 1)})`;
+        context.shadowBlur = bloom > 0 && lineWidth === 3 ? 16 : 0;
         context.lineWidth = lineWidth;
-        context.stroke(path);
-        context.shadowBlur = 0;
+        for (const [to, reach] of ends) {
+          const end: Point = [
+            corner[0] + (to[0] - corner[0]) * reach,
+            corner[1] + (to[1] - corner[1]) * reach,
+          ];
+          const gradient = context.createLinearGradient(...corner, ...end);
+          gradient.addColorStop(0, `rgba(${rgb}, ${alpha})`);
+          gradient.addColorStop(0.3, `rgba(${rgb}, ${alpha})`);
+          gradient.addColorStop(1, `rgba(${rgb}, 0)`);
+          context.strokeStyle = gradient;
+          context.beginPath();
+          context.moveTo(...corner);
+          context.lineTo(...end);
+          context.stroke();
+        }
       }
+      context.shadowBlur = 0;
+      const radius = 10;
+      const flare = context.createRadialGradient(...corner, 0, ...corner, radius);
+      flare.addColorStop(0, `rgba(255, 240, 235, ${0.9 * strength})`);
+      flare.addColorStop(0.35, `rgba(255, 70, 55, ${0.45 * strength})`);
+      flare.addColorStop(1, 'rgba(255, 40, 30, 0)');
+      context.fillStyle = flare;
+      context.fillRect(corner[0] - radius, corner[1] - radius, radius * 2, radius * 2);
       context.restore();
     }
 
@@ -377,8 +376,9 @@ export function Corruption({
         path.closePath();
         return path;
       };
-      const light = 0.12 + 0.88 * Math.min(block.layer, 1) ** 1.6;
-      const fog = `rgba(0, 0, 0, ${0.65 * (1 - light)})`;
+      const depth = Math.min(block.layer, 1) ** 1.6;
+      const light = 0.5 + 0.5 * depth;
+      const fog = `rgba(0, 0, 0, ${0.88 * (1 - depth)})`;
       const outer = clamp((block.layer - 0.55) / 0.45);
       const [[left, top], [right], [, bottom]] = corners;
       const walls: [number, number, string, boolean][] = [
@@ -388,12 +388,9 @@ export function Corruption({
         [3, 0, 'rgb(42, 5, 7)', left > vx],
       ];
       const edges: [Path2D, Path2D] = [new Path2D(), new Path2D()];
-      const hot: [Point, Point, Point][] = [];
       const line = (index: number, from: Point | undefined, to: Point | undefined) => {
         const tier = block.edges.tiers[index] ?? 0;
-        const span = block.edges.spans[index];
         if (!from || !to) return;
-        if (tier === 2 && span) hot.push([from, to, span]);
         const path = edges[tier === 0 ? 0 : 1];
         path.moveTo(...from);
         path.lineTo(...to);
@@ -416,7 +413,7 @@ export function Corruption({
       context.fill(face);
       context.fillStyle = fog;
       context.fill(face);
-      drawSpecks(block, corners, light, t);
+      drawSpecks(block, corners, depth, t);
       for (let side = 0; side < 4; side++) {
         const after = (side + 1) % 4,
           before = (side + 3) % 4;
@@ -426,9 +423,21 @@ export function Corruption({
       }
       for (const tier of [0, 1] as const)
         strokeNeon(edges[tier], 0.9 * light * block.edges.levels[tier]);
-      const heat = block.edges.levels[2];
-      for (const [from, to, span] of hot)
-        glowSegment(from, to, span, 0.9 * light * heat, outer * heat);
+      const hot = block.edges.hot;
+      const point = hot ? corners[hot.corner] : undefined;
+      if (hot && point) {
+        const heat = block.edges.levels[2];
+        const [ahead, back, inward] = hot.reach;
+        const ends: [Point, number][] = [];
+        const after = corners[(hot.corner + 1) % 4],
+          before = corners[(hot.corner + 3) % 4],
+          deep = behind[hot.corner];
+        if (after) ends.push([after, ahead]);
+        if (before) ends.push([before, back]);
+        if (deep && (walls[hot.corner]?.[3] || walls[(hot.corner + 3) % 4]?.[3]))
+          ends.push([deep, inward]);
+        glowCorner(point, ends, 0.9 * light * heat, outer * heat);
+      }
 
       const [x0, y0] = corners[0];
       const size = corners[1][0] - x0;
