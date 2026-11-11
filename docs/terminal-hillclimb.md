@@ -1,6 +1,6 @@
 # Terminal UI hillclimb plan
 
-Status on 11 November 2026: the harness is built and frozen, and the baseline is 181 steps. The owner confirmed the question list and the stop. No attempt has run yet.
+Status on 11 November 2026: the baseline is 181 steps and the total is now 168, after attempts 1 to 5. The owner confirmed the question list and the stop.
 
 ## Goal
 
@@ -45,9 +45,9 @@ A pane off the default slots still opens when its code is typed in the command b
 | ----- | --------------------- | ------------ | ---------------------------------------------------------------------------------- |
 | GRID  | Find a ticker         | 1 to 3       | WL, SIG, MOV, NEWS with CA                                                         |
 | FOCUS | Study the company     | 4, 5, 11, 12 | GP with KEY folded in, HDS as rows, one feed of DISC, ticker news and action dates |
-| FLOW  | See who is trading it | 6 to 10      | A short GP, BRK, BFL with FF, the merged trades pane, TB with OB                   |
+| FLOW  | See who is trading it | 6 to 10      | GP above FF, BRK, BFL and TB, then DD in a full-height column, then OB with RT   |
 
-The short GP stays in FLOW because shift-dragging it sets the date range for the broker panes. The target is at most two tabs per pane.
+GP stays in FLOW because shift-dragging it sets the date range for the broker panes. Views read together never share a pane: GP and FF, DD and RT, TB and OB. GP keeps enough height to read candles, and RT and DD get tall columns, because a tape needs height more than width.
 
 Open behavior to test: whether picking a ticker in GRID should jump to FOCUS. It saves a keypress, but it stops arrowing through the watchlist with the chart in view.
 
@@ -105,7 +105,7 @@ Visible controls on the default screens: GRID 109 to 125, FOCUS 51 to 56, FLOW 6
 
 - `vp test` and `vp check` stay green. Run the tests on Node 24, because Node 26's built-in `localStorage` breaks 55 tests under happy-dom even on a clean master.
 - Font size and row height stay fixed, so shrinking text cannot count as a win.
-- The visible-control count never rises.
+- Visible controls per item never rise, and no new kind of control appears. A count that rises only because more items now fit on screen is allowed.
 - Each kept change gets a before and after screenshot. Steps cannot see legibility, so the owner can veto any change.
 
 ## Stop
@@ -116,14 +116,15 @@ Total steps at most 90, which is at least 50% below the baseline of 181, after a
 
 One change each, measured, then kept or reverted, with one commit per kept change. Each attempt is logged in `apps/web/hillclimb/decision.tsv`, which git ignores, with its hypothesis, before, after, test result and verdict. Removals come first, so later changes are measured on the simpler screen.
 
-1. Give each mode one job, per the table above.
-2. Take HEAT, CAL and RISK off the default slots.
-3. Fold KEY into the GP legend row.
-4. Rebuild HDS as rows. Scale every sparkline the same way and show the change in points, because per-holder scaling draws a 1.5 point move as steep as an 18 point move.
-5. Merge RT and DD. Decide how to show non-regular boards, which DD drops, and auction matches, which appear under both orders.
-6. Make a click on an FF or GP day set the trade session.
-7. Share one broker filter across panes.
-8. Give FF a price line and a common zero for bars and running total.
-9. Test TB and OB as one ladder.
-10. Test one dated feed per ticker from DISC, ticker CA and ticker NEWS.
-11. Order SIG by date, so one day's signals sit together. The baseline added this one.
+1. Kept, 181 to 172. Give each mode one job, per the table above.
+2. Kept, 172. Take HEAT, CAL and RISK off the default slots.
+3. Kept, 172. Fold KEY into the panes that already show its facts. The registry facts head HDS, and the company name sits in GP's header, because GP's legend row already shows the latest bar.
+4. Kept, 172 to 165. Rebuild HDS. The owner compared rows with sparklines, one chart for all holders, and 100% ownership bars, and chose one chart on a log scale with a holder list below it.
+5. Kept, 165 to 168. The owner rejected the first FLOW and designed the one in the table above.
+6. Merge RT and DD. Decide how to show non-regular boards, which DD drops, and auction matches, which appear under both orders.
+7. Make a click on an FF or GP day set the trade session.
+8. Share one broker filter across panes.
+9. Give FF a price line and a common zero for bars and running total.
+10. Test TB and OB as one ladder.
+11. Test one dated feed per ticker from DISC, ticker CA and ticker NEWS.
+12. Order SIG by date, so one day's signals sit together. The baseline added this one.
