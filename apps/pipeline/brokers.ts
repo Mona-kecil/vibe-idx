@@ -441,7 +441,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
       token: resolve(values.token),
       out: resolve(values.out),
       accountId,
-      deadline: Date.now() + (minutes * 60 - process.uptime()) * 1000,
+      deadline: Math.floor(Date.now() + (minutes * 60 - process.uptime()) * 1000),
     });
     process.stdout.write(`${JSON.stringify(summary)}\n`);
   } catch (error) {
