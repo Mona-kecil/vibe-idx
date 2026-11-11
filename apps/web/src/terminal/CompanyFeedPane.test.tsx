@@ -142,6 +142,9 @@ describe('company feed', () => {
       'Recent',
     ]);
     expect(host.textContent).toContain('50 IDR per share');
+    expect(host.querySelector('.feed-status')?.firstElementChild?.textContent).toBe(
+      'Actions as of 11 Nov 2026',
+    );
     expect(host.textContent).not.toContain('Other company');
   });
   it('keeps date-only events imprecise and moves timed events into history once they pass', async () => {
@@ -224,8 +227,10 @@ describe('company feed', () => {
     await render();
     expect(host.textContent).toContain('Ticker news unavailable');
     expect(host.querySelector('[data-feed-empty="action"]')?.textContent).toBe(
-      'No corporate actions for UNVR',
+      'No corporate actions for UNVR as of 11 Nov 2026',
     );
+    expect(host.querySelectorAll('.feed-status [data-feed-empty="action"]')).toHaveLength(1);
+    expect(host.querySelector('.feed-status')?.firstElementChild?.className).toBe('feed-asof');
     context.ticker = 'BBCA';
     context.detail = { kind: 'loading' };
     context.tickerNews = { kind: 'ready', data: [] };
@@ -233,5 +238,9 @@ describe('company feed', () => {
     expect(host.querySelectorAll('[data-feed-kind]')).toHaveLength(0);
     expect(host.querySelector('[data-feed-empty="news"]')?.textContent).toBe('No news for BBCA');
     expect(host.textContent).toContain('Loading Disclosures');
+    context.data.health.corporate_actions = null;
+    await render();
+    expect(host.textContent).toContain('No corporate actions for BBCA; reporting date unavailable');
+    context.data.health.corporate_actions = '2026-11-11';
   });
 });

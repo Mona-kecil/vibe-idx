@@ -130,8 +130,8 @@ function FeedRow({ item }: { item: FeedItem }) {
     </tr>
   );
 }
-function SourceDate({ health }: { health: TerminalData['health'] }) {
-  const { publications } = useTerminal();
+function SourceDate({ health, noActions }: { health: TerminalData['health']; noActions: boolean }) {
+  const { ticker, publications } = useTerminal();
   const dates = [
     health.disclosures && `Disclosures ${dateText(health.disclosures)}`,
     publications.news.kind === 'ready' &&
@@ -142,11 +142,16 @@ function SourceDate({ health }: { health: TerminalData['health'] }) {
     .filter(Boolean)
     .join('\n');
   return health.corporate_actions ? (
-    <span className="feed-asof" title={dates}>
-      Actions as of {dateText(health.corporate_actions)}
+    <span className="feed-asof" title={dates} data-feed-empty={noActions ? 'action' : undefined}>
+      {noActions ? `No corporate actions for ${ticker} as of ` : 'Actions as of '}
+      {dateText(health.corporate_actions)}
     </span>
   ) : (
-    <Empty>Corporate action reporting date unavailable</Empty>
+    <Empty>
+      {noActions
+        ? `No corporate actions for ${ticker}; reporting date unavailable`
+        : 'Corporate action reporting date unavailable'}
+    </Empty>
   );
 }
 export function CompanyFeedPane() {
@@ -207,7 +212,12 @@ export function CompanyFeedPane() {
   return (
     <Scroll reset={ticker} className="company-feed">
       <div className="feed-status">
-        <SourceDate health={data.health} />
+        <SourceDate
+          health={data.health}
+          noActions={
+            publications.actions.kind === 'ready' && !actions.some((action) => action.steps.length)
+          }
+        />
         {publications.news.kind === 'ready' &&
           publications.news.data.errors.map((error) => <Empty key={error}>{error}</Empty>)}
         <Availability resource={detail} name="Disclosures">
@@ -223,13 +233,7 @@ export function CompanyFeedPane() {
           }
         </Availability>
         <Availability resource={publications.actions} name="Corporate actions">
-          {() =>
-            !actions.some((action) => action.steps.length) && (
-              <Empty>
-                <span data-feed-empty="action">No corporate actions for {ticker}</span>
-              </Empty>
-            )
-          }
+          {() => null}
         </Availability>
       </div>
       <table aria-label="Company feed">
