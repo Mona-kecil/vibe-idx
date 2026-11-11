@@ -87,6 +87,10 @@
   font: inherit;
   color: inherit;
 }
+.terminal-page .tick-block-select:focus-visible {
+  outline: none;
+}
+.terminal-page .tick-blocks tr.tick-highlight,
 .terminal-page .tick-blocks tr:has(:focus-visible) {
   outline: 1px solid var(--accent);
   outline-offset: -1px;
