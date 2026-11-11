@@ -10,7 +10,6 @@
 }
 .terminal-page .company-feed td:first-child {
   height: 32px;
-  padding-top: 9px;
 }
 .terminal-page .feed-type {
   display: block;
@@ -27,7 +26,6 @@
 .terminal-page .company-feed .feed-date {
   text-align: left;
   color: var(--muted);
-  padding-top: 10px;
   white-space: nowrap;
 }
 .terminal-page .feed-content {
