@@ -75,6 +75,10 @@
   padding-left: 3px;
   padding-right: 3px;
 }
+.terminal-page .tick-orders td + td,
+.terminal-page .tick-orders th + th {
+  padding-left: 9px;
+}
 .terminal-page .tick-blocks tbody tr {
   cursor: pointer;
 }
