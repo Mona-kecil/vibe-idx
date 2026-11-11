@@ -26,9 +26,10 @@ export function TerminalLink() {
       (button.top + button.height / 2) / window.innerHeight,
     );
     setStage('glitching');
-    startGlitch();
+    const swallowMs = glitchLeadMs + arrivalMs();
+    startGlitch(swallowMs);
     window.setTimeout(() => setStage('swallowing'), glitchLeadMs);
-    window.setTimeout(openTerminal, glitchLeadMs + arrivalMs());
+    window.setTimeout(openTerminal, swallowMs);
   }
   return (
     <>
