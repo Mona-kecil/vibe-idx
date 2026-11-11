@@ -1,6 +1,6 @@
 # Terminal UI hillclimb plan
 
-Status on 11 November 2026: planned only. Nothing is built or measured. The stop numbers and the question list are proposals awaiting confirmation.
+Status on 11 November 2026: the harness is built and frozen, and the baseline is 181 steps. The owner confirmed the question list and the stop. No attempt has run yet.
 
 ## Goal
 
@@ -53,7 +53,9 @@ Open behavior to test: whether picking a ticker in GRID should jump to FOCUS. It
 
 ## Metric
 
-Total steps to answer a fixed question list. Lower is better. A step is one tab switch, mode switch, command, click, or screen of scrolling. An answer visible on load costs zero.
+Total steps to answer the question list, summed over three tickers and three window sizes. Lower is better. A step is one tab switch, mode switch, command, click, or screen of scrolling. An answer visible when its question starts costs zero.
+
+The questions run in order in one session per ticker and window, starting from GRID, and the screen carries from one question to the next. To bring a pane on screen, the harness takes the cheapest route: nothing if it is showing, otherwise one step for a tab in this mode, a mode where it already shows, or the command bar. Scrolling is counted per scroll container as the screens needed to bring every target into view, measured on the text and drawings of each target rather than its box, so a short table row in a wide table does not count as clipped. A target that no scrolling can reveal is an error.
 
 ## Question list
 
@@ -74,28 +76,45 @@ A pane that answers none of these leaves the default slots.
 
 ## Measurement
 
-A Playwright script drives the dev server against frozen fixtures for three contrasting tickers: SINI (many holders), BBCA (heavy tape, about half foreign), and one with few holders. Broker and trade endpoints need a signed-in session, so the script stubs `/api` and `/data` from the fixtures.
+`pnpm --filter @vibe-idx/web hillclimb` prints steps per question for each ticker and window, the total, the count of questions answered, the error count, and the visible controls on each mode's default screen. `--verbose` prints each step, `--repeat 3` checks the total repeats, and `--shots <dir>` saves each mode's default screen for SINI.
 
-The script prints steps per question, the total, the count of questions answered, the error count, and the count of visible controls on each default screen. The question list, fixtures, viewport and counting rule are frozen. The path for each question is rescripted when the UI changes and is reviewed with that change.
+The harness lives in `apps/web/hillclimb`. It starts the dev server with a stub sign-in and replays every request from a store in `~/.cache/vibe-idx/hillclimb`, so no request leaves the machine. The store holds private broker and tick data, so it stays out of this public repository. To run on another machine, copy that directory. `--record` fills misses from live public data and from the private bucket copy in `~/.cache/vibe-idx/fixtures`, and re-recording means a new baseline.
 
-The viewport is fixed. It was inferred as roughly 1200 by 730 from a screenshot and needs the real window size.
+The clock is frozen at the recording time, 11 November 2026 12:28 WIB, with broker and tick data through 10 November. The tickers are SINI (13 holder blocks), BBCA (6) and UNVR (3), and the watchlist holds eight pins. The windows are a maximized browser on a 16 inch laptop at 1728 by 1000, a 24 inch monitor at 1920 by 960, and a 27 inch monitor at 2560 by 1320.
 
-Before freezing, prove sensitivity: the script must report more scrolling for SINI holders than for the few-holder ticker.
+Sensitivity holds: HDS costs SINI 5, 5 and 3 screens of scrolling, BBCA 2, 2 and 1, and UNVR 1, 1 and 0.
+
+## Baseline
+
+181 steps, the same in three runs, with all 108 answers reached and no errors. Tab switches account for 81 steps, scrolling for 64, and clicks for 36.
+
+| Question | Steps | Where they go |
+| --- | --- | --- |
+| 12 News and action dates | 40 | NEWS and CA each need a tab and a ticker filter. |
+| 1 Signals today | 36 | SIG lists 3 rows from 10 November, 55 from 9 November, then 22 more from 10 November. |
+| 10 Volume at price and book | 23 | TB and OB are tabs in one slot, and SINI's 40 price levels scroll. |
+| 5 Holders | 20 | HDS scrolls, most for SINI on the smaller screens. |
+| 9 Largest orders and fills | 18 | A DD tab and a click to expand the order. |
+| 11 Disclosures | 17 | A DISC tab, and ten rows scroll in most windows. |
+| 2, 7, 8 | 9 each | One click or tab each. |
+| 3, 4, 6 | 0 | WL, GP and BRK show on load. |
+
+Visible controls on the default screens: GRID 109 to 125, FOCUS 51 to 56, FLOW 67 to 74, depending on the window.
 
 ## Guards
 
-- `vp test` and `vp check` stay green.
+- `vp test` and `vp check` stay green. Run the tests on Node 24, because Node 26's built-in `localStorage` breaks 55 tests under happy-dom even on a clean master.
 - Font size and row height stay fixed, so shrinking text cannot count as a win.
 - The visible-control count never rises.
 - Each kept change gets a before and after screenshot. Steps cannot see legibility, so the owner can veto any change.
 
 ## Stop
 
-Total steps at least 50% below baseline, after at least 10 logged attempts.
+Total steps at most 90, which is at least 50% below the baseline of 181, after at least 10 logged attempts.
 
 ## Attempts
 
-One change each, measured, then kept or reverted, with one commit per kept change. Each attempt is logged in an uncommitted `decision.tsv` with its hypothesis, before, after, test result and verdict. Removals come first, so later changes are measured on the simpler screen.
+One change each, measured, then kept or reverted, with one commit per kept change. Each attempt is logged in `apps/web/hillclimb/decision.tsv`, which git ignores, with its hypothesis, before, after, test result and verdict. Removals come first, so later changes are measured on the simpler screen.
 
 1. Give each mode one job, per the table above.
 2. Take HEAT, CAL and RISK off the default slots.
@@ -107,9 +126,4 @@ One change each, measured, then kept or reverted, with one commit per kept chang
 8. Give FF a price line and a common zero for bars and running total.
 9. Test TB and OB as one ladder.
 10. Test one dated feed per ticker from DISC, ticker CA and ticker NEWS.
-
-## Open inputs
-
-- The real window size.
-- Edits to the question list.
-- Confirmation of the stop numbers.
+11. Order SIG by date, so one day's signals sit together. The baseline added this one.

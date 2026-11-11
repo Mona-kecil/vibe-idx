@@ -9,6 +9,7 @@
     "check": "CI=true vp check",
     "dev": "CI=true vp dev",
     "dev:web": "CI=true vp dev",
+    "hillclimb": "tsx hillclimb/run.ts",
     "preview": "vp preview",
     "test": "CI=true vp test"
   },
@@ -32,6 +33,8 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.3",
     "happy-dom": "^21.0.4",
+    "playwright-core": "^1.65.0",
+    "tsx": "^4.22.4",
     "typescript": "^6.0.3",
     "vite-plus": "^0.2.1"
   }
