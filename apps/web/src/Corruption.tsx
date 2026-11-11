@@ -293,13 +293,15 @@ export function Corruption({
         path.closePath();
         return path;
       };
-      const walls: [number, number, string][] = [
-        [0, 1, 'rgb(60, 8, 10)'],
-        [1, 2, 'rgb(32, 4, 6)'],
-        [2, 3, 'rgb(22, 3, 4)'],
-        [3, 0, 'rgb(42, 5, 7)'],
+      const [[left, top], [right], [, bottom]] = corners;
+      const walls: [number, number, string, boolean][] = [
+        [0, 1, 'rgb(60, 8, 10)', top > vy],
+        [1, 2, 'rgb(32, 4, 6)', right < vx],
+        [2, 3, 'rgb(22, 3, 4)', bottom < vy],
+        [3, 0, 'rgb(42, 5, 7)', left > vx],
       ];
-      for (const [from, to, fill] of walls) {
+      for (const [from, to, fill, facing] of walls) {
+        if (!facing) continue;
         const a = corners[from],
           b = corners[to],
           c = behind[to],
