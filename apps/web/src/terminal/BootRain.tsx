@@ -78,6 +78,7 @@ type Stream = {
   speed: number;
   length: number;
   text: string;
+  phase: number;
   red: boolean;
 };
 
@@ -111,6 +112,7 @@ export function BootRain({
           const move = pick(moves);
           stream.head = -Math.random() * 12;
           stream.text = `${pick(tickers)} ${move} `;
+          stream.phase = Math.floor(Math.random() * stream.text.length);
           stream.red = move.startsWith('-') && Math.random() < 0.3;
         }
         const head = Math.floor(stream.head);
@@ -119,7 +121,10 @@ export function BootRain({
           const y = row * rowHeight;
           if (y < 0 || y > height + rowHeight) continue;
           const glyph =
-            stream.text[((row % stream.text.length) + stream.text.length) % stream.text.length];
+            stream.text[
+              (((row + stream.phase) % stream.text.length) + stream.text.length) %
+                stream.text.length
+            ];
           const strength = 1 - trail / stream.length;
           context.fillStyle =
             trail === 0
@@ -148,12 +153,14 @@ export function BootRain({
       context.fillRect(0, 0, width, height);
       streams = Array.from({ length: Math.ceil(width / 28) }, (_, index) => {
         const move = pick(moves);
+        const text = `${pick(tickers)} ${move} `;
         return {
           x: index * 28 + 14,
           head: (Math.random() * height) / rowHeight,
           speed: 10 + Math.random() * 15,
           length: 12 + Math.floor(Math.random() * 22),
-          text: `${pick(tickers)} ${move} `,
+          text,
+          phase: Math.floor(Math.random() * text.length),
           red: move.startsWith('-') && Math.random() < 0.3,
         };
       });
