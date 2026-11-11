@@ -31,9 +31,15 @@
 .terminal-page .feed-content {
   overflow-wrap: anywhere;
 }
-.terminal-page .feed-content a {
+.terminal-page .feed-content > a {
   display: block;
   min-height: 24px;
+}
+.terminal-page .company-feed td {
+  padding: 4px 7px;
+}
+.terminal-page .feed-content .filing-attachments a {
+  min-height: 0;
 }
 .terminal-page .feed-time {
   white-space: nowrap;
