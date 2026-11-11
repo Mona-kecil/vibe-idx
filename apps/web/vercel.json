@@ -3,6 +3,9 @@
   "framework": "vite",
   "buildCommand": "pnpm run build:client",
   "outputDirectory": "dist",
+  "functions": {
+    "api/og.ts": { "includeFiles": "public/fonts/*.ttf" }
+  },
   "git": {
     "deploymentEnabled": {
       "**": false,
@@ -13,6 +16,10 @@
     {
       "source": "/data/:path*",
       "destination": "https://pub-7982bfb066694e6e8615750132283eba.r2.dev/:path*"
+    },
+    {
+      "source": "/t/:ticker",
+      "destination": "/api/page?ticker=:ticker"
     },
     {
       "source": "/((?!assets/|data(?:/|$)|api(?:/|$)|src/|node_modules/|@).*)",

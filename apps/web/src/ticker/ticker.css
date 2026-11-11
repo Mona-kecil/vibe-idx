@@ -196,9 +196,47 @@
 .ticker-page .identity h1 {
   font-size: 58px;
   line-height: 1;
-  margin: 0 0 12px;
+  margin: 0;
   font-weight: 800;
   letter-spacing: -3px;
+}
+.ticker-page .identity-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.ticker-page .ticker-share {
+  position: relative;
+  flex: none;
+}
+.ticker-page .share-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 8px;
+  border-radius: 5px;
+  color: var(--muted);
+}
+.ticker-page .share-button svg {
+  width: 20px;
+  height: 20px;
+}
+.ticker-page .share-status:not(:empty) {
+  position: absolute;
+  top: calc(100% + 5px);
+  left: 0;
+  z-index: 5;
+  width: max-content;
+  max-width: 200px;
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--surface);
+  font-size: 12px;
+  font-weight: 500;
 }
 .ticker-page .identity p {
   font-size: 16px;
@@ -747,8 +785,10 @@
   }
   .ticker-page .identity h1 {
     font-size: 49px;
-    margin-bottom: 9px;
     letter-spacing: -2.5px;
+  }
+  .ticker-page .identity-heading {
+    margin-bottom: 9px;
   }
   .ticker-page .identity p {
     font-size: 13px;
