@@ -67,6 +67,7 @@ function QuoteTable({
   const { setTicker } = useTerminal();
   return (
     <table
+      className="quote-table"
       aria-label={
         columns === 'change' ? 'Change ranking' : columns === 'value' ? 'Value ranking' : undefined
       }

@@ -234,3 +234,7 @@
   font-weight: 400;
   text-align: left;
 }
+
+.terminal-page .quote-table th:first-child {
+  padding-left: 31px;
+}
