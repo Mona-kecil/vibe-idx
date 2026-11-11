@@ -125,15 +125,10 @@ export default {
     return new Response(null, { status: 404 });
   },
   async scheduled(controller, env) {
-    const job =
-      controller.cron === '0 12 * * *'
-        ? 'freshness'
-        : controller.cron === '17 10 * * *'
-          ? 'ingest.yml'
-          : 'brokers.yml';
+    const job = controller.cron === '0 12 * * *' ? 'freshness' : 'ingest.yml';
     try {
       if (job === 'freshness') await checkFreshness(env, controller.scheduledTime);
-      else if (job === 'ingest.yml' || !(await running(env, job))) await dispatch(env, job);
+      else await dispatch(env, job);
     } catch (error) {
       await report(
         env,
