@@ -121,7 +121,7 @@ function growBlocks(width: number, height: number, ox: number, oy: number) {
       depth: size / (0.8 * width),
       layer: near(x + size / 2, y + size / 2),
       pulse: next() * Math.PI * 2,
-      traces: Array.from({ length: size > 200 ? 2 : 1 }, () => trace(next)),
+      traces: Array.from({ length: size > 280 ? 2 : size >= 200 ? 1 : 0 }, () => trace(next)),
     };
     blocks.push(block);
     for (const index of cells(x + coverCell, y + coverCell, size - 2 * coverCell))
@@ -185,7 +185,7 @@ function growBlocks(width: number, height: number, ox: number, oy: number) {
         depth: size / (0.8 * width),
         layer: parent.layer + 0.0001,
         pulse: next() * Math.PI * 2,
-        traces: size >= 70 && next() < 0.5 ? [trace(next)] : [],
+        traces: [],
       });
     }
   }
