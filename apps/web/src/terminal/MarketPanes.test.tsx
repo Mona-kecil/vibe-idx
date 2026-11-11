@@ -20,8 +20,10 @@ const ownershipFeed: Feed = [76.78, 76.781, 76.8, null].map((pct_after, i) => ({
   },
 }));
 let feed: Feed;
+let priceDate: string;
 beforeEach(() => {
   feed = ownershipFeed;
+  priceDate = '2026-11-10';
 });
 vi.mock('./state', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./state')>();
@@ -34,7 +36,7 @@ vi.mock('./state', async (importOriginal) => {
           feed,
           stocks: moverStocks,
           summary: moverSummary,
-          health: { prices: '2026-11-10' },
+          health: { prices: priceDate },
         },
         ticker: 'AAA',
         pins: [],
@@ -277,5 +279,22 @@ it('shares the period across both rankings and keeps foreign estimates at one se
     await press(host, '3d');
     expect(ranking(host, 'Change')).toEqual(['CCC', 'BBB', 'AAA']);
     expect(ranking(host, 'Value')).toEqual(['AAA', 'CCC', 'BBB']);
+  });
+});
+
+it('places the reporting date below the shared controls and preserves a different foreign date', async () => {
+  priceDate = '2026-11-09';
+  await withMovers(async (host) => {
+    const controls = host.querySelector('.mover-controls');
+    expect(controls?.nextElementSibling?.textContent).toBe('As of 10 Nov 2026');
+    await press(host, 'F BUY');
+    const foreignControls = host.querySelector('.seg[aria-label="Value movers"]')?.parentElement;
+    expect(foreignControls?.nextElementSibling?.textContent).toBe('As of 9 Nov 2026');
+    expect(
+      host
+        .querySelector('[aria-label="Value movers"]')
+        ?.closest('section')
+        ?.querySelector('.pb .publication'),
+    ).toBeNull();
   });
 });

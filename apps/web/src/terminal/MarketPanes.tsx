@@ -133,7 +133,6 @@ export function MoversPane() {
     day ? `As of ${dateText(day)}` : 'Date unavailable';
   return (
     <>
-      <div className="publication">{asOf(data.summary.date)}</div>
       <div
         className="sub mover-controls"
         title={foreign ? 'Foreign estimates are available for one session only' : undefined}
@@ -146,6 +145,7 @@ export function MoversPane() {
           onChange={(value) => filter('period', value)}
         />
       </div>
+      <div className="publication">{asOf(data.summary.date)}</div>
       <div className="movers">
         <section className="mover-list" aria-label="Change movers">
           <div className="sub">
@@ -172,8 +172,8 @@ export function MoversPane() {
               }}
             />
           </div>
+          {date !== data.summary.date && <div className="publication">{asOf(date)}</div>}
           <Scroll reset={`${filters.movValue}:${filters.period}`}>
-            {date !== data.summary.date && <div className="publication">{asOf(date)}</div>}
             <QuoteTable
               stocks={valueStocks.slice(0, 30)}
               selected={ticker}
