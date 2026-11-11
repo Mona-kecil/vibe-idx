@@ -254,6 +254,7 @@ it('toggles each ranking independently, including foreign buys and sells', async
 it('shares the period across both rankings and keeps foreign estimates at one session', async () => {
   await withMovers(async (host) => {
     expect(host.querySelectorAll('[aria-label="Mover period"]')).toHaveLength(1);
+    expect(host.querySelector('[aria-label="Mover period"]')?.closest('.mover-list')).toBeNull();
     await press(host, '3d');
     expect(ranking(host, 'Change')).toEqual(['CCC', 'BBB', 'AAA']);
     expect(ranking(host, 'Value')).toEqual(['AAA', 'CCC', 'BBB']);

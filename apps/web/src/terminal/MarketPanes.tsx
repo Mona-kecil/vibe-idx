@@ -134,6 +134,18 @@ export function MoversPane() {
   return (
     <>
       <div className="publication">{asOf(data.summary.date)}</div>
+      <div
+        className="sub mover-controls"
+        title={foreign ? 'Foreign estimates are available for one session only' : undefined}
+      >
+        <Segments
+          label="Mover period"
+          values={['1d', '3d', '5d']}
+          value={foreign ? '1d' : filters.period}
+          disabled={foreign ? ['3d', '5d'] : []}
+          onChange={(value) => filter('period', value)}
+        />
+      </div>
       <div className="movers">
         <section className="mover-list" aria-label="Change movers">
           <div className="sub">
@@ -159,15 +171,6 @@ export function MoversPane() {
                 if (value !== 'VALUE') filter('period', '1d');
               }}
             />
-            <span className="mover-period">
-              <Segments
-                label="Mover period"
-                values={['1d', '3d', '5d']}
-                value={foreign ? '1d' : filters.period}
-                disabled={foreign ? ['3d', '5d'] : []}
-                onChange={(value) => filter('period', value)}
-              />
-            </span>
           </div>
           <Scroll reset={`${filters.movValue}:${filters.period}`}>
             {date !== data.summary.date && <div className="publication">{asOf(date)}</div>}
