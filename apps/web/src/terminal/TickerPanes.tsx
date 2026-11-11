@@ -160,12 +160,21 @@ function HoldersChart({
   const active = hover ?? focus;
   const shell = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(660);
+  const [height, setHeight] = useState(256);
   useEffect(() => {
     const element = shell.current;
-    if (!element || typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver(() => setWidth(element.clientWidth));
-    setWidth(element.clientWidth);
+    const pane = element?.closest('.pb');
+    if (!element || !pane || typeof ResizeObserver === 'undefined') return;
+    // The holder list keeps its rows on screen; the chart takes what is left, between 160 and 256px.
+    const fit = () => {
+      setWidth(element.clientWidth);
+      const rest = pane.scrollHeight - element.offsetHeight;
+      setHeight(Math.round(Math.max(160, Math.min(256, pane.clientHeight - rest))));
+    };
+    const observer = new ResizeObserver(fit);
+    fit();
     observer.observe(element);
+    observer.observe(pane);
     return () => observer.disconnect();
   }, []);
   const dates = histories.flatMap((h) => h.points.map((p) => p.date)).sort();
@@ -177,7 +186,7 @@ function HoldersChart({
   const left = 46,
     right = width - 14,
     top = 14,
-    bottom = 226;
+    bottom = height - 30;
   const values = histories.flatMap((h) => h.points.flatMap((p) => (p.pct === null ? [] : [p.pct])));
   // A log scale keeps a 1% holder readable next to a 55% controller.
   const ticks = [0.5, 1, 2, 5, 10, 20, 50, 100];
@@ -197,7 +206,8 @@ function HoldersChart({
     <div className="holders">
       <div className="holders-chart" ref={shell}>
         <svg
-          viewBox={`0 0 ${width} 256`}
+          viewBox={`0 0 ${width} ${height}`}
+          style={{ height }}
           role="img"
           aria-label={`Reported holdings in percent from ${dateText(firstDate)} to ${dateText(lastDate)}`}
         >
@@ -224,7 +234,7 @@ function HoldersChart({
               key={date}
               className="holder-axis"
               x={x(date)}
-              y={248}
+              y={height - 8}
               textAnchor={
                 !span
                   ? 'middle'
