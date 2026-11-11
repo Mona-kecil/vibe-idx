@@ -518,7 +518,7 @@ describe('terminal availability', () => {
     expect(host.querySelector('[inert]')).toBeNull();
   });
 
-  it('fades the home page out and opens the terminal without a reload', async () => {
+  it('covers the home page from the Terminal button and opens the terminal without a reload', async () => {
     vi.useFakeTimers();
     desktop();
     window.history.replaceState(null, '', '/');
@@ -526,7 +526,7 @@ describe('terminal availability', () => {
     await act(async () => host.querySelector<HTMLAnchorElement>('a.terminal-link')?.click());
     expect(document.querySelector('.terminal-veil')).not.toBeNull();
     expect(window.location.pathname).toBe('/');
-    await advance(350);
+    await advance(250);
     await act(async () => {
       await vi.dynamicImportSettled();
     });
