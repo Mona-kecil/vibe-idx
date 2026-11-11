@@ -61,7 +61,7 @@
   margin: 0;
 }
 .terminal-page .holders {
-  padding: 12px;
+  padding: 0 12px 12px;
 }
 .terminal-page .holder-registry {
   display: flex;
@@ -92,19 +92,56 @@
   flex: none;
   font-size: 10px;
 }
-.terminal-page .holder-history {
-  margin-bottom: 18px;
+.terminal-page .holders-chart svg {
+  display: block;
+  width: 100%;
+  height: 256px;
+}
+.terminal-page .holder-axis {
+  fill: var(--muted);
+  font-size: 10px;
+}
+.terminal-page .holder-axis line {
+  stroke: #222826;
+}
+.terminal-page .holder-entries {
+  margin-top: 8px;
 }
 .terminal-page .holder-title {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 6px;
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr) 88px 98px;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  cursor: pointer;
+  list-style: none;
+}
+.terminal-page .holder-title::-webkit-details-marker {
+  display: none;
+}
+.terminal-page .holder-title:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+.terminal-page .holder-history[data-active='true'],
+.terminal-page .holder-history:has(details[open]) {
+  background: var(--hover);
+}
+.terminal-page .holder-swatch {
+  width: 7px;
+  height: 7px;
+  border: 1px solid var(--muted);
+}
+.terminal-page .holder-swatch[data-shown='true'] {
+  border-color: currentColor;
 }
 .terminal-page .holder-title b {
-  flex: none;
   font-weight: 500;
+  text-align: right;
+}
+.terminal-page .holder-change {
+  text-align: right;
+  white-space: nowrap;
 }
 .terminal-page .holder-name {
   overflow-wrap: anywhere;
@@ -115,37 +152,18 @@
   color: var(--accent);
   font-size: 10px;
 }
-.terminal-page .holder-plot {
-  display: flex;
-  gap: 8px;
-  height: 64px;
+.terminal-page .holder-history details:not([open]) .holder-reports {
+  display: none;
 }
-.terminal-page .holder-plot svg {
-  flex: 1;
-  min-width: 0;
-  color: var(--up);
-  fill: currentColor;
+.terminal-page .holder-reports {
+  padding: 4px 16px 12px;
 }
-.terminal-page .holder-scale {
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  padding: 3px 0;
-}
-.terminal-page .holder-scale,
-.terminal-page .holder-dates,
-.terminal-page .holder-history summary {
-  font-size: 10px;
+.terminal-page .holder-reports button {
   color: var(--muted);
+  margin-bottom: 4px;
 }
-.terminal-page .holder-dates {
-  display: flex;
-  justify-content: space-between;
-  margin: 4px 0 8px;
-}
-.terminal-page .holder-history summary {
-  cursor: pointer;
-  min-height: 24px;
+.terminal-page .holder-reports button[aria-pressed='true'] {
+  color: var(--accent);
 }
 .terminal-page .holder-range {
   display: flex;

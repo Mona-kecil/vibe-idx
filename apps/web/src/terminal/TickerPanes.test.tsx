@@ -107,13 +107,14 @@ it('shows registry facts above the holders with the reporting date available on 
   expect(host.querySelector('dl')?.title).toBe('Registry unavailable');
   expect([...host.querySelectorAll('dl dd')].map((el) => el.textContent)).toEqual(['—', '—', '—']);
 });
-it('groups holder reports into dated charts with inspectable percentages and shares', async () => {
+it('shares one percentage chart with inspectable reports and range changes', async () => {
   await act(async () => root.render(<HoldersPane />));
   expect(host.querySelectorAll('.holder-history')).toHaveLength(2);
   const holder = host.querySelector('[aria-label="Holder A"]');
-  expect(holder?.querySelectorAll('svg circle')).toHaveLength(3);
-  expect(holder?.querySelector('summary')?.textContent).toBe('Reported values (3)');
-  expect(holder?.querySelector('.holder-dates')?.textContent).toBe('6 Nov 20259 Nov 2026');
+  expect(host.querySelectorAll('.holders-chart svg')).toHaveLength(1);
+  expect(host.querySelectorAll('[data-holder="a"] circle')).toHaveLength(3);
+  expect(holder?.querySelector('.holder-change')?.textContent).toBe('+0.11 pp');
+  expect(holder?.querySelector('summary')?.textContent).toContain('Holder A');
   expect([...(holder?.querySelectorAll('tbody tr') ?? [])].map((e) => e.textContent)).toEqual([
     '9 Nov 20269.11%911',
     '6 Oct 20269.10%910',
@@ -267,11 +268,43 @@ it('ends a monthly history below 1% when the holder leaves subsequent snapshots'
   await act(async () => root.render(<HoldersPane />));
   const holder = host.querySelector('[aria-label="Monthly exit"]');
   expect(holder?.querySelector('b')?.textContent).toBe('Below 1%');
-  expect(holder?.querySelectorAll('svg circle')).toHaveLength(1);
+  expect(host.querySelectorAll('[data-holder="exit"] circle')).toHaveLength(1);
+  expect(holder?.querySelector('.holder-change')?.textContent).toBe('<−0.20 pp');
   expect(holder?.querySelector('tbody tr')?.textContent).toBe('30 Oct 2026Below 1%—');
   selection = { anchor: '2026-09-01', end: '2026-09-30' };
   await act(async () => root.render(<HoldersPane />));
   expect(host.querySelector('[aria-label="Monthly exit"] b')?.textContent).toBe('1.20%');
+});
+it('shows six lines, previews every holder on focus and allows replacing a pinned line', async () => {
+  detailData = tickerSchema.parse({
+    ...ticker,
+    holders: Array.from({ length: 8 }, (_, i) => ({
+      holder_key: `h${i}`,
+      investor: `Holder ${i}`,
+      pct: 20 - i,
+      shares: (20 - i) * 100,
+    })),
+    changes: [],
+  });
+  await act(async () => root.render(<HoldersPane />));
+  expect(host.querySelectorAll('.holder-history')).toHaveLength(8);
+  expect(host.querySelectorAll('.holders-chart [data-holder]')).toHaveLength(6);
+  const holder = host.querySelector('[aria-label="Holder 7"]');
+  await act(async () => {
+    holder?.querySelector('summary')?.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
+  });
+  expect(host.querySelector('.holders-chart [data-holder="h7"]')).not.toBeNull();
+  expect(host.querySelector('.holders-chart [data-holder="h0"]')?.getAttribute('opacity')).toBe(
+    '0.18',
+  );
+  await act(async () => {
+    holder?.querySelector<HTMLButtonElement>('button')?.click();
+    holder?.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
+  });
+  expect(holder?.querySelector('button')?.getAttribute('aria-pressed')).toBe('true');
+  expect(host.querySelectorAll('.holders-chart [data-holder]')).toHaveLength(6);
+  expect(host.querySelector('.holders-chart [data-holder="h7"]')).not.toBeNull();
+  expect(host.querySelector('.holders-chart [data-holder="h0"]')).toBeNull();
 });
 it('keeps ten key figures with formatted price and registry dates and current-ticker pinning', async () => {
   await act(async () => root.render(<DescriptionPane />));
