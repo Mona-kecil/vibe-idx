@@ -4,8 +4,8 @@ export type CorruptionMode = 'spread' | 'hold' | 'retreat' | 'still';
 
 const rootSize = 96;
 const coverCell = 24;
-const maxBuds = 3;
-const growUnits = 1.4;
+const maxBuds = 2;
+const growUnits = 3.2;
 const liftShare = 0.3;
 const sparkCount = 90;
 const layoutSeed = Math.floor(Math.random() * 2 ** 32);
@@ -129,13 +129,13 @@ function growBlocks(width: number, height: number, ox: number, oy: number) {
     let buds = 0;
     for (const [u, v] of shuffled(spots, next)) {
       if (buds >= maxBuds) break;
-      const size = Math.min(Math.max(parent.size * (0.6 + next() * 0.9), 48), 360);
+      const size = Math.min(Math.max(parent.size * (0.9 + next() * 0.8), 64), 520);
       const px = parent.x + u * parent.size,
         py = parent.y + v * parent.size;
       const x = px + (u - 0.5) * size * 0.5 - size / 2,
         y = py + (v - 0.5) * size * 0.5 - size / 2;
       if (open(x, y, size) < 0.4) continue;
-      const birth = parent.birth + 0.6 + next() * 0.6;
+      const birth = parent.birth + 0.8 + buds * 0.9 + next() * 0.3;
       queue.push({
         block: add(x, y, size, [px, py], birth, generation + 1),
         generation: generation + 1,
@@ -159,7 +159,7 @@ function growBlocks(width: number, height: number, ox: number, oy: number) {
       }
     }
     if (!nearest) return;
-    const size = Math.max(coverCell * 4, nearest.size * 0.8);
+    const size = Math.max(coverCell * 6, nearest.size, gap * 2 + coverCell * 2);
     const anchor: Point = [
       Math.min(Math.max(cx, nearest.x), nearest.x + nearest.size),
       Math.min(Math.max(cy, nearest.y), nearest.y + nearest.size),
@@ -180,7 +180,7 @@ function layoutSparks(width: number, height: number): Spark[] {
   }));
 }
 
-const ease = (p: number) => 1 - (1 - p) ** 3;
+const ease = (p: number) => 1 - (1 - p) ** 2;
 const clamp = (p: number) => Math.min(Math.max(p, 0), 1);
 
 export function Corruption({
@@ -210,7 +210,7 @@ export function Corruption({
       if (mode === 'spread') {
         const unit = durationMs / (lastBirth + growUnits);
         const grow = ease(clamp((t - block.birth * unit) / (growUnits * unit)));
-        return { grow, lift: 0, alpha: clamp(grow * 4) };
+        return { grow, lift: 0, alpha: grow > 0 ? 1 : 0 };
       }
       if (mode === 'retreat') {
         const at = (block.birth / lastBirth) * (durationMs - liftMs);
@@ -244,8 +244,8 @@ export function Corruption({
         return [vx + (gx - vx) * toward, vy + (gy - vy) * toward];
       };
       const back = ([x, y]: Point): Point => [
-        vx + (x - vx) / (1 + block.depth),
-        vy + (y - vy) / (1 + block.depth),
+        vx + (x - vx) / (1 + block.depth * grow),
+        vy + (y - vy) / (1 + block.depth * grow),
       ];
       const corners = [
         front(block.x, block.y),
