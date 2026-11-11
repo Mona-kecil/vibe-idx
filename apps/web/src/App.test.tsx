@@ -528,7 +528,7 @@ describe('terminal availability', () => {
     await advance(300);
     expect(document.querySelector('.terminal-veil')).not.toBeNull();
     expect(window.location.pathname).toBe('/');
-    await advance(400);
+    await advance(750);
     await act(async () => {
       await vi.dynamicImportSettled();
     });

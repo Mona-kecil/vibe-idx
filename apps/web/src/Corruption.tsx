@@ -3,7 +3,7 @@ import { useEffect, useRef } from 'react';
 export type CorruptionMode = 'spread' | 'hold' | 'retreat' | 'still';
 
 const cell = 40;
-const enterMs = 220;
+const flightShare = 0.5;
 const gridCols = 18;
 const gridRows = 11;
 const strays = 70;
@@ -136,7 +136,8 @@ export function Corruption({
     const context = canvas?.getContext('2d');
     if (!canvas || !context) return;
     const cubes = layoutCubes();
-    const span = Math.max(durationMs - enterMs, 0);
+    const enterMs = durationMs * flightShare;
+    const span = durationMs - enterMs;
     let cols = 0,
       rows = 0,
       mask = new Float64Array(0),
