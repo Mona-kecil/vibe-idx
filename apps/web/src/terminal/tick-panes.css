@@ -92,6 +92,14 @@
 .terminal-page .tick-orders th + th {
   padding-left: 9px;
 }
+.terminal-page .tick-orders th:first-child,
+.terminal-page .tick-orders td:first-child {
+  padding-left: 6px;
+}
+.terminal-page .tick-orders th:last-child,
+.terminal-page .tick-orders td:last-child {
+  padding-right: 6px;
+}
 .terminal-page .tick-blocks tbody tr {
   cursor: pointer;
 }
@@ -130,7 +138,7 @@
   overflow: hidden;
   flex-shrink: 0;
   position: relative;
-  padding: 3px 4px 6px;
+  padding: 3px 6px 6px;
   font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
