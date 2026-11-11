@@ -1,6 +1,6 @@
 # Terminal UI hillclimb plan
 
-Status on 11 November 2026: the baseline is 181 steps and the total is now 113, after attempts 1 to 6, 11 and 12. The owner confirmed the question list and the stop.
+Status on 11 November 2026: the baseline is 181 steps and the total is now 110, after attempts 1 to 6 and 11 to 13. The owner confirmed the question list and the stop.
 
 ## Goal
 
@@ -128,3 +128,4 @@ One change each, measured, then kept or reverted, with one commit per kept chang
 10. Test TB and OB as one ladder.
 11. Kept, 159 to 113. One dated feed per ticker replaces DISC, ticker NEWS and ticker CA in FOCUS, with upcoming actions first. FOCUS puts a wide GP over HDS, with the feed in its own column.
 12. Kept, 177 to 159. Order SIG by date, so one day's signals sit together. The baseline added this one.
+13. Kept, 113 to 110. Fit the HDS chart to the height the holder list leaves, between 160 and 256px.
