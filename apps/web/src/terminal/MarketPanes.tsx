@@ -154,6 +154,13 @@ const signalNames = {
   green_on_red: 'RS',
   five_pct_change: '5%',
 };
+const signalOrder: Record<Feed[number]['kind'], number> = {
+  ara: 0,
+  volume_spike: 1,
+  foreign_streak: 2,
+  green_on_red: 3,
+  five_pct_change: 4,
+};
 function SignalDetail({ row }: { row: Feed[number] }) {
   switch (row.kind) {
     case 'ara':
@@ -190,13 +197,15 @@ function SignalDetail({ row }: { row: Feed[number] }) {
 }
 export function SignalsPane() {
   const { data, filters, filter, ticker, setTicker } = useTerminal();
-  const rows = data.feed.filter(
-    (row) =>
-      (filters.sig === 'ALL' || signalNames[row.kind] === filters.sig) &&
-      (row.kind !== 'five_pct_change' ||
-        row.numbers.pct_after === null ||
-        nf(row.numbers.pct_before, 2) !== nf(row.numbers.pct_after, 2)),
-  );
+  const rows = data.feed
+    .filter(
+      (row) =>
+        (filters.sig === 'ALL' || signalNames[row.kind] === filters.sig) &&
+        (row.kind !== 'five_pct_change' ||
+          row.numbers.pct_after === null ||
+          nf(row.numbers.pct_before, 2) !== nf(row.numbers.pct_after, 2)),
+    )
+    .sort((a, b) => b.date.localeCompare(a.date) || signalOrder[a.kind] - signalOrder[b.kind]);
   return (
     <>
       <div className="sub">
