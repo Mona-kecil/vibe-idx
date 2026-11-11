@@ -1101,7 +1101,7 @@ it.each(['grid', 'focus', 'flow'])(
     expect(first.querySelector('button')?.tabIndex).toBe(0);
     expect(cells(first)).toEqual([
       '09:00:00',
-      '100.0 (0.00%)',
+      '100 (0.00%)',
       'SELL',
       '350',
       '3.5M',
@@ -1210,7 +1210,7 @@ it('shows AUC and groups interleaved auction counterparties by lots without matc
   const auction = host.querySelector('.tick-blocks tbody tr:nth-child(3)')!;
   expect(cells(auction)).toEqual([
     '16:00:00',
-    '100.0 (0.00%)',
+    '100 (0.00%)',
     'AUC',
     '15',
     '150.0K',
@@ -1371,7 +1371,7 @@ it.each(['sell', 'buy', 'auction-sell', 'auction-buy'])(
       descending ? ['up', 'mut', 'dn'] : ['dn', 'mut', 'up'],
     );
     const singlePrice = [...host.querySelectorAll('.tick-blocks tbody tr')].find(
-      (row) => cells(row)[1] === '100.0 (0.00%)',
+      (row) => cells(row)[1] === '100 (0.00%)',
     )!;
     await act(async () => singlePrice.querySelector<HTMLElement>('button')!.click());
     expect(host.querySelector('.tick-summary')).not.toBeNull();

@@ -35,6 +35,10 @@
 .terminal-page .tick-table th {
   font-size: 10px;
 }
+.terminal-page .tick-whole-price {
+  display: inline-block;
+  padding-right: 2ch;
+}
 .terminal-page .tick-foreign {
   color: var(--broker-foreign);
 }

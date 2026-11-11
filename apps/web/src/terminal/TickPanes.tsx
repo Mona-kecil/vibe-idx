@@ -179,12 +179,13 @@ function Price({
   decimals?: number;
 }) {
   const change = open ? (value / open.price - 1) * 100 : null;
+  const whole = decimals > 0 && Number.isInteger(Number(value.toFixed(decimals)));
   return (
     <span
       className={change === null || change === 0 ? 'mut' : change > 0 ? 'up' : 'dn'}
       title={open ? `${open.source} ${nf(open.price)}` : 'Opening price unavailable'}
     >
-      {nf(value, decimals)}
+      {whole ? <span className="tick-whole-price">{nf(value)}</span> : nf(value, decimals)}
       {change !== null &&
         ` (${change > 0 ? '+' : change < 0 ? '−' : ''}${nf(Math.abs(change), 2)}%)`}
     </span>
