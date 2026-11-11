@@ -170,6 +170,8 @@ class StockbitError extends Error {
 
 // Publication after the deadline takes minutes; a marker outlives its run's deadline by this much.
 const MARKER_GRACE_MS = 15 * 60000;
+// A stop signal ends the process without running finally blocks, so the CLI releases the marker itself.
+let releaseMarker: (() => Promise<void>) | undefined;
 // Markers written before expiry existed belong to GitHub runs, whose job timeout was 355 minutes.
 const LEGACY_MARKER_MS = 6 * 3600000;
 
@@ -221,9 +223,7 @@ export async function brokers({
     if (saved?.bytes.equals(marker)) await r2.delete('broker-run.json');
     throw error;
   }
-  try {
-    return await collect();
-  } finally {
+  const release = async () => {
     const saved = await r2.get('broker-run.json').catch(() => undefined);
     if (saved?.bytes.equals(marker))
       await r2
@@ -231,6 +231,13 @@ export async function brokers({
         .catch((error: unknown) =>
           console.error(`Leaving broker-run.json to expire: ${String(error)}`),
         );
+  };
+  releaseMarker = release;
+  try {
+    return await collect();
+  } finally {
+    await release();
+    releaseMarker = undefined;
   }
 
   async function collect() {
@@ -417,6 +424,13 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   if (!values.data || !values.token || !values.out)
     throw new Error('Usage: brokers -- --data <dir> --token <file> --out <private dir>');
   startSentry();
+  for (const [signal, code] of [
+    ['SIGINT', 130],
+    ['SIGTERM', 143],
+  ] as const)
+    process.once(signal, () => {
+      void (releaseMarker?.() ?? Promise.resolve()).finally(() => process.exit(code));
+    });
   const accountId = process.env.R2_ACCOUNT_ID;
   const minutes = Number(process.env.BROKER_DEADLINE_MINUTES);
   if (!accountId || !Number.isFinite(minutes) || minutes <= 0)
