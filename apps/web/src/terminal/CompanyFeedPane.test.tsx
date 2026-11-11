@@ -71,7 +71,17 @@ describe('company feed', () => {
             kind: 'other',
             url: 'https://idx.co.id/filing',
             attachments: [
-              { name: 'dividend.pdf', url: 'https://idx.co.id/dividend.pdf', label: 'PDF' },
+              {
+                name: 'dividend.pdf',
+                url: 'https://idx.co.id/dividend.pdf',
+                label: '036CSGIVR2026',
+              },
+              {
+                name: 'meeting_lamp2.pdf',
+                url: 'https://idx.co.id/meeting.pdf',
+                label: 'X.H.11 BCD 1 UNVR',
+              },
+              { name: 'main.pdf', url: 'https://idx.co.id/filing', label: 'Main filing' },
             ],
           },
         ],
@@ -198,9 +208,16 @@ describe('company feed', () => {
     expect(host.querySelector('[data-feed-kind="disclosure"] a')?.getAttribute('href')).toBe(
       'https://idx.co.id/filing',
     );
-    expect(host.querySelector('.filing-attachments a')?.getAttribute('href')).toBe(
+    expect(host.querySelector('.filing-attachments a:last-child')?.getAttribute('href')).toBe(
       'https://idx.co.id/dividend.pdf',
     );
+    const attachments = [...host.querySelectorAll('.filing-attachments a')];
+    expect(attachments.map((el) => el.textContent)).toEqual(['Lampiran 1', 'Lampiran 2']);
+    expect(attachments.map((el) => el.getAttribute('title'))).toEqual([
+      'X.H.11 BCD 1 UNVR\nmeeting_lamp2.pdf',
+      '036CSGIVR2026\ndividend.pdf',
+    ]);
+    expect(attachments.every((el) => el.getAttribute('target') === '_blank')).toBe(true);
     const link = host.querySelector('[data-feed-kind="news"] a');
     expect(link?.getAttribute('href')).toBe('https://example.com/Dividend coverage');
     expect(link?.getAttribute('target')).toBe('_blank');

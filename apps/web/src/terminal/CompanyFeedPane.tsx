@@ -1,6 +1,6 @@
 import { Fragment } from 'react';
 import type { Ticker } from '../data';
-import { FilingAttachments } from '../ticker/Feeds';
+import { attachments } from '../ticker/logic';
 import { dateText } from '../ticker/format';
 import type { Headline, TerminalData } from './sources';
 import { useTerminal, type usePublications } from './state';
@@ -57,6 +57,26 @@ function TypeMark({ kind }: { kind: FeedItem['kind'] }) {
         <path d="M3 4h14v14H3z M3 8h14 M6 2v4 M14 2v4 M6 11h2 M12 11h2 M6 14h2 M12 14h2" />
       )}
     </svg>
+  );
+}
+function FeedAttachments({ filing }: { filing: Ticker['disclosures'][number] }) {
+  const links = attachments(filing);
+  return (
+    links.length > 0 && (
+      <div className="filing-attachments">
+        {links.map((attachment, index) => (
+          <a
+            key={attachment.url}
+            href={attachment.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            title={`${attachment.label}\n${attachment.name}`}
+          >
+            Lampiran {index + 1}
+          </a>
+        ))}
+      </div>
+    )
   );
 }
 function FeedRow({ item }: { item: FeedItem }) {
@@ -123,7 +143,7 @@ function FeedRow({ item }: { item: FeedItem }) {
             >
               {item.kind === 'disclosure' ? item.filing.title : item.article.title}
             </a>
-            {item.kind === 'disclosure' && <FilingAttachments filing={item.filing} />}
+            {item.kind === 'disclosure' && <FeedAttachments filing={item.filing} />}
           </>
         )}
       </td>
