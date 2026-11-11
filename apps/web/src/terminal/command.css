@@ -34,7 +34,8 @@
   width: min(520px, 100%);
   background: var(--head);
   z-index: 40;
-  box-shadow: 0 4px 14px #0008;
+  border: 1px solid var(--muted);
+  box-shadow: 0 8px 24px #000c;
 }
 .terminal-page .ac.open {
   display: block;
