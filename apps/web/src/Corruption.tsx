@@ -6,6 +6,8 @@ const rootSize = 96;
 const coverCell = 24;
 const maxBuds = 2;
 const growUnits = 3.2;
+const nubGrowUnits = 1.6;
+const unitMs = 79;
 const liftShare = 0.3;
 const sparkCount = 90;
 const layoutSeed = Math.floor(Math.random() * 2 ** 32);
@@ -22,7 +24,9 @@ type Block = {
   size: number;
   anchor: Point;
   birth: number;
+  grows: number;
   depth: number;
+  layer: number;
   pulse: number;
   traces: Point[][];
 };
@@ -83,7 +87,8 @@ function growBlocks(width: number, height: number, ox: number, oy: number) {
   const blocks: Block[] = [];
   const near = (x: number, y: number) =>
     clamp(Math.hypot(x - width / 2, y - height / 2) / Math.hypot(width / 2, height / 2));
-  const sizeAt = (x: number, y: number) => (130 + 300 * near(x, y) ** 1.3) * (0.8 + next() * 0.5);
+  const sizeAt = (x: number, y: number) =>
+    (next() < 0.6 ? 120 + next() * 50 : 200 + next() * 100) * (0.8 + 0.4 * near(x, y));
   const cells = (x: number, y: number, size: number) => {
     const found: number[] = [];
     for (
@@ -110,7 +115,9 @@ function growBlocks(width: number, height: number, ox: number, oy: number) {
       size,
       anchor,
       birth,
-      depth: 0.04 + 0.5 * near(x + size / 2, y + size / 2) ** 1.5,
+      grows: growUnits,
+      depth: size / (0.8 * width),
+      layer: near(x + size / 2, y + size / 2),
       pulse: next() * Math.PI * 2,
       traces: next() < 0.35 ? [] : [trace(next)],
     };
@@ -128,8 +135,8 @@ function growBlocks(width: number, height: number, ox: number, oy: number) {
       const px = parent.x + u * parent.size,
         py = parent.y + v * parent.size;
       const size = sizeAt(px, py);
-      const x = px + (u - 0.5) * size * 0.5 - size / 2,
-        y = py + (v - 0.5) * size * 0.5 - size / 2;
+      const x = px + (u - 0.5) * size * 0.8 - size / 2,
+        y = py + (v - 0.5) * size * 0.8 - size / 2;
       if (open(x, y, size) < 0.4) continue;
       const birth = parent.birth + 0.8 + buds * 0.9 + next() * 0.3;
       queue.push(add(x, y, size, [px, py], birth));
@@ -159,7 +166,42 @@ function growBlocks(width: number, height: number, ox: number, oy: number) {
     ];
     add(cx - size / 2, cy - size / 2, size, anchor, nearest.birth + 0.6 + next() * 0.4);
   });
-  return blocks.sort((a, b) => a.depth - b.depth);
+
+  for (const parent of [...blocks]) {
+    const nubs = Math.floor(next() * (parent.size > 200 ? 4 : 3));
+    for (const [u, v] of shuffled(spots, next).slice(0, nubs)) {
+      const size = next() < 0.6 ? 28 + next() * 32 : 70 + next() * 40;
+      const cx = parent.x + u * parent.size,
+        cy = parent.y + v * parent.size;
+      blocks.push({
+        x: cx - size / 2,
+        y: cy - size / 2,
+        size,
+        anchor: [cx, cy],
+        birth: parent.birth + growUnits * 0.6 + next() * 0.4,
+        grows: nubGrowUnits,
+        depth: size / (0.8 * width),
+        layer: parent.layer + 0.0001,
+        pulse: next() * Math.PI * 2,
+        traces: [],
+      });
+    }
+  }
+  return blocks.sort((a, b) => a.layer - b.layer);
+}
+
+export function arrivalMs() {
+  const blocks = growBlocks(
+    window.innerWidth,
+    window.innerHeight,
+    origin.x * window.innerWidth,
+    origin.y * window.innerHeight,
+  );
+  return Math.round(finish(blocks) * unitMs);
+}
+
+function finish(blocks: Block[]) {
+  return Math.max(...blocks.map((block) => block.birth + block.grows));
 }
 
 function layoutSparks(width: number, height: number): Spark[] {
@@ -198,8 +240,7 @@ export function Corruption({
 
     function stage(block: Block, t: number) {
       if (mode === 'spread') {
-        const unit = durationMs / (lastBirth + growUnits);
-        const grow = ease(clamp((t - block.birth * unit) / (growUnits * unit)));
+        const grow = ease(clamp((t - block.birth * unitMs) / (block.grows * unitMs)));
         return { grow, lift: 0, alpha: grow > 0 ? 1 : 0 };
       }
       if (mode === 'retreat') {
@@ -251,10 +292,10 @@ export function Corruption({
         return path;
       };
       const walls: [number, number, string][] = [
-        [0, 1, 'rgb(84, 10, 12)'],
-        [1, 2, 'rgb(44, 5, 7)'],
-        [2, 3, 'rgb(30, 4, 5)'],
-        [3, 0, 'rgb(58, 7, 9)'],
+        [0, 1, 'rgb(60, 8, 10)'],
+        [1, 2, 'rgb(32, 4, 6)'],
+        [2, 3, 'rgb(22, 3, 4)'],
+        [3, 0, 'rgb(42, 5, 7)'],
       ];
       for (const [from, to, fill] of walls) {
         const a = corners[from],
@@ -310,7 +351,8 @@ export function Corruption({
         drawBlock(block, grow, lift, t);
       }
       context.globalAlpha = 1;
-      const progress = durationMs ? t / durationMs : 1;
+      const span = mode === 'spread' ? finish(blocks) * unitMs : durationMs;
+      const progress = span ? t / span : 1;
       drawSparks(
         t,
         mode === 'spread' ? clamp(progress * 2 - 1) : mode === 'retreat' ? 1 - clamp(progress) : 1,

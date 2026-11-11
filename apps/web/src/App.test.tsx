@@ -3,6 +3,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { App } from './App';
+import { arrivalMs } from './Corruption';
 import { tickerSchema, type Feed, type Ticker } from './data';
 import tpiaFixture from './ticker/fixtures/TPIA-history.json';
 
@@ -528,7 +529,7 @@ describe('terminal availability', () => {
     await advance(300);
     expect(document.querySelector('.terminal-veil')).not.toBeNull();
     expect(window.location.pathname).toBe('/');
-    await advance(1000);
+    await advance(arrivalMs());
     await act(async () => {
       await vi.dynamicImportSettled();
     });

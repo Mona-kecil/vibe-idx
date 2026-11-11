@@ -1,10 +1,9 @@
 import { useState, type MouseEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { Corruption, aimCorruption } from './Corruption';
+import { Corruption, aimCorruption, arrivalMs } from './Corruption';
 import { startGlitch } from './glitch';
 
 const glitchLeadMs = 300;
-const spreadMs = 1000;
 
 function openTerminal() {
   window.history.pushState(null, '', '/terminal');
@@ -29,7 +28,7 @@ export function TerminalLink() {
     setStage('glitching');
     startGlitch();
     window.setTimeout(() => setStage('swallowing'), glitchLeadMs);
-    window.setTimeout(openTerminal, glitchLeadMs + spreadMs);
+    window.setTimeout(openTerminal, glitchLeadMs + arrivalMs());
   }
   return (
     <>
@@ -40,7 +39,7 @@ export function TerminalLink() {
       {stage === 'swallowing' &&
         createPortal(
           <div className="terminal-veil">
-            <Corruption mode="spread" durationMs={spreadMs} />
+            <Corruption mode="spread" />
           </div>,
           document.body,
         )}
