@@ -49,7 +49,7 @@ CI runs package checks, tests, and the client build on pull requests and pushes 
 pnpm --filter @vibe-idx/pipeline ingest -- --data /tmp/idx-data --out /tmp/idx-public
 ```
 
-Run private Stockbit collection on one machine only. A token refresh revokes the previous pair, and Stockbit rate-limits each account, so a second collector breaks the first. `apps/pipeline/collector/run.sh` restores prices, corporate actions, and the broker activity ledger from R2 into a fresh directory, then runs `brokers` until its deadline. A systemd user unit runs it from a master worktree, with Node 24 and the credentials in `~/.config/vibe-idx/env`, and starts the next run a minute after each one ends. After a failed run, the script waits up to 30 minutes before collecting again.
+Run private Stockbit collection on one machine only. A token refresh revokes the previous pair, and Stockbit rate-limits each account, so a second collector breaks the first. `apps/pipeline/collector/run.sh` restores prices, corporate actions, and the broker activity ledger from R2 into a fresh directory, then runs `brokers` until its deadline. A systemd user unit runs it from a master worktree, with Node 24 and the credentials in `~/.config/vibe-idx/env`, and starts the next run a minute after each one ends. After a failed run, the script waits up to 30 minutes before collecting again. Put `SENTRY_DSN` and `VIBE_IDX_SENTRY_HOST` in `~/.config/vibe-idx/collector.env`, which only the unit loads, never in the shared env file.
 
 ```sh
 git worktree add --detach ~/.local/share/vibe-idx-collector origin/master
