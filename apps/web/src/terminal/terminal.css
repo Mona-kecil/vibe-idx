@@ -4,12 +4,9 @@
   inset: 0;
   z-index: 1000;
   overflow: hidden;
-  background: #050505;
-  opacity: 1;
-  transition: opacity 450ms ease-out;
 }
-.terminal-boot--leaving {
-  opacity: 0;
+.terminal-boot--holding {
+  background: #050505;
 }
 .terminal-boot-status {
   position: absolute;
@@ -19,11 +16,6 @@
   overflow: hidden;
   clip-path: inset(50%);
   white-space: nowrap;
-}
-@media (prefers-reduced-motion: reduce) {
-  .terminal-boot {
-    transition: none;
-  }
 }
 .terminal-page {
   color-scheme: dark;

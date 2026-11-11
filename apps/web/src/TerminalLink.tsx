@@ -1,17 +1,17 @@
 import { useState, type MouseEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { Corruption } from './Corruption';
+import { Corruption, type Seed } from './Corruption';
 
 const spreadMs = 300;
 
-function openTerminal() {
-  window.history.pushState(null, '', '/terminal');
+function openTerminal(voidSeed?: Seed) {
+  window.history.pushState(voidSeed ? { voidSeed } : null, '', '/terminal');
   window.scrollTo(0, 0);
   window.dispatchEvent(new PopStateEvent('popstate'));
 }
 
 export function TerminalLink() {
-  const [seed, setSeed] = useState<{ x: number; y: number } | null>(null);
+  const [seed, setSeed] = useState<Seed | null>(null);
   function enter(event: MouseEvent<HTMLAnchorElement>) {
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)
       return;
@@ -20,8 +20,9 @@ export function TerminalLink() {
     if (seed) return;
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return openTerminal();
     const box = event.currentTarget.getBoundingClientRect();
-    setSeed({ x: box.left + box.width / 2, y: box.top + box.height / 2 });
-    window.setTimeout(openTerminal, spreadMs);
+    const center = { x: box.left + box.width / 2, y: box.top + box.height / 2 };
+    setSeed(center);
+    window.setTimeout(() => openTerminal(center), spreadMs);
   }
   return (
     <>
@@ -32,7 +33,7 @@ export function TerminalLink() {
       {seed &&
         createPortal(
           <div className="terminal-veil">
-            <Corruption seed={seed} spreadMs={spreadMs} />
+            <Corruption mode="spread" seed={seed} durationMs={spreadMs} />
           </div>,
           document.body,
         )}

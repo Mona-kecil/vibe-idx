@@ -2,7 +2,8 @@ import { useEffect, useRef } from 'react';
 
 const size = 40;
 const flashMs = 700;
-type Seed = { x: number; y: number };
+export type Seed = { x: number; y: number };
+export type CorruptionMode = 'spread' | 'hold' | 'retreat' | 'still';
 type Flash = { x: number; y: number; w: number; h: number; at: number };
 
 function neon(context: CanvasRenderingContext2D, path: Path2D, alpha: number) {
@@ -22,9 +23,8 @@ function noise(x: number, y: number, salt: number) {
   return value - Math.floor(value);
 }
 
-function schedule(cols: number, rows: number, seed: Seed | undefined, spreadMs: number) {
+function schedule(cols: number, rows: number, seed: Seed, spreadMs: number) {
   const at = new Float64Array(cols * rows);
-  if (!seed) return at;
   const width = cols * size,
     height = rows * size;
   const reach = Math.max(
@@ -46,13 +46,13 @@ function schedule(cols: number, rows: number, seed: Seed | undefined, spreadMs: 
 }
 
 export function Corruption({
+  mode,
   seed,
-  spreadMs = 0,
-  still = false,
+  durationMs = 0,
 }: {
-  seed?: Seed;
-  spreadMs?: number;
-  still?: boolean;
+  mode: CorruptionMode;
+  seed: Seed;
+  durationMs?: number;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
@@ -68,7 +68,13 @@ export function Corruption({
 
     function draw(now: number) {
       if (!canvas || !context) return;
-      const t = still ? Infinity : now - start;
+      const t = now - start;
+      const present = (index: number) => {
+        const born = at[index] ?? 0;
+        if (mode === 'spread') return born <= t;
+        if (mode === 'retreat') return t < durationMs - born;
+        return true;
+      };
       context.clearRect(0, 0, canvas.width, canvas.height);
       const edges = new Path2D();
       const side = (x1: number, y1: number, x2: number, y2: number) => {
@@ -76,14 +82,13 @@ export function Corruption({
         edges.lineTo(x2, y2);
       };
       const done = (x: number, y: number) =>
-        x < 0 || y < 0 || x >= cols || y >= rows || (at[y * cols + x] ?? 0) <= t;
+        x < 0 || y < 0 || x >= cols || y >= rows || present(y * cols + x);
       context.fillStyle = '#050505';
       context.strokeStyle = 'rgba(255, 40, 40, 0.07)';
       context.lineWidth = 1;
       for (let y = 0; y < rows; y++)
         for (let x = 0; x < cols; x++) {
-          const born = at[y * cols + x] ?? 0;
-          if (born > t) continue;
+          if (!present(y * cols + x)) continue;
           const px = x * size,
             py = y * size;
           context.fillRect(px, py, size, size);
@@ -93,7 +98,7 @@ export function Corruption({
           if (!done(x, y + 1)) side(px, py + size, px + size, py + size);
           if (!done(x - 1, y)) side(px, py, px, py + size);
         }
-      if (!still && t >= spreadMs) {
+      if (mode === 'hold') {
         flashes = flashes.filter((flash) => now - flash.at < flashMs);
         if (Math.random() < 0.08)
           flashes.push({
@@ -120,7 +125,7 @@ export function Corruption({
       context.setTransform(ratio, 0, 0, ratio, 0, 0);
       cols = Math.ceil(window.innerWidth / size);
       rows = Math.ceil(window.innerHeight / size);
-      at = schedule(cols, rows, still ? undefined : seed, spreadMs);
+      at = schedule(cols, rows, seed, durationMs);
       start = performance.now();
       draw(start);
     }
@@ -130,12 +135,12 @@ export function Corruption({
       frame = window.requestAnimationFrame(animate);
     }
     resize();
-    if (!still) frame = window.requestAnimationFrame(animate);
+    if (mode !== 'still') frame = window.requestAnimationFrame(animate);
     window.addEventListener('resize', resize);
     return () => {
       window.cancelAnimationFrame(frame);
       window.removeEventListener('resize', resize);
     };
-  }, [seed, spreadMs, still]);
+  }, [mode, seed, durationMs]);
   return <canvas className="corruption" ref={canvasRef} aria-hidden="true" />;
 }
