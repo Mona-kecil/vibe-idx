@@ -74,9 +74,9 @@ function shuffled<T>(items: readonly T[], next: () => number) {
 }
 
 function litEdges(next: () => number): Edges {
-  const levels: Edges['levels'] = [0.2 + next() * 0.12, 0.4 + next() * 0.2, 1.3 + next() * 0.6];
+  const levels: Edges['levels'] = [0.16 + next() * 0.1, 0.32 + next() * 0.16, 1.3 + next() * 0.6];
   const tiers = Array.from({ length: 12 }, (): Tier => (next() < 0.55 ? 0 : 1));
-  if (next() >= 0.35) return { levels, tiers, hot: null };
+  if (next() >= 0.25) return { levels, tiers, hot: null };
   const corner = Math.floor(next() * 4);
   tiers[corner] = 2;
   tiers[(corner + 3) % 4] = 2;
