@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdtemp, mkdir, readFile, rm, stat } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DuckDBInstance } from '@duckdb/node-api';
@@ -182,7 +182,6 @@ describe('private broker pipeline', () => {
       date: day,
       stocks: [{ ticker: 'AAA', windows: { '1d': null, '3d': null, '5d': null } }],
     });
-    expect(f.objects.has('broker-run.json')).toBe(false);
     const idle = network(f.token);
     await brokers({ ...f.options, fetcher: idle.fetcher });
     expect(idle.calls).toEqual([]);
@@ -215,13 +214,10 @@ describe('private broker pipeline', () => {
     });
     expect(fetcher).not.toHaveBeenCalled();
     expect(f.objects.has('site/market-accumulation.json')).toBe(true);
-    expect(f.objects.has('broker-run.json')).toBe(false);
   });
 
-  it('retains an existing run marker and refuses auth, but clears markers on handled auth or storage errors', async () => {
+  it('stops before any data request on handled auth or storage errors', async () => {
     for (const cut of [
-      'existing-marker',
-      'marker-cas',
       'auth-http',
       'auth-503',
       'auth-network',
@@ -234,10 +230,7 @@ describe('private broker pipeline', () => {
     ]) {
       const f = await fixture();
       await prices(f.data, [{ ticker: 'AAA', date: day, volume: 1 }]);
-      if (cut === 'existing-marker') f.save('broker-run.json', '{}');
       f.hooks.before = async (operation, key) => {
-        if (cut === 'marker-cas' && operation === 'put' && key === 'broker-run.json')
-          f.save(key, '{}');
         if (cut === 'auth-cas' && operation === 'put' && key === 'auth/stockbit.json')
           f.save(key, '{"refresh":"other"}');
         if (
@@ -267,10 +260,7 @@ describe('private broker pipeline', () => {
       });
       await expect(brokers({ ...f.options, fetcher })).rejects.toThrow();
       if (cut.startsWith('auth')) expect(fetcher).toHaveBeenCalledTimes(1);
-      expect(f.objects.has('broker-run.json')).toBe(
-        cut === 'existing-marker' || cut === 'marker-cas',
-      );
-      if (cut.startsWith('auth') || cut.includes('marker'))
+      if (cut.startsWith('auth'))
         expect(net.calls.filter((url) => url.pathname !== '/login/refresh')).toEqual([]);
       if (cut === 'auth-cas') {
         expect(f.load('auth/stockbit.json').toString()).toBe('{"refresh":"other"}');
@@ -280,6 +270,44 @@ describe('private broker pipeline', () => {
         });
       } else expect(f.objects.has('auth/stockbit-unsaved.json')).toBe(false);
     }
+  });
+  it('recovers with the local pair when the cloud pair was revoked by an unsaved refresh', async () => {
+    const f = await fixture();
+    await prices(f.data, [{ ticker: 'AAA', date: day, volume: 1 }]);
+    f.save('auth/stockbit.json', JSON.stringify({ refresh: 'synthetic-revoked' }));
+    await writeFile(
+      f.token,
+      JSON.stringify({ access: 'synthetic-access-0', refresh: 'synthetic-refresh-0' }),
+      { mode: 0o600 },
+    );
+    const net = network(f.token);
+    const fetcher = vi.fn<typeof fetch>((input, init) =>
+      new Headers(init?.headers).get('Authorization') === 'Bearer synthetic-revoked'
+        ? Promise.resolve(new Response('', { status: 401 }))
+        : net.fetcher(input, init),
+    );
+    await brokers({ ...f.options, fetcher });
+    expect(
+      fetcher.mock.calls
+        .slice(0, 2)
+        .map(([, init]) => new Headers(init?.headers).get('Authorization')),
+    ).toEqual(['Bearer synthetic-revoked', 'Bearer synthetic-refresh-0']);
+    expect(JSON.parse(f.load('auth/stockbit.json').toString())).toEqual({
+      access: 'synthetic-access-1',
+      refresh: 'synthetic-refresh-1',
+    });
+    expect(net.calls.filter((url) => url.pathname === '/order-trade/broker/top')).toHaveLength(3);
+  });
+
+  it('does not retry a different pair when the cloud refresh fails for another reason', async () => {
+    const f = await fixture();
+    await prices(f.data, [{ ticker: 'AAA', date: day, volume: 1 }]);
+    await writeFile(f.token, JSON.stringify({ access: 'x', refresh: 'synthetic-local' }), {
+      mode: 0o600,
+    });
+    const fetcher = vi.fn<typeof fetch>(() => Promise.resolve(new Response('', { status: 429 })));
+    await expect(brokers({ ...f.options, fetcher })).rejects.toThrow('Stockbit auth HTTP 429');
+    expect(fetcher).toHaveBeenCalledTimes(1);
   });
 });
 
