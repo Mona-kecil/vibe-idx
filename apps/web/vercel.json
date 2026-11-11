@@ -3,6 +3,9 @@
   "framework": "vite",
   "buildCommand": "pnpm run build:client",
   "outputDirectory": "dist",
+  "functions": {
+    "api/og.ts": { "includeFiles": "public/fonts/*.ttf" }
+  },
   "git": {
     "deploymentEnabled": {
       "**": false,
