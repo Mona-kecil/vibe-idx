@@ -77,6 +77,11 @@ export async function collectTicks({
     if (raw === undefined) return;
     return parseTradePage(raw, date);
   }
+  async function closingSequence(date: string) {
+    const last = await tradePage(date, 'DESC');
+    // Trades sharing the final second come back in any order, so the first row is not always the highest number.
+    return last && Math.max(0, ...last.map((r) => r.trade_number));
+  }
   async function alreadyPublished(date: string, dataset: Dataset) {
     if (await store.complete(date, dataset)) {
       const p = await store.progress(date, dataset);
@@ -129,9 +134,8 @@ export async function collectTicks({
     let p = await store.progress(date, 'running_trade');
     if (p && p.dataset !== 'running_trade') throw new Error('Invalid trade progress');
     if (!p) {
-      const last = await tradePage(date, 'DESC');
-      if (!last) return;
-      const expected = last[0]?.trade_number ?? 0;
+      const expected = await closingSequence(date);
+      if (expected === undefined) return;
       if (!expected) {
         // An observed trading session cannot be certified empty from an expired/empty API response.
         await store.targets(date, 'running_trade', tickers);
@@ -166,8 +170,11 @@ export async function collectTicks({
       start = progress.cursor;
     }
     async function take(page: Trade[]) {
-      if (page.some((r) => r.trade_number > progress.expected))
-        throw new Error('Running trade exceeds closing sequence');
+      const top = Math.max(0, ...page.map((r) => r.trade_number));
+      // Progress saved before closingSequence took the maximum can hold a count that is too low.
+      if (top > progress.expected)
+        progress.expected = Math.max(progress.expected, (await closingSequence(date)) ?? 0);
+      if (top > progress.expected) throw new Error('Running trade exceeds closing sequence');
       rows.push(...page);
       pages++;
       if (pages >= 100) await flush();
