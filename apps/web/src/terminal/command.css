@@ -42,9 +42,11 @@
 }
 .terminal-page .ac [role='option'] {
   display: grid;
-  grid-template-columns: 64px 1fr;
+  grid-template-columns: 64px 1fr auto;
+  align-items: center;
   gap: 12px;
-  padding: 5px 12px;
+  padding: 2px 6px 2px 12px;
+  min-height: 28px;
   cursor: pointer;
 }
 .terminal-page .ac .on {

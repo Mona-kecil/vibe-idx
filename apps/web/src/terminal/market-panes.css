@@ -246,3 +246,10 @@
 .terminal-page .quote-table {
   max-width: 480px;
 }
+.terminal-page .watchlist .quote-table {
+  max-width: none;
+}
+.terminal-page .watchlist .quote-table :is(th, td):not(:first-child) {
+  width: 1%;
+  padding-left: 20px;
+}

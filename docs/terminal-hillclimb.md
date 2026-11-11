@@ -33,7 +33,7 @@ The app has no usage tracking, so these are judgments against the question list 
 | TB, OB                 | Keep, test one ladder  | Both are per-price views of one session.                                       |
 | KEY                    | Fold into GP           | It spends a pane on ten figures, and GP's legend row is empty until hover.     |
 | WL, SIG, MOV, NEWS, CA | Keep in GRID           | They pick the ticker. NEWS and CA use their ticker filter in FOCUS.            |
-| HEAT                   | Off the default slots  | It is MOV sorted by value, drawn as tiles.                                     |
+| HEAT                   | GRID, ahead of MOV     | Same value ranking as MOV, but the tiles show the whole market at a glance.   |
 | CAL                    | Off the default slots  | The status bar already names the next high-impact event.                       |
 | RISK                   | Off the default slots  | Every ticker pane header already shows that ticker's flags.                    |
 
@@ -43,7 +43,7 @@ A pane off the default slots still opens when its code is typed in the command b
 
 | Mode  | Job                   | Questions    | Panes                                                                              |
 | ----- | --------------------- | ------------ | ---------------------------------------------------------------------------------- |
-| GRID  | Find a ticker         | 1 to 3       | WL, SIG, MOV, NEWS with CA                                                         |
+| GRID  | Find a ticker         | 1 to 3       | WL, SIG, HEAT with MOV, NEWS with CA                                               |
 | FOCUS | Study the company     | 4, 5, 11, 12 | GP over HDS, then one feed of disclosures, ticker news and action dates          |
 | FLOW  | See who is trading it | 6 to 10      | GP above FF, BRK, BFL and TB, then DD in a full-height column, then OB with RT   |
 

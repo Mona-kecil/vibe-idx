@@ -5,12 +5,17 @@ import { describe, expect, it, vi } from 'vite-plus/test';
 import { CommandBar, commandSuggestions } from './CommandBar';
 import { functions } from './state';
 
+const togglePin = vi.fn<(ticker: string) => void>();
+const setTicker = vi.fn<(ticker: string) => void>();
 vi.mock('./state', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./state')>()),
   useTerminal: () => ({
     data: { stocks: tickers },
-    pins: [],
+    pins: ['MARK'],
     ticker: 'BBCA',
+    togglePin,
+    setTicker,
+    filter: vi.fn<() => void>(),
   }),
 }));
 
@@ -71,7 +76,8 @@ it('keeps every shortcut and function in help and restores focus on close', asyn
     const dialog = host.querySelector('[role="dialog"]');
     expect(dialog?.getAttribute('aria-label')).toBe('Keyboard reference');
     const keys = dialog?.querySelector('[aria-labelledby="terminal-help-keys"]');
-    expect(keys?.querySelectorAll('dt')).toHaveLength(10);
+    expect(keys?.querySelectorAll('dt')).toHaveLength(11);
+    expect(keys?.textContent).toContain('BREN PIN');
     expect(keys?.textContent).toContain('Shift-drag chart');
     const reference = dialog?.querySelector('[aria-labelledby="terminal-help-functions"]');
     expect(Array.from(reference?.querySelectorAll('dt') ?? [], (item) => item.textContent)).toEqual(
@@ -86,6 +92,67 @@ it('keeps every shortcut and function in help and restores focus on close', asyn
     await act(async () => close?.click());
     expect(host.querySelector('[role="dialog"]')).toBeNull();
     expect(document.activeElement).toBe(help);
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
+it('pins the named or current ticker from the command line and from a suggestion', async () => {
+  vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+  const host = document.createElement('div');
+  document.body.append(host);
+  const root = createRoot(host);
+  const input = () => host.querySelector<HTMLInputElement>('[aria-label="Command"]')!;
+  async function type(text: string) {
+    await act(async () => {
+      input().focus();
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(
+        input(),
+        text,
+      );
+      input().dispatchEvent(new Event('input', { bubbles: true }));
+    });
+  }
+  async function enter() {
+    await act(async () => {
+      input().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    });
+  }
+  try {
+    await act(async () => {
+      root.render(
+        <CommandBar
+          layout="grid"
+          setLayout={vi.fn<() => void>()}
+          openFunction={vi.fn<() => void>()}
+          maximize={vi.fn<() => void>()}
+        />,
+      );
+    });
+    togglePin.mockClear();
+    await type('NICE PIN');
+    await enter();
+    expect(togglePin.mock.calls).toEqual([['NICE']]);
+    expect(setTicker).toHaveBeenCalledWith('NICE');
+    expect(host.querySelector('[role="alert"]')).toBeNull();
+
+    togglePin.mockClear();
+    await type('PIN');
+    await enter();
+    expect(togglePin.mock.calls).toEqual([['BBCA']]);
+
+    togglePin.mockClear();
+    setTicker.mockClear();
+    await type('MAR');
+    const star = host.querySelector<HTMLButtonElement>('[role="option"] [aria-label="Unpin MARK"]');
+    expect(star?.getAttribute('aria-pressed')).toBe('true');
+    await act(async () => {
+      star?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+    });
+    expect(togglePin.mock.calls).toEqual([['MARK']]);
+    expect(setTicker).not.toHaveBeenCalled();
   } finally {
     await act(async () => root.unmount());
     host.remove();
