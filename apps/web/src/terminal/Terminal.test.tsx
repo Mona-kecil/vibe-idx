@@ -1115,7 +1115,7 @@ it.each(['grid', 'focus', 'flow'])(
   },
 );
 
-it('shows BUY, preserves selection across modes, and clears on Escape, date or ticker', async () => {
+it('shows BUY and keeps the selection across modes', async () => {
   prepareBlocks();
   await render();
   await command('DD');
@@ -1131,6 +1131,14 @@ it('shows BUY, preserves selection across modes, and clears on Escape, date or t
   await command('FLOW');
   expect(highlightedFills()).toHaveLength(1);
   expect(host.querySelectorAll('.tick-blocks [aria-pressed="true"]')).toHaveLength(1);
+});
+
+it('clears the selection on Escape and leaves RT in front', async () => {
+  prepareBlocks();
+  await render();
+  await command('FLOW');
+  await clickBlock(2);
+  expect(highlightedFills()).toHaveLength(1);
   await act(async () =>
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })),
   );
@@ -1138,6 +1146,12 @@ it('shows BUY, preserves selection across modes, and clears on Escape, date or t
   expect(button('[role="tab"][id$="-RT"]').getAttribute('aria-selected')).toBe('true');
   expect(host.querySelectorAll('.tick-tape tbody tr').length).toBeGreaterThan(500);
   expect(host.querySelector('.tick-summary')).toBeNull();
+});
+
+it('clears the selection when the session date or ticker changes', async () => {
+  prepareBlocks();
+  await render();
+  await command('FLOW');
   await clickBlock();
   await click('[aria-label="Running trade"] [aria-label="Previous session"]');
   expect(host.querySelector('.tick-blocks [aria-pressed="true"]')).toBeNull();
