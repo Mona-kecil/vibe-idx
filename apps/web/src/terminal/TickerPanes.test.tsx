@@ -115,6 +115,7 @@ it('shares one percentage chart with inspectable reports and range changes', asy
   expect(host.querySelectorAll('[data-holder="a"] circle')).toHaveLength(3);
   expect(holder?.querySelector('.holder-change')?.textContent).toBe('+0.11 pp');
   expect(holder?.querySelector('summary')?.textContent).toContain('Holder A');
+  expect(holder?.querySelector('.holder-name')?.getAttribute('title')).toBe('Holder A');
   expect([...(holder?.querySelectorAll('tbody tr') ?? [])].map((e) => e.textContent)).toEqual([
     '9 Nov 20269.11%911',
     '6 Oct 20269.10%910',

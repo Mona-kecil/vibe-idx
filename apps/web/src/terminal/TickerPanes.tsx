@@ -319,7 +319,7 @@ function HoldersChart({
                         visible || active === history.key ? color(history.key) : undefined,
                     }}
                   />
-                  <span className="holder-name">
+                  <span className="holder-name" title={history.name}>
                     {history.name}
                     {role && (
                       <span className="holder-role" aria-label={role} title={role}>
