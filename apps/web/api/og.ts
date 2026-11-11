@@ -114,7 +114,7 @@ function brandCard() {
 }
 
 function tickerCard(card: TickerCard) {
-  const tickerSize = Math.min(132, 560 / (card.ticker.length * 0.6));
+  const tickerSize = Math.min(112, 560 / (card.ticker.length * 0.6));
   return h(
     'div',
     { style: root },
@@ -162,7 +162,7 @@ function tickerCard(card: TickerCard) {
           'div',
           {
             style: {
-              fontSize: 26,
+              fontSize: 32,
               color: muted,
               marginTop: 22,
               whiteSpace: 'nowrap',
@@ -182,7 +182,7 @@ function tickerCard(card: TickerCard) {
           h('span', { style: { fontSize: 26, color: muted } }, 'IDR'),
           h(
             'span',
-            { style: { fontSize: nf(card.close).length > 7 ? 60 : 76, fontWeight: 700 } },
+            { style: { fontSize: nf(card.close).length > 7 ? 52 : 64, fontWeight: 700 } },
             nf(card.close),
           ),
         ),
