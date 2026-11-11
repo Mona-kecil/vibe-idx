@@ -1,23 +1,11 @@
-import { readFile } from 'node:fs/promises';
-import type { Font } from 'satori';
 import { describe, expect, it, vi } from 'vite-plus/test';
-import { og } from '../api/og';
+import { loadFonts, og } from '../api/og';
 import { reportFailure } from '../api/_sentry';
 import history from './ticker/fixtures/TPIA-history.json';
 
 vi.mock('../api/_sentry', () => ({ reportFailure: vi.fn<typeof reportFailure>() }));
 
-const fixtureFonts = Promise.all([
-  readFile(new URL('../public/fonts/Manrope-500.ttf', import.meta.url)),
-  readFile(new URL('../public/fonts/Manrope-800.ttf', import.meta.url)),
-]).then(
-  ([medium, bold]) =>
-    [
-      { name: 'Manrope', data: medium, weight: 500 },
-      { name: 'Manrope', data: bold, weight: 800 },
-    ] satisfies Font[],
-);
-const fontLoader = () => fixtureFonts;
+const fontLoader = loadFonts;
 
 async function expectPng(response: Response) {
   expect(response.headers.get('content-type')).toBe('image/png');

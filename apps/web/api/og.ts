@@ -13,14 +13,14 @@ let fonts: Promise<Font[]> | undefined;
 
 export function loadFonts(): Promise<Font[]> {
   fonts ??= Promise.all([
-    readFile(new URL('../public/fonts/Manrope-500.ttf', import.meta.url)),
-    readFile(new URL('../public/fonts/Manrope-800.ttf', import.meta.url)),
+    readFile(new URL('../public/fonts/JetBrainsMono-500.ttf', import.meta.url)),
+    readFile(new URL('../public/fonts/JetBrainsMono-700.ttf', import.meta.url)),
   ])
     .then(
       ([medium, bold]) =>
         [
-          { name: 'Manrope', data: medium, weight: 500 },
-          { name: 'Manrope', data: bold, weight: 800 },
+          { name: 'JetBrains Mono', data: medium, weight: 500 },
+          { name: 'JetBrains Mono', data: bold, weight: 700 },
         ] satisfies Font[],
     )
     .catch((error: unknown) => {
@@ -30,196 +30,186 @@ export function loadFonts(): Promise<Font[]> {
   return fonts;
 }
 
-const paper = '#f8f7f3',
-  ink = '#222320',
-  muted = '#62635c';
+const bg = '#0a0c0b',
+  head = '#141816',
+  line = '#222826',
+  ink = '#d9ded8',
+  muted = '#8d9790',
+  cursor = '#3fd68f';
 const color = (change: number | null) =>
-  change !== null && change > 0 ? '#167049' : change !== null && change < 0 ? '#b43c36' : muted;
+  change !== null && change > 0 ? '#22a6a0' : change !== null && change < 0 ? '#e4573f' : muted;
 
-function wordmark(size: number, markSize: number) {
-  return h(
-    'div',
-    { style: { display: 'flex', alignItems: 'center', gap: size * 0.25 } },
-    h('img', {
-      src: `data:image/svg+xml;base64,${Buffer.from(markSvg).toString('base64')}`,
-      width: markSize,
-      height: markSize,
-    }),
-    h(
-      'div',
-      { style: { display: 'flex', gap: size * 0.22, fontSize: size, letterSpacing: -size * 0.05 } },
-      h('span', { style: { fontWeight: 800 } }, 'Vibe'),
-      h('span', { style: { fontWeight: 500 } }, 'IDX'),
-    ),
-  );
-}
+const mark = (size: number) =>
+  h('img', {
+    src: `data:image/svg+xml;base64,${Buffer.from(markSvg).toString('base64')}`,
+    width: size,
+    height: size,
+  });
 
-function sparkline(closes: number[]) {
+function sparkline(closes: number[], width: number, height: number) {
   const first = closes[0],
     last = closes.at(-1);
   if (first === undefined || last === undefined) return null;
   const low = Math.min(...closes),
-    high = Math.max(...closes);
+    high = Math.max(...closes),
+    pad = 10;
   const points = closes.map((close, i) => [
-    closes.length === 1 ? 536 : (i / (closes.length - 1)) * 1072,
-    high === low ? 65 : 120 - ((close - low) / (high - low)) * 110,
+    closes.length === 1 ? width / 2 : (i / (closes.length - 1)) * width,
+    high === low ? height / 2 : pad + (1 - (close - low) / (high - low)) * (height - 2 * pad),
   ]);
   const path = points.map(([x, y], i) => `${i === 0 ? 'M' : 'L'}${x},${y}`).join(' ');
   const stroke = color(last - first);
   return h(
     'svg',
-    { width: 1072, height: 146, viewBox: '0 0 1072 146' },
+    { width, height, viewBox: `0 0 ${width} ${height}` },
     h(
       'defs',
       null,
       h(
         'linearGradient',
         { id: 'area', x1: '0', y1: '0', x2: '0', y2: '1' },
-        h('stop', { offset: '0%', stopColor: stroke, stopOpacity: 0.14 }),
+        h('stop', { offset: '0%', stopColor: stroke, stopOpacity: 0.22 }),
         h('stop', { offset: '100%', stopColor: stroke, stopOpacity: 0 }),
       ),
     ),
+    ...[0.25, 0.5, 0.75].map((f) =>
+      h('path', { d: `M0,${height * f} H${width}`, stroke: line, strokeWidth: 1 }),
+    ),
     h('path', {
-      d: `${path} L${points.at(-1)?.[0]},146 L${points[0]?.[0]},146 Z`,
+      d: `${path} L${points.at(-1)?.[0]},${height} L${points[0]?.[0]},${height} Z`,
       fill: 'url(#area)',
     }),
     h('path', {
       d: path,
       fill: 'none',
       stroke,
-      strokeWidth: 4,
-      strokeLinecap: 'round',
+      strokeWidth: 3,
       strokeLinejoin: 'round',
     }),
-    closes.length === 1 ? h('circle', { cx: 536, cy: 65, r: 5, fill: stroke }) : null,
   );
 }
 
-function cardTree(card: TickerCard | null) {
-  const root = {
-    display: 'flex',
-    position: 'relative',
-    width: 1200,
-    height: 630,
-    background: paper,
-    color: ink,
-    fontFamily: 'Manrope',
-    fontWeight: 500,
-  } satisfies CSSProperties;
-  if (!card)
-    return h(
+const root = {
+  display: 'flex',
+  flexDirection: 'column',
+  width: 1200,
+  height: 630,
+  background: bg,
+  color: ink,
+  fontFamily: 'JetBrains Mono',
+  fontWeight: 500,
+} satisfies CSSProperties;
+
+function brandCard() {
+  return h(
+    'div',
+    { style: { ...root, justifyContent: 'center', padding: 88, gap: 40 } },
+    h(
       'div',
-      {
-        style: { ...root, flexDirection: 'column', justifyContent: 'center', gap: 52, padding: 64 },
-      },
-      wordmark(150, 132),
-      h(
-        'div',
-        { style: { fontSize: 34, color: muted } },
-        'Indonesian stock prices, ownership and broker flow',
-      ),
-    );
-  const price = `IDR ${nf(card.close)}`;
+      { style: { display: 'flex', alignItems: 'flex-end', fontSize: 120, fontWeight: 700 } },
+      'Vibe IDX',
+      h('div', {
+        style: { width: 60, height: 14, marginLeft: 16, marginBottom: 24, background: cursor },
+      }),
+    ),
+    h('div', { style: { fontSize: 30, color: muted } }, 'IDX prices, ownership and broker flow'),
+  );
+}
+
+function tickerCard(card: TickerCard) {
+  const tickerSize = Math.min(132, 560 / (card.ticker.length * 0.6));
   return h(
     'div',
     { style: root },
     h(
       'div',
-      { style: { display: 'flex', position: 'absolute', left: 64, top: 48 } },
-      wordmark(32, 44),
+      {
+        style: {
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          height: 72,
+          padding: '0 48px',
+          background: head,
+          borderBottom: `1px solid ${line}`,
+          fontSize: 24,
+        },
+      },
+      h(
+        'div',
+        { style: { display: 'flex', alignItems: 'center', gap: 16, fontWeight: 700 } },
+        mark(36),
+        'Vibe IDX',
+      ),
+      h('div', { style: { color: muted } }, dateText(card.date)),
     ),
     h(
       'div',
       {
         style: {
           display: 'flex',
-          position: 'absolute',
-          left: 64,
-          top: 142,
-          flexDirection: 'column',
-          width: 584,
+          justifyContent: 'space-between',
+          alignItems: 'flex-start',
+          padding: '44px 48px 0',
         },
       },
       h(
         'div',
-        {
-          style: {
-            fontSize: Math.min(150, 900 / card.ticker.length),
-            fontWeight: 800,
-            letterSpacing: -7,
-            lineHeight: 1.15,
+        { style: { display: 'flex', flexDirection: 'column', width: 600 } },
+        h(
+          'div',
+          { style: { fontSize: tickerSize, fontWeight: 700, lineHeight: 1, letterSpacing: -4 } },
+          card.ticker,
+        ),
+        h(
+          'div',
+          {
+            style: {
+              fontSize: 26,
+              color: muted,
+              marginTop: 22,
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            },
           },
-        },
-        card.ticker,
+          card.name,
+        ),
       ),
       h(
         'div',
-        {
-          style: {
-            width: 584,
-            fontSize: 30,
-            color: muted,
-            marginTop: 12,
-            whiteSpace: 'nowrap',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-          },
-        },
-        card.name,
+        { style: { display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 14 } },
+        h(
+          'div',
+          { style: { display: 'flex', alignItems: 'baseline', gap: 14, whiteSpace: 'nowrap' } },
+          h('span', { style: { fontSize: 26, color: muted } }, 'IDR'),
+          h(
+            'span',
+            { style: { fontSize: nf(card.close).length > 7 ? 60 : 76, fontWeight: 700 } },
+            nf(card.close),
+          ),
+        ),
+        h(
+          'div',
+          { style: { fontSize: 38, fontWeight: 700, color: color(card.changePct) } },
+          card.changePct === null ? '—' : `${signed(card.changePct, (v) => nf(v, 2))}%`,
+        ),
       ),
     ),
     h(
       'div',
-      {
-        style: {
-          display: 'flex',
-          position: 'absolute',
-          right: 64,
-          top: 160,
-          flexDirection: 'column',
-          alignItems: 'flex-end',
-          width: 448,
-          gap: 12,
-        },
-      },
-      h(
-        'div',
-        {
-          style: {
-            fontSize: price.length > 11 ? 56 : 72,
-            fontWeight: 800,
-            letterSpacing: -3,
-            whiteSpace: 'nowrap',
-          },
-        },
-        price,
-      ),
-      h(
-        'div',
-        { style: { fontSize: 36, color: color(card.changePct) } },
-        card.changePct === null ? '—' : `${signed(card.changePct, (v) => nf(v, 2))}%`,
-      ),
-      h('div', { style: { fontSize: 26, color: muted } }, dateText(card.date)),
-    ),
-    h(
-      'div',
-      {
-        style: {
-          display: 'flex',
-          position: 'absolute',
-          left: 64,
-          bottom: 48,
-          width: 1072,
-          height: 146,
-        },
-      },
-      sparkline(card.closes),
+      { style: { display: 'flex', marginTop: 'auto', padding: '0 48px 40px' } },
+      sparkline(card.closes, 1104, 190),
     ),
   );
 }
 
 export async function renderCard(card: TickerCard | null, fontLoader = loadFonts) {
-  const svg = await satori(cardTree(card), { width: 1200, height: 630, fonts: await fontLoader() });
+  const svg = await satori(card ? tickerCard(card) : brandCard(), {
+    width: 1200,
+    height: 630,
+    fonts: await fontLoader(),
+  });
   return new Uint8Array(new Resvg(svg).render().asPng());
 }
 
