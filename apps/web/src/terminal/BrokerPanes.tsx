@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { HistogramSeries, LineSeries, type ISeriesApi } from 'lightweight-charts';
+import {
+  HistogramSeries,
+  LineSeries,
+  type AutoscaleInfoProvider,
+  type ISeriesApi,
+} from 'lightweight-charts';
 import { aggregateBrokers, brokerName, edgeFills } from '../broker-data';
 import { matchesInvestor, type InvestorFilter, type BrokerDay } from '../brokers';
 import { bounds } from '../ticker/logic';
@@ -530,6 +535,13 @@ export function foreignFlow(days: BrokerDay[], dates: string[], unit: 'VALUE' | 
     };
   });
 }
+export const zeroCenteredAutoscale: AutoscaleInfoProvider = (original) => {
+  const info = original();
+  if (!info?.priceRange) return null;
+  const limit = Math.max(Math.abs(info.priceRange.minValue), Math.abs(info.priceRange.maxValue), 1);
+  return { priceRange: { minValue: -limit, maxValue: limit } };
+};
+
 function ForeignFlow({ days }: { days: BrokerDay[] }) {
   const { broker, selection, detail, ticker } = useTerminal();
   const [hover, setHover] = useState<string | null>(null);
@@ -542,12 +554,25 @@ function ForeignFlow({ days }: { days: BrokerDay[] }) {
   useEffect(() => {
     if (!host.current || !flow.length) return;
     const chart = terminalChart(host.current);
+    chart.applyOptions({
+      leftPriceScale: {
+        visible: true,
+        borderColor: '#222826',
+        scaleMargins: { top: 0.1, bottom: 0.1 },
+      },
+      rightPriceScale: { scaleMargins: { top: 0.1, bottom: 0.1 } },
+      handleScale: { axisPressedMouseMove: { price: false } },
+    });
     const style = getComputedStyle(host.current);
     const up = style.getPropertyValue('--up').trim() || '#22a6a0';
     const down = style.getPropertyValue('--down').trim() || '#e4573f';
     const format = { type: 'custom' as const, formatter: short };
     chart
-      .addSeries(HistogramSeries, { priceLineVisible: false, priceFormat: format })
+      .addSeries(HistogramSeries, {
+        priceLineVisible: false,
+        priceFormat: format,
+        autoscaleInfoProvider: zeroCenteredAutoscale,
+      })
       .setData(flow.map((d) => ({ time: d.date, value: d.net, color: d.net < 0 ? down : up })));
     chart
       .addSeries(LineSeries, {
@@ -556,9 +581,9 @@ function ForeignFlow({ days }: { days: BrokerDay[] }) {
         priceScaleId: 'left',
         priceLineVisible: false,
         priceFormat: format,
+        autoscaleInfoProvider: zeroCenteredAutoscale,
       })
       .setData(flow.map((d) => ({ time: d.date, value: d.cumulative })));
-    chart.priceScale('left').applyOptions({ visible: true, borderColor: '#222826' });
     chart.subscribeCrosshairMove((event) => setHover(chartDate(event.time)));
     chart.timeScale().fitContent();
     return () => chart.remove();
