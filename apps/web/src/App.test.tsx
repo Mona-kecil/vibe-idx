@@ -524,6 +524,8 @@ describe('terminal availability', () => {
     window.history.replaceState(null, '', '/');
     await render();
     await act(async () => host.querySelector<HTMLAnchorElement>('a.terminal-link')?.click());
+    expect(document.querySelector('.terminal-veil')).toBeNull();
+    await advance(300);
     expect(document.querySelector('.terminal-veil')).not.toBeNull();
     expect(window.location.pathname).toBe('/');
     await advance(400);

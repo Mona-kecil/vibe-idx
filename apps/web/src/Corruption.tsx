@@ -10,8 +10,6 @@ const strays = 70;
 const spill = 1.12;
 const halfView = 1.0;
 const far = 8;
-const glitchMs = 70;
-const glitchChance = 0.35;
 const travel = 0.8;
 const part = 2.4;
 const layoutSeed = Math.floor(Math.random() * 2 ** 32);
@@ -259,39 +257,16 @@ export function Corruption({
     function draw(now: number) {
       if (!canvas || !context) return;
       const t = mode === 'still' ? 0 : now - start;
-      const glitch = random(layoutSeed ^ Math.imul(Math.floor(t / glitchMs) + 1, 0x2c1b3c6d));
-      const bursting = mode !== 'still' && glitch() < glitchChance;
       context.clearRect(0, 0, canvas.width, canvas.height);
       drawMask(t);
       const drawn = [];
       for (const cube of placed) {
-        if (bursting && glitch() < 0.08) continue;
         const p = progress(cube.order, t);
         const item = p > 0 ? drawCube(cube, p, t) : null;
         if (item) drawn.push(item);
       }
       drawn.sort((a, b) => b.depth - a.depth);
       for (const item of drawn) item.render(context);
-      if (bursting) tear(glitch);
-    }
-
-    function tear(glitch: () => number) {
-      if (!canvas || !context) return;
-      const ratio = canvas.width / width;
-      for (let slices = 3 + Math.floor(glitch() * 6); slices > 0; slices--) {
-        const y = glitch() * height,
-          band = 6 + glitch() ** 2 * 120,
-          shift = (glitch() - 0.5) * 360;
-        const slice = [0, y * ratio, canvas.width, band * ratio] as const;
-        context.drawImage(canvas, ...slice, shift, y, width, band);
-        context.globalCompositeOperation = 'screen';
-        context.globalAlpha = 0.45;
-        context.drawImage(canvas, ...slice, shift + (glitch() - 0.5) * 40, y, width, band);
-        context.globalCompositeOperation = 'source-over';
-        context.globalAlpha = 1;
-        context.fillStyle = glitch() < 0.5 ? 'rgba(255, 60, 60, 0.55)' : 'rgba(80, 230, 255, 0.3)';
-        context.fillRect(0, y, width, 1);
-      }
     }
 
     function resize() {

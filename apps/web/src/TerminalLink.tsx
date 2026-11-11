@@ -1,7 +1,9 @@
 import { useState, type MouseEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { Corruption, aimCorruption } from './Corruption';
+import { startGlitch } from './glitch';
 
+const glitchLeadMs = 300;
 const spreadMs = 400;
 
 function openTerminal() {
@@ -11,21 +13,23 @@ function openTerminal() {
 }
 
 export function TerminalLink() {
-  const [swallowing, setSwallowing] = useState(false);
+  const [stage, setStage] = useState<'idle' | 'glitching' | 'swallowing'>('idle');
   function enter(event: MouseEvent<HTMLAnchorElement>) {
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)
       return;
     if (!window.matchMedia('(min-width: 901px)').matches) return;
     event.preventDefault();
-    if (swallowing) return;
+    if (stage !== 'idle') return;
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return openTerminal();
     const button = event.currentTarget.getBoundingClientRect();
     aimCorruption(
       (button.left + button.width / 2) / window.innerWidth,
       (button.top + button.height / 2) / window.innerHeight,
     );
-    setSwallowing(true);
-    window.setTimeout(openTerminal, spreadMs);
+    setStage('glitching');
+    startGlitch();
+    window.setTimeout(() => setStage('swallowing'), glitchLeadMs);
+    window.setTimeout(openTerminal, glitchLeadMs + spreadMs);
   }
   return (
     <>
@@ -33,7 +37,7 @@ export function TerminalLink() {
         Terminal
         <span className="cursor" aria-hidden="true" />
       </a>
-      {swallowing &&
+      {stage === 'swallowing' &&
         createPortal(
           <div className="terminal-veil">
             <Corruption mode="spread" durationMs={spreadMs} />

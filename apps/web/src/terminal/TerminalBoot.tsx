@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useReducer, useSyncExternalStore } from 'react';
 import { Corruption } from '../Corruption';
+import { startGlitch, stopGlitch } from '../glitch';
 
 const retreatMs = 450;
 
@@ -62,6 +63,11 @@ export function TerminalBoot({
   phase: 'holding' | 'leaving';
   reducedMotion: boolean;
 }) {
+  useEffect(() => {
+    if (reducedMotion) return;
+    startGlitch();
+    return stopGlitch;
+  }, [reducedMotion]);
   return (
     <div className={`terminal-boot terminal-boot--${phase}`}>
       <Corruption
