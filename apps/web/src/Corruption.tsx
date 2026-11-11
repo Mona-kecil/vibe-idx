@@ -10,6 +10,8 @@ const nubGrowUnits = 1.6;
 const unitMs = 79;
 const liftShare = 0.3;
 const sparkCount = 90;
+const pulseGap = 520;
+const pulseSpeed = 0.4;
 const layoutSeed = Math.floor(Math.random() * 2 ** 32);
 let origin = { x: 0.5, y: 0.5 };
 
@@ -119,7 +121,7 @@ function growBlocks(width: number, height: number, ox: number, oy: number) {
       depth: size / (0.8 * width),
       layer: near(x + size / 2, y + size / 2),
       pulse: next() * Math.PI * 2,
-      traces: next() < 0.35 ? [] : [trace(next)],
+      traces: Array.from({ length: size > 200 ? 2 : 1 }, () => trace(next)),
     };
     blocks.push(block);
     for (const index of cells(x + coverCell, y + coverCell, size - 2 * coverCell))
@@ -183,7 +185,7 @@ function growBlocks(width: number, height: number, ox: number, oy: number) {
         depth: size / (0.8 * width),
         layer: parent.layer + 0.0001,
         pulse: next() * Math.PI * 2,
-        traces: [],
+        traces: size >= 70 && next() < 0.5 ? [trace(next)] : [],
       });
     }
   }
@@ -310,10 +312,13 @@ export function Corruption({
         context.lineWidth = 1;
         context.stroke(wall);
       }
+      const light = 0.45 + 0.55 * Math.min(block.layer, 1);
       const face = quad([...corners]);
       context.fillStyle = sheen;
       context.fill(face);
-      strokeNeon(face, 0.9);
+      context.fillStyle = `rgba(0, 0, 0, ${0.5 * (1 - light)})`;
+      context.fill(face);
+      strokeNeon(face, 0.9 * light);
 
       const [x0, y0] = corners[0];
       const size = corners[1][0] - x0;
@@ -326,7 +331,21 @@ export function Corruption({
           if (index === 0) traces.moveTo(x, y);
           else traces.lineTo(x, y);
         });
-      strokeNeon(traces, 0.8 * glow);
+      strokeNeon(traces, glow * (0.65 + 0.35 * light));
+      if (mode !== 'hold' || !block.traces.length) return;
+      context.save();
+      context.setLineDash([16, pulseGap]);
+      context.lineDashOffset = -((t * pulseSpeed + block.pulse * 100) % (16 + pulseGap));
+      context.lineCap = 'round';
+      for (const [color, lineWidth] of [
+        [`rgba(255, 60, 40, ${0.35 * light})`, 6],
+        [`rgba(255, 215, 205, ${light})`, 1.8],
+      ] as const) {
+        context.strokeStyle = color;
+        context.lineWidth = lineWidth;
+        context.stroke(traces);
+      }
+      context.restore();
     }
 
     function drawSparks(t: number, alpha: number) {
