@@ -1,5 +1,7 @@
 .terminal-page .news-item {
   display: block;
+  color: inherit;
+  text-decoration: none;
   width: 100%;
   text-align: left;
   padding: 10px 12px;
@@ -27,53 +29,6 @@
   margin-top: 5px;
   color: var(--accent);
   font-size: 10px;
-}
-.terminal-page .reader {
-  display: flex;
-  flex-direction: column;
-  background: var(--pane);
-  flex: 1;
-  min-height: 0;
-}
-.terminal-page .reader header {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 12px;
-  padding: 10px 16px;
-  color: var(--muted);
-  font-size: 10px;
-}
-.terminal-page .reader nav {
-  display: flex;
-  gap: 8px;
-  margin-left: auto;
-}
-.terminal-page .reader nav button {
-  width: 26px;
-  height: 26px;
-  font-size: 18px;
-}
-.terminal-page .reader-body {
-  flex: 1;
-  overflow: auto;
-  padding: 18px 26px;
-}
-.terminal-page .reader h1 {
-  font:
-    600 20px/1.3 'IBM Plex Sans',
-    sans-serif;
-  margin: 0 0 14px;
-}
-.terminal-page .reader-body p {
-  font:
-    400 15px/1.6 'IBM Plex Sans',
-    sans-serif;
-}
-.terminal-page .reader footer {
-  padding: 12px 26px;
-  color: var(--accent);
-  font-size: 11px;
 }
 .terminal-page .calendar td:nth-child(3),
 .terminal-page .actions td:nth-child(3) {

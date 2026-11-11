@@ -100,8 +100,6 @@ export function CommandBar({
   function dismiss() {
     setHelp(false);
     if (selection) select(null);
-    else if (document.querySelector('.reader'))
-      document.querySelector<HTMLButtonElement>('[aria-label="Close reader"]')?.click();
     else maximize();
   }
   useEffect(() => {
@@ -139,11 +137,7 @@ export function CommandBar({
       }
       if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
         event.preventDefault();
-        const reader = document.querySelector<HTMLButtonElement>(
-          `[aria-label="${event.key === 'ArrowDown' ? 'Next' : 'Previous'} article"]`,
-        );
-        if (reader) reader.click();
-        else move(event.key === 'ArrowDown' ? 1 : -1);
+        move(event.key === 'ArrowDown' ? 1 : -1);
         return;
       }
       if (event.key === '/') {
@@ -314,11 +308,11 @@ export function CommandBar({
               <dt>Tab</dt>
               <dd>Complete suggestion</dd>
               <dt>Up Down</dt>
-              <dd>Move through suggestions, watchlist or articles</dd>
+              <dd>Move through suggestions or watchlist</dd>
               <dt>1 2 3</dt>
               <dd>GRID FOCUS FLOW</dd>
               <dt>Esc</dt>
-              <dd>Clear selection, close reader or restore pane</dd>
+              <dd>Clear selection or restore pane</dd>
               <dt>Drag borders</dt>
               <dd>Resize panes. Double-click to reset.</dd>
               <dt>Double-click header</dt>

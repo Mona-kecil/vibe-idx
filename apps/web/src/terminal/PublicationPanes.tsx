@@ -47,7 +47,6 @@ function usePublicationTimeline(data: unknown, filter: string) {
 }
 export function NewsPane() {
   const { publications, filters, filter, ticker, tickerNews } = useTerminal();
-  const [article, setArticle] = useState<Headline | null>(null);
   const published = publications.news.kind === 'ready' ? publications.news.data.news : [];
   const source: Resource<Headline[]> =
     filters.news === 'TICKER'
@@ -64,7 +63,6 @@ export function NewsPane() {
     ...new Map([...candidates].reverse().map((item) => [item.link, item])).values(),
   ].sort((a, b) => b.ts.localeCompare(a.ts));
   const resource: Resource<Headline[]> = list.length ? { kind: 'ready', data: list } : source;
-  const index = article ? list.indexOf(article) : -1;
   return (
     <>
       <div className="sub">
@@ -72,103 +70,56 @@ export function NewsPane() {
           label="News region"
           values={['ID', 'WORLD', 'TICKER']}
           value={filters.news}
-          onChange={(value) => {
-            filter('news', value);
-            setArticle(null);
-          }}
+          onChange={(value) => filter('news', value)}
         />
       </div>
-      {!article && (
-        <Scroll reset={`${filters.news}:${ticker}`}>
-          <Availability resource={resource} name="News">
-            {() => (
-              <>
-                {publications.news.kind === 'ready' && (
-                  <Publication
-                    date={publications.news.data.as_of}
-                    errors={publications.news.data.errors}
-                  />
-                )}
-                {list.length ? (
-                  list.map((item) => {
-                    const body = (
-                      <>
-                        <div className="news-meta">
-                          <time>{wib(item.ts)} WIB</time>
-                          <span>{item.src}</span>
-                        </div>
-                        <strong>{item.title}</strong>
-                        <div className="tags">
-                          {item.tags
-                            .filter((tag) => filters.news !== 'TICKER' || tag !== ticker)
-                            .map((tag) => (
-                              <span key={tag}>{tag}</span>
-                            ))}
-                        </div>
-                      </>
-                    );
-                    return (
-                      <button
-                        className="news-item"
-                        key={item.link}
-                        onClick={() => setArticle(item)}
-                      >
-                        {body}
-                      </button>
-                    );
-                  })
-                ) : (
-                  <Empty>No news in this view</Empty>
-                )}
-              </>
-            )}
-          </Availability>
-        </Scroll>
-      )}
-      {article && (
-        <aside className="reader" aria-label="Article reader">
-          <header>
-            <button onClick={() => setArticle(null)}>← Back</button>
-            <span>{article.src}</span>
-            <time>{wib(article.ts)} WIB</time>
-            <nav>
-              <button
-                aria-label="Previous article"
-                disabled={index <= 0}
-                onClick={() => setArticle(list[index - 1] ?? null)}
-              >
-                ↑
-              </button>
-              <button
-                aria-label="Next article"
-                disabled={index < 0 || index >= list.length - 1}
-                onClick={() => setArticle(list[index + 1] ?? null)}
-              >
-                ↓
-              </button>
-              <button aria-label="Close reader" onClick={() => setArticle(null)}>
-                ×
-              </button>
-            </nav>
-          </header>
-          <div className="reader-body" key={article.link}>
-            <h1>{article.title}</h1>
-            <div className="tags">
-              {article.tags
-                .filter((tag) => filters.news !== 'TICKER' || tag !== ticker)
-                .map((tag) => (
-                  <TickerLink key={tag} ticker={tag} />
-                ))}
-            </div>
-            {article.sum ? <p>{article.sum}</p> : <Empty>Summary unavailable</Empty>}
-          </div>
-          <footer>
-            <a href={article.link} target="_blank" rel="noreferrer">
-              OPEN ORIGINAL
-            </a>
-          </footer>
-        </aside>
-      )}
+      <Scroll reset={`${filters.news}:${ticker}`}>
+        <Availability resource={resource} name="News">
+          {() => (
+            <>
+              {publications.news.kind === 'ready' && (
+                <Publication
+                  date={publications.news.data.as_of}
+                  errors={publications.news.data.errors}
+                />
+              )}
+              {list.length ? (
+                list.map((item) => {
+                  const body = (
+                    <>
+                      <div className="news-meta">
+                        <time>{wib(item.ts)} WIB</time>
+                        <span>{item.src}</span>
+                      </div>
+                      <strong>{item.title}</strong>
+                      <div className="tags">
+                        {item.tags
+                          .filter((tag) => filters.news !== 'TICKER' || tag !== ticker)
+                          .map((tag) => (
+                            <span key={tag}>{tag}</span>
+                          ))}
+                      </div>
+                    </>
+                  );
+                  return (
+                    <a
+                      className="news-item"
+                      key={item.link}
+                      href={item.link}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      {body}
+                    </a>
+                  );
+                })
+              ) : (
+                <Empty>No news in this view</Empty>
+              )}
+            </>
+          )}
+        </Availability>
+      </Scroll>
     </>
   );
 }

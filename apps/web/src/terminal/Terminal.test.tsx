@@ -289,14 +289,14 @@ describe('React terminal', () => {
     ).toHaveLength(1);
     expect(fetcher.mock.calls.every(([path]) => !requestUrl(path).includes('/proto/'))).toBe(true);
   });
-  it('reads only the published summary and links the original without article fetching', async () => {
+  it('opens news at its source in a new tab without fetching the article', async () => {
     newsAvailable = true;
     await render();
-    await click('.news-item');
-    expect(host.querySelector('.reader')?.textContent).toContain('The published item summary.');
-    expect(host.querySelector('.reader footer a')?.getAttribute('href')).toBe(
-      'https://example.com/original',
-    );
+    const item = host.querySelector<HTMLAnchorElement>('a.news-item');
+    expect(item?.getAttribute('href')).toBe('https://example.com/original');
+    expect(item?.target).toBe('_blank');
+    expect(item?.rel).toBe('noreferrer');
+    expect(host.querySelector('.reader')).toBeNull();
     expect(
       fetcher.mock.calls.every(
         ([path]) =>
@@ -336,8 +336,7 @@ describe('React terminal', () => {
       host.querySelector('[aria-label="News region"] button[aria-pressed="true"]')?.textContent,
     ).toBe('TICKER');
     expect(host.textContent).toContain('Ticker news from existing API');
-    await click('.news-item');
-    expect(host.querySelector('.reader')?.textContent).toContain('Summary unavailable');
+    expect(host.querySelector('a.news-item')?.getAttribute('target')).toBe('_blank');
   });
   it('opens the ticker feed without filters and keeps every publication function command available', async () => {
     await render();
