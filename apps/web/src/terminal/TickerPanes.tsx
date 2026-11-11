@@ -137,11 +137,11 @@ function holdingChange(first: HolderPoint, last: HolderPoint) {
   }
   if (first.pct !== null && last.pct === null) {
     const bound = last.below - first.pct;
-    return { text: `<${signed(bound, (v) => nf(v, 2))} pp`, value: bound <= 0 ? -1 : null };
+    return { text: `< ${signed(bound, (v) => nf(v, 2))} pp`, value: bound <= 0 ? -1 : null };
   }
   if (first.pct === null && last.pct !== null) {
     const bound = last.pct - first.below;
-    return { text: `>${signed(bound, (v) => nf(v, 2))} pp`, value: bound >= 0 ? 1 : null };
+    return { text: `> ${signed(bound, (v) => nf(v, 2))} pp`, value: bound >= 0 ? 1 : null };
   }
   return { text: '—', value: null };
 }
@@ -334,7 +334,7 @@ function HoldersChart({
                   </b>
                   <span
                     className={`holder-change ${direction(change.value)}`}
-                    title={`Change in percentage points from ${dateText(first.date)} to ${dateText(last.date)}`}
+                    title={`${change.text} from ${dateText(first.date)} to ${dateText(last.date)}${first.pct === null || last.pct === null ? '; exact change unknown because a holding is below the reporting threshold' : ''}`}
                   >
                     {change.text}
                   </span>
