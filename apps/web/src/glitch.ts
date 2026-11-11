@@ -1,8 +1,12 @@
 const burstMs = 60;
-const burstChance = 0.55;
+const burstChance = 0.4;
+const fadeMs = 1500;
+const restingEnergy = 0.3;
+const resumeMs = 100;
 const mapHeight = 360;
 
-let running: { timer: number; svg: SVGSVGElement } | null = null;
+let running: { timer: number; svg: SVGSVGElement; startedAt: number } | null = null;
+let stopped = { startedAt: 0, at: -Infinity };
 
 function filter() {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -41,19 +45,21 @@ function tears() {
   return canvas.toDataURL();
 }
 
-function burst(svg: SVGSVGElement) {
+function burst(svg: SVGSVGElement, startedAt: number) {
   const root = document.documentElement;
-  const map = Math.random() < burstChance ? tears() : null;
+  const fading = Math.max(1 - (performance.now() - startedAt) / fadeMs, 0);
+  const energy = restingEnergy + (1 - restingEnergy) * fading;
+  const map = Math.random() < burstChance * energy ? tears() : null;
   if (!map) {
     root.style.filter = '';
     return;
   }
   const width = window.innerWidth;
-  const split = (2 + Math.random() * 8) / width;
+  const split = ((1.5 + Math.random() * 4) * energy) / width;
   svg.querySelector('feImage')?.setAttribute('href', map);
   svg
     .querySelector('feDisplacementMap')
-    ?.setAttribute('scale', String((60 + Math.random() * 260) / width));
+    ?.setAttribute('scale', String(((30 + Math.random() * 130) * energy) / width));
   const [red, cyan] = svg.querySelectorAll('feOffset');
   red?.setAttribute('dx', String(split));
   cyan?.setAttribute('dx', String(-split));
@@ -63,14 +69,17 @@ function burst(svg: SVGSVGElement) {
 export function startGlitch() {
   if (running) return;
   const svg = filter();
-  running = { svg, timer: window.setInterval(() => burst(svg), burstMs) };
-  burst(svg);
+  const now = performance.now();
+  const startedAt = now - stopped.at < resumeMs ? stopped.startedAt : now;
+  running = { svg, startedAt, timer: window.setInterval(() => burst(svg, startedAt), burstMs) };
+  burst(svg, startedAt);
 }
 
 export function stopGlitch() {
   if (!running) return;
   window.clearInterval(running.timer);
   running.svg.remove();
+  stopped = { startedAt: running.startedAt, at: performance.now() };
   running = null;
   document.documentElement.style.filter = '';
 }
