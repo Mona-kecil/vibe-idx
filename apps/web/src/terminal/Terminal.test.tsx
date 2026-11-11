@@ -1181,7 +1181,7 @@ it('clears the selection on Escape and leaves RT in front', async () => {
   expect(host.querySelector('.tick-summary')).toBeNull();
 });
 
-it('clears the selection when the session date or ticker changes', async () => {
+it('clears the selection when the session date changes', async () => {
   prepareBlocks();
   await render();
   await command('FLOW');
@@ -1189,7 +1189,12 @@ it('clears the selection when the session date or ticker changes', async () => {
   await click('[aria-label="Running trade"] [aria-label="Previous session"]');
   expect(host.querySelector('.tick-blocks [aria-pressed="true"]')).toBeNull();
   expect(host.querySelector('.tick-summary')).toBeNull();
-  await click('[aria-label="Running trade"] [aria-label="Next session"]');
+});
+
+it('clears the selection when the ticker changes', async () => {
+  prepareBlocks();
+  await render();
+  await command('FLOW');
   await clickBlock();
   expect(highlightedFills()).toHaveLength(3);
   await command('BBCA');
