@@ -2,16 +2,13 @@ import { useEffect, useRef } from 'react';
 
 export type CorruptionMode = 'spread' | 'hold' | 'retreat' | 'still';
 
-const cell = 40;
-const flightShare = 0.5;
-const gridCols = 18;
-const gridRows = 11;
-const strays = 70;
-const spill = 1.12;
-const halfView = 1.0;
-const far = 8;
-const travel = 0.8;
-const part = 2.4;
+const cell = 64;
+const depthStep = 0.05;
+const riseShare = 0.2;
+const stepShare = 0.12;
+const liftShare = 0.3;
+const leadMs = 160;
+const sparkCount = 90;
 const layoutSeed = Math.floor(Math.random() * 2 ** 32);
 let origin = { x: 0.5, y: 0.5 };
 
@@ -19,32 +16,16 @@ export function aimCorruption(x: number, y: number) {
   origin = { x, y };
 }
 
-type Vec = [number, number, number];
-type Cube = {
-  u: number;
-  v: number;
-  depth: number;
-  size: number;
-  yaw: number;
-  pitch: number;
+type Point = [number, number];
+type Block = {
+  col: number;
+  row: number;
+  level: number;
+  order: number;
   pulse: number;
-  jitter: number;
+  traces: Point[][];
 };
-type Placed = { home: Vec; half: number; yaw: number; pitch: number; pulse: number; order: number };
-
-const corners: Vec[] = Array.from({ length: 8 }, (_, i) => [
-  i & 1 ? 1 : -1,
-  i & 2 ? 1 : -1,
-  i & 4 ? 1 : -1,
-]);
-const faces: { axis: Vec; points: number[] }[] = [
-  { axis: [0, 0, 1], points: [4, 5, 7, 6] },
-  { axis: [0, 0, -1], points: [0, 2, 3, 1] },
-  { axis: [1, 0, 0], points: [1, 3, 7, 5] },
-  { axis: [-1, 0, 0], points: [0, 4, 6, 2] },
-  { axis: [0, 1, 0], points: [2, 6, 7, 3] },
-  { axis: [0, -1, 0], points: [0, 1, 5, 4] },
-];
+type Spark = { x: number; y: number; speed: number; size: number; phase: number };
 
 function random(seed: number) {
   let state = seed;
@@ -56,68 +37,54 @@ function random(seed: number) {
   };
 }
 
-function layoutCubes(): Cube[] {
-  const next = random(layoutSeed);
-  const cube = (u: number, v: number): Cube => ({
-    u,
-    v,
-    depth: next(),
-    size: next() ** 1.6,
-    yaw: (next() - 0.5) * 0.7,
-    pitch: (next() - 0.5) * 0.6,
-    pulse: next() * Math.PI * 2,
-    jitter: next(),
-  });
-  const across = (index: number, count: number) => ((index + next()) / count) * 2 - 1;
-  return [
-    ...Array.from({ length: gridCols * gridRows }, (_, index) =>
-      cube(
-        across(index % gridCols, gridCols) * spill,
-        across(Math.floor(index / gridCols), gridRows) * spill,
-      ),
-    ),
-    ...Array.from({ length: strays }, () =>
-      cube((next() * 2 - 1) * spill, (next() * 2 - 1) * spill),
-    ),
-  ];
-}
-
 function outward(fromOrigin: number, jitter: number) {
   return Math.min(fromOrigin, 1) * 0.72 + jitter * 0.28;
 }
 
-function layoutMask(cols: number, rows: number, reach: (x: number, y: number) => number) {
-  const next = random(layoutSeed ^ 0x9e3779b9);
-  const coarse = Array.from({ length: (cols >> 2) + 1 }, () =>
-    Array.from({ length: (rows >> 2) + 1 }, next),
+function trace(next: () => number): Point[] {
+  const lane = () => (1 + Math.floor(next() * 3)) / 4;
+  const enter = lane(),
+    turn = lane(),
+    leave = lane();
+  const across: Point[] = [
+    [0, enter],
+    [turn, enter],
+    [turn, leave],
+    [1, leave],
+  ];
+  return next() < 0.5 ? across : across.map(([x, y]) => [y, x]);
+}
+
+function layoutBlocks(cols: number, rows: number, reach: (x: number, y: number) => number) {
+  const next = random(layoutSeed);
+  const patches = Array.from({ length: Math.ceil(cols / 3) + 1 }, () =>
+    Array.from({ length: Math.ceil(rows / 3) + 1 }, next),
   );
-  const order = new Float64Array(cols * rows);
-  for (let y = 0; y < rows; y++)
-    for (let x = 0; x < cols; x++) {
-      order[y * cols + x] = outward(
-        reach((x + 0.5) * cell, (y + 0.5) * cell),
-        coarse[x >> 2]?.[y >> 2] ?? 0,
-      );
+  const blocks: Block[] = [];
+  for (let row = 0; row < rows; row++)
+    for (let col = 0; col < cols; col++) {
+      const terrace = patches[Math.floor(col / 3)]?.[Math.floor(row / 3)] ?? 0;
+      blocks.push({
+        col,
+        row,
+        level: Math.min(1 + Math.floor(terrace * 2.2 + next() * 0.8), 3),
+        order: outward(reach((col + 0.5) * cell, (row + 0.5) * cell), terrace * 0.6 + next() * 0.4),
+        pulse: next() * Math.PI * 2,
+        traces: next() < 0.35 ? [] : [trace(next)],
+      });
     }
-  return order;
+  return blocks;
 }
 
-function rotate([x, y, z]: Vec, yaw: number, pitch: number): Vec {
-  const y1 = y * Math.cos(pitch) - z * Math.sin(pitch),
-    z1 = y * Math.sin(pitch) + z * Math.cos(pitch);
-  return [x * Math.cos(yaw) + z1 * Math.sin(yaw), y1, -x * Math.sin(yaw) + z1 * Math.cos(yaw)];
-}
-
-function neon(context: CanvasRenderingContext2D, path: Path2D, alpha: number) {
-  for (const [color, width] of [
-    [`rgba(255, 24, 24, ${0.22 * alpha})`, 9],
-    [`rgba(255, 42, 42, ${alpha})`, 2.5],
-    [`rgba(255, 176, 168, ${alpha})`, 1],
-  ] as const) {
-    context.strokeStyle = color;
-    context.lineWidth = width;
-    context.stroke(path);
-  }
+function layoutSparks(width: number, height: number): Spark[] {
+  const next = random(layoutSeed ^ 0x51ed270b);
+  return Array.from({ length: sparkCount }, () => ({
+    x: next() * width,
+    y: next() * height,
+    speed: 20 + next() * 50,
+    size: 1 + next() * 1.6,
+    phase: next() * Math.PI * 2,
+  }));
 }
 
 const ease = (p: number) => 1 - (1 - p) ** 3;
@@ -135,139 +102,182 @@ export function Corruption({
     const canvas = canvasRef.current;
     const context = canvas?.getContext('2d');
     if (!canvas || !context) return;
-    const cubes = layoutCubes();
-    const enterMs = durationMs * flightShare;
-    const span = durationMs - enterMs;
+    const riseMs = durationMs * riseShare,
+      stepMs = durationMs * stepShare,
+      liftMs = durationMs * liftShare;
     let cols = 0,
       rows = 0,
-      mask = new Float64Array(0),
-      placed: Placed[] = [],
-      aim: Vec = [0, 0, -1],
       width = 0,
       height = 0,
-      focal = 1,
+      vanish: Point = [0, 0],
+      blocks: Block[] = [],
+      sparks: Spark[] = [],
+      heights = new Float64Array(0),
+      sheen: CanvasGradient | string = '#070708',
       frame = 0,
       start = performance.now();
 
-    function progress(order: number, t: number) {
-      if (mode === 'spread') return ease(clamp((t - order * span) / enterMs));
-      if (mode === 'retreat') return 1 - clamp((t - order * span) / enterMs) ** 2;
-      return 1;
-    }
-
-    function drawMask(t: number) {
-      if (!context) return;
-      const present = (index: number) => {
-        const at = (mask[index] ?? 0) * span;
-        if (mode === 'spread') return at <= t;
-        if (mode === 'retreat') return t < at;
-        return true;
-      };
-      const solid = (x: number, y: number) =>
-        x < 0 || y < 0 || x >= cols || y >= rows || present(y * cols + x);
-      const edges = new Path2D();
-      const side = (x1: number, y1: number, x2: number, y2: number) => {
-        edges.moveTo(x1, y1);
-        edges.lineTo(x2, y2);
-      };
-      context.fillStyle = '#050505';
-      context.strokeStyle = 'rgba(255, 40, 40, 0.05)';
-      context.lineWidth = 1;
-      for (let y = 0; y < rows; y++)
-        for (let x = 0; x < cols; x++) {
-          if (!present(y * cols + x)) continue;
-          const px = x * cell,
-            py = y * cell;
-          context.fillRect(px, py, cell, cell);
-          context.strokeRect(px + 0.5, py + 0.5, cell - 1, cell - 1);
-          if (!solid(x, y - 1)) side(px, py, px + cell, py);
-          if (!solid(x + 1, y)) side(px + cell, py, px + cell, py + cell);
-          if (!solid(x, y + 1)) side(px, py + cell, px + cell, py + cell);
-          if (!solid(x - 1, y)) side(px, py, px, py + cell);
-        }
-      neon(context, edges, 0.55);
-    }
-
-    function place([x, y, z]: Vec, p: number): Vec {
-      const [ax, ay, az] = aim;
+    function grow(block: Block, t: number) {
       if (mode === 'spread') {
-        const from = far * (1 - p);
-        return [ax * from + x * p, ay * from + y * p, az * from + z * p];
+        const at = block.order * (durationMs - riseMs - 2 * stepMs);
+        let h = 0;
+        for (let level = 0; level < block.level; level++)
+          h += ease(clamp((t - at - level * stepMs) / riseMs));
+        return { h, alpha: clamp(h * 5), glow: clamp(1 - (at - t) / leadMs) };
       }
       if (mode === 'retreat') {
-        const length = Math.hypot(ax, ay, az);
-        const [dx, dy, dz] = [ax / length, ay / length, az / length];
-        const along = x * dx + y * dy + z * dz;
-        const [rx, ry, rz] = [x - dx * along, y - dy * along, z - dz * along];
-        const side = (part * (1 - p)) / (Math.hypot(rx, ry, rz) || 1);
-        const pass = travel * (1 - p);
-        return [x + rx * side - dx * pass, y + ry * side - dy * pass, z + rz * side - dz * pass];
+        const lift = clamp((t - block.order * (durationMs - liftMs)) / liftMs);
+        return { h: block.level + lift ** 2 * 5, alpha: 1 - clamp(lift * 2 - 1), glow: 0 };
       }
-      return [x, y, z];
+      return { h: block.level, alpha: 1, glow: 0 };
     }
 
-    function drawCube(cube: Placed, p: number, t: number) {
-      const center = place(cube.home, p);
-      const yaw = cube.yaw;
-      const world = corners.map(([cx, cy, cz]) => {
-        const [x, y, z] = rotate([cx * cube.half, cy * cube.half, cz * cube.half], yaw, cube.pitch);
-        return [center[0] + x, center[1] + y, center[2] + z] as Vec;
-      });
-      if (world.some(([, , z]) => -z < 0.08)) return null;
-      const screen = world.map(
-        ([x, y, z]) => [width / 2 + (focal * x) / -z, height / 2 - (focal * y) / -z] as const,
-      );
-      const glow = mode === 'hold' ? 0.75 + 0.25 * Math.cos(t / 260 + cube.pulse) : 1;
-      return {
-        depth: Math.hypot(...center),
-        render(context: CanvasRenderingContext2D) {
-          context.globalAlpha = p;
-          for (const face of faces) {
-            const normal = rotate(face.axis, yaw, cube.pitch);
-            let dot = 0;
-            for (const index of face.points) {
-              const point = world[index] ?? center;
-              dot += normal[0] * point[0] + normal[1] * point[1] + normal[2] * point[2];
-            }
-            if (dot >= 0) continue;
-            const path = new Path2D();
-            face.points.forEach((index, order) => {
-              const [x, y] = screen[index] ?? [0, 0];
-              if (order === 0) path.moveTo(x, y);
-              else path.lineTo(x, y);
-            });
-            path.closePath();
-            if (face.axis[2] === 1) {
-              context.fillStyle = '#060606';
-              context.fill(path);
-              neon(context, path, glow);
-            } else {
-              const light = Math.round(12 + 18 * Math.abs(normal[1]) + 8 * Math.abs(normal[0]));
-              context.fillStyle = `rgb(${light}, 4, 5)`;
-              context.fill(path);
-              context.strokeStyle = `rgba(255, 40, 40, ${0.55 * glow})`;
-              context.lineWidth = 1;
-              context.stroke(path);
-            }
-          }
-          context.globalAlpha = 1;
-        },
+    function strokeNeon(path: Path2D, glow: number) {
+      if (!context) return;
+      for (const [color, lineWidth] of [
+        [`rgba(255, 30, 30, ${0.22 * glow})`, 4],
+        [`rgba(255, 60, 50, ${glow})`, 1.4],
+        [`rgba(255, 190, 180, ${0.8 * glow})`, 0.6],
+      ] as const) {
+        context.strokeStyle = color;
+        context.lineWidth = lineWidth;
+        context.stroke(path);
+      }
+    }
+
+    function drawBlock(block: Block, h: number, t: number) {
+      if (!context) return;
+      const k = 1 + h * depthStep;
+      const [vx, vy] = vanish;
+      const project = (x: number, y: number): Point => [vx + (x - vx) * k, vy + (y - vy) * k];
+      const x0 = block.col * cell,
+        y0 = block.row * cell,
+        x1 = x0 + cell,
+        y1 = y0 + cell;
+      const [fx0, fy0] = project(x0, y0);
+      const [fx1, fy1] = project(x1, y1);
+      const lower = (col: number, row: number) =>
+        col >= 0 &&
+        row >= 0 &&
+        col < cols &&
+        row < rows &&
+        (heights[row * cols + col] ?? 0) < h - 0.01;
+      const side = (points: Point[], fill: string) => {
+        const path = new Path2D();
+        points.forEach(([x, y], index) => (index === 0 ? path.moveTo(x, y) : path.lineTo(x, y)));
+        path.closePath();
+        context.fillStyle = fill;
+        context.fill(path);
       };
+      if (x0 > vx && lower(block.col - 1, block.row))
+        side(
+          [
+            [x0, y0],
+            [x0, y1],
+            [fx0, fy1],
+            [fx0, fy0],
+          ],
+          'rgb(58, 7, 9)',
+        );
+      if (x1 < vx && lower(block.col + 1, block.row))
+        side(
+          [
+            [x1, y0],
+            [x1, y1],
+            [fx1, fy1],
+            [fx1, fy0],
+          ],
+          'rgb(44, 5, 7)',
+        );
+      if (y0 > vy && lower(block.col, block.row - 1))
+        side(
+          [
+            [x0, y0],
+            [x1, y0],
+            [fx1, fy0],
+            [fx0, fy0],
+          ],
+          'rgb(84, 10, 12)',
+        );
+      if (y1 < vy && lower(block.col, block.row + 1))
+        side(
+          [
+            [x0, y1],
+            [x1, y1],
+            [fx1, fy1],
+            [fx0, fy1],
+          ],
+          'rgb(30, 4, 5)',
+        );
+
+      const size = fx1 - fx0;
+      context.fillStyle = sheen;
+      context.fillRect(fx0, fy0, size, size);
+      context.strokeStyle = 'rgba(255, 50, 45, 0.18)';
+      context.lineWidth = 1;
+      context.strokeRect(fx0, fy0, size, size);
+      const edge = new Path2D();
+      const rim = (col: number, row: number, from: Point, to: Point) => {
+        if (!lower(col, row)) return;
+        edge.moveTo(...from);
+        edge.lineTo(...to);
+      };
+      rim(block.col - 1, block.row, [fx0, fy0], [fx0, fy1]);
+      rim(block.col + 1, block.row, [fx1, fy0], [fx1, fy1]);
+      rim(block.col, block.row - 1, [fx0, fy0], [fx1, fy0]);
+      rim(block.col, block.row + 1, [fx0, fy1], [fx1, fy1]);
+      strokeNeon(edge, 0.9);
+
+      const glow = mode === 'hold' ? 0.7 + 0.3 * Math.cos(t / 300 + block.pulse) : 1;
+      const traces = new Path2D();
+      for (const points of block.traces)
+        points.forEach(([u, v], index) => {
+          const x = fx0 + u * size,
+            y = fy0 + v * size;
+          if (index === 0) traces.moveTo(x, y);
+          else traces.lineTo(x, y);
+        });
+      strokeNeon(traces, glow);
+      context.fillStyle = `rgba(255, 150, 140, ${glow})`;
+      for (const points of block.traces) {
+        const [u, v] = points[points.length - 1] ?? [0.5, 0.5];
+        context.fillRect(fx0 + u * size - 1.5, fy0 + v * size - 1.5, 3, 3);
+      }
+    }
+
+    function drawSparks(t: number) {
+      if (!context) return;
+      const wrap = height + 20;
+      for (const spark of sparks) {
+        const y = ((((spark.y - (spark.speed * t) / 1000) % wrap) + wrap) % wrap) - 10;
+        const x = spark.x + Math.sin(t / 400 + spark.phase) * 6;
+        const under = heights[Math.floor(y / cell) * cols + Math.floor(x / cell)] ?? 0;
+        if (under < 0.5) continue;
+        context.fillStyle = `rgba(255, 90, 70, ${0.5 + 0.5 * Math.sin(t / 90 + spark.phase)})`;
+        context.fillRect(x, y, spark.size, spark.size);
+      }
     }
 
     function draw(now: number) {
       if (!canvas || !context) return;
       const t = mode === 'still' ? 0 : now - start;
-      context.clearRect(0, 0, canvas.width, canvas.height);
-      drawMask(t);
-      const drawn = [];
-      for (const cube of placed) {
-        const p = progress(cube.order, t);
-        const item = p > 0 ? drawCube(cube, p, t) : null;
-        if (item) drawn.push(item);
+      context.clearRect(0, 0, width, height);
+      const grown = blocks.map((block) => ({ block, ...grow(block, t) }));
+      grown.forEach(({ block, h, alpha }) => {
+        heights[block.row * cols + block.col] = alpha > 0.01 ? h : 0;
+      });
+      for (const { block, h, glow } of grown) {
+        if (h > 0 || glow <= 0) continue;
+        context.fillStyle = `rgba(255, 36, 24, ${0.3 * glow})`;
+        context.fillRect(block.col * cell, block.row * cell, cell, cell);
       }
-      drawn.sort((a, b) => b.depth - a.depth);
-      for (const item of drawn) item.render(context);
+      const visible = grown.filter(({ alpha }) => alpha > 0.01).sort((a, b) => a.h - b.h);
+      for (const { block, h, alpha } of visible) {
+        context.globalAlpha = alpha;
+        drawBlock(block, h, t);
+      }
+      context.globalAlpha = 1;
+      drawSparks(t);
     }
 
     function resize() {
@@ -278,46 +288,27 @@ export function Corruption({
       canvas.width = Math.round(width * ratio);
       canvas.height = Math.round(height * ratio);
       context.setTransform(ratio, 0, 0, ratio, 0, 0);
-      focal = width / 2 / Math.tan(halfView);
       cols = Math.ceil(width / cell);
       rows = Math.ceil(height / cell);
       const ox = origin.x * width,
         oy = origin.y * height;
-      aim = [(ox - width / 2) / focal, (height / 2 - oy) / focal, -1];
+      vanish = [ox, oy];
       const longest = Math.max(
         Math.hypot(ox, oy),
         Math.hypot(width - ox, height - oy),
         Math.hypot(ox, height - oy),
         Math.hypot(width - ox, oy),
       );
-      const reach = (x: number, y: number) => Math.hypot(x - ox, y - oy) / longest;
-      mask = layoutMask(cols, rows, reach);
-      const angle = (x: number, y: number) => {
-        const ray: Vec = [(x - width / 2) / focal, (height / 2 - y) / focal, -1];
-        const cos =
-          (ray[0] * aim[0] + ray[1] * aim[1] + ray[2] * aim[2]) /
-          (Math.hypot(...ray) * Math.hypot(...aim));
-        return Math.acos(Math.min(cos, 1));
-      };
-      const widest = Math.max(angle(0, 0), angle(width, 0), angle(0, height), angle(width, height));
-      const slot = (spill * width) / gridCols;
-      placed = cubes.map((cube) => {
-        const x = width / 2 + (cube.u * width) / 2,
-          y = height / 2 - (cube.v * height) / 2;
-        const near = Math.min(angle(x, y) / widest, 1);
-        const distance = 0.45 + (1 - near) ** 1.4 * 2.2 + cube.depth * 0.5;
-        const rayX = (x - width / 2) / focal,
-          rayY = (height / 2 - y) / focal;
-        const pixels = slot * (0.45 + cube.size * 1.1) * (0.7 + 0.6 * near);
-        return {
-          home: [rayX * distance, rayY * distance, -distance],
-          half: (distance * pixels) / 2 / focal,
-          yaw: -Math.atan(rayX) + cube.yaw,
-          pitch: cube.pitch,
-          pulse: cube.pulse,
-          order: outward(reach(x, y), cube.jitter),
-        };
-      });
+      blocks = layoutBlocks(cols, rows, (x, y) => Math.hypot(x - ox, y - oy) / longest);
+      sparks = layoutSparks(width, height);
+      heights = new Float64Array(cols * rows);
+      const gradient = context.createLinearGradient(0, 0, width, height);
+      gradient.addColorStop(0, '#050506');
+      gradient.addColorStop(0.42, '#0b0b0e');
+      gradient.addColorStop(0.5, '#141418');
+      gradient.addColorStop(0.58, '#0b0b0e');
+      gradient.addColorStop(1, '#040405');
+      sheen = gradient;
       start = performance.now();
       draw(start);
     }
