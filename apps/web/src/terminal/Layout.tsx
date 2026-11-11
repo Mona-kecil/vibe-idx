@@ -16,8 +16,8 @@ export const layouts: Record<Layout, { tree: LayoutNode; slots: Record<string, F
     },
     slots: {
       a: ['WL'],
-      b: ['NEWS', 'CA', 'CAL'],
-      c: ['SIG', 'MOV', 'HEAT', 'RISK'],
+      b: ['NEWS', 'CA'],
+      c: ['SIG', 'MOV'],
     },
   },
   focus: {
