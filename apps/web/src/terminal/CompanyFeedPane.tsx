@@ -1,4 +1,3 @@
-import { Fragment } from 'react';
 import type { Ticker } from '../data';
 import { attachments } from '../ticker/logic';
 import { dateText } from '../ticker/format';
@@ -230,7 +229,8 @@ export function CompanyFeedPane() {
       (upcoming(a) ? 1 : -1) * (timestamp(a.date).getTime() - timestamp(b.date).getTime()) ||
       a.key.localeCompare(b.key),
   );
-  const firstPast = items.findIndex((item) => !upcoming(item));
+  const upcomingItems = items.filter(upcoming);
+  const recentItems = items.filter((item) => !upcoming(item));
   return (
     <Scroll reset={ticker} className="company-feed">
       <div className="feed-status">
@@ -264,23 +264,20 @@ export function CompanyFeedPane() {
           <col className="feed-date-column" />
           <col />
         </colgroup>
-        <tbody>
-          {items.map((item, index) => (
-            <Fragment key={item.key}>
-              {index === 0 && upcoming(item) && (
-                <tr className="feed-heading">
-                  <th colSpan={3}>Upcoming</th>
-                </tr>
-              )}
-              {index === firstPast && firstPast > 0 && (
-                <tr className="feed-heading">
-                  <th colSpan={3}>Recent</th>
-                </tr>
-              )}
-              <FeedRow item={item} />
-            </Fragment>
-          ))}
-        </tbody>
+        {upcomingItems.length > 0 && (
+          <tbody aria-label="Upcoming actions">
+            {upcomingItems.map((item) => (
+              <FeedRow key={item.key} item={item} />
+            ))}
+          </tbody>
+        )}
+        {recentItems.length > 0 && (
+          <tbody aria-label="Recent items">
+            {recentItems.map((item) => (
+              <FeedRow key={item.key} item={item} />
+            ))}
+          </tbody>
+        )}
       </table>
     </Scroll>
   );

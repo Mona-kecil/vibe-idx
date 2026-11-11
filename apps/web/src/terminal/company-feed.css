@@ -44,10 +44,10 @@
 .terminal-page .feed-time {
   white-space: nowrap;
 }
-.terminal-page .company-feed .feed-heading th {
-  position: static;
-  text-align: left;
-  padding: 7px;
+.terminal-page .company-feed tbody + tbody::before {
+  content: '';
+  display: table-row;
+  height: 16px;
 }
 .terminal-page .feed-status {
   padding: 4px 8px;

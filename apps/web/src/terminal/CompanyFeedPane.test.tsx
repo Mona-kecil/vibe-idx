@@ -152,10 +152,9 @@ describe('company feed', () => {
       '2026-11-10',
       '2026-11-09T12:00:00.000Z',
     ]);
-    expect([...host.querySelectorAll('th')].map((el) => el.textContent)).toEqual([
-      'Upcoming',
-      'Recent',
-    ]);
+    expect(host.querySelectorAll('th')).toHaveLength(0);
+    expect(host.querySelector('[aria-label="Upcoming actions"]')?.children).toHaveLength(2);
+    expect(host.querySelector('[aria-label="Recent items"]')?.children).toHaveLength(4);
     expect(host.textContent).toContain('50 IDR per share');
     expect(host.querySelector('.feed-status')?.firstElementChild?.textContent).toBe(
       'Actions as of 11 Nov 2026',
@@ -191,9 +190,10 @@ describe('company feed', () => {
       '00:00',
     );
     expect(
-      host.querySelector('[data-source-date="2026-11-11T00:30"]')?.previousElementSibling
-        ?.textContent,
-    ).toBe('Recent');
+      host
+        .querySelector('[data-source-date="2026-11-11T00:30"]')
+        ?.parentElement?.getAttribute('aria-label'),
+    ).toBe('Recent items');
     expect(host.textContent).toContain('02:30 WIB');
   });
   it('distinguishes every kind with an accessible mark and keeps exact source and attachment links', async () => {
