@@ -186,8 +186,11 @@ function Price({
       title={open ? `${open.source} ${nf(open.price)}` : 'Opening price unavailable'}
     >
       {whole ? <span className="tick-whole-price">{nf(value)}</span> : nf(value, decimals)}
-      {change !== null &&
-        ` (${change > 0 ? '+' : change < 0 ? '−' : ''}${nf(Math.abs(change), 2)}%)`}
+      {change !== null && (
+        <span className="tick-price-change">
+          {` (${change > 0 ? '+' : change < 0 ? '−' : ''}${nf(Math.abs(change), 2)}%)`}
+        </span>
+      )}
     </span>
   );
 }

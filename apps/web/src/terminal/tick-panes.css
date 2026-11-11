@@ -48,6 +48,15 @@
   display: inline-block;
   padding-right: 2ch;
 }
+/* The change keeps a fixed slot, so a longer percentage never pushes the price out of line. */
+.terminal-page :is(.tick-tape, .tick-blocks) .tick-price-change {
+  display: inline-block;
+  min-width: 10ch;
+  text-align: right;
+}
+.terminal-page :is(.tick-tape, .tick-blocks) :is(th, td):nth-child(3) {
+  text-align: center;
+}
 .terminal-page .tick-foreign {
   color: var(--broker-foreign);
 }

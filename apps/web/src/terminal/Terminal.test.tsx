@@ -1372,9 +1372,11 @@ it.each(['sell', 'buy', 'auction-sell', 'auction-buy'])(
         ? ['110 (+10.00%) 150', '100 (0.00%) 50', '90 (−10.00%) 200']
         : ['90 (−10.00%) 200', '100 (0.00%) 50', '110 (+10.00%) 150'],
     );
-    expect([...line.querySelectorAll('span > span')].map((price) => price.className)).toEqual(
-      descending ? ['up', 'mut', 'dn'] : ['dn', 'mut', 'up'],
-    );
+    expect(
+      [...line.querySelectorAll('span > span:not(.tick-price-change)')].map(
+        (price) => price.className,
+      ),
+    ).toEqual(descending ? ['up', 'mut', 'dn'] : ['dn', 'mut', 'up']);
     const singlePrice = [...host.querySelectorAll('.tick-blocks tbody tr')].find(
       (row) => cells(row)[1] === '100 (0.00%)',
     )!;
