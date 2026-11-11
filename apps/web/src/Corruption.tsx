@@ -293,7 +293,8 @@ export function Corruption({
         path.closePath();
         return path;
       };
-      const light = 0.45 + 0.55 * Math.min(block.layer, 1);
+      const light = 0.12 + 0.88 * Math.min(block.layer, 1) ** 1.6;
+      const fog = `rgba(0, 0, 0, ${0.65 * (1 - light)})`;
       const [[left, top], [right], [, bottom]] = corners;
       const walls: [number, number, string, boolean][] = [
         [0, 1, 'rgb(60, 8, 10)', top > vy],
@@ -311,12 +312,14 @@ export function Corruption({
         const wall = quad([a, b, c, d]);
         context.fillStyle = fill;
         context.fill(wall);
+        context.fillStyle = fog;
+        context.fill(wall);
         strokeNeon(wall, 0.9 * light);
       }
       const face = quad([...corners]);
       context.fillStyle = sheen;
       context.fill(face);
-      context.fillStyle = `rgba(0, 0, 0, ${0.5 * (1 - light)})`;
+      context.fillStyle = fog;
       context.fill(face);
       strokeNeon(face, 0.9 * light);
 
@@ -331,7 +334,7 @@ export function Corruption({
           if (index === 0) traces.moveTo(x, y);
           else traces.lineTo(x, y);
         });
-      strokeNeon(traces, glow * (0.65 + 0.35 * light));
+      strokeNeon(traces, glow * (0.2 + 0.8 * light));
       if (mode !== 'hold' || !block.traces.length) return;
       context.save();
       context.setLineDash([16, pulseGap]);
