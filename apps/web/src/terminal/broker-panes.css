@@ -15,7 +15,7 @@
   display: grid;
   align-items: start;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 12px;
+  gap: 24px;
 }
 .terminal-page .broker-ledger {
   font-size: 11px;
