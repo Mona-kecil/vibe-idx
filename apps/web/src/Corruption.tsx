@@ -10,8 +10,8 @@ const nubGrowUnits = 1.6;
 const unitMs = 79;
 const liftShare = 0.3;
 const sparkCount = 90;
-const pulseGap = 520;
-const pulseSpeed = 0.4;
+const pulseGap = 300;
+const pulseSpeed = 0.15;
 const layoutSeed = Math.floor(Math.random() * 2 ** 32);
 let origin = { x: 0.5, y: 0.5 };
 
