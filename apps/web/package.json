@@ -13,6 +13,7 @@
     "test": "CI=true vp test"
   },
   "dependencies": {
+    "@resvg/resvg-js": "2.6.2",
     "@sentry/node": "^10.78.0",
     "@sentry/react": "^10.78.0",
     "@workos-inc/authkit-react": "^0.16.3",
