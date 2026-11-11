@@ -30,6 +30,7 @@ export function commandSuggestions(
   return [
     ...Object.entries(functions).map(([code, label]) => ({ code, label })),
     ...['GRID', 'FOCUS', 'FLOW', 'HELP'].map((code) => ({ code, label: '' })),
+    { code: 'PIN', label: 'Pin or unpin ticker' },
     ...[...stocks]
       .sort((a, b) => b.value - a.value)
       .map((stock) => ({ code: stock.ticker, label: stock.name })),
@@ -50,7 +51,7 @@ export function CommandBar({
   openFunction: (id: FunctionId, layout: Layout) => void;
   maximize: () => void;
 }) {
-  const { data, setTicker, pins, ticker, select, selection, filter } = useTerminal();
+  const { data, setTicker, pins, togglePin, ticker, select, selection, filter } = useTerminal();
   const input = useRef<HTMLInputElement>(null);
   const helpButton = useRef<HTMLButtonElement>(null);
   const [text, setText] = useState(''),
@@ -60,6 +61,7 @@ export function CommandBar({
     [error, setError] = useState('');
   const last = text.trim().toUpperCase().split(/\s+/).at(-1) ?? '';
   const suggestions = commandSuggestions(data.stocks, last);
+  const stockCodes = new Set(data.stocks.map((stock) => stock.ticker));
   function run(command: string) {
     setError('');
     const tokens = command.toUpperCase().trim().split(/\s+/);
@@ -68,10 +70,12 @@ export function CommandBar({
       tokens.some((token) => data.stocks.some((stock) => stock.ticker === token))
     )
       filter('news', 'TICKER');
+    const named = tokens.filter((token) => data.stocks.some((stock) => stock.ticker === token));
+    if (tokens.includes('PIN')) for (const code of named.length ? named : [ticker]) togglePin(code);
     let targetLayout = layout;
     let targetFunction: FunctionId | null = null;
     for (const token of tokens) {
-      if (data.stocks.some((stock) => stock.ticker === token)) setTicker(token);
+      if (named.includes(token)) setTicker(token);
       else if (isFunction(token)) targetFunction = token;
       else if (isLayout(token.toLowerCase())) {
         const next = token.toLowerCase();
@@ -80,6 +84,7 @@ export function CommandBar({
           setLayout(next);
         }
       } else if (token === 'HELP' || token === '?') setHelp(true);
+      else if (token === 'PIN') continue;
       else if (token) setError(`Unknown command: ${token}`);
     }
     if (targetFunction) openFunction(targetFunction, targetLayout);
@@ -229,6 +234,21 @@ export function CommandBar({
             >
               <b>{item.code}</b>
               <span>{item.label}</span>
+              {stockCodes.has(item.code) && (
+                <button
+                  className="pin-button"
+                  tabIndex={-1}
+                  aria-label={`${pins.includes(item.code) ? 'Unpin' : 'Pin'} ${item.code}`}
+                  aria-pressed={pins.includes(item.code)}
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    togglePin(item.code);
+                  }}
+                >
+                  {pins.includes(item.code) ? '★' : '☆'}
+                </button>
+              )}
             </div>
           ))}
         </div>
@@ -308,6 +328,8 @@ export function CommandBar({
                     <dd>Focus command line</dd>
                     <dt>Enter</dt>
                     <dd>Run ticker or function, e.g. BREN BRK</dd>
+                    <dt>PIN</dt>
+                    <dd>Pin or unpin a ticker, e.g. BREN PIN</dd>
                     <dt>Tab</dt>
                     <dd>Complete suggestion</dd>
                     <dt>Up Down</dt>

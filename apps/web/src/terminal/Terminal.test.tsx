@@ -228,14 +228,16 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 describe('React terminal', () => {
-  it('shows watchlist, signals, movers and news in separate GRID panes', async () => {
+  it('shows watchlist, signals, heatmap with movers behind it, and news in separate GRID panes', async () => {
     await render();
     expect(
       [...host.querySelectorAll('.pane')]
         .map((el) => el.querySelector('[role="tab"][aria-selected="true"]')?.textContent ?? '')
         .sort((a, b) => a.localeCompare(b)),
-    ).toEqual(['MOV', 'NEWS', 'SIG', 'WL']);
+    ).toEqual(['HEAT', 'NEWS', 'SIG', 'WL']);
+    expect(host.querySelector('[data-slot="d"] .heat')).not.toBeNull();
     expect(host.querySelector('[data-slot="c"] [role="tab"][title="Market movers"]')).toBeNull();
+    await click('[data-slot="d"] [role="tab"][title="Market movers"]');
     expect(host.querySelector('[data-slot="d"] [aria-label="Change ranking"]')).not.toBeNull();
     expect(host.querySelector('[data-slot="d"] [aria-label="Value ranking"]')).not.toBeNull();
   });

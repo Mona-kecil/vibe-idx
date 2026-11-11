@@ -12,12 +12,12 @@ export function WatchlistPane() {
     return stock ? [stock] : [];
   });
   return (
-    <Scroll reset="watchlist">
+    <Scroll reset="watchlist" className="watchlist">
       {stocks.length ? (
         <QuoteTable stocks={stocks} selected={ticker} />
       ) : (
         <Empty>
-          No pinned stocks. <PinButton ticker={ticker} showTicker /> or use ☆ in MOV and SIG.
+          No pinned stocks. <PinButton ticker={ticker} showTicker /> or type a ticker then PIN.
         </Empty>
       )}
     </Scroll>

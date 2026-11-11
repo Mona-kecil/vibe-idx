@@ -75,49 +75,52 @@ export function NewsPane() {
       </div>
       <Scroll reset={`${filters.news}:${ticker}`}>
         <Availability resource={resource} name="News">
-          {() => (
-            <>
-              {publications.news.kind === 'ready' && (
-                <Publication
-                  date={publications.news.data.as_of}
-                  errors={publications.news.data.errors}
-                />
-              )}
-              {list.length ? (
-                list.map((item) => {
-                  const body = (
-                    <>
-                      <div className="news-meta">
-                        <time>{wib(item.ts)} WIB</time>
-                        <span>{item.src}</span>
-                      </div>
-                      <strong>{item.title}</strong>
-                      <div className="tags">
-                        {item.tags
-                          .filter((tag) => filters.news !== 'TICKER' || tag !== ticker)
-                          .map((tag) => (
-                            <span key={tag}>{tag}</span>
-                          ))}
-                      </div>
-                    </>
-                  );
-                  return (
-                    <a
-                      className="news-item"
-                      key={item.link}
-                      href={item.link}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      {body}
-                    </a>
-                  );
-                })
-              ) : (
-                <Empty>No news in this view</Empty>
-              )}
-            </>
-          )}
+          {() => {
+            let day = '';
+            return (
+              <>
+                {publications.news.kind === 'ready' && (
+                  <Publication
+                    date={publications.news.data.as_of}
+                    errors={publications.news.data.errors}
+                  />
+                )}
+                {list.length ? (
+                  list.map((item) => {
+                    const date = dateText(calendarDate(item.ts));
+                    const heading = date !== day;
+                    day = date;
+                    const tags = item.tags.filter(
+                      (tag) => filters.news !== 'TICKER' || tag !== ticker,
+                    );
+                    return (
+                      <Fragment key={item.link}>
+                        {heading && <h3 className="news-day">{date}</h3>}
+                        <a className="news-item" href={item.link} target="_blank" rel="noreferrer">
+                          <time dateTime={item.ts} title={`${wib(item.ts)} WIB`}>
+                            {wib(item.ts, { day: undefined, month: undefined })}
+                          </time>
+                          <span>
+                            <strong>{item.title}</strong>
+                            <span className="news-src">{item.src}</span>
+                            {tags.length > 0 && (
+                              <span className="tags">
+                                {tags.map((tag) => (
+                                  <span key={tag}>{tag}</span>
+                                ))}
+                              </span>
+                            )}
+                          </span>
+                        </a>
+                      </Fragment>
+                    );
+                  })
+                ) : (
+                  <Empty>No news in this view</Empty>
+                )}
+              </>
+            );
+          }}
         </Availability>
       </Scroll>
     </>
