@@ -4,10 +4,14 @@ export type CorruptionMode = 'spread' | 'hold' | 'retreat' | 'still';
 
 const cell = 40;
 const enterMs = 220;
-const cubeCount = 150;
-const thetaMax = 1.25;
+const gridCols = 18;
+const gridRows = 11;
+const strays = 70;
+const spill = 1.12;
 const halfView = 1.0;
 const far = 8;
+const glitchMs = 70;
+const glitchChance = 0.35;
 const travel = 0.8;
 const part = 2.4;
 const layoutSeed = Math.floor(Math.random() * 2 ** 32);
@@ -19,15 +23,16 @@ export function aimCorruption(x: number, y: number) {
 
 type Vec = [number, number, number];
 type Cube = {
-  theta: number;
+  u: number;
   v: number;
-  r: number;
-  half: number;
+  depth: number;
+  size: number;
   yaw: number;
   pitch: number;
   pulse: number;
   jitter: number;
 };
+type Placed = { home: Vec; half: number; yaw: number; pitch: number; pulse: number; order: number };
 
 const corners: Vec[] = Array.from({ length: 8 }, (_, i) => [
   i & 1 ? 1 : -1,
@@ -55,16 +60,28 @@ function random(seed: number) {
 
 function layoutCubes(): Cube[] {
   const next = random(layoutSeed);
-  return Array.from({ length: cubeCount }, () => ({
-    theta: (next() * 2 - 1) * thetaMax,
-    v: next() * 2.2 - 1.1,
-    r: 0.75 + next() * 1.1,
-    half: 0.03 + next() ** 2.2 * 0.2,
+  const cube = (u: number, v: number): Cube => ({
+    u,
+    v,
+    depth: next(),
+    size: next() ** 1.6,
     yaw: (next() - 0.5) * 0.7,
     pitch: (next() - 0.5) * 0.6,
     pulse: next() * Math.PI * 2,
     jitter: next(),
-  }));
+  });
+  const across = (index: number, count: number) => ((index + next()) / count) * 2 - 1;
+  return [
+    ...Array.from({ length: gridCols * gridRows }, (_, index) =>
+      cube(
+        across(index % gridCols, gridCols) * spill,
+        across(Math.floor(index / gridCols), gridRows) * spill,
+      ),
+    ),
+    ...Array.from({ length: strays }, () =>
+      cube((next() * 2 - 1) * spill, (next() * 2 - 1) * spill),
+    ),
+  ];
 }
 
 function outward(fromOrigin: number, jitter: number) {
@@ -125,7 +142,7 @@ export function Corruption({
     let cols = 0,
       rows = 0,
       mask = new Float64Array(0),
-      orders: number[] = [],
+      placed: Placed[] = [],
       aim: Vec = [0, 0, -1],
       width = 0,
       height = 0,
@@ -190,15 +207,9 @@ export function Corruption({
       return [x, y, z];
     }
 
-    function drawCube(cube: Cube, p: number, t: number, sway: number) {
-      const theta = cube.theta + sway;
-      const distance = cube.r * Math.cos(theta);
-      if (distance <= 0.12) return null;
-      const center = place(
-        [cube.r * Math.sin(theta), (cube.v * (height / 2) * distance) / focal, -distance],
-        p,
-      );
-      const yaw = -theta + cube.yaw;
+    function drawCube(cube: Placed, p: number, t: number) {
+      const center = place(cube.home, p);
+      const yaw = cube.yaw;
       const world = corners.map(([cx, cy, cz]) => {
         const [x, y, z] = rotate([cx * cube.half, cy * cube.half, cz * cube.half], yaw, cube.pitch);
         return [center[0] + x, center[1] + y, center[2] + z] as Vec;
@@ -248,17 +259,39 @@ export function Corruption({
     function draw(now: number) {
       if (!canvas || !context) return;
       const t = mode === 'still' ? 0 : now - start;
+      const glitch = random(layoutSeed ^ Math.imul(Math.floor(t / glitchMs) + 1, 0x2c1b3c6d));
+      const bursting = mode !== 'still' && glitch() < glitchChance;
       context.clearRect(0, 0, canvas.width, canvas.height);
       drawMask(t);
-      const sway = mode === 'hold' ? 0.045 * Math.sin(t / 1500) : 0;
       const drawn = [];
-      for (const [index, cube] of cubes.entries()) {
-        const p = progress(orders[index] ?? 0, t);
-        const item = p > 0 ? drawCube(cube, p, t, sway) : null;
+      for (const cube of placed) {
+        if (bursting && glitch() < 0.08) continue;
+        const p = progress(cube.order, t);
+        const item = p > 0 ? drawCube(cube, p, t) : null;
         if (item) drawn.push(item);
       }
       drawn.sort((a, b) => b.depth - a.depth);
       for (const item of drawn) item.render(context);
+      if (bursting) tear(glitch);
+    }
+
+    function tear(glitch: () => number) {
+      if (!canvas || !context) return;
+      const ratio = canvas.width / width;
+      for (let slices = 3 + Math.floor(glitch() * 6); slices > 0; slices--) {
+        const y = glitch() * height,
+          band = 6 + glitch() ** 2 * 120,
+          shift = (glitch() - 0.5) * 360;
+        const slice = [0, y * ratio, canvas.width, band * ratio] as const;
+        context.drawImage(canvas, ...slice, shift, y, width, band);
+        context.globalCompositeOperation = 'screen';
+        context.globalAlpha = 0.45;
+        context.drawImage(canvas, ...slice, shift + (glitch() - 0.5) * 40, y, width, band);
+        context.globalCompositeOperation = 'source-over';
+        context.globalAlpha = 1;
+        context.fillStyle = glitch() < 0.5 ? 'rgba(255, 60, 60, 0.55)' : 'rgba(80, 230, 255, 0.3)';
+        context.fillRect(0, y, width, 1);
+      }
     }
 
     function resize() {
@@ -283,12 +316,32 @@ export function Corruption({
       );
       const reach = (x: number, y: number) => Math.hypot(x - ox, y - oy) / longest;
       mask = layoutMask(cols, rows, reach);
-      orders = cubes.map((cube) =>
-        outward(
-          reach(width / 2 + focal * Math.tan(cube.theta), height / 2 - (cube.v * height) / 2),
-          cube.jitter,
-        ),
-      );
+      const angle = (x: number, y: number) => {
+        const ray: Vec = [(x - width / 2) / focal, (height / 2 - y) / focal, -1];
+        const cos =
+          (ray[0] * aim[0] + ray[1] * aim[1] + ray[2] * aim[2]) /
+          (Math.hypot(...ray) * Math.hypot(...aim));
+        return Math.acos(Math.min(cos, 1));
+      };
+      const widest = Math.max(angle(0, 0), angle(width, 0), angle(0, height), angle(width, height));
+      const slot = (spill * width) / gridCols;
+      placed = cubes.map((cube) => {
+        const x = width / 2 + (cube.u * width) / 2,
+          y = height / 2 - (cube.v * height) / 2;
+        const near = Math.min(angle(x, y) / widest, 1);
+        const distance = 0.45 + (1 - near) ** 1.4 * 2.2 + cube.depth * 0.5;
+        const rayX = (x - width / 2) / focal,
+          rayY = (height / 2 - y) / focal;
+        const pixels = slot * (0.45 + cube.size * 1.1) * (0.7 + 0.6 * near);
+        return {
+          home: [rayX * distance, rayY * distance, -distance],
+          half: (distance * pixels) / 2 / focal,
+          yaw: -Math.atan(rayX) + cube.yaw,
+          pitch: cube.pitch,
+          pulse: cube.pulse,
+          order: outward(reach(x, y), cube.jitter),
+        };
+      });
       start = performance.now();
       draw(start);
     }
