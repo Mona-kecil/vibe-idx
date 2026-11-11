@@ -237,6 +237,20 @@ describe('React terminal', () => {
     expect(host.textContent).not.toContain('SAMPLE');
     expect(host.querySelector('[role="tab"][title="Closing order book"]')).not.toBeNull();
   });
+  it.each([
+    ['GP', 'FF'],
+    ['DD', 'RT'],
+    ['TB', 'OB'],
+  ])('keeps %s and %s visible together in FLOW', async (first, second) => {
+    await render();
+    await command('FLOW');
+    await click(`[role="tab"][id$="-${first}"]`);
+    await click(`[role="tab"][id$="-${second}"]`);
+    for (const id of [first, second]) {
+      expect(button(`[role="tab"][id$="-${id}"]`).getAttribute('aria-selected')).toBe('true');
+      expect(host.querySelector(`[role="tabpanel"][aria-labelledby$="-${id}"]`)).not.toBeNull();
+    }
+  });
   it('renders missing publications once and resets scrolling on filter changes', async () => {
     await render();
     expect(host.textContent).toContain('News unavailable');

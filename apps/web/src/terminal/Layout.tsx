@@ -34,15 +34,15 @@ export const layouts: Record<Layout, { tree: LayoutNode; slots: Record<string, F
   },
   flow: {
     tree: {
-      direction: 'col',
-      sizes: [24, 76],
-      children: ['b', { direction: 'row', sizes: [38, 36, 26], children: ['d', 'e', 'c'] }],
+      direction: 'row',
+      sizes: [40, 36, 24],
+      children: [{ direction: 'col', sizes: [50, 50], children: ['b', 'e'] }, 'c', 'd'],
     },
     slots: {
-      b: ['GP', 'RT'],
-      c: ['TB', 'OB'],
-      d: ['BRK', 'BFL'],
-      e: ['FF', 'DD'],
+      b: ['GP'],
+      c: ['DD'],
+      d: ['OB', 'RT'],
+      e: ['FF', 'BRK', 'BFL', 'TB'],
     },
   },
 };
