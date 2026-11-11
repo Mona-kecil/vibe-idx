@@ -340,3 +340,22 @@ it.each([
     expect(change?.getAttribute('title')).toContain('exact change unknown');
   },
 );
+
+it.each([
+  { pct: 9.002, text: '+0.00 pp', exact: '+0.002 pp' },
+  { pct: 8.998, text: '−0.00 pp', exact: '−0.002 pp' },
+  { pct: 9, text: '0.00 pp', exact: '0 pp' },
+])(
+  'rounds small changes consistently while retaining $exact on hover',
+  async ({ pct, text, exact }) => {
+    detailData = tickerSchema.parse({
+      ...ticker,
+      holders: [{ ...ticker.holders[0], pct }],
+      changes: [ticker.changes[0]],
+    });
+    await act(async () => root.render(<HoldersPane />));
+    const change = host.querySelector('.holder-change');
+    expect(change?.textContent).toBe(text);
+    expect(change?.getAttribute('title')).toContain(`exact change ${exact}`);
+  },
+);

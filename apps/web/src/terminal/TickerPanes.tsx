@@ -133,7 +133,7 @@ function holdingText(point: HolderPoint) {
 function holdingChange(first: HolderPoint, last: HolderPoint) {
   if (first.pct !== null && last.pct !== null) {
     const value = last.pct - first.pct;
-    return { text: `${signed(value, (v) => nf(v, v > 0 && v < 0.005 ? 4 : 2))} pp`, value };
+    return { text: `${signed(value, (v) => nf(v, 2))} pp`, value };
   }
   if (first.pct !== null && last.pct === null) {
     const bound = last.below - first.pct;
@@ -334,7 +334,7 @@ function HoldersChart({
                   </b>
                   <span
                     className={`holder-change ${direction(change.value)}`}
-                    title={`${change.text} from ${dateText(first.date)} to ${dateText(last.date)}${first.pct === null || last.pct === null ? '; exact change unknown because a holding is below the reporting threshold' : ''}`}
+                    title={`${change.text} from ${dateText(first.date)} to ${dateText(last.date)}${first.pct === null || last.pct === null ? '; exact change unknown because a holding is below the reporting threshold' : `; exact change ${signed(last.pct - first.pct, (v) => new Intl.NumberFormat('en-US', { maximumFractionDigits: 10 }).format(v))} pp`}`}
                   >
                     {change.text}
                   </span>
