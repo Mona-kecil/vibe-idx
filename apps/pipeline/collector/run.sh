@@ -23,7 +23,11 @@ mkdir -p "$data/parquet"
 uvx --quiet --from awscli aws s3 sync s3://vibe-idx-private/parquet "$data/parquet" \
   --exclude '*' --include 'prices/*.parquet' --include 'corporate_actions/*.parquet' \
   --include 'broker_activity/*.parquet' --include 'broker-activity-coverage.parquet' \
-  --endpoint-url "https://$R2_ACCOUNT_ID.r2.cloudflarestorage.com" --only-show-errors || fail
+  --endpoint-url "https://$R2_ACCOUNT_ID.r2.cloudflarestorage.com" --only-show-errors || {
+  status=$?
+  if ((status == 130 || status == 143)); then exit "$status"; fi
+  fail
+}
 
 status=0
 pnpm --dir "$repo" --filter @vibe-idx/pipeline brokers -- \
