@@ -383,6 +383,7 @@ function Flow({ days }: { days: BrokerDay[] }) {
       lines.current.set(series.code, line);
     });
     chart.subscribeCrosshairMove((event) => setHover(chartDate(event.time)));
+    chart.timeScale().applyOptions({ rightOffsetPixels: 6 });
     chart.timeScale().fitContent();
     return () => {
       lines.current.clear();
@@ -585,6 +586,7 @@ function ForeignFlow({ days }: { days: BrokerDay[] }) {
       })
       .setData(flow.map((d) => ({ time: d.date, value: d.cumulative })));
     chart.subscribeCrosshairMove((event) => setHover(chartDate(event.time)));
+    chart.timeScale().applyOptions({ rightOffsetPixels: 6 });
     chart.timeScale().fitContent();
     return () => chart.remove();
   }, [flow, ticker]);

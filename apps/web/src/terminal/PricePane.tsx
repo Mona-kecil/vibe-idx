@@ -331,12 +331,12 @@ function PriceHistory({
     };
     // Fit after the first layout, when the chart knows its pane and price-axis widths.
     const frame = requestAnimationFrame(() => {
-      api.timeScale().setVisibleLogicalRange(
-        visibleRange.current ?? {
-          from: Math.max(0, data.length - visibleBars),
-          to: data.length + 3,
-        },
-      );
+      if (visibleRange.current) api.timeScale().setVisibleLogicalRange(visibleRange.current);
+      else
+        api.timeScale().applyOptions({
+          barSpacing: api.timeScale().width() / Math.min(data.length, visibleBars),
+          rightOffsetPixels: 6,
+        });
       fitted = true;
     });
     return () => {
