@@ -2,19 +2,23 @@ import * as Sentry from '@sentry/node';
 
 export function startSentry() {
   const env = process.env;
-  // Sentry.init reads SENTRY_DSN from the environment on its own, so local runs must skip it.
-  if (env.GITHUB_ACTIONS !== 'true') return;
+  const github = env.GITHUB_ACTIONS === 'true';
+  const host = env.VIBE_IDX_SENTRY_HOST;
+  // Sentry.init reads SENTRY_DSN from the environment on its own, so runs that did not opt in must skip it.
+  if (!github && !host) return;
   Sentry.init({
     dsn: env.SENTRY_DSN,
     environment: 'production',
     release: env.GITHUB_SHA,
     initialScope: {
-      tags: {
-        workflow: env.GITHUB_WORKFLOW,
-        run_url:
-          env.GITHUB_RUN_ID &&
-          `${env.GITHUB_SERVER_URL}/${env.GITHUB_REPOSITORY}/actions/runs/${env.GITHUB_RUN_ID}`,
-      },
+      tags: github
+        ? {
+            workflow: env.GITHUB_WORKFLOW,
+            run_url:
+              env.GITHUB_RUN_ID &&
+              `${env.GITHUB_SERVER_URL}/${env.GITHUB_REPOSITORY}/actions/runs/${env.GITHUB_RUN_ID}`,
+          }
+        : { host },
     },
   });
 }
