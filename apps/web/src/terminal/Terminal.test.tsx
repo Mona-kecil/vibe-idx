@@ -226,7 +226,7 @@ describe('React terminal', () => {
     await act(async () => link?.click());
     expect(window.location.search).toContain('t=BBCA');
     await click('.lay button:nth-child(2)');
-    expect(host.querySelectorAll('.pane')).toHaveLength(2);
+    expect(host.querySelectorAll('.pane')).toHaveLength(3);
     expect(window.location.search).toContain('l=focus');
     await click('.pane .maxb');
     expect(host.querySelector('.pane.max')).not.toBeNull();
@@ -235,21 +235,21 @@ describe('React terminal', () => {
     await click('.lay button:nth-child(3)');
     expect(host.querySelectorAll('.pane')).toHaveLength(4);
     expect(host.textContent).not.toContain('SAMPLE');
-    expect(host.querySelector('[role="tab"][title="Order book"]')).toBeNull();
+    expect(host.querySelector('[role="tab"][title="Closing order book"]')).not.toBeNull();
   });
   it('renders missing publications once and resets scrolling on filter changes', async () => {
     await render();
     expect(host.textContent).toContain('News unavailable');
-    await click('[data-slot="c"] [role="tab"]:nth-child(3)');
+    await command('CAL');
     expect(host.textContent).toContain('Calendar unavailable');
-    const body = host.querySelector<HTMLDivElement>('[data-slot="c"] .pb');
+    const body = host.querySelector<HTMLDivElement>('[aria-label="Economic calendar"] .pb');
     if (!body) throw new Error('Missing body');
     body.scrollTop = 120;
     await click('[aria-label="Calendar"] button:nth-child(2)');
     expect(body.scrollTop).toBe(0);
-    await click('[data-slot="c"] [role="tab"]:nth-child(4)');
+    await command('CA');
     expect(host.textContent).toContain('Corporate actions unavailable');
-    await click('[data-slot="d"] [role="tab"]:nth-child(2)');
+    await command('RISK');
     expect(host.textContent).toContain('Risk flags unavailable');
     expect(
       fetcher.mock.calls.filter(([path]) => requestUrl(path) === '/data/news.json'),
@@ -275,7 +275,7 @@ describe('React terminal', () => {
     await render();
     await command('BBCA BRK');
     expect(window.location.search).toBe('?t=BBCA&l=grid');
-    await click('[data-slot="e"] .empty button');
+    await click('[role="tabpanel"][aria-labelledby$="-BRK"] .empty button');
     expect(auth.signIn).toHaveBeenCalledOnce();
     expect(window.sessionStorage.getItem('vibe-idx-return-to')).toBe('/terminal?t=BBCA&l=grid');
     expect(fetcher.mock.calls.every(([path]) => !requestUrl(path).includes('/api/brokers'))).toBe(
@@ -298,7 +298,7 @@ describe('React terminal', () => {
     await render();
     await command('FOCUS BBCA NEWS');
     expect(window.location.search).toBe('?t=BBCA&l=focus');
-    expect(host.querySelectorAll('.pane')).toHaveLength(2);
+    expect(host.querySelectorAll('.pane')).toHaveLength(3);
     expect(
       host.querySelector('[aria-label="News region"] button[aria-pressed="true"]')?.textContent,
     ).toBe('TICKER');
@@ -309,6 +309,7 @@ describe('React terminal', () => {
   it('filters broker boards, types and units, pairs gross rows and mutes edge prices', async () => {
     auth.user = { id: 'test-user' };
     await render();
+    await command('BRK');
     expect(host.querySelector('.broker-ledger.buy')?.textContent).toContain('50.0K');
     await click('[aria-label="Broker period"] button:nth-child(2)');
     expect(host.querySelector('.broker-ledger.buy')?.textContent).toContain('200.0K');
@@ -330,6 +331,7 @@ describe('React terminal', () => {
   it('renders NET broker codes as text and keeps GROSS pairing interactive', async () => {
     auth.user = { id: 'test-user' };
     await render();
+    await command('BRK');
     expect(host.querySelector('.broker-ledger button')).toBeNull();
     expect(host.querySelector('.broker-ledger td.l span')?.getAttribute('title')).toContain(
       'LOCAL',
@@ -350,6 +352,7 @@ describe('React terminal', () => {
       },
       async () => {
         await render();
+        await command('BRK');
         await click('[aria-label="Broker period"] button:nth-child(2)');
         expect(host.querySelector('.broker-date')?.textContent).toContain('6–9 Nov 2026');
         for (const pane of ['BRK', 'BFL', 'FF']) {
@@ -397,6 +400,7 @@ describe('React terminal', () => {
       },
       async () => {
         await render();
+        await command('BRK');
         await click('[aria-label="Broker period"] button:nth-child(3)');
         expect(host.querySelector('.broker-ledger.buy')?.textContent).toContain('50.0K');
         expect(host.querySelector('.broker-ledger.buy')?.textContent).not.toContain('200.0K');
@@ -413,6 +417,7 @@ describe('React terminal', () => {
       window.history.replaceState(null, '', `/terminal?t=BREN&l=grid&brokerType=${type}`);
       auth.user = { id: 'test-user' };
       await render();
+      await command('BRK');
       expect(
         host.querySelector('[aria-label="Client domicile"] button[aria-pressed="true"]')
           ?.textContent,
@@ -431,17 +436,18 @@ describe('React terminal', () => {
   });
   it('uses the entire mover row to select a ticker and keeps links and pin controls independent', async () => {
     await render();
+    await command('MOV');
     await click('[aria-label="Movers"] button:nth-child(4)');
-    await click('[data-slot="d"] [aria-label="Pin BBCA"]');
+    await click('[data-slot="c"] [aria-label="Pin BBCA"]');
     expect(window.location.search).toContain('t=BREN');
     expect(host.querySelector('[data-slot="a"] a.ticker')?.textContent).toBe('BBCA');
     await act(async () => {
       host
-        .querySelector('[data-slot="d"] tbody tr:nth-child(2) td:last-child')
+        .querySelector('[data-slot="c"] tbody tr:nth-child(2) td:last-child')
         ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
     expect(window.location.search).toContain('t=BBCA');
-    const link = host.querySelector('[data-slot="d"] tbody tr:nth-child(2) a.ticker');
+    const link = host.querySelector('[data-slot="c"] tbody tr:nth-child(2) a.ticker');
     const modifiedClick = new MouseEvent('click', {
       bubbles: true,
       cancelable: true,
@@ -452,6 +458,7 @@ describe('React terminal', () => {
   });
   it('limits foreign movers to one session and restores longer periods for price movers', async () => {
     await render();
+    await command('MOV');
     await click('[aria-label="Mover period"] button:nth-child(2)');
     await click('[aria-label="Movers"] button:nth-child(4)');
     expect(
@@ -670,8 +677,8 @@ it('pushes ticker navigation, replaces layout navigation and restores on popstat
     window.history.replaceState(null, '', '/terminal?t=BREN&l=grid');
     window.dispatchEvent(new PopStateEvent('popstate'));
   });
-  expect(host.querySelector('[data-slot="b"] .ctx b')?.textContent).toBe('BREN');
-  expect(host.querySelectorAll('.pane')).toHaveLength(6);
+  expect(host.querySelector('[aria-label="Pin BREN"]')).not.toBeNull();
+  expect(host.querySelectorAll('.pane')).toHaveLength(3);
   expect(push).toHaveBeenCalledOnce();
   push.mockRestore();
   replace.mockRestore();
@@ -687,6 +694,7 @@ it('restores the layout when a command targets a different maximized pane', asyn
 
 it('keeps ticker identity without duplicating the price in pane headers', async () => {
   await render();
+  await command('FOCUS');
   const contexts = [...host.querySelectorAll('.ctx')].filter((el) => el.querySelector('b'));
   expect(contexts).toHaveLength(3);
   expect(contexts.every((el) => el.textContent === 'BREN')).toBe(true);
@@ -697,15 +705,16 @@ it('uses one tab stop per pane tablist and segment group with arrow navigation',
   for (const list of host.querySelectorAll('.tabs, .seg')) {
     expect([...list.querySelectorAll('button')].filter((el) => el.tabIndex === 0)).toHaveLength(1);
   }
-  const tab = button('[data-slot="c"] [aria-selected="true"]');
+  const tab = button('[data-slot="b"] [aria-selected="true"]');
   await act(async () => {
     tab.focus();
     tab.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
   });
-  expect(document.activeElement?.textContent).toBe('SIG');
-  const panel = host.querySelector('[data-slot="c"] [role="tabpanel"]');
+  expect(document.activeElement?.textContent).toBe('CA');
+  const panel = host.querySelector('[data-slot="b"] [role="tabpanel"]');
   expect(document.activeElement?.getAttribute('aria-controls')).toBe(panel?.id);
   expect(panel?.getAttribute('aria-labelledby')).toBe(document.activeElement?.id);
+  await command('MOV');
   const segment = button('[aria-label="Movers"] button');
   await act(async () => {
     segment.focus();
@@ -755,6 +764,7 @@ it('identifies failed broker sources even when the publication run is fresh', as
 it('keeps sign-in hidden while AuthKit is loading with no user', async () => {
   auth.isLoading = true;
   await render();
+  await command('BRK');
   expect(host.textContent).toContain('Checking sign-in…');
   expect([...host.querySelectorAll('button')].some((el) => el.textContent === 'Sign in')).toBe(
     false,
@@ -766,6 +776,7 @@ it.each(['4H', '1H', '15M'])(
   async (timeframe) => {
     tickSessions = true;
     await render();
+    await command('GP');
     expect(host.querySelector('.chart-host')?.getAttribute('data-series')).toBe('candles');
     expect(
       host.querySelector('[aria-label="Chart timeframe"] [aria-pressed="true"]')?.textContent,
@@ -793,6 +804,7 @@ it.each(['4H', '1H', '15M'])(
 it('keeps two compact control groups, fixed volume and foreign data, and remembers the icon choice', async () => {
   tickSessions = true;
   await render();
+  await command('GP');
   const series = () => host.querySelector('.chart-host');
   expect(series()?.getAttribute('data-series')).toBe('candles');
   expect(host.querySelectorAll('.chart-controls [role="group"]')).toHaveLength(2);
@@ -810,6 +822,7 @@ it('keeps two compact control groups, fixed volume and foreign data, and remembe
   await act(async () => root.unmount());
   root = createRoot(host);
   await render();
+  await command('GP');
   expect(series()?.getAttribute('data-series')).toBe('line');
   expect(window.localStorage.getItem('terminal:chart:type')).toBe('LINE');
   expect(host.querySelector('.legend')?.textContent).toContain('LOT');
@@ -823,6 +836,7 @@ it('ignores invalid chart type preferences and still works when localStorage is 
   tickSessions = true;
   window.localStorage.setItem('terminal:chart:type', 'area');
   await render();
+  await command('GP');
   expect(host.querySelector('.chart-host')?.getAttribute('data-series')).toBe('candles');
   const get = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
     throw new Error('blocked');
@@ -834,6 +848,7 @@ it('ignores invalid chart type preferences and still works when localStorage is 
     await act(async () => root.unmount());
     root = createRoot(host);
     await render();
+    await command('GP');
     await click('[aria-label="Line"]');
     expect(host.querySelector('.chart-host')?.getAttribute('data-series')).toBe('line');
   } finally {

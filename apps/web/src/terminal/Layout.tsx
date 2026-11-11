@@ -11,43 +11,38 @@ export const layouts: Record<Layout, { tree: LayoutNode; slots: Record<string, F
   grid: {
     tree: {
       direction: 'row',
-      sizes: [21, 45, 34],
-      children: [
-        { direction: 'col', sizes: [58, 42], children: ['a', 'd'] },
-        { direction: 'col', sizes: [56, 44], children: ['b', 'e'] },
-        { direction: 'col', sizes: [56, 44], children: ['c', 'f'] },
-      ],
+      sizes: [45, 55],
+      children: [{ direction: 'col', sizes: [35, 65], children: ['a', 'c'] }, 'b'],
     },
     slots: {
       a: ['WL'],
-      b: ['GP'],
-      c: ['NEWS', 'SIG', 'CAL', 'CA', 'HEAT'],
-      d: ['MOV', 'RISK'],
-      e: ['BRK', 'BFL', 'FF', 'RT', 'DD'],
-      f: ['HDS', 'DISC', 'KEY', 'OB', 'TB'],
+      b: ['NEWS', 'CA', 'CAL'],
+      c: ['SIG', 'MOV', 'HEAT', 'RISK'],
     },
   },
   focus: {
-    tree: { direction: 'row', sizes: [70, 30], children: ['b', 'c'] },
+    tree: {
+      direction: 'row',
+      sizes: [60, 40],
+      children: [{ direction: 'col', sizes: [65, 35], children: ['b', 'c'] }, 'f'],
+    },
     slots: {
-      b: ['GP', 'KEY', 'BRK', 'BFL', 'FF', 'RT', 'DD', 'OB', 'TB', 'HDS', 'DISC', 'HEAT', 'MOV'],
-      c: ['NEWS', 'SIG', 'CAL', 'CA', 'RISK', 'WL'],
+      b: ['GP', 'KEY'],
+      c: ['DISC', 'NEWS'],
+      f: ['HDS', 'CA'],
     },
   },
   flow: {
     tree: {
-      direction: 'row',
-      sizes: [60, 40],
-      children: [
-        { direction: 'col', sizes: [58, 42], children: ['b', 'd'] },
-        { direction: 'col', sizes: [46, 54], children: ['c', 'e'] },
-      ],
+      direction: 'col',
+      sizes: [24, 76],
+      children: ['b', { direction: 'row', sizes: [38, 36, 26], children: ['d', 'e', 'c'] }],
     },
     slots: {
-      b: ['GP', 'KEY'],
-      c: ['CAL', 'CA', 'RISK', 'OB', 'TB'],
-      d: ['BRK', 'BFL', 'FF', 'RT', 'DD'],
-      e: ['NEWS', 'WL', 'SIG'],
+      b: ['GP', 'RT'],
+      c: ['TB', 'OB'],
+      d: ['BRK', 'BFL'],
+      e: ['FF', 'DD'],
     },
   },
 };
