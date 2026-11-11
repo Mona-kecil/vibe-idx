@@ -1,0 +1,21 @@
+[Unit]
+Description=vibe-idx Stockbit collector
+StartLimitIntervalSec=0
+
+[Service]
+Type=exec
+EnvironmentFile=%h/.config/vibe-idx/env
+EnvironmentFile=-%h/.config/vibe-idx/collector.env
+Environment=PATH=%h/.local/share/mise/installs/node/24.22.2/bin:%h/.local/share/mise/installs/pnpm/11.9.0:%h/.local/bin:/usr/bin
+Environment=AWS_DEFAULT_REGION=auto
+Environment=BROKER_DEADLINE_MINUTES=240
+Environment=TICKS_BUDGET_MINUTES=240
+ExecStart=%h/.local/share/vibe-idx-collector/apps/pipeline/collector/run.sh
+KillSignal=SIGINT
+SuccessExitStatus=130 143
+TimeoutStopSec=90
+Restart=always
+RestartSec=60
+
+[Install]
+WantedBy=default.target
