@@ -8,11 +8,20 @@
   padding: 0 5px;
 }
 .terminal-page .tick-filter {
+  color: var(--ink);
+  background: var(--bg);
+  border: 1px solid #354139;
+  font-family: var(--font);
+  cursor: text;
   width: 52px;
   min-height: 24px;
   font-size: 10px;
   padding: 2px 4px;
   text-transform: uppercase;
+}
+.terminal-page .tick-filter::placeholder {
+  color: var(--ink-2);
+  opacity: 1;
 }
 .terminal-page .tick-table {
   width: 100%;
@@ -35,39 +44,151 @@
 .terminal-page .tick-table th {
   font-size: 10px;
 }
+.terminal-page .tick-whole-price {
+  display: inline-block;
+  padding-right: 2ch;
+}
+/* The change keeps a fixed slot, so a longer percentage never pushes the price out of line. */
+.terminal-page :is(.tick-tape, .tick-blocks) .tick-price-change {
+  display: inline-block;
+  min-width: 10ch;
+  text-align: right;
+}
+.terminal-page :is(.tick-tape, .tick-blocks) :is(th, td):nth-child(3) {
+  text-align: center;
+}
 .terminal-page .tick-foreign {
   color: var(--broker-foreign);
 }
 .terminal-page .tick-book .depth {
   background-repeat: no-repeat;
+  background-origin: content-box;
+  background-clip: content-box;
   background-size: var(--depth) 100%;
 }
 .terminal-page .tick-book .depth.bid {
-  background-image: linear-gradient(#22a6a033, #22a6a033);
-  background-position: right;
+  background-image: linear-gradient(#22a6a026, #22a6a026);
+  background-position: left;
 }
 .terminal-page .tick-book .depth.offer {
-  background-image: linear-gradient(#e4573f33, #e4573f33);
+  background-image: linear-gradient(#e4573f26, #e4573f26);
   background-position: left;
 }
 .terminal-page .tick-book tfoot td {
   border-top: 1px solid var(--line, #222826);
   color: var(--muted);
 }
+.terminal-page .tick-highlight,
+.terminal-page .tick-highlight:hover {
+  background: var(--sel);
+}
+.terminal-page .tick-tape .tick-highlight td:first-child {
+  box-shadow: inset 2px 0 var(--accent);
+}
+.terminal-page .tick-tape .tick-dimmed {
+  opacity: 0.45;
+}
+.terminal-page .tick-tape tr {
+  scroll-margin-top: 26px;
+}
+.terminal-page .tick-orders {
+  width: max-content;
+}
+.terminal-page .tick-orders td,
+.terminal-page .tick-orders th {
+  padding-left: 3px;
+  padding-right: 3px;
+}
+.terminal-page .tick-orders td + td,
+.terminal-page .tick-orders th + th {
+  padding-left: 9px;
+}
+.terminal-page .tick-orders th:first-child,
+.terminal-page .tick-orders td:first-child {
+  padding-left: 6px;
+}
+.terminal-page .tick-orders th:last-child,
+.terminal-page .tick-orders td:last-child {
+  padding-right: 6px;
+}
 .terminal-page .tick-blocks tbody tr {
   cursor: pointer;
 }
-.terminal-page .tick-blocks tr.on {
-  background: #ffffff0a;
+.terminal-page .tick-blocks td {
+  vertical-align: middle;
 }
-.terminal-page .tick-blocks tr.on td.l {
-  white-space: normal;
+.terminal-page .tick-block-select {
+  padding: 0;
+  min-height: 0;
+  font: inherit;
+  color: inherit;
 }
-.terminal-page .tick-party {
-  margin-right: 8px;
+.terminal-page .tick-block-select:focus-visible {
+  outline: none;
 }
-.terminal-page .tick-split {
+.terminal-page .tick-blocks tr.tick-highlight,
+.terminal-page .tick-blocks tr:has(:focus-visible) {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+.terminal-page .tick-stack {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  vertical-align: middle;
+}
+.terminal-page .tick-summary-dock {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  height: calc(4 * 11px * 1.45 + 9px);
+  flex-shrink: 0;
+  overflow: auto;
+}
+.terminal-page .tick-summary {
+  overflow: hidden;
+  flex-shrink: 0;
+  position: relative;
+  padding: 3px 6px 6px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.terminal-page .tick-summary-main,
+.terminal-page .tick-summary-line {
+  display: flex;
+  gap: 12px;
+  white-space: nowrap;
+}
+.terminal-page .tick-summary-main {
+  flex-wrap: wrap;
+  gap: 0 12px;
+}
+.terminal-page .tick-summary-line {
+  overflow: hidden;
+}
+.terminal-page .tick-summary-line > span {
+  flex-shrink: 0;
+}
+.terminal-page .tick-counterparty {
+  padding: 0;
+  min-height: 0;
+  font: inherit;
+  color: inherit;
+}
+.terminal-page .tick-counterparty[data-active='true'] {
+  color: var(--accent);
+  box-shadow: inset 0 -1px var(--accent);
+}
+.terminal-page .tick-summary-measure {
+  position: absolute;
+  visibility: hidden;
+  width: max-content;
+  pointer-events: none;
+}
+.terminal-page .tick-table .tick-split {
   width: 40%;
+  text-align: left;
+  padding-left: 12px;
 }
 .terminal-page .tick-split i {
   display: inline-block;
@@ -82,6 +203,10 @@
 }
 .terminal-page .tick-split i.mut {
   background: var(--muted);
+}
+.terminal-page .tick-levels th:last-child,
+.terminal-page .tick-levels td:last-child {
+  padding-right: 7px;
 }
 .terminal-page .tick-more {
   display: block;

@@ -100,8 +100,6 @@ export function CommandBar({
   function dismiss() {
     setHelp(false);
     if (selection) select(null);
-    else if (document.querySelector('.reader'))
-      document.querySelector<HTMLButtonElement>('[aria-label="Close reader"]')?.click();
     else maximize();
   }
   useEffect(() => {
@@ -139,11 +137,7 @@ export function CommandBar({
       }
       if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
         event.preventDefault();
-        const reader = document.querySelector<HTMLButtonElement>(
-          `[aria-label="${event.key === 'ArrowDown' ? 'Next' : 'Previous'} article"]`,
-        );
-        if (reader) reader.click();
-        else move(event.key === 'ArrowDown' ? 1 : -1);
+        move(event.key === 'ArrowDown' ? 1 : -1);
         return;
       }
       if (event.key === '/') {
@@ -303,44 +297,54 @@ export function CommandBar({
             >
               ×
             </button>
-            <h2>KEYS</h2>
-            <dl>
-              <dt>A to Z</dt>
-              <dd>Start a command</dd>
-              <dt>/</dt>
-              <dd>Focus command line</dd>
-              <dt>Enter</dt>
-              <dd>Run ticker or function, e.g. BREN BRK</dd>
-              <dt>Tab</dt>
-              <dd>Complete suggestion</dd>
-              <dt>Up Down</dt>
-              <dd>Move through suggestions, watchlist or articles</dd>
-              <dt>1 2 3</dt>
-              <dd>GRID FOCUS FLOW</dd>
-              <dt>Esc</dt>
-              <dd>Clear selection, close reader or restore pane</dd>
-              <dt>Drag borders</dt>
-              <dd>Resize panes. Double-click to reset.</dd>
-              <dt>Double-click header</dt>
-              <dd>Maximize pane</dd>
-              <dt>Shift-drag chart</dt>
-              <dd>Select dates for broker and ownership panes. Drag the date axis also selects.</dd>
-            </dl>
-            <h2>FUNCTIONS</h2>
-            <dl>
-              {Object.entries(functions).map(([code, name]) => (
-                <div key={code}>
-                  <dt>{code}</dt>
-                  <dd>{name}</dd>
-                </div>
-              ))}
-            </dl>
-            <a href="https://www.tradingview.com/" target="_blank" rel="noreferrer">
-              TradingView Lightweight Charts™ Copyright (с) 2025 TradingView, Inc.
-            </a>
-            <a href="/licenses/lightweight-charts.txt" target="_blank" rel="noreferrer">
-              Apache-2.0 license
-            </a>
+            <div className="help-content">
+              <div className="help-reference">
+                <section aria-labelledby="terminal-help-keys">
+                  <h2 id="terminal-help-keys">KEYS</h2>
+                  <dl>
+                    <dt>A to Z</dt>
+                    <dd>Start a command</dd>
+                    <dt>/</dt>
+                    <dd>Focus command line</dd>
+                    <dt>Enter</dt>
+                    <dd>Run ticker or function, e.g. BREN BRK</dd>
+                    <dt>Tab</dt>
+                    <dd>Complete suggestion</dd>
+                    <dt>Up Down</dt>
+                    <dd>Move through suggestions or watchlist</dd>
+                    <dt>1 2 3</dt>
+                    <dd>GRID FOCUS FLOW</dd>
+                    <dt>Esc</dt>
+                    <dd>Clear selection or restore pane</dd>
+                    <dt>Drag borders</dt>
+                    <dd>Resize panes. Double-click to reset.</dd>
+                    <dt>Double-click header</dt>
+                    <dd>Maximize pane</dd>
+                    <dt>Shift-drag chart</dt>
+                    <dd>
+                      Select dates for broker and ownership panes. Drag the date axis also selects.
+                    </dd>
+                  </dl>
+                </section>
+                <section aria-labelledby="terminal-help-functions">
+                  <h2 id="terminal-help-functions">FUNCTIONS</h2>
+                  <dl>
+                    {Object.entries(functions).map(([code, name]) => (
+                      <div key={code}>
+                        <dt>{code}</dt>
+                        <dd>{name}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </section>
+              </div>
+              <a href="https://www.tradingview.com/" target="_blank" rel="noreferrer">
+                TradingView Lightweight Charts™ Copyright (с) 2025 TradingView, Inc.
+              </a>
+              <a href="/licenses/lightweight-charts.txt" target="_blank" rel="noreferrer">
+                Apache-2.0 license
+              </a>
+            </div>
           </div>
         </div>
       )}

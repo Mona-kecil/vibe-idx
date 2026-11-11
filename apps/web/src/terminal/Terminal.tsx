@@ -3,6 +3,7 @@ import { useAuth } from '@workos-inc/authkit-react';
 import type { Ticker } from '../data';
 import type { BrokerDay } from '../brokers';
 import type { Selection } from '../ticker/logic';
+import type { BlockSelection } from '../ticks';
 import { initialPins, writeStorage } from '../watchlist';
 import {
   fetchBrokers,
@@ -35,6 +36,7 @@ import { BrokerSummaryPane, BrokerFlowPane, ForeignFlowPane } from './BrokerPane
 import { DoneDetailPane, OrderBookPane, RunningTradePane, TradeBookPane } from './TickPanes';
 import { WatchlistPane, MoversPane, SignalsPane, HeatmapPane } from './MarketPanes';
 import { DescriptionPane, HoldersPane, DisclosuresPane } from './TickerPanes';
+import { CompanyFeedPane } from './CompanyFeedPane';
 import { NewsPane, CalendarPane, ActionsPane, RiskPane } from './PublicationPanes';
 import './terminal.css';
 
@@ -108,13 +110,25 @@ function TerminalWorkspace({ data }: { data: TerminalData }) {
   const [brokers, setBrokers] = useState<Resource<BrokerDay[]>>({ kind: 'loading' }),
     [brokerError, setBrokerError] = useState(''),
     [attempt, retry] = useState(0);
-  const [tickDate, setTickDate] = useState<string | null>(null);
+  const [tickDate, changeTickDate] = useState<string | null>(null);
+  const [tickBlock, setTickBlock] = useState<BlockSelection | null>(null);
+  function setTickDate(date: string | null) {
+    if (date !== tickDate) setTickBlock(null);
+    changeTickDate(date);
+  }
+  useEffect(() => {
+    if (!tickBlock) return;
+    const clear = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setTickBlock(null);
+    };
+    window.addEventListener('keydown', clear);
+    return () => window.removeEventListener('keydown', clear);
+  }, [tickBlock]);
   const getToken = useCallback(() => authRef.current.getAccessToken(), []);
   const [flowPins, setFlowPins] = useState<string[]>([]),
     [flowHidden, setFlowHidden] = useState<string[]>([]);
   const [tickerNews, setTickerNews] = useState<Resource<Headline[]>>({ kind: 'loading' });
   useEffect(() => {
-    if (filters.news !== 'TICKER') return;
     let current = true;
     setTickerNews({ kind: 'loading' });
     void fetchTickerNews(ticker).then((value) => {
@@ -123,7 +137,7 @@ function TerminalWorkspace({ data }: { data: TerminalData }) {
     return () => {
       current = false;
     };
-  }, [ticker, filters.news]);
+  }, [ticker]);
   const [max, setMax] = useState<string | null>(null),
     [focused, setFocused] = useState('b');
   const [slots, setSlots] = useState<Record<Layout, Record<string, FunctionId[]>>>(() => ({
@@ -156,9 +170,10 @@ function TerminalWorkspace({ data }: { data: TerminalData }) {
       if (data.stocks.some((stock) => stock.ticker === value)) {
         changeTicker(value);
         select(null);
+        if (value !== ticker) setTickBlock(null);
       }
     },
-    [data],
+    [data, ticker],
   );
   const setLayout = useCallback((value: Layout) => {
     changeLayout(value);
@@ -251,6 +266,15 @@ function TerminalWorkspace({ data }: { data: TerminalData }) {
     if (max && max !== slot) setMax(null);
     setActive((previous) => ({ ...previous, [`${targetLayout}:${slot}`]: id }));
     setFocused(slot);
+  }
+  function selectTickBlock(block: BlockSelection | null) {
+    setTickBlock(block);
+    if (!block) return;
+    const targetLayout = Object.values(slots[layout]).some((ids) => ids.includes('RT'))
+      ? layout
+      : 'flow';
+    if (targetLayout !== layout) setLayout(targetLayout);
+    openFunction('RT', targetLayout);
   }
   function pane(slot: string) {
     const ids = slots[layout][slot] ?? [],
@@ -352,6 +376,8 @@ function TerminalWorkspace({ data }: { data: TerminalData }) {
         getToken,
         tickDate,
         setTickDate,
+        tickBlock,
+        selectTickBlock,
         retryBrokers: () => retry(attempt + 1),
         publications,
         tickerNews,
@@ -377,12 +403,19 @@ function TerminalWorkspace({ data }: { data: TerminalData }) {
   );
 }
 function PaneContext({ id }: { id: FunctionId }) {
-  const { ticker, publications } = useTerminal();
-  if (!['GP', 'KEY', 'BRK', 'BFL', 'FF', 'OB', 'RT', 'DD', 'TB', 'HDS', 'DISC'].includes(id))
+  const { ticker, detail, publications } = useTerminal();
+  if (
+    !['GP', 'KEY', 'BRK', 'BFL', 'FF', 'OB', 'RT', 'DD', 'TB', 'HDS', 'DISC', 'FEED'].includes(id)
+  )
     return <span className="ctx" />;
   return (
     <div className="ctx">
       <b>{ticker}</b>
+      {id === 'GP' && detail.kind === 'ready' && (
+        <span className="company-name" title={detail.data.name}>
+          {detail.data.name}
+        </span>
+      )}
       <RiskFlags
         risk={
           publications.risks.kind === 'ready' ? publications.risks.data.risk[ticker] : undefined
@@ -417,6 +450,8 @@ function PaneView({ id }: { id: FunctionId }) {
       return <HoldersPane />;
     case 'DISC':
       return <DisclosuresPane />;
+    case 'FEED':
+      return <CompanyFeedPane />;
     case 'SIG':
       return <SignalsPane />;
     case 'MOV':

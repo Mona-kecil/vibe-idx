@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState } from 'react';
 import type { Ticker } from '../data';
 import type { BrokerDay, BrokerBoard, InvestorFilter } from '../brokers';
 import type { Selection } from '../ticker/logic';
+import type { BlockSelection } from '../ticks';
 import {
   fetchHeadlines,
   fetchCalendar,
@@ -25,6 +26,7 @@ export const functions = {
   TB: 'Trade book',
   HDS: '5% holders and changes',
   DISC: 'IDX disclosures',
+  FEED: 'Company feed',
   SIG: 'Signals feed',
   HEAT: 'Heatmap by value',
   MOV: 'Market movers',
@@ -56,7 +58,8 @@ export type Filters = {
   ca: 'ALL' | 'DIV' | 'RIGHTS' | 'RUPS' | 'TICKER';
   risk: 'ALL' | 'SUSP' | 'UMA' | 'FCA' | 'NOTES';
   sig: 'ALL' | 'ARA' | 'VOL' | 'FGN' | 'RS' | '5%';
-  mov: 'GAIN' | 'LOSE' | 'VALUE' | 'F BUY' | 'F SELL';
+  mov: 'GAIN' | 'LOSE';
+  movValue: 'VALUE' | 'F BUY' | 'F SELL';
   period: '1d' | '3d' | '5d';
 };
 export const initialFilters: Filters = {
@@ -66,6 +69,7 @@ export const initialFilters: Filters = {
   risk: 'ALL',
   sig: 'ALL',
   mov: 'GAIN',
+  movValue: 'VALUE',
   period: '1d',
 };
 export const initialBrokerFilters: BrokerFilters = {
@@ -117,6 +121,8 @@ type TerminalContextValue = {
   getToken: () => Promise<string | undefined>;
   tickDate: string | null;
   setTickDate: (date: string | null) => void;
+  tickBlock: BlockSelection | null;
+  selectTickBlock: (block: BlockSelection | null) => void;
   retryBrokers: () => void;
   publications: ReturnType<typeof usePublications>;
   tickerNews: Resource<Headline[]>;

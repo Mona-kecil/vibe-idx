@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vite-plus/test';
-import { bars, clock, doneDetail, tickTradesSchema, tradeBook, type TickTrades } from './ticks';
+import { tickerSchema } from './data';
+import {
+  sessionOpen,
+  isBlockTrade,
+  bars,
+  clock,
+  doneDetail,
+  tickTradesSchema,
+  tradeBook,
+  type TickTrades,
+} from './ticks';
 
 type Trade = [
   time: string,
@@ -46,7 +56,9 @@ const day = session([
 
 describe('done detail', () => {
   it('groups continuous fills by the aggressive order and lists who took the other side', () => {
-    const [sweep] = doneDetail(day).sort((a, b) => b.shares - a.shares);
+    const sweep = doneDetail(day).find(
+      (block) => block.session === 'continuous' && block.order === 99,
+    );
     expect(sweep).toMatchObject({
       session: 'continuous',
       side: 'sell',
@@ -64,13 +76,20 @@ describe('done detail', () => {
     });
   });
 
-  it('splits an auction match into one block per order on each side and skips negotiated trades', () => {
+  it('splits auction orders and includes negotiated trades separately', () => {
     const blocks = doneDetail(day);
     expect(blocks.filter((b) => b.session === 'auction').map((b) => [b.side, b.broker])).toEqual([
       ['buy', 'PG'],
       ['sell', 'XL'],
     ]);
-    expect(blocks.some((b) => b.broker === 'AO')).toBe(false);
+    expect(blocks.find((b) => b.broker === 'AO')).toMatchObject({
+      session: 'off-board',
+      side: 'none',
+      board: 'NG',
+      buyOrder: 200,
+      sellOrder: 201,
+      fills: 1,
+    });
     expect(blocks.filter((b) => b.side === 'buy' && b.session === 'continuous')).toHaveLength(2);
   });
 });
@@ -97,4 +116,36 @@ it('builds regular-board bars of any size from trade times', () => {
 it('rejects trade columns of different lengths', () => {
   const broken = { ...day, price: day.price.slice(1) };
   expect(tickTradesSchema.safeParse(broken).success).toBe(false);
+});
+
+it('uses the daily open that GP charts, before falling back to the first RG continuous trade', () => {
+  const ticker = tickerSchema.parse({
+    ticker: 'SINI',
+    name: 'SINI',
+    holders: [],
+    changes: [],
+    prices: [
+      { date: day.date, open: 7900, close: 8675, volume: 100, value: 867500, net_foreign: 0 },
+    ],
+  });
+  expect(sessionOpen(ticker.prices, day)).toEqual({ price: 7900, source: 'GP daily open' });
+  expect(sessionOpen([], day)).toEqual({ price: 7675, source: 'First RG continuous trade' });
+  expect(sessionOpen([], { ...day, auction: day.auction.map(() => true) })).toBeNull();
+});
+
+it('keeps non-RG matches separate even with the same orders and never highlights RG by accident', () => {
+  const trades = session([
+    ['09:00:00', 4960, 0.24, 'b', 'CD', 'CD', 10, 20, { board: 'NG' }],
+    ['09:00:01', 4960, 712, 'b', 'CD', 'CD', 10, 20, { board: 'NG' }],
+    ['09:00:02', 5300, 19, 'b', 'CC', 'NI', 10, 20, { board: 'TN' }],
+    ['09:00:03', 5300, 10, 'b', 'CD', 'CD', 10, 20],
+  ]);
+  const blocks = doneDetail(trades);
+  expect(blocks).toHaveLength(4);
+  for (const [index, block] of blocks.entries()) {
+    const selection = { ...block, ticker: trades.ticker, date: trades.date };
+    expect(trades.time.map((_, i) => isBlockTrade(trades, i, selection))).toEqual(
+      trades.time.map((_, i) => i === index),
+    );
+  }
 });

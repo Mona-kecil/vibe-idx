@@ -302,7 +302,7 @@ describe('publication pane interactions', () => {
     if (!(button instanceof HTMLButtonElement)) throw new Error(`Missing ${selector}`);
     await act(async () => button.click());
   }
-  it('replaces the list with a reader and preserves next, previous and close controls', async () => {
+  it('links every headline to its source in a new tab and keeps the list in place', async () => {
     context.filters.news = 'TICKER';
     context.tickerNews = {
       kind: 'ready',
@@ -320,17 +320,12 @@ describe('publication pane interactions', () => {
     expect(host.querySelectorAll('.tags span').length).toBe(2);
     expect(host.querySelector('.tags')?.textContent).toBe('BBCA');
     expect(host.querySelector('[aria-label="Open news in"]')).toBeNull();
-    await click('.news-item');
-    expect(host.querySelectorAll('.news-item')).toHaveLength(0);
-    expect(host.querySelector('.reader')?.textContent).toContain('Summary 0');
-    expect(host.querySelector('.reader .tags')?.textContent).toBe('BBCA');
-    await click('[aria-label="Next article"]');
-    expect(host.querySelector('.reader')?.textContent).toContain('Summary 1');
-    await click('[aria-label="Previous article"]');
-    expect(host.querySelector('.reader')?.textContent).toContain('Summary 0');
-    await click('[aria-label="Close reader"]');
-    expect(host.querySelector('.reader')).toBeNull();
-    expect(host.querySelectorAll('.news-item')).toHaveLength(2);
+    const items = [...host.querySelectorAll<HTMLAnchorElement>('a.news-item')];
+    expect(items.map((item) => item.getAttribute('href'))).toEqual([
+      'https://example.com/0',
+      'https://example.com/1',
+    ]);
+    expect(items.every((item) => item.target === '_blank' && item.rel === 'noreferrer')).toBe(true);
   });
   it('expands a corporate action without switching ticker and keeps the ticker link active', async () => {
     context.publications.actions = {

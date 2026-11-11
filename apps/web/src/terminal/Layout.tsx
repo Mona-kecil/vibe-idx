@@ -1,4 +1,4 @@
-import { Fragment, useState, type ReactNode, type PointerEvent } from 'react';
+import { Fragment, useRef, useState, type ReactNode, type PointerEvent } from 'react';
 import { z } from 'zod';
 import { readStorage, writeStorage } from '../watchlist';
 import type { FunctionId, Layout } from './state';
@@ -6,48 +6,55 @@ import './layout.css';
 
 export type LayoutNode =
   | string
-  | { direction: 'row' | 'col'; sizes: number[]; children: LayoutNode[] };
+  | {
+      direction: 'row' | 'col';
+      sizes: number[];
+      basis?: (number | null)[];
+      children: LayoutNode[];
+    };
 export const layouts: Record<Layout, { tree: LayoutNode; slots: Record<string, FunctionId[]> }> = {
   grid: {
     tree: {
       direction: 'row',
-      sizes: [21, 45, 34],
+      sizes: [38, 40, 22],
+      basis: [576, null, null],
       children: [
-        { direction: 'col', sizes: [58, 42], children: ['a', 'd'] },
-        { direction: 'col', sizes: [56, 44], children: ['b', 'e'] },
-        { direction: 'col', sizes: [56, 44], children: ['c', 'f'] },
+        'c',
+        { direction: 'col', sizes: [30, 70], basis: [264, null], children: ['a', 'd'] },
+        'b',
       ],
     },
     slots: {
       a: ['WL'],
-      b: ['GP'],
-      c: ['NEWS', 'SIG', 'CAL', 'CA', 'HEAT'],
-      d: ['MOV', 'RISK'],
-      e: ['BRK', 'BFL', 'FF', 'RT', 'DD'],
-      f: ['HDS', 'DISC', 'KEY', 'OB', 'TB'],
+      b: ['NEWS', 'CA'],
+      c: ['SIG'],
+      d: ['MOV'],
     },
   },
   focus: {
-    tree: { direction: 'row', sizes: [70, 30], children: ['b', 'c'] },
+    tree: {
+      direction: 'row',
+      sizes: [64, 36],
+      children: [{ direction: 'col', sizes: [50, 50], children: ['b', 'f'] }, 'c'],
+    },
     slots: {
-      b: ['GP', 'KEY', 'BRK', 'BFL', 'FF', 'RT', 'DD', 'OB', 'TB', 'HDS', 'DISC', 'HEAT', 'MOV'],
-      c: ['NEWS', 'SIG', 'CAL', 'CA', 'RISK', 'WL'],
+      b: ['GP'],
+      c: ['FEED'],
+      f: ['HDS'],
     },
   },
   flow: {
     tree: {
       direction: 'row',
-      sizes: [60, 40],
-      children: [
-        { direction: 'col', sizes: [58, 42], children: ['b', 'd'] },
-        { direction: 'col', sizes: [46, 54], children: ['c', 'e'] },
-      ],
+      sizes: [52, 24, 24],
+      basis: [null, 475, 446],
+      children: [{ direction: 'col', sizes: [50, 50], children: ['b', 'e'] }, 'c', 'd'],
     },
     slots: {
-      b: ['GP', 'KEY'],
-      c: ['CAL', 'CA', 'RISK', 'OB', 'TB'],
-      d: ['BRK', 'BFL', 'FF', 'RT', 'DD'],
-      e: ['NEWS', 'WL', 'SIG'],
+      b: ['GP'],
+      c: ['DD'],
+      d: ['OB', 'RT'],
+      e: ['FF', 'BRK', 'BFL', 'TB'],
     },
   },
 };
@@ -60,13 +67,16 @@ export function SplitLayout({
   path: string;
   pane: (slot: string) => ReactNode;
 }) {
+  const boxRef = useRef<HTMLDivElement>(null);
   const defaults = typeof node === 'string' ? [] : node.sizes;
   const [sizes, setSizes] = useState(() => {
     try {
       const saved = z
         .array(z.number().positive().finite())
         .parse(JSON.parse(readStorage(`terminal:split:${path}`) ?? 'null'));
-      return saved.length === defaults.length ? saved : defaults;
+      return saved.length === defaults.length && saved.some((size, i) => size !== defaults[i])
+        ? saved
+        : defaults;
     } catch {
       return defaults;
     }
@@ -76,11 +86,22 @@ export function SplitLayout({
     setSizes(next);
     writeStorage(`terminal:split:${path}`, JSON.stringify(next));
   }
-  function resize(index: number, delta: number) {
-    const a = sizes[index],
-      b = sizes[index + 1];
+  function measuredSizes() {
+    const box = boxRef.current;
+    if (!box) return sizes;
+    const children = [...box.querySelectorAll(':scope > .split-child')];
+    const lengths = children.map((child) => {
+      const rect = child.getBoundingClientRect();
+      return typeof node !== 'string' && node.direction === 'row' ? rect.width : rect.height;
+    });
+    const total = lengths.reduce((sum, length) => sum + length, 0);
+    return total ? lengths.map((length) => (length / total) * 100) : sizes;
+  }
+  function resize(index: number, delta: number, current = measuredSizes()) {
+    const a = current[index],
+      b = current[index + 1];
     if (a === undefined || b === undefined) return;
-    const next = [...sizes],
+    const next = [...current],
       pair = a + b;
     next[index] = Math.max(pair * 0.1, Math.min(pair * 0.9, a + delta));
     next[index + 1] = pair - next[index];
@@ -94,11 +115,12 @@ export function SplitLayout({
     const horizontal = typeof node !== 'string' && node.direction === 'row';
     const total = horizontal ? box.clientWidth : box.clientHeight;
     const origin = horizontal ? event.clientX : event.clientY;
-    const weights = sizes.reduce((sum, value) => sum + value, 0);
+    const current = measuredSizes();
+    const weights = current.reduce((sum, value) => sum + value, 0);
     const handle = event.currentTarget;
     handle.setPointerCapture(event.pointerId);
     const move = (e: globalThis.PointerEvent) =>
-      resize(index, (((horizontal ? e.clientX : e.clientY) - origin) / total) * weights);
+      resize(index, (((horizontal ? e.clientX : e.clientY) - origin) / total) * weights, current);
     const end = () => {
       handle.removeEventListener('pointermove', move);
       handle.removeEventListener('pointerup', end);
@@ -109,7 +131,7 @@ export function SplitLayout({
     handle.addEventListener('pointercancel', end);
   }
   return (
-    <div className={`box ${node.direction}`}>
+    <div ref={boxRef} className={`box ${node.direction}`}>
       {node.children.map((child, index) => (
         <Fragment key={`${path}.${index}`}>
           {index > 0 && (
@@ -131,7 +153,15 @@ export function SplitLayout({
               }}
             />
           )}
-          <div className="split-child" style={{ flex: `${sizes[index]} 1 0px` }}>
+          <div
+            className="split-child"
+            style={{
+              flex:
+                sizes === defaults && node.basis?.[index] != null
+                  ? `0 1 ${node.basis[index]}px`
+                  : `${sizes[index]} 1 0px`,
+            }}
+          >
             <SplitLayout node={child} path={`${path}.${index}`} pane={pane} />
           </div>
         </Fragment>
