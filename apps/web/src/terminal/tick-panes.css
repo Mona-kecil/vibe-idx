@@ -53,14 +53,16 @@
 }
 .terminal-page .tick-book .depth {
   background-repeat: no-repeat;
+  background-origin: content-box;
+  background-clip: content-box;
   background-size: var(--depth) 100%;
 }
 .terminal-page .tick-book .depth.bid {
-  background-image: linear-gradient(#22a6a033, #22a6a033);
-  background-position: right;
+  background-image: linear-gradient(#22a6a026, #22a6a026);
+  background-position: left;
 }
 .terminal-page .tick-book .depth.offer {
-  background-image: linear-gradient(#e4573f33, #e4573f33);
+  background-image: linear-gradient(#e4573f26, #e4573f26);
   background-position: left;
 }
 .terminal-page .tick-book tfoot td {
