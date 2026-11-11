@@ -168,6 +168,25 @@ class StockbitError extends Error {
   }
 }
 
+// Publication after the deadline takes minutes; a marker outlives its run's deadline by this much.
+const MARKER_GRACE_MS = 15 * 60000;
+// A stop signal ends the process without running finally blocks, so the CLI releases the marker itself.
+let releaseMarker: (() => Promise<void>) | undefined;
+// Markers written before expiry existed belong to GitHub runs, whose job timeout was 355 minutes.
+const LEGACY_MARKER_MS = 6 * 3600000;
+
+function markerExpiry(bytes: Buffer): number {
+  let value: unknown;
+  try {
+    value = JSON.parse(bytes.toString('utf8'));
+  } catch {
+    return 0;
+  }
+  if (!isObject(value)) return 0;
+  if (typeof value.expires === 'number') return value.expires;
+  return typeof value.started === 'number' ? value.started + LEGACY_MARKER_MS : 0;
+}
+
 export async function brokers({
   data,
   token,
@@ -187,20 +206,38 @@ export async function brokers({
 }) {
   const started = Date.now();
   const completedThrough = new Date(started - (10 * 60 + 17) * 60000).toISOString().slice(0, 10);
-  if (await r2.get('broker-run.json'))
-    throw new Error('Broker run marker requires operator review');
-  const marker = Buffer.from(JSON.stringify({ id: randomUUID(), started }));
+  // The marker keeps a second collector out. It expires after this run's deadline, so a run that
+  // died without deleting it delays the next run instead of blocking collection.
+  const held = await r2.get('broker-run.json');
+  if (held && markerExpiry(held.bytes) > started)
+    throw new Error(
+      `Another broker run holds broker-run.json until ${new Date(markerExpiry(held.bytes)).toISOString()}`,
+    );
+  const marker = Buffer.from(
+    JSON.stringify({ id: randomUUID(), started, expires: deadline + MARKER_GRACE_MS }),
+  );
   try {
-    await r2.put('broker-run.json', marker, { ifNoneMatch: '*' });
+    await r2.put('broker-run.json', marker, held ? { ifMatch: held.etag } : { ifNoneMatch: '*' });
   } catch (error) {
     const saved = await r2.get('broker-run.json');
     if (saved?.bytes.equals(marker)) await r2.delete('broker-run.json');
     throw error;
   }
+  const release = async () => {
+    const saved = await r2.get('broker-run.json').catch(() => undefined);
+    if (saved?.bytes.equals(marker))
+      await r2
+        .delete('broker-run.json')
+        .catch((error: unknown) =>
+          console.error(`Leaving broker-run.json to expire: ${String(error)}`),
+        );
+  };
+  releaseMarker = release;
   try {
     return await collect();
   } finally {
-    await r2.delete('broker-run.json');
+    await release();
+    releaseMarker = undefined;
   }
 
   async function collect() {
@@ -239,10 +276,28 @@ export async function brokers({
       const current: unknown = JSON.parse(saved.bytes.toString('utf8'));
       if (!isObject(current) || typeof current.refresh !== 'string' || !current.refresh)
         throw new Error('Invalid Stockbit token file');
-      const auth = await stockbit('https://exodus.stockbit.com/login/refresh', {
-        method: 'POST',
-        headers: { ...headers, Authorization: `Bearer ${current.refresh}` },
-      });
+      // A run that refreshed but could not save to R2 still holds the live pair in its local file.
+      const candidates = [current.refresh];
+      const local = await readFile(token, 'utf8').then(
+        (text) => {
+          try {
+            return JSON.parse(text) as unknown;
+          } catch {
+            return undefined;
+          }
+        },
+        () => undefined,
+      );
+      if (isObject(local) && typeof local.refresh === 'string' && local.refresh !== current.refresh)
+        candidates.push(local.refresh);
+      let auth: Awaited<ReturnType<typeof stockbit>> = undefined;
+      for (const refresh of candidates) {
+        auth = await stockbit('https://exodus.stockbit.com/login/refresh', {
+          method: 'POST',
+          headers: { ...headers, Authorization: `Bearer ${refresh}` },
+        });
+        if (!auth || auth.ok || ![401, 403].includes(auth.status)) break;
+      }
       if (!auth) return false;
       if (!auth.ok)
         throw new StockbitError(`Stockbit auth HTTP ${auth.status}`, { status: auth.status });
@@ -369,6 +424,13 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   if (!values.data || !values.token || !values.out)
     throw new Error('Usage: brokers -- --data <dir> --token <file> --out <private dir>');
   startSentry();
+  for (const [signal, code] of [
+    ['SIGINT', 130],
+    ['SIGTERM', 143],
+  ] as const)
+    process.once(signal, () => {
+      void (releaseMarker?.() ?? Promise.resolve()).finally(() => process.exit(code));
+    });
   const accountId = process.env.R2_ACCOUNT_ID;
   const minutes = Number(process.env.BROKER_DEADLINE_MINUTES);
   if (!accountId || !Number.isFinite(minutes) || minutes <= 0)

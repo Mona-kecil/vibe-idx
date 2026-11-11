@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdtemp, mkdir, readFile, rm, stat } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DuckDBInstance } from '@duckdb/node-api';
@@ -218,7 +218,7 @@ describe('private broker pipeline', () => {
     expect(f.objects.has('broker-run.json')).toBe(false);
   });
 
-  it('retains an existing run marker and refuses auth, but clears markers on handled auth or storage errors', async () => {
+  it('retains an unexpired run marker and refuses auth, but clears markers on handled auth or storage errors', async () => {
     for (const cut of [
       'existing-marker',
       'marker-cas',
@@ -234,7 +234,11 @@ describe('private broker pipeline', () => {
     ]) {
       const f = await fixture();
       await prices(f.data, [{ ticker: 'AAA', date: day, volume: 1 }]);
-      if (cut === 'existing-marker') f.save('broker-run.json', '{}');
+      if (cut === 'existing-marker')
+        f.save(
+          'broker-run.json',
+          JSON.stringify({ id: 'other', started: Date.now(), expires: Date.now() + 3600000 }),
+        );
       f.hooks.before = async (operation, key) => {
         if (cut === 'marker-cas' && operation === 'put' && key === 'broker-run.json')
           f.save(key, '{}');
@@ -279,6 +283,95 @@ describe('private broker pipeline', () => {
           refresh: 'synthetic-refresh-1',
         });
       } else expect(f.objects.has('auth/stockbit-unsaved.json')).toBe(false);
+    }
+  });
+  it('takes over an expired or legacy marker and leaves an unexpired one alone', async () => {
+    const now = Date.now();
+    for (const [held, takes] of [
+      [{ id: 'dead', started: now - 7200000, expires: now - 1 }, true],
+      [{ id: 'github', started: now - 7 * 3600000 }, true],
+      [{ id: 'github', started: now - 3600000 }, false],
+      ['not json', true],
+    ] as const) {
+      const f = await fixture();
+      await prices(f.data, [{ ticker: 'AAA', date: day, volume: 1 }]);
+      const bytes = typeof held === 'string' ? held : JSON.stringify(held);
+      f.save('broker-run.json', bytes);
+      const net = network(f.token);
+      const run = brokers({ ...f.options, fetcher: net.fetcher });
+      if (takes) {
+        await run;
+        expect(f.objects.has('broker-run.json')).toBe(false);
+      } else {
+        await expect(run).rejects.toThrow('Another broker run holds broker-run.json');
+        expect(f.load('broker-run.json').toString()).toBe(bytes);
+        expect(net.calls).toEqual([]);
+      }
+    }
+  });
+
+  it('writes its own deadline into the marker', async () => {
+    const f = await fixture();
+    await prices(f.data, [{ ticker: 'AAA', date: day, volume: 1 }]);
+    let seen: unknown;
+    f.hooks.after = async (operation, key) => {
+      if (operation === 'put' && key === 'broker-run.json')
+        seen = JSON.parse(f.load(key).toString());
+    };
+    await brokers({ ...f.options, fetcher: network(f.token).fetcher });
+    expect(seen).toMatchObject({ expires: f.options.deadline + 15 * 60000 });
+  });
+
+  it('recovers with the local pair when the cloud pair was revoked by an unsaved refresh', async () => {
+    const f = await fixture();
+    await prices(f.data, [{ ticker: 'AAA', date: day, volume: 1 }]);
+    f.save('auth/stockbit.json', JSON.stringify({ refresh: 'synthetic-revoked' }));
+    await writeFile(
+      f.token,
+      JSON.stringify({ access: 'synthetic-access-0', refresh: 'synthetic-refresh-0' }),
+      { mode: 0o600 },
+    );
+    const net = network(f.token);
+    const fetcher = vi.fn<typeof fetch>((input, init) =>
+      new Headers(init?.headers).get('Authorization') === 'Bearer synthetic-revoked'
+        ? Promise.resolve(new Response('', { status: 401 }))
+        : net.fetcher(input, init),
+    );
+    await brokers({ ...f.options, fetcher });
+    expect(
+      fetcher.mock.calls
+        .slice(0, 2)
+        .map(([, init]) => new Headers(init?.headers).get('Authorization')),
+    ).toEqual(['Bearer synthetic-revoked', 'Bearer synthetic-refresh-0']);
+    expect(JSON.parse(f.load('auth/stockbit.json').toString())).toEqual({
+      access: 'synthetic-access-1',
+      refresh: 'synthetic-refresh-1',
+    });
+    expect(net.calls.filter((url) => url.pathname === '/order-trade/broker/top')).toHaveLength(3);
+  });
+
+  it('uses the cloud pair alone when the local file is corrupt or the failure is not a rejection', async () => {
+    for (const [local, status] of [
+      ['{"refresh":', 200],
+      [JSON.stringify({ access: 'x', refresh: 'synthetic-local' }), 429],
+    ] as const) {
+      const f = await fixture();
+      await prices(f.data, [{ ticker: 'AAA', date: day, volume: 1 }]);
+      await writeFile(f.token, local, { mode: 0o600 });
+      const net = network(f.token);
+      const fetcher = vi.fn<typeof fetch>((input, init) =>
+        status === 200 ? net.fetcher(input, init) : Promise.resolve(new Response('', { status })),
+      );
+      const run = brokers({ ...f.options, fetcher });
+      if (status === 200) {
+        await run;
+        expect(new Headers(fetcher.mock.calls[0][1]?.headers).get('Authorization')).toBe(
+          'Bearer synthetic-refresh-0',
+        );
+      } else {
+        await expect(run).rejects.toThrow('Stockbit auth HTTP 429');
+        expect(fetcher).toHaveBeenCalledTimes(1);
+      }
     }
   });
 });
