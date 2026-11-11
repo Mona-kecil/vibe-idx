@@ -59,6 +59,8 @@ function TypeMark({ kind }: { kind: FeedItem['kind'] }) {
     </svg>
   );
 }
+// A label with a lowercase word reads as a title; one without is a file code such as 036CSGIVR2026.
+const readable = (label: string) => /[a-z]{3,}/.test(label);
 function FeedAttachments({ filing }: { filing: Ticker['disclosures'][number] }) {
   const links = attachments(filing);
   return (
@@ -72,7 +74,7 @@ function FeedAttachments({ filing }: { filing: Ticker['disclosures'][number] }) 
             rel="noopener noreferrer"
             title={`${attachment.label}\n${attachment.name}`}
           >
-            Lampiran {index + 1}
+            {readable(attachment.label) ? attachment.label : `Lampiran ${index + 1}`}
           </a>
         ))}
       </div>
