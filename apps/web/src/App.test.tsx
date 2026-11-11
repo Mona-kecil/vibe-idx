@@ -518,6 +518,23 @@ describe('terminal availability', () => {
     expect(host.querySelector('[inert]')).toBeNull();
   });
 
+  it('fades the home page out and opens the terminal without a reload', async () => {
+    vi.useFakeTimers();
+    desktop();
+    window.history.replaceState(null, '', '/');
+    await render();
+    await act(async () => host.querySelector<HTMLAnchorElement>('a.terminal-link')?.click());
+    expect(document.querySelector('.terminal-veil')).not.toBeNull();
+    expect(window.location.pathname).toBe('/');
+    await advance(350);
+    await act(async () => {
+      await vi.dynamicImportSettled();
+    });
+    expect(window.location.pathname).toBe('/terminal');
+    expect(document.querySelector('.terminal-veil')).toBeNull();
+    expect(host.querySelector('.terminal-boot')).not.toBeNull();
+  });
+
   it('reveals the failed data request and keeps retry loading plain', async () => {
     vi.useFakeTimers();
     desktop();

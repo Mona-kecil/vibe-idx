@@ -1144,8 +1144,21 @@ body {
     opacity: 0;
   }
 }
+.terminal-veil {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: #0a0c0b;
+  animation: terminal-veil 350ms ease-in both;
+}
+@keyframes terminal-veil {
+  from {
+    opacity: 0;
+  }
+}
 @media (prefers-reduced-motion: reduce) {
-  .terminal-link .cursor {
+  .terminal-link .cursor,
+  .terminal-veil {
     animation: none;
   }
 }

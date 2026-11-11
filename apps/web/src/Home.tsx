@@ -3,6 +3,7 @@ import { initialPins, readStorage, writeStorage } from './watchlist';
 import { AccountControls } from './BrokerPanel';
 import { load, type Feed, type Health, type Market, type Stock, type Ticker } from './data';
 import { Stale } from './Stale';
+import { TerminalLink } from './TerminalLink';
 import { dateText, direction, nf } from './ticker/format';
 
 type Event = Feed[number];
@@ -541,10 +542,7 @@ export function Home() {
               Home
             </a>
             <a href="/market">Market</a>
-            <a className="terminal-link" href="/terminal">
-              Terminal
-              <span className="cursor" aria-hidden="true" />
-            </a>
+            <TerminalLink />
           </nav>
           <div className="search" ref={searchBox}>
             <svg
