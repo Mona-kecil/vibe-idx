@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useReducer, useState, useSyncExternalStore } from 'react';
-import { Corruption, type Seed } from '../Corruption';
+import { useCallback, useEffect, useReducer, useSyncExternalStore } from 'react';
+import { Corruption } from '../Corruption';
 
 const retreatMs = 450;
 
@@ -55,22 +55,6 @@ export function useTerminalBoot() {
   return { phase: state.phase, reducedMotion, settle };
 }
 
-function arrivalSeed(): Seed {
-  const state: unknown = window.history.state;
-  const seed =
-    state && typeof state === 'object' && 'voidSeed' in state ? state.voidSeed : undefined;
-  if (
-    seed &&
-    typeof seed === 'object' &&
-    'x' in seed &&
-    'y' in seed &&
-    typeof seed.x === 'number' &&
-    typeof seed.y === 'number'
-  )
-    return { x: seed.x, y: seed.y };
-  return { x: window.innerWidth / 2, y: 0 };
-}
-
 export function TerminalBoot({
   phase,
   reducedMotion,
@@ -78,12 +62,10 @@ export function TerminalBoot({
   phase: 'holding' | 'leaving';
   reducedMotion: boolean;
 }) {
-  const [seed] = useState(arrivalSeed);
   return (
     <div className={`terminal-boot terminal-boot--${phase}`}>
       <Corruption
         mode={reducedMotion ? 'still' : phase === 'leaving' ? 'retreat' : 'hold'}
-        seed={seed}
         durationMs={retreatMs}
       />
       <span className="terminal-boot-status" role="status">
