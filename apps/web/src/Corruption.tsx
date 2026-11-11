@@ -293,6 +293,7 @@ export function Corruption({
         path.closePath();
         return path;
       };
+      const light = 0.45 + 0.55 * Math.min(block.layer, 1);
       const [[left, top], [right], [, bottom]] = corners;
       const walls: [number, number, string, boolean][] = [
         [0, 1, 'rgb(60, 8, 10)', top > vy],
@@ -310,11 +311,8 @@ export function Corruption({
         const wall = quad([a, b, c, d]);
         context.fillStyle = fill;
         context.fill(wall);
-        context.strokeStyle = 'rgba(255, 50, 45, 0.35)';
-        context.lineWidth = 1;
-        context.stroke(wall);
+        strokeNeon(wall, 0.9 * light);
       }
-      const light = 0.45 + 0.55 * Math.min(block.layer, 1);
       const face = quad([...corners]);
       context.fillStyle = sheen;
       context.fill(face);
