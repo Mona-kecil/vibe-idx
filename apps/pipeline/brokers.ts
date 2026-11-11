@@ -385,6 +385,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   } catch (error) {
     if (error instanceof BrokerRunError) process.stdout.write(`${JSON.stringify(error.summary)}\n`);
     console.error(error);
+    await reportError(error, { source: 'brokers' });
     process.exitCode = 1;
   }
 }
