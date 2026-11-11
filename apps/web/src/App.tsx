@@ -6,7 +6,7 @@ import { LoginPage } from './BrokerPanel';
 import { TickerPage } from './ticker/TickerPage';
 import { Home } from './Home';
 import { MarketPage } from './MarketPage';
-import { BootRain, useTerminalBoot } from './terminal/BootRain';
+import { TerminalBoot, useTerminalBoot } from './terminal/TerminalBoot';
 
 const Terminal = lazy(() => import('./terminal/Terminal').then((m) => ({ default: m.Terminal })));
 
@@ -70,7 +70,7 @@ function TerminalRoute() {
           <Terminal onSettled={settle} booting={booting} />
         </Suspense>
       </div>
-      {booting && <BootRain phase={phase} reducedMotion={reducedMotion} />}
+      {booting && <TerminalBoot phase={phase} reducedMotion={reducedMotion} />}
     </>
   );
 }

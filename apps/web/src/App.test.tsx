@@ -472,7 +472,7 @@ describe('terminal availability', () => {
     ).toHaveLength(1);
     expect(host.querySelector('.term')).not.toBeNull();
     expect(host.querySelector('.term')?.closest('[inert]')).not.toBeNull();
-    await advance(1399);
+    await advance(799);
     expect(host.querySelector('.terminal-boot')).not.toBeNull();
     await advance(1);
     expect(host.querySelector('.terminal-boot')).not.toBeNull();
@@ -499,7 +499,7 @@ describe('terminal availability', () => {
       return baseFetch(input);
     });
     await openTerminal();
-    await advance(2000);
+    await advance(1500);
     expect(host.querySelector('.terminal-boot')).not.toBeNull();
     await act(async () => {
       release();
@@ -526,7 +526,7 @@ describe('terminal availability', () => {
     await act(async () => host.querySelector<HTMLAnchorElement>('a.terminal-link')?.click());
     expect(document.querySelector('.terminal-veil')).not.toBeNull();
     expect(window.location.pathname).toBe('/');
-    await advance(250);
+    await advance(300);
     await act(async () => {
       await vi.dynamicImportSettled();
     });
@@ -541,7 +541,7 @@ describe('terminal availability', () => {
     fetcher.mockRejectedValueOnce(new Error('Offline'));
     await openTerminal();
     expect(host.querySelector('.terminal-boot')).not.toBeNull();
-    await advance(1400);
+    await advance(800);
     await advance(450);
     expect(host.querySelector('.terminal-boot')).toBeNull();
     expect(host.querySelector('[inert]')).toBeNull();

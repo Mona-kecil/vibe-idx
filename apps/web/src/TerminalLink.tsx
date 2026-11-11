@@ -1,32 +1,27 @@
-import { useState, type CSSProperties, type MouseEvent } from 'react';
+import { useState, type MouseEvent } from 'react';
 import { createPortal } from 'react-dom';
+import { Corruption } from './Corruption';
 
-const creepMs = 250;
+const spreadMs = 300;
+
+function openTerminal() {
+  window.history.pushState(null, '', '/terminal');
+  window.scrollTo(0, 0);
+  window.dispatchEvent(new PopStateEvent('popstate'));
+}
 
 export function TerminalLink() {
-  const [origin, setOrigin] = useState<CSSProperties | null>(null);
+  const [seed, setSeed] = useState<{ x: number; y: number } | null>(null);
   function enter(event: MouseEvent<HTMLAnchorElement>) {
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)
       return;
     if (!window.matchMedia('(min-width: 901px)').matches) return;
     event.preventDefault();
-    if (origin) return;
+    if (seed) return;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return openTerminal();
     const box = event.currentTarget.getBoundingClientRect();
-    setOrigin({
-      '--top': `${box.top}px`,
-      '--right': `${window.innerWidth - box.right}px`,
-      '--bottom': `${window.innerHeight - box.bottom}px`,
-      '--left': `${box.left}px`,
-    } as CSSProperties);
-    const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    window.setTimeout(
-      () => {
-        window.history.pushState(null, '', '/terminal');
-        window.scrollTo(0, 0);
-        window.dispatchEvent(new PopStateEvent('popstate'));
-      },
-      still ? 0 : creepMs,
-    );
+    setSeed({ x: box.left + box.width / 2, y: box.top + box.height / 2 });
+    window.setTimeout(openTerminal, spreadMs);
   }
   return (
     <>
@@ -34,9 +29,11 @@ export function TerminalLink() {
         Terminal
         <span className="cursor" aria-hidden="true" />
       </a>
-      {origin &&
+      {seed &&
         createPortal(
-          <div className="terminal-veil" style={origin} aria-hidden="true" />,
+          <div className="terminal-veil">
+            <Corruption seed={seed} spreadMs={spreadMs} />
+          </div>,
           document.body,
         )}
     </>
