@@ -4,7 +4,7 @@ import { Corruption, aimCorruption } from './Corruption';
 import { startGlitch } from './glitch';
 
 const glitchLeadMs = 300;
-const spreadMs = 750;
+const spreadMs = 1000;
 
 function openTerminal() {
   window.history.pushState(null, '', '/terminal');
