@@ -1,6 +1,6 @@
 import { useState, type MouseEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { Corruption } from './Corruption';
+import { Corruption, aimCorruption } from './Corruption';
 
 const spreadMs = 400;
 
@@ -19,6 +19,11 @@ export function TerminalLink() {
     event.preventDefault();
     if (swallowing) return;
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return openTerminal();
+    const button = event.currentTarget.getBoundingClientRect();
+    aimCorruption(
+      (button.left + button.width / 2) / window.innerWidth,
+      (button.top + button.height / 2) / window.innerHeight,
+    );
     setSwallowing(true);
     window.setTimeout(openTerminal, spreadMs);
   }

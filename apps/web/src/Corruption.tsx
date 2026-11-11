@@ -7,7 +7,15 @@ const enterMs = 220;
 const cubeCount = 150;
 const thetaMax = 1.25;
 const halfView = 1.0;
+const far = 8;
+const travel = 0.8;
+const part = 2.4;
 const layoutSeed = Math.floor(Math.random() * 2 ** 32);
+let origin = { x: 0.5, y: 0.5 };
+
+export function aimCorruption(x: number, y: number) {
+  origin = { x, y };
+}
 
 type Vec = [number, number, number];
 type Cube = {
@@ -18,7 +26,7 @@ type Cube = {
   yaw: number;
   pitch: number;
   pulse: number;
-  order: number;
+  jitter: number;
 };
 
 const corners: Vec[] = Array.from({ length: 8 }, (_, i) => [
@@ -47,26 +55,23 @@ function random(seed: number) {
 
 function layoutCubes(): Cube[] {
   const next = random(layoutSeed);
-  return Array.from({ length: cubeCount }, () => {
-    const theta = (next() * 2 - 1) * thetaMax;
-    return {
-      theta,
-      v: next() * 2.2 - 1.1,
-      r: 0.75 + next() * 1.1,
-      half: 0.03 + next() ** 2.2 * 0.2,
-      yaw: (next() - 0.5) * 0.7,
-      pitch: (next() - 0.5) * 0.6,
-      pulse: next() * Math.PI * 2,
-      order: outward(Math.abs(Math.tan(theta)) / Math.tan(halfView), next()),
-    };
-  });
+  return Array.from({ length: cubeCount }, () => ({
+    theta: (next() * 2 - 1) * thetaMax,
+    v: next() * 2.2 - 1.1,
+    r: 0.75 + next() * 1.1,
+    half: 0.03 + next() ** 2.2 * 0.2,
+    yaw: (next() - 0.5) * 0.7,
+    pitch: (next() - 0.5) * 0.6,
+    pulse: next() * Math.PI * 2,
+    jitter: next(),
+  }));
 }
 
-function outward(fromCenter: number, jitter: number) {
-  return Math.min(fromCenter, 1) * 0.72 + jitter * 0.28;
+function outward(fromOrigin: number, jitter: number) {
+  return Math.min(fromOrigin, 1) * 0.72 + jitter * 0.28;
 }
 
-function layoutMask(cols: number, rows: number) {
+function layoutMask(cols: number, rows: number, reach: (x: number, y: number) => number) {
   const next = random(layoutSeed ^ 0x9e3779b9);
   const coarse = Array.from({ length: (cols >> 2) + 1 }, () =>
     Array.from({ length: (rows >> 2) + 1 }, next),
@@ -75,7 +80,7 @@ function layoutMask(cols: number, rows: number) {
   for (let y = 0; y < rows; y++)
     for (let x = 0; x < cols; x++) {
       order[y * cols + x] = outward(
-        Math.abs((x + 0.5) / cols - 0.5) * 2,
+        reach((x + 0.5) * cell, (y + 0.5) * cell),
         coarse[x >> 2]?.[y >> 2] ?? 0,
       );
     }
@@ -120,6 +125,8 @@ export function Corruption({
     let cols = 0,
       rows = 0,
       mask = new Float64Array(0),
+      orders: number[] = [],
+      aim: Vec = [0, 0, -1],
       width = 0,
       height = 0,
       focal = 1,
@@ -128,7 +135,7 @@ export function Corruption({
 
     function progress(order: number, t: number) {
       if (mode === 'spread') return ease(clamp((t - order * span) / enterMs));
-      if (mode === 'retreat') return ease(clamp((durationMs - t - order * span) / enterMs));
+      if (mode === 'retreat') return 1 - clamp((t - order * span) / enterMs) ** 2;
       return 1;
     }
 
@@ -137,7 +144,7 @@ export function Corruption({
       const present = (index: number) => {
         const at = (mask[index] ?? 0) * span;
         if (mode === 'spread') return at <= t;
-        if (mode === 'retreat') return t < durationMs - at;
+        if (mode === 'retreat') return t < at;
         return true;
       };
       const solid = (x: number, y: number) =>
@@ -165,16 +172,32 @@ export function Corruption({
       neon(context, edges, 0.55);
     }
 
+    function place([x, y, z]: Vec, p: number): Vec {
+      const [ax, ay, az] = aim;
+      if (mode === 'spread') {
+        const from = far * (1 - p);
+        return [ax * from + x * p, ay * from + y * p, az * from + z * p];
+      }
+      if (mode === 'retreat') {
+        const length = Math.hypot(ax, ay, az);
+        const [dx, dy, dz] = [ax / length, ay / length, az / length];
+        const along = x * dx + y * dy + z * dz;
+        const [rx, ry, rz] = [x - dx * along, y - dy * along, z - dz * along];
+        const side = (part * (1 - p)) / (Math.hypot(rx, ry, rz) || 1);
+        const pass = travel * (1 - p);
+        return [x + rx * side - dx * pass, y + ry * side - dy * pass, z + rz * side - dz * pass];
+      }
+      return [x, y, z];
+    }
+
     function drawCube(cube: Cube, p: number, t: number, sway: number) {
-      const theta = cube.theta * (0.15 + 0.85 * p) + sway;
-      const r = cube.r * (1 + 4 * (1 - p));
-      const distance = r * Math.cos(theta);
+      const theta = cube.theta + sway;
+      const distance = cube.r * Math.cos(theta);
       if (distance <= 0.12) return null;
-      const center: Vec = [
-        r * Math.sin(theta),
-        (cube.v * (height / 2) * distance) / focal,
-        -distance,
-      ];
+      const center = place(
+        [cube.r * Math.sin(theta), (cube.v * (height / 2) * distance) / focal, -distance],
+        p,
+      );
       const yaw = -theta + cube.yaw;
       const world = corners.map(([cx, cy, cz]) => {
         const [x, y, z] = rotate([cx * cube.half, cy * cube.half, cz * cube.half], yaw, cube.pitch);
@@ -229,8 +252,8 @@ export function Corruption({
       drawMask(t);
       const sway = mode === 'hold' ? 0.045 * Math.sin(t / 1500) : 0;
       const drawn = [];
-      for (const cube of cubes) {
-        const p = progress(cube.order, t);
+      for (const [index, cube] of cubes.entries()) {
+        const p = progress(orders[index] ?? 0, t);
         const item = p > 0 ? drawCube(cube, p, t, sway) : null;
         if (item) drawn.push(item);
       }
@@ -249,7 +272,23 @@ export function Corruption({
       focal = width / 2 / Math.tan(halfView);
       cols = Math.ceil(width / cell);
       rows = Math.ceil(height / cell);
-      mask = layoutMask(cols, rows);
+      const ox = origin.x * width,
+        oy = origin.y * height;
+      aim = [(ox - width / 2) / focal, (height / 2 - oy) / focal, -1];
+      const longest = Math.max(
+        Math.hypot(ox, oy),
+        Math.hypot(width - ox, height - oy),
+        Math.hypot(ox, height - oy),
+        Math.hypot(width - ox, oy),
+      );
+      const reach = (x: number, y: number) => Math.hypot(x - ox, y - oy) / longest;
+      mask = layoutMask(cols, rows, reach);
+      orders = cubes.map((cube) =>
+        outward(
+          reach(width / 2 + focal * Math.tan(cube.theta), height / 2 - (cube.v * height) / 2),
+          cube.jitter,
+        ),
+      );
       start = performance.now();
       draw(start);
     }
