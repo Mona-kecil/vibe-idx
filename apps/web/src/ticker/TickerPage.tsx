@@ -10,6 +10,7 @@ import { Ownership } from './Ownership';
 import { BrokerFlow } from './BrokerFlow';
 import { ShareButton } from './ShareButton';
 import './ticker.css';
+import { TerminalLink } from '../TerminalLink';
 
 export function TickerPage({ ticker }: { ticker: string }) {
   const [state, setState] = useState<
@@ -119,10 +120,7 @@ function TickerNav({ market, stocks }: { market: Market | null; stocks: Stock[] 
         <nav className="main-nav" aria-label="Main">
           <a href="/">Home</a>
           <a href="/market">Market</a>
-          <a className="terminal-link" href="/terminal">
-            Terminal
-            <span className="cursor" aria-hidden="true" />
-          </a>
+          <TerminalLink />
         </nav>
         <div className="search" ref={container}>
           <svg

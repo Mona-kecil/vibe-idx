@@ -8,6 +8,7 @@ import { Stale } from './Stale';
 import { dateText, direction, nf } from './ticker/format';
 import { initialPins, readStorage, writeStorage } from './watchlist';
 import './market.css';
+import { TerminalLink } from './TerminalLink';
 
 type Stock = MarketSummary['stocks'][number];
 type SortKey = 'ticker' | 'close' | 'change_pct' | 'value' | 'rel_volume' | 'acc' | 'size';
@@ -187,10 +188,7 @@ export function MarketPage() {
             <a href="/market" aria-current="page">
               Market
             </a>
-            <a className="terminal-link" href="/terminal">
-              Terminal
-              <span className="cursor" aria-hidden="true" />
-            </a>
+            <TerminalLink />
           </nav>
           <div className="search">
             <svg
