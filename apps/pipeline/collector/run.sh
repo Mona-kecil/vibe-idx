@@ -30,8 +30,9 @@ uvx --quiet --from awscli aws s3 sync s3://vibe-idx-private/parquet "$data/parqu
 }
 
 status=0
-pnpm --dir "$repo" --filter @vibe-idx/pipeline brokers -- \
-  --data "$data" --token "$state/stockbit.json" --out "$data/private" || status=$?
+# Run node itself: pnpm exits as soon as it is signalled, and systemd then kills node before it releases the run marker.
+(cd "$repo/apps/pipeline" && node --import tsx brokers.ts \
+  --data "$data" --token "$state/stockbit.json" --out "$data/private") || status=$?
 # 130 and 143 mean systemd stopped the run, not that it failed.
 if ((status == 130 || status == 143)); then exit "$status"; fi
 echo $((status == 0 ? 0 : failures + 1)) >"$state/failures"

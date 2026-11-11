@@ -12,7 +12,7 @@ import {
   tickerCode,
 } from './ticks-data';
 import type { BookRow, Trade } from './ticks-data';
-import { TickStore } from './ticks-store';
+import { TickStore, tradeLanes } from './ticks-store';
 import type { Dataset } from './ticks-store';
 
 export type TickSummary = { published: string[]; pending: string[]; stopped?: string };
@@ -40,31 +40,41 @@ export async function collectTicks({
   const store = await TickStore.open(data, r2);
   const summary: TickSummary = { published: [], pending: [] };
   const next = { running_trade: 0, closing_book: 0 };
+  const started = { running_trade: 0, closing_book: 0 };
+  const backoff = { running_trade: 0, closing_book: 0 };
   const bounded = () => Date.now() >= end;
-  async function paced(url: URL, dataset: Dataset): Promise<unknown> {
+  async function paced(url: URL, dataset: Dataset, signal?: AbortSignal): Promise<unknown> {
     for (let attempt = 0; ; attempt++) {
-      await setTimeout(Math.max(0, Math.min(next[dataset] - Date.now(), end - Date.now())));
-      if (bounded()) return;
-      next[dataset] = Date.now() + (dataset === 'running_trade' ? 250 : 200);
+      const interval = dataset === 'running_trade' ? 250 : 200;
+      const slot = Math.max(Date.now(), next[dataset]);
+      next[dataset] = slot + interval;
+      // Late wakeups and a concurrent response's backoff must not bunch reserved requests together.
+      while (!bounded() && !signal?.aborted) {
+        const wait = Math.max(slot, started[dataset] + interval, backoff[dataset]) - Date.now();
+        if (wait <= 0) break;
+        await setTimeout(Math.min(wait, end - Date.now()));
+      }
+      if (bounded() || signal?.aborted) return;
+      started[dataset] = Date.now();
       let response: Response | undefined;
       try {
         response = await request(url.href, end);
       } catch (error) {
-        if (bounded()) return;
+        if (bounded() || signal?.aborted) return;
         if (attempt >= 3) throw new TickStop('Tick request failed', { cause: error });
         await setTimeout(Math.min(1000, Math.max(0, end - Date.now())));
         continue;
       }
       if (!response) return;
       if ((response.status === 429 || response.status >= 500) && attempt < 3) {
-        next[dataset] = Date.now() + 1000;
+        backoff[dataset] = Date.now() + 1000;
         continue;
       }
       if (!response.ok) throw new TickStop(`Stockbit ${dataset} HTTP ${response.status}`);
       return response.json();
     }
   }
-  async function tradePage(date: string, sort: 'ASC' | 'DESC', cursor = 0) {
+  async function tradePage(date: string, sort: 'ASC' | 'DESC', cursor = 0, signal?: AbortSignal) {
     const url = new URL('https://exodus.stockbit.com/order-trade/running-trade');
     url.search = new URLSearchParams({
       date,
@@ -73,9 +83,14 @@ export async function collectTicks({
       limit: '100',
       ...(cursor ? { trade_number: String(cursor) } : {}),
     }).toString();
-    const raw = await paced(url, 'running_trade');
+    const raw = await paced(url, 'running_trade', signal);
     if (raw === undefined) return;
     return parseTradePage(raw, date);
+  }
+  async function closingSequence(date: string, signal?: AbortSignal) {
+    const last = await tradePage(date, 'DESC', 0, signal);
+    // Trades sharing the final second come back in any order, so the first row is not always the highest number.
+    return last && Math.max(0, ...last.map((r) => r.trade_number));
   }
   async function alreadyPublished(date: string, dataset: Dataset) {
     if (await store.complete(date, dataset)) {
@@ -129,9 +144,8 @@ export async function collectTicks({
     let p = await store.progress(date, 'running_trade');
     if (p && p.dataset !== 'running_trade') throw new Error('Invalid trade progress');
     if (!p) {
-      const last = await tradePage(date, 'DESC');
-      if (!last) return;
-      const expected = last[0]?.trade_number ?? 0;
+      const expected = await closingSequence(date);
+      if (expected === undefined) return;
       if (!expected) {
         // An observed trading session cannot be certified empty from an expired/empty API response.
         await store.targets(date, 'running_trade', tickers);
@@ -148,8 +162,7 @@ export async function collectTicks({
         chunks: [],
         expected,
         phase: 'bulk',
-        cursor: 0,
-        seen: [],
+        lanes: tradeLanes(expected),
         repairs: 0,
       };
     }
@@ -158,35 +171,74 @@ export async function collectTicks({
     await store.restore(progress);
     let rows: Trade[] = [];
     let pages = 0;
-    let start = progress.cursor;
-    async function flush() {
-      await store.checkpoint(progress, rows, start, progress.cursor);
+    const stop = new AbortController();
+    let checkpoint = Promise.resolve();
+    let closing: Promise<number | undefined> | undefined;
+    function flush() {
+      const batch = rows;
       rows = [];
       pages = 0;
-      start = progress.cursor;
+      const snapshot = structuredClone(progress);
+      checkpoint = checkpoint.then(async () => {
+        snapshot.chunks = [...progress.chunks];
+        const numbers = batch.map((r) => r.trade_number);
+        await store.checkpoint(
+          snapshot,
+          batch,
+          numbers.length ? Math.min(...numbers) : 0,
+          numbers.length ? Math.max(...numbers) : 0,
+        );
+        progress.chunks = snapshot.chunks;
+      });
+      return checkpoint;
     }
-    async function take(page: Trade[]) {
-      if (page.some((r) => r.trade_number > progress.expected))
-        throw new Error('Running trade exceeds closing sequence');
+    async function take(page: Trade[], lane?: (typeof progress.lanes)[number]) {
+      const top = Math.max(0, ...page.map((r) => r.trade_number));
+      // Progress saved before closingSequence took the maximum can hold a count that is too low.
+      if (top > progress.expected) {
+        closing ??= closingSequence(date, stop.signal).finally(() => {
+          closing = undefined;
+        });
+        progress.expected = Math.max(progress.expected, (await closing) ?? 0);
+      }
+      if (stop.signal.aborted) return;
+      if (top > progress.expected) throw new Error('Running trade exceeds closing sequence');
       rows.push(...page);
       pages++;
+      if (lane) {
+        const tail = page.at(-1)?.trade_number ?? lane.cursor;
+        lane.done =
+          page.length < 100 || lane.seen.includes(tail) || (lane.end !== null && tail >= lane.end);
+        lane.seen.push(lane.cursor);
+        lane.cursor = tail;
+      }
       if (pages >= 100) await flush();
     }
     try {
-      while (progress.phase === 'bulk' && !bounded()) {
-        const page = await tradePage(date, 'ASC', progress.cursor);
-        if (!page) break;
-        await take(page);
-        const tail = page.at(-1)?.trade_number ?? progress.cursor;
-        const exhausted = page.length < 100 || progress.seen.includes(tail);
-        progress.seen.push(progress.cursor);
-        progress.cursor = tail;
-        if (exhausted) {
-          progress.phase = 'repair';
-          progress.cursor = 0;
-          progress.seen = [];
-          await flush();
-        }
+      if (progress.phase === 'bulk') {
+        const results = await Promise.allSettled(
+          progress.lanes.map(async (lane) => {
+            try {
+              let retries = 0;
+              while (!lane.done && !bounded() && !stop.signal.aborted) {
+                const page = await tradePage(date, 'ASC', lane.cursor, stop.signal);
+                if (!page || stop.signal.aborted) return;
+                if (!page.length && !lane.seen.length && lane.cursor > 0 && retries++ < 3) {
+                  lane.cursor--;
+                  continue;
+                }
+                await take(page, lane);
+              }
+            } catch (error) {
+              stop.abort();
+              throw error;
+            }
+          }),
+        );
+        const failure = results.find((r) => r.status === 'rejected');
+        if (failure?.status === 'rejected') throw failure.reason;
+        if (progress.lanes.every((lane) => lane.done)) progress.phase = 'repair';
+        await flush();
       }
       // Trades sharing a second come back in a different order on each request, so the cursor can skip one.
       // Re-read only the seconds around each gap; numbers still absent after that are not in Stockbit's feed.
@@ -222,7 +274,7 @@ export async function collectTicks({
     }
     summary.pending.push(`running_trade/${date}`);
     // Far more gaps than cancelled trades explain means the crawl itself failed. Crawl the day again next run.
-    Object.assign(progress, { phase: 'bulk', cursor: 0, seen: [], repairs: 0 });
+    Object.assign(progress, { phase: 'bulk', lanes: tradeLanes(progress.expected), repairs: 0 });
     await flush();
     await report(new Error(`${missing.length} running trades missing for ${date}`), {
       source: 'ticks',

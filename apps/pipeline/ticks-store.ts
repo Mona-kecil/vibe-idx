@@ -22,15 +22,44 @@ const base = z.object({
   tickers: z.array(tickerCode),
   chunks: z.array(z.string().regex(/^chunk-\d+-\d+-\d+\.parquet$/)),
 });
-export const progressSchema = z.discriminatedUnion('dataset', [
-  base.extend({
-    dataset: z.literal('running_trade'),
-    expected: z.number().int().nonnegative(),
-    phase: z.enum(['bulk', 'repair']),
-    cursor: z.number().int().nonnegative(),
-    seen: z.array(z.number().int().nonnegative()),
-    repairs: z.number().int().nonnegative(),
-  }),
+const laneSchema = z.object({
+  cursor: z.number().int().nonnegative(),
+  end: z.number().int().nonnegative().nullable(),
+  seen: z.array(z.number().int().nonnegative()),
+  done: z.boolean(),
+});
+const LANES = 4;
+export function tradeLanes(expected: number, cursor = 0): z.infer<typeof laneSchema>[] {
+  const start = (i: number) => cursor + Math.floor(((expected - cursor) * i) / LANES);
+  return Array.from({ length: LANES }, (_, i) => ({
+    cursor: start(i),
+    end: i === LANES - 1 ? null : start(i + 1),
+    seen: [],
+    done: false,
+  }));
+}
+export const progressSchema = z.union([
+  base
+    .extend({
+      dataset: z.literal('running_trade'),
+      expected: z.number().int().nonnegative(),
+      phase: z.enum(['bulk', 'repair']),
+      repairs: z.number().int().nonnegative(),
+    })
+    .and(
+      z.union([
+        z.object({ lanes: z.array(laneSchema).length(LANES) }),
+        z.object({
+          cursor: z.number().int().nonnegative(),
+          seen: z.array(z.number().int().nonnegative()),
+        }),
+      ]),
+    )
+    .transform((p) => {
+      if ('lanes' in p) return p;
+      const { cursor, seen: _seen, ...rest } = p;
+      return { ...rest, lanes: tradeLanes(p.expected, cursor) };
+    }),
   base.extend({ dataset: z.literal('closing_book'), nextTicker: z.number().int().nonnegative() }),
 ]);
 export type Progress = z.infer<typeof progressSchema>;

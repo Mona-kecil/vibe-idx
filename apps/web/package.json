@@ -13,6 +13,7 @@
     "test": "CI=true vp test"
   },
   "dependencies": {
+    "@resvg/resvg-js": "2.6.2",
     "@sentry/node": "^10.78.0",
     "@sentry/react": "^10.78.0",
     "@workos-inc/authkit-react": "^0.16.3",
@@ -22,6 +23,7 @@
     "lightweight-charts": "5.2.1",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
+    "satori": "0.63.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
