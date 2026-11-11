@@ -228,3 +228,9 @@
 .terminal-page .mover-period {
   margin-left: auto;
 }
+
+.terminal-page .signal-day {
+  font-size: inherit;
+  font-weight: 400;
+  text-align: left;
+}

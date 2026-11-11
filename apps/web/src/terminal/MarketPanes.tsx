@@ -241,6 +241,12 @@ export function SignalsPane() {
           nf(row.numbers.pct_before, 2) !== nf(row.numbers.pct_after, 2)),
     )
     .sort((a, b) => b.date.localeCompare(a.date) || signalOrder[a.kind] - signalOrder[b.kind]);
+  const days = new Map<string, Feed>();
+  for (const row of rows) {
+    const day = days.get(row.date);
+    if (day) day.push(row);
+    else days.set(row.date, [row]);
+  }
   return (
     <>
       <div className="sub">
@@ -254,25 +260,31 @@ export function SignalsPane() {
       <Scroll reset={filters.sig}>
         {rows.length ? (
           <table>
-            <tbody>
-              {rows.map((row, i) => (
-                <tr
-                  key={`${row.ticker}:${row.kind}:${row.date}:${i}`}
-                  className={`ticker-row${row.ticker === ticker ? ' on' : ''}`}
-                  onClick={(event) => selectRow(event, row.ticker, setTicker)}
-                >
-                  <td className="mut">{dateText(row.date)}</td>
-                  <td className="quote-ticker">
-                    <PinButton ticker={row.ticker} />
-                    <TickerLink ticker={row.ticker} />
-                  </td>
-                  <td className="accent">{signalNames[row.kind]}</td>
-                  <td className="l">
-                    <SignalDetail row={row} />
-                  </td>
+            {[...days].map(([date, signals]) => (
+              <tbody key={date} aria-label={`${dateText(date)} signals`}>
+                <tr>
+                  <th className="signal-day" scope="rowgroup" colSpan={3}>
+                    {dateText(date)}
+                  </th>
                 </tr>
-              ))}
-            </tbody>
+                {signals.map((row, i) => (
+                  <tr
+                    key={`${row.ticker}:${row.kind}:${row.date}:${i}`}
+                    className={`ticker-row${row.ticker === ticker ? ' on' : ''}`}
+                    onClick={(event) => selectRow(event, row.ticker, setTicker)}
+                  >
+                    <td className="quote-ticker">
+                      <PinButton ticker={row.ticker} />
+                      <TickerLink ticker={row.ticker} />
+                    </td>
+                    <td className="accent">{signalNames[row.kind]}</td>
+                    <td className="l">
+                      <SignalDetail row={row} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            ))}
           </table>
         ) : (
           <Empty>No signals</Empty>

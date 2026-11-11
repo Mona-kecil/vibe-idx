@@ -15,9 +15,7 @@ export const questions: Question[] = [
     text: 'Which tickers fired a signal today?',
     async ask(ui) {
       const sig = await ui.open('SIG');
-      const day =
-        (await sig.getByRole('row').first().getByRole('cell').first().textContent()) ?? '';
-      await ui.see(sig.getByRole('row').filter({ hasText: day }));
+      await ui.see(sig.getByRole('rowgroup').first().locator('tr.ticker-row'));
     },
   },
   {

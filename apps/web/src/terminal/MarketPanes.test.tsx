@@ -164,6 +164,14 @@ it('shows today before older signals, groups kinds stably, and keeps every filte
   try {
     await act(async () => root.render(<SignalsPane />));
     expect(tickers()).toEqual(all);
+    expect([...host.querySelectorAll('tbody')].map((el) => el.getAttribute('aria-label'))).toEqual([
+      '10 Nov 2026 signals',
+      '9 Nov 2026 signals',
+      '8 Nov 2026 signals',
+    ]);
+    expect(host.querySelectorAll('tbody:first-child tr.ticker-row')).toHaveLength(7);
+    expect(host.textContent?.match(/10 Nov 2026/g)).toHaveLength(1);
+    expect(host.querySelectorAll('tr.ticker-row td')).toHaveLength(all.length * 3);
     for (const [label, expected] of [
       ['ARA', ['ZARA', 'AARA', 'OLDARA']],
       ['VOL', ['VOL']],
