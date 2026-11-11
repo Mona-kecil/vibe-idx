@@ -15,6 +15,10 @@
       "destination": "https://pub-7982bfb066694e6e8615750132283eba.r2.dev/:path*"
     },
     {
+      "source": "/t/:ticker",
+      "destination": "/api/page?ticker=:ticker"
+    },
+    {
       "source": "/((?!assets/|data(?:/|$)|api(?:/|$)|src/|node_modules/|@).*)",
       "destination": "/index.html"
     }
