@@ -58,7 +58,8 @@ export type Filters = {
   ca: 'ALL' | 'DIV' | 'RIGHTS' | 'RUPS' | 'TICKER';
   risk: 'ALL' | 'SUSP' | 'UMA' | 'FCA' | 'NOTES';
   sig: 'ALL' | 'ARA' | 'VOL' | 'FGN' | 'RS' | '5%';
-  mov: 'GAIN' | 'LOSE' | 'VALUE' | 'F BUY' | 'F SELL';
+  mov: 'GAIN' | 'LOSE';
+  movValue: 'VALUE' | 'F BUY' | 'F SELL';
   period: '1d' | '3d' | '5d';
 };
 export const initialFilters: Filters = {
@@ -68,6 +69,7 @@ export const initialFilters: Filters = {
   risk: 'ALL',
   sig: 'ALL',
   mov: 'GAIN',
+  movValue: 'VALUE',
   period: '1d',
 };
 export const initialBrokerFilters: BrokerFilters = {

@@ -213,3 +213,18 @@
 .terminal-page .seg button {
   min-height: 24px;
 }
+.terminal-page .movers {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  flex: 1;
+  min-height: 0;
+}
+.terminal-page .mover-list {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.terminal-page .mover-period {
+  margin-left: auto;
+}

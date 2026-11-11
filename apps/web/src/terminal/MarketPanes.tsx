@@ -57,20 +57,26 @@ function QuoteTable({
   stocks,
   selected,
   foreign = false,
+  columns = 'quote',
 }: {
   stocks: Stock[];
   selected: string;
   foreign?: boolean;
+  columns?: 'quote' | 'change' | 'value';
 }) {
   const { setTicker } = useTerminal();
   return (
-    <table>
+    <table
+      aria-label={
+        columns === 'change' ? 'Change ranking' : columns === 'value' ? 'Value ranking' : undefined
+      }
+    >
       <thead>
         <tr>
           <th>TICKER</th>
-          <th>LAST IDR</th>
+          {columns !== 'value' && <th>LAST IDR</th>}
           <th>CHG</th>
-          <th>{foreign ? 'F NET EST. IDR' : 'VALUE IDR'}</th>
+          {columns !== 'change' && <th>{foreign ? 'F NET EST. IDR' : 'VALUE IDR'}</th>}
         </tr>
       </thead>
       <tbody>
@@ -84,14 +90,16 @@ function QuoteTable({
               <PinButton ticker={stock.ticker} />
               <TickerLink ticker={stock.ticker} />
             </td>
-            <td>{nf(stock.close)}</td>
+            {columns !== 'value' && <td>{nf(stock.close)}</td>}
             <td className={direction(stock.change_pct)}>{percent(stock.change_pct)}</td>
-            <td
-              title={nf(foreign ? stock.net_foreign : stock.value)}
-              className={foreign ? direction(stock.net_foreign) : 'mut'}
-            >
-              {foreign ? signed(stock.net_foreign, short) : short(stock.value)}
-            </td>
+            {columns !== 'change' && (
+              <td
+                title={nf(foreign ? stock.net_foreign : stock.value)}
+                className={foreign ? direction(stock.net_foreign) : 'mut'}
+              >
+                {foreign ? signed(stock.net_foreign, short) : short(stock.value)}
+              </td>
+            )}
           </tr>
         ))}
       </tbody>
@@ -100,50 +108,77 @@ function QuoteTable({
 }
 export function MoversPane() {
   const { data, filters, filter, ticker } = useTerminal();
-  const foreign = filters.mov === 'F BUY' || filters.mov === 'F SELL';
+  const foreign = filters.movValue !== 'VALUE';
   const date = foreign ? data.health.prices : data.summary.date;
   const quotes = new Map(data.stocks.map((stock) => [stock.ticker, stock]));
-  const stocks = foreign
-    ? [...data.stocks]
-    : data.summary.stocks.flatMap((stock) => {
-        const quote = quotes.get(stock.ticker),
-          window = stock.windows[filters.period];
-        return quote && window.value !== null
-          ? [{ ...quote, value: window.value, change_pct: window.change_pct }]
-          : [];
-      });
-  const amount = (stock: Stock) =>
-    foreign ? stock.net_foreign : filters.mov === 'VALUE' ? stock.value : stock.change_pct;
-  const descending = filters.mov !== 'LOSE' && filters.mov !== 'F SELL';
-  stocks.sort((a, b) => {
-    const av = amount(a),
-      bv = amount(b);
-    return av === null ? 1 : bv === null ? -1 : (av - bv) * (descending ? -1 : 1);
+  const stocks = data.summary.stocks.flatMap((stock) => {
+    const quote = quotes.get(stock.ticker),
+      window = stock.windows[filters.period];
+    return quote && window.value !== null
+      ? [{ ...quote, value: window.value, change_pct: window.change_pct }]
+      : [];
   });
+  const changeStocks = [...stocks].sort((a, b) => {
+    const av = a.change_pct,
+      bv = b.change_pct;
+    return av === null ? 1 : bv === null ? -1 : (av - bv) * (filters.mov === 'GAIN' ? -1 : 1);
+  });
+  const valueStocks = (foreign ? [...data.stocks] : [...stocks]).sort((a, b) => {
+    const av = foreign ? a.net_foreign : a.value;
+    const bv = foreign ? b.net_foreign : b.value;
+    return (av - bv) * (filters.movValue === 'F SELL' ? 1 : -1);
+  });
+  const asOf = (day: string | null | undefined) =>
+    day ? `As of ${dateText(day)}` : 'Date unavailable';
   return (
     <>
-      <div className="sub">
-        <Segments
-          label="Movers"
-          values={['GAIN', 'LOSE', 'VALUE', 'F BUY', 'F SELL']}
-          value={filters.mov}
-          onChange={(value) => {
-            filter('mov', value);
-            if (value === 'F BUY' || value === 'F SELL') filter('period', '1d');
-          }}
-        />
-        <Segments
-          label="Mover period"
-          values={['1d', '3d', '5d']}
-          value={foreign ? '1d' : filters.period}
-          disabled={foreign ? ['3d', '5d'] : []}
-          onChange={(value) => filter('period', value)}
-        />
+      <div className="publication">{asOf(data.summary.date)}</div>
+      <div className="movers">
+        <section className="mover-list" aria-label="Change movers">
+          <div className="sub">
+            <Segments
+              label="Movers"
+              values={['GAIN', 'LOSE']}
+              value={filters.mov}
+              onChange={(value) => filter('mov', value)}
+            />
+          </div>
+          <Scroll reset={`${filters.mov}:${filters.period}`}>
+            <QuoteTable stocks={changeStocks.slice(0, 30)} selected={ticker} columns="change" />
+          </Scroll>
+        </section>
+        <section className="mover-list" aria-label="Value movers">
+          <div className="sub">
+            <Segments
+              label="Value movers"
+              values={['VALUE', 'F BUY', 'F SELL']}
+              value={filters.movValue}
+              onChange={(value) => {
+                filter('movValue', value);
+                if (value !== 'VALUE') filter('period', '1d');
+              }}
+            />
+            <span className="mover-period">
+              <Segments
+                label="Mover period"
+                values={['1d', '3d', '5d']}
+                value={foreign ? '1d' : filters.period}
+                disabled={foreign ? ['3d', '5d'] : []}
+                onChange={(value) => filter('period', value)}
+              />
+            </span>
+          </div>
+          <Scroll reset={`${filters.movValue}:${filters.period}`}>
+            {date !== data.summary.date && <div className="publication">{asOf(date)}</div>}
+            <QuoteTable
+              stocks={valueStocks.slice(0, 30)}
+              selected={ticker}
+              columns="value"
+              foreign={foreign}
+            />
+          </Scroll>
+        </section>
       </div>
-      <Scroll reset={`${filters.mov}:${filters.period}`}>
-        <div className="publication">{date ? `As of ${dateText(date)}` : 'Date unavailable'}</div>
-        <QuoteTable stocks={stocks.slice(0, 30)} selected={ticker} foreign={foreign} />
-      </Scroll>
     </>
   );
 }

@@ -9,20 +9,25 @@ export type LayoutNode =
   | {
       direction: 'row' | 'col';
       sizes: number[];
-      widths?: (number | null)[];
+      basis?: (number | null)[];
       children: LayoutNode[];
     };
 export const layouts: Record<Layout, { tree: LayoutNode; slots: Record<string, FunctionId[]> }> = {
   grid: {
     tree: {
       direction: 'row',
-      sizes: [45, 55],
-      children: [{ direction: 'col', sizes: [35, 65], children: ['a', 'c'] }, 'b'],
+      sizes: [38, 40, 22],
+      children: [
+        'c',
+        { direction: 'col', sizes: [30, 70], basis: [264, null], children: ['a', 'd'] },
+        'b',
+      ],
     },
     slots: {
       a: ['WL'],
       b: ['NEWS', 'CA'],
-      c: ['SIG', 'MOV'],
+      c: ['SIG'],
+      d: ['MOV'],
     },
   },
   focus: {
@@ -41,7 +46,7 @@ export const layouts: Record<Layout, { tree: LayoutNode; slots: Record<string, F
     tree: {
       direction: 'row',
       sizes: [52, 24, 24],
-      widths: [null, 427, 398],
+      basis: [null, 427, 398],
       children: [{ direction: 'col', sizes: [50, 50], children: ['b', 'e'] }, 'c', 'd'],
     },
     slots: {
@@ -151,8 +156,8 @@ export function SplitLayout({
             className="split-child"
             style={{
               flex:
-                sizes === defaults && node.widths?.[index] != null
-                  ? `0 1 ${node.widths[index]}px`
+                sizes === defaults && node.basis?.[index] != null
+                  ? `0 1 ${node.basis[index]}px`
                   : `${sizes[index]} 1 0px`,
             }}
           >

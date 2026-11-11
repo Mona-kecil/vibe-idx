@@ -25,9 +25,9 @@ export const questions: Question[] = [
     async ask(ui) {
       const mov = await ui.open('MOV');
       await ui.press(mov, 'GAIN');
-      await ui.see(top(body(mov.getByRole('table'))));
+      await ui.see(top(body(mov.getByRole('table', { name: 'Change ranking' }))));
       await ui.press(mov, 'VALUE');
-      await ui.see(top(body(mov.getByRole('table'))));
+      await ui.see(top(body(mov.getByRole('table', { name: 'Value ranking' }))));
     },
   },
   {

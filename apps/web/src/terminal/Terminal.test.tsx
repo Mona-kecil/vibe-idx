@@ -226,6 +226,17 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 describe('React terminal', () => {
+  it('shows watchlist, signals, movers and news in separate GRID panes', async () => {
+    await render();
+    expect(
+      [...host.querySelectorAll('.pane')]
+        .map((el) => el.querySelector('[role="tab"][aria-selected="true"]')?.textContent ?? '')
+        .sort((a, b) => a.localeCompare(b)),
+    ).toEqual(['MOV', 'NEWS', 'SIG', 'WL']);
+    expect(host.querySelector('[data-slot="c"] [role="tab"][title="Market movers"]')).toBeNull();
+    expect(host.querySelector('[data-slot="d"] [aria-label="Change ranking"]')).not.toBeNull();
+    expect(host.querySelector('[data-slot="d"] [aria-label="Value ranking"]')).not.toBeNull();
+  });
   it('opens ticker links, switches layouts and restores maximized panes', async () => {
     window.localStorage.setItem('vibe-idx:watchlist', JSON.stringify(['BBCA']));
     await render();
@@ -482,17 +493,17 @@ describe('React terminal', () => {
   it('uses the entire mover row to select a ticker and keeps links and pin controls independent', async () => {
     await render();
     await command('MOV');
-    await click('[aria-label="Movers"] button:nth-child(4)');
-    await click('[data-slot="c"] [aria-label="Pin BBCA"]');
+    await click('[aria-label="Value movers"] button:nth-child(2)');
+    await click('[aria-label="Value ranking"] [aria-label="Pin BBCA"]');
     expect(window.location.search).toContain('t=BREN');
     expect(host.querySelector('[data-slot="a"] a.ticker')?.textContent).toBe('BBCA');
     await act(async () => {
       host
-        .querySelector('[data-slot="c"] tbody tr:nth-child(2) td:last-child')
+        .querySelector('[aria-label="Value ranking"] tbody tr:nth-child(2) td:last-child')
         ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
     expect(window.location.search).toContain('t=BBCA');
-    const link = host.querySelector('[data-slot="c"] tbody tr:nth-child(2) a.ticker');
+    const link = host.querySelector('[aria-label="Value ranking"] tbody tr:nth-child(2) a.ticker');
     const modifiedClick = new MouseEvent('click', {
       bubbles: true,
       cancelable: true,
@@ -505,14 +516,14 @@ describe('React terminal', () => {
     await render();
     await command('MOV');
     await click('[aria-label="Mover period"] button:nth-child(2)');
-    await click('[aria-label="Movers"] button:nth-child(4)');
+    await click('[aria-label="Value movers"] button:nth-child(2)');
     expect(
       button('[aria-label="Mover period"] button:nth-child(1)').getAttribute('aria-pressed'),
     ).toBe('true');
     expect(button('[aria-label="Mover period"] button:nth-child(2)').disabled).toBe(true);
     expect(button('[aria-label="Mover period"] button:nth-child(3)').disabled).toBe(true);
     expect(host.textContent).not.toContain('Foreign flow is available for 1D only.');
-    await click('[aria-label="Movers"] button:nth-child(1)');
+    await click('[aria-label="Value movers"] button:nth-child(1)');
     expect(button('[aria-label="Mover period"] button:nth-child(2)').disabled).toBe(false);
   });
   it('keeps broker flow colours stable across pins and closes the picker on Escape', async () => {
@@ -723,7 +734,7 @@ it('pushes ticker navigation, replaces layout navigation and restores on popstat
     window.dispatchEvent(new PopStateEvent('popstate'));
   });
   expect(host.querySelector('[aria-label="Pin BREN"]')).not.toBeNull();
-  expect(host.querySelectorAll('.pane')).toHaveLength(3);
+  expect(host.querySelectorAll('.pane')).toHaveLength(4);
   expect(push).toHaveBeenCalledOnce();
   push.mockRestore();
   replace.mockRestore();
@@ -781,7 +792,7 @@ it('uses one tab stop per pane tablist and segment group with arrow navigation',
     segment.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
   });
   expect(document.activeElement?.getAttribute('aria-pressed')).toBe('true');
-  expect(document.activeElement?.textContent).toBe('F SELL');
+  expect(document.activeElement?.textContent).toBe('LOSE');
 });
 
 it('traps keyboard focus in help and restores focus on Escape', async () => {
