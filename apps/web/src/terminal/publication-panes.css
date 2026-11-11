@@ -35,6 +35,9 @@
   white-space: normal;
   min-width: 140px;
 }
+.terminal-page .actions td {
+  vertical-align: baseline;
+}
 .terminal-page .day td {
   background: var(--head);
   color: var(--muted);
