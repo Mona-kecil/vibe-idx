@@ -8,6 +8,7 @@ import { PriceChart, visiblePrices, type Period } from './PriceChart';
 import { SelectionSummary, FilingsNews } from './Feeds';
 import { Ownership } from './Ownership';
 import { BrokerFlow } from './BrokerFlow';
+import { ShareButton } from './ShareButton';
 import './ticker.css';
 
 export function TickerPage({ ticker }: { ticker: string }) {
@@ -263,7 +264,10 @@ function TickerDetail({ data, health }: { data: Ticker; health: Health | null })
       </div>
       <div className="ticker-header">
         <div className="identity">
-          <h1>{data.ticker}</h1>
+          <div className="identity-heading">
+            <h1>{data.ticker}</h1>
+            <ShareButton ticker={data.ticker} name={data.name} />
+          </div>
           <p>{data.name.replace(/\.$/, '')}</p>
         </div>
         {last && (
