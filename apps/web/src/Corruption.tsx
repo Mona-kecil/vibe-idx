@@ -3,7 +3,7 @@ import { useEffect, useRef } from 'react';
 export type CorruptionMode = 'spread' | 'hold' | 'retreat' | 'still';
 
 const cell = 40;
-const enterMs = 160;
+const enterMs = 220;
 const cubeCount = 150;
 const thetaMax = 1.25;
 const halfView = 1.0;
@@ -57,13 +57,13 @@ function layoutCubes(): Cube[] {
       yaw: (next() - 0.5) * 0.7,
       pitch: (next() - 0.5) * 0.6,
       pulse: next() * Math.PI * 2,
-      order: inward(Math.abs(Math.tan(theta)) / Math.tan(halfView), next()),
+      order: outward(Math.abs(Math.tan(theta)) / Math.tan(halfView), next()),
     };
   });
 }
 
-function inward(fromSide: number, jitter: number) {
-  return (1 - Math.min(fromSide, 1)) * 0.72 + jitter * 0.28;
+function outward(fromCenter: number, jitter: number) {
+  return Math.min(fromCenter, 1) * 0.72 + jitter * 0.28;
 }
 
 function layoutMask(cols: number, rows: number) {
@@ -74,7 +74,7 @@ function layoutMask(cols: number, rows: number) {
   const order = new Float64Array(cols * rows);
   for (let y = 0; y < rows; y++)
     for (let x = 0; x < cols; x++) {
-      order[y * cols + x] = inward(
+      order[y * cols + x] = outward(
         Math.abs((x + 0.5) / cols - 0.5) * 2,
         coarse[x >> 2]?.[y >> 2] ?? 0,
       );
@@ -166,8 +166,8 @@ export function Corruption({
     }
 
     function drawCube(cube: Cube, p: number, t: number, sway: number) {
-      const theta = cube.theta + Math.sign(cube.theta) * 0.7 * (1 - p) + sway;
-      const r = cube.r * (1 - 0.4 * (1 - p));
+      const theta = cube.theta * (0.15 + 0.85 * p) + sway;
+      const r = cube.r * (1 + 4 * (1 - p));
       const distance = r * Math.cos(theta);
       if (distance <= 0.12) return null;
       const center: Vec = [
