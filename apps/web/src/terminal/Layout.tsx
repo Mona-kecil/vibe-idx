@@ -27,7 +27,7 @@ export const layouts: Record<Layout, { tree: LayoutNode; slots: Record<string, F
       children: [{ direction: 'col', sizes: [65, 35], children: ['b', 'c'] }, 'f'],
     },
     slots: {
-      b: ['GP', 'KEY'],
+      b: ['GP'],
       c: ['DISC', 'NEWS'],
       f: ['HDS', 'CA'],
     },

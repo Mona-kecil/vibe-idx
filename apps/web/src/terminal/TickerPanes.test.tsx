@@ -92,6 +92,21 @@ afterEach(async () => {
   await act(async () => root.unmount());
   vi.unstubAllGlobals();
 });
+it('shows registry facts above the holders with the reporting date available on hover', async () => {
+  await act(async () => root.render(<HoldersPane />));
+  const registry = host.querySelector('dl');
+  expect([...(registry?.querySelectorAll('div') ?? [])].map((el) => el.textContent)).toEqual([
+    'FREE FLOAT40.00%',
+    'SID COUNT1,000',
+    'ISSUED SHARES10,000',
+  ]);
+  expect(registry?.title).toBe('Registry 31 Oct 2026');
+  expect(registry?.nextElementSibling?.querySelector('[aria-label="Holder A"]')).not.toBeNull();
+  selection = { anchor: '2026-10-01', end: '2026-10-30' };
+  await act(async () => root.render(<HoldersPane />));
+  expect(host.querySelector('dl')?.title).toBe('Registry unavailable');
+  expect([...host.querySelectorAll('dl dd')].map((el) => el.textContent)).toEqual(['—', '—', '—']);
+});
 it('groups holder reports into dated charts with inspectable percentages and shares', async () => {
   await act(async () => root.render(<HoldersPane />));
   expect(host.querySelectorAll('.holder-history')).toHaveLength(2);

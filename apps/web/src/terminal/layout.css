@@ -115,7 +115,15 @@
   font-size: 11px;
 }
 .terminal-page .ctx b {
+  flex: none;
   font-weight: 600;
+}
+.terminal-page .company-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.terminal-page .ctx .flags {
+  flex: none;
 }
 .terminal-page .maxb {
   flex: none;

@@ -377,12 +377,17 @@ function TerminalWorkspace({ data }: { data: TerminalData }) {
   );
 }
 function PaneContext({ id }: { id: FunctionId }) {
-  const { ticker, publications } = useTerminal();
+  const { ticker, detail, publications } = useTerminal();
   if (!['GP', 'KEY', 'BRK', 'BFL', 'FF', 'OB', 'RT', 'DD', 'TB', 'HDS', 'DISC'].includes(id))
     return <span className="ctx" />;
   return (
     <div className="ctx">
       <b>{ticker}</b>
+      {id === 'GP' && detail.kind === 'ready' && (
+        <span className="company-name" title={detail.data.name}>
+          {detail.data.name}
+        </span>
+      )}
       <RiskFlags
         risk={
           publications.risks.kind === 'ready' ? publications.risks.data.risk[ticker] : undefined

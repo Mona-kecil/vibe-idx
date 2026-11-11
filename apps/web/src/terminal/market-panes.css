@@ -63,6 +63,25 @@
 .terminal-page .holders {
   padding: 12px;
 }
+.terminal-page .holder-registry {
+  display: flex;
+  gap: 16px;
+  margin: 0;
+  padding: 6px 12px;
+  white-space: nowrap;
+}
+.terminal-page .holder-registry > div {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.terminal-page .holder-registry dt {
+  color: var(--muted);
+  font-size: 10px;
+}
+.terminal-page .holder-registry dd {
+  margin: 0;
+}
 .terminal-page .key-heading {
   display: flex;
   align-items: flex-start;

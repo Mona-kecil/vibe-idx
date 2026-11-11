@@ -242,20 +242,45 @@ export function HoldersPane() {
               }))
               .filter((history) => history.points.length > 0)
               .sort((a, b) => (b.points.at(-1)?.pct ?? 0) - (a.points.at(-1)?.pct ?? 0));
-            return histories.length ? (
-              <div className="holders">
-                {histories.map((history) => (
-                  <HolderChart
-                    key={history.key}
-                    history={history}
-                    role={holderRole(snapshot, history.key)}
-                  />
-                ))}
-              </div>
-            ) : (
-              <Empty>
-                {range ? 'No holder reports in this chart range' : 'No holders reported'}
-              </Empty>
+            return (
+              <>
+                <dl
+                  className="holder-registry"
+                  title={snapshot ? `Registry ${dateText(snapshot.date)}` : 'Registry unavailable'}
+                >
+                  <div>
+                    <dt>FREE FLOAT</dt>
+                    <dd>
+                      {snapshot?.free_float_pct == null
+                        ? '—'
+                        : `${nf(snapshot.free_float_pct, 2)}%`}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>SID COUNT</dt>
+                    <dd>{snapshot?.sid_count == null ? '—' : nf(snapshot.sid_count)}</dd>
+                  </div>
+                  <div>
+                    <dt>ISSUED SHARES</dt>
+                    <dd>{snapshot?.issued_shares == null ? '—' : nf(snapshot.issued_shares)}</dd>
+                  </div>
+                </dl>
+                {histories.length ? (
+                  <div className="holders">
+                    {histories.map((history) => (
+                      <HolderChart
+                        key={history.key}
+                        history={history}
+                        role={holderRole(snapshot, history.key)}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <Empty>
+                    {range ? 'No holder reports in this chart range' : 'No holders reported'}
+                  </Empty>
+                )}
+              </>
             );
           }}
         </Availability>

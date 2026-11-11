@@ -692,12 +692,27 @@ it('restores the layout when a command targets a different maximized pane', asyn
   expect(host.querySelector('[data-slot="c"] [aria-selected="true"]')?.textContent).toBe('SIG');
 });
 
-it('keeps ticker identity without duplicating the price in pane headers', async () => {
+it('shows the company name beside the GP ticker and keeps other pane headers compact', async () => {
   await render();
   await command('FOCUS');
   const contexts = [...host.querySelectorAll('.ctx')].filter((el) => el.querySelector('b'));
   expect(contexts).toHaveLength(3);
-  expect(contexts.every((el) => el.textContent === 'BREN')).toBe(true);
+  expect(contexts.map((el) => el.textContent)).toEqual(['BRENCompany BREN', 'BREN', 'BREN']);
+  expect(host.querySelector('.company-name')?.getAttribute('title')).toBe('Company BREN');
+  await command('BBCA');
+  expect(host.querySelector('.company-name')?.textContent).toBe('Company BBCA');
+});
+
+it.each(['GRID', 'FOCUS', 'FLOW'])('opens KEY only from the command bar in %s', async (mode) => {
+  await render();
+  await command(mode);
+  expect(host.querySelector('[role="tab"][title="Key figures"]')).toBeNull();
+  await command('KEY');
+  expect(
+    host.querySelector('[role="tab"][title="Key figures"]')?.getAttribute('aria-selected'),
+  ).toBe('true');
+  expect(host.querySelector('.description h1')?.textContent).toBe('Company BREN');
+  expect(host.querySelector('.description [aria-label="Pin BREN"]')).not.toBeNull();
 });
 
 it('uses one tab stop per pane tablist and segment group with arrow navigation', async () => {
