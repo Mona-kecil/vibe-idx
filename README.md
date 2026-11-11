@@ -54,11 +54,12 @@ Run private Stockbit collection on one machine only. A token refresh revokes the
 ```sh
 git worktree add --detach ~/.local/share/vibe-idx-collector origin/master
 pnpm --dir ~/.local/share/vibe-idx-collector install --frozen-lockfile
-install -D -m 644 apps/pipeline/collector/vibe-idx-collector.service ~/.config/systemd/user/
+install -D -m 644 apps/pipeline/collector/vibe-idx-collector.service ~/.config/systemd/user/vibe-idx-collector.service
+systemctl --user daemon-reload
 systemctl --user enable --now vibe-idx-collector
 ```
 
-To deploy a new master, run `git -C ~/.local/share/vibe-idx-collector checkout --detach origin/master` after fetching, then `systemctl --user restart vibe-idx-collector`. Follow a run with `journalctl --user -u vibe-idx-collector -f`.
+To deploy a new master, fetch, run `git -C ~/.local/share/vibe-idx-collector checkout --detach origin/master`, then repeat the install, unit copy, and `daemon-reload` steps and run `systemctl --user restart vibe-idx-collector`. Follow a run with `journalctl --user -u vibe-idx-collector -f`.
 
 Seed `auth/stockbit.json` in `vibe-idx-private` with `access` and `refresh` fields. Treat it as a secret. The collector reads the current cloud pair and writes its rotated replacement to R2 before collecting data. Its local token file is a checkpoint, not a seed that replaces cloud state. A refresh revokes the previous pair at once, so if saving the rotated pair fails, the collector writes it to `auth/stockbit-unsaved.json`. Copy that file over `auth/stockbit.json` once no collector is running.
 

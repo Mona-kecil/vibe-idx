@@ -1,7 +1,5 @@
 [Unit]
 Description=vibe-idx Stockbit collector
-Wants=network-online.target
-After=network-online.target
 StartLimitIntervalSec=0
 
 [Service]
@@ -14,6 +12,7 @@ Environment=BROKER_DEADLINE_MINUTES=240
 Environment=TICKS_BUDGET_MINUTES=240
 ExecStart=%h/.local/share/vibe-idx-collector/apps/pipeline/collector/run.sh
 KillSignal=SIGINT
+SuccessExitStatus=130 143
 TimeoutStopSec=90
 Restart=always
 RestartSec=60
