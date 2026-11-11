@@ -2,12 +2,11 @@ import { useEffect, useRef } from 'react';
 
 export type CorruptionMode = 'spread' | 'hold' | 'retreat' | 'still';
 
-const cell = 64;
-const depthStep = 0.05;
-const riseShare = 0.2;
-const stepShare = 0.12;
+const rootSize = 96;
+const coverCell = 24;
+const maxBuds = 3;
+const growUnits = 1.4;
 const liftShare = 0.3;
-const leadMs = 160;
 const sparkCount = 90;
 const layoutSeed = Math.floor(Math.random() * 2 ** 32);
 let origin = { x: 0.5, y: 0.5 };
@@ -18,14 +17,27 @@ export function aimCorruption(x: number, y: number) {
 
 type Point = [number, number];
 type Block = {
-  col: number;
-  row: number;
-  level: number;
-  order: number;
+  x: number;
+  y: number;
+  size: number;
+  anchor: Point;
+  birth: number;
+  depth: number;
   pulse: number;
   traces: Point[][];
 };
 type Spark = { x: number; y: number; speed: number; size: number; phase: number };
+
+const spots: Point[] = [
+  [0, 0],
+  [1, 0],
+  [0, 1],
+  [1, 1],
+  [0.5, 0],
+  [0.5, 1],
+  [0, 0.5],
+  [1, 0.5],
+];
 
 function random(seed: number) {
   let state = seed;
@@ -37,8 +49,13 @@ function random(seed: number) {
   };
 }
 
-function outward(fromOrigin: number, jitter: number) {
-  return Math.min(fromOrigin, 1) * 0.72 + jitter * 0.28;
+function shuffled<T>(items: readonly T[], next: () => number) {
+  const copy = [...items];
+  for (let index = copy.length - 1; index > 0; index--) {
+    const pick = Math.floor(next() * (index + 1));
+    [copy[index], copy[pick]] = [copy[pick] as T, copy[index] as T];
+  }
+  return copy;
 }
 
 function trace(next: () => number): Point[] {
@@ -55,25 +72,101 @@ function trace(next: () => number): Point[] {
   return next() < 0.5 ? across : across.map(([x, y]) => [y, x]);
 }
 
-function layoutBlocks(cols: number, rows: number, reach: (x: number, y: number) => number) {
+function growBlocks(width: number, height: number, ox: number, oy: number) {
   const next = random(layoutSeed);
-  const patches = Array.from({ length: Math.ceil(cols / 3) + 1 }, () =>
-    Array.from({ length: Math.ceil(rows / 3) + 1 }, next),
-  );
+  const cols = Math.ceil(width / coverCell),
+    rows = Math.ceil(height / coverCell);
+  const covered = new Uint8Array(cols * rows);
   const blocks: Block[] = [];
-  for (let row = 0; row < rows; row++)
-    for (let col = 0; col < cols; col++) {
-      const terrace = patches[Math.floor(col / 3)]?.[Math.floor(row / 3)] ?? 0;
-      blocks.push({
-        col,
-        row,
-        level: Math.min(1 + Math.floor(terrace * 2.2 + next() * 0.8), 3),
-        order: outward(reach((col + 0.5) * cell, (row + 0.5) * cell), terrace * 0.6 + next() * 0.4),
-        pulse: next() * Math.PI * 2,
-        traces: next() < 0.35 ? [] : [trace(next)],
+  const cells = (x: number, y: number, size: number) => {
+    const found: number[] = [];
+    for (
+      let row = Math.max(Math.floor(y / coverCell), 0);
+      row < Math.min(Math.ceil((y + size) / coverCell), rows);
+      row++
+    )
+      for (
+        let col = Math.max(Math.floor(x / coverCell), 0);
+        col < Math.min(Math.ceil((x + size) / coverCell), cols);
+        col++
+      )
+        found.push(row * cols + col);
+    return found;
+  };
+  const open = (x: number, y: number, size: number) => {
+    const inside = cells(x, y, size);
+    return inside.length ? inside.filter((index) => !covered[index]).length / inside.length : 0;
+  };
+  const add = (
+    x: number,
+    y: number,
+    size: number,
+    anchor: Point,
+    birth: number,
+    generation: number,
+  ) => {
+    const block: Block = {
+      x,
+      y,
+      size,
+      anchor,
+      birth,
+      depth: Math.min(0.08 + generation * 0.03, 0.3),
+      pulse: next() * Math.PI * 2,
+      traces: next() < 0.35 ? [] : [trace(next)],
+    };
+    blocks.push(block);
+    for (const index of cells(x + coverCell, y + coverCell, size - 2 * coverCell))
+      covered[index] = 1;
+    return block;
+  };
+
+  const queue = [
+    { block: add(ox - rootSize / 2, oy - rootSize / 2, rootSize, [ox, oy], 0, 0), generation: 0 },
+  ];
+  for (let item = queue.shift(); item; item = queue.shift()) {
+    const { block: parent, generation } = item;
+    let buds = 0;
+    for (const [u, v] of shuffled(spots, next)) {
+      if (buds >= maxBuds) break;
+      const size = Math.min(Math.max(parent.size * (0.6 + next() * 0.9), 48), 360);
+      const px = parent.x + u * parent.size,
+        py = parent.y + v * parent.size;
+      const x = px + (u - 0.5) * size * 0.5 - size / 2,
+        y = py + (v - 0.5) * size * 0.5 - size / 2;
+      if (open(x, y, size) < 0.4) continue;
+      const birth = parent.birth + 0.6 + next() * 0.6;
+      queue.push({
+        block: add(x, y, size, [px, py], birth, generation + 1),
+        generation: generation + 1,
       });
+      buds++;
     }
-  return blocks;
+  }
+
+  covered.forEach((done, index) => {
+    if (done) return;
+    const cx = ((index % cols) + 0.5) * coverCell,
+      cy = (Math.floor(index / cols) + 0.5) * coverCell;
+    let nearest = blocks[0],
+      gap = Infinity;
+    for (const block of blocks) {
+      const dx = Math.max(block.x - cx, 0, cx - block.x - block.size),
+        dy = Math.max(block.y - cy, 0, cy - block.y - block.size);
+      if (Math.hypot(dx, dy) < gap) {
+        gap = Math.hypot(dx, dy);
+        nearest = block;
+      }
+    }
+    if (!nearest) return;
+    const size = Math.max(coverCell * 4, nearest.size * 0.8);
+    const anchor: Point = [
+      Math.min(Math.max(cx, nearest.x), nearest.x + nearest.size),
+      Math.min(Math.max(cy, nearest.y), nearest.y + nearest.size),
+    ];
+    add(cx - size / 2, cy - size / 2, size, anchor, nearest.birth + 0.6 + next() * 0.4, 6);
+  });
+  return blocks.sort((a, b) => a.birth - b.birth);
 }
 
 function layoutSparks(width: number, height: number): Spark[] {
@@ -102,34 +195,29 @@ export function Corruption({
     const canvas = canvasRef.current;
     const context = canvas?.getContext('2d');
     if (!canvas || !context) return;
-    const riseMs = durationMs * riseShare,
-      stepMs = durationMs * stepShare,
-      liftMs = durationMs * liftShare;
-    let cols = 0,
-      rows = 0,
-      width = 0,
+    const liftMs = durationMs * liftShare;
+    let width = 0,
       height = 0,
       vanish: Point = [0, 0],
       blocks: Block[] = [],
       sparks: Spark[] = [],
-      heights = new Float64Array(0),
+      lastBirth = 1,
       sheen: CanvasGradient | string = '#070708',
       frame = 0,
       start = performance.now();
 
-    function grow(block: Block, t: number) {
+    function stage(block: Block, t: number) {
       if (mode === 'spread') {
-        const at = block.order * (durationMs - riseMs - 2 * stepMs);
-        let h = 0;
-        for (let level = 0; level < block.level; level++)
-          h += ease(clamp((t - at - level * stepMs) / riseMs));
-        return { h, alpha: clamp(h * 5), glow: clamp(1 - (at - t) / leadMs) };
+        const unit = durationMs / (lastBirth + growUnits);
+        const grow = ease(clamp((t - block.birth * unit) / (growUnits * unit)));
+        return { grow, lift: 0, alpha: clamp(grow * 4) };
       }
       if (mode === 'retreat') {
-        const lift = clamp((t - block.order * (durationMs - liftMs)) / liftMs);
-        return { h: block.level + lift ** 2 * 5, alpha: 1 - clamp(lift * 2 - 1), glow: 0 };
+        const at = (block.birth / lastBirth) * (durationMs - liftMs);
+        const lift = clamp((t - at) / liftMs);
+        return { grow: 1, lift, alpha: 1 - clamp(lift * 2 - 1) };
       }
-      return { h: block.level, alpha: 1, glow: 0 };
+      return { grow: 1, lift: 0, alpha: 1 };
     }
 
     function strokeNeon(path: Path2D, glow: number) {
@@ -145,115 +233,78 @@ export function Corruption({
       }
     }
 
-    function drawBlock(block: Block, h: number, t: number) {
+    function drawBlock(block: Block, grow: number, lift: number, t: number) {
       if (!context) return;
-      const k = 1 + h * depthStep;
       const [vx, vy] = vanish;
-      const project = (x: number, y: number): Point => [vx + (x - vx) * k, vy + (y - vy) * k];
-      const x0 = block.col * cell,
-        y0 = block.row * cell,
-        x1 = x0 + cell,
-        y1 = y0 + cell;
-      const [fx0, fy0] = project(x0, y0);
-      const [fx1, fy1] = project(x1, y1);
-      const lower = (col: number, row: number) =>
-        col >= 0 &&
-        row >= 0 &&
-        col < cols &&
-        row < rows &&
-        (heights[row * cols + col] ?? 0) < h - 0.01;
-      const side = (points: Point[], fill: string) => {
+      const [ax, ay] = block.anchor;
+      const toward = 1 + lift ** 2 * 1.2;
+      const front = (x: number, y: number): Point => {
+        const gx = ax + (x - ax) * grow,
+          gy = ay + (y - ay) * grow;
+        return [vx + (gx - vx) * toward, vy + (gy - vy) * toward];
+      };
+      const back = ([x, y]: Point): Point => [
+        vx + (x - vx) / (1 + block.depth),
+        vy + (y - vy) / (1 + block.depth),
+      ];
+      const corners = [
+        front(block.x, block.y),
+        front(block.x + block.size, block.y),
+        front(block.x + block.size, block.y + block.size),
+        front(block.x, block.y + block.size),
+      ] as const;
+      const behind = corners.map(back);
+      const quad = (points: Point[]) => {
         const path = new Path2D();
         points.forEach(([x, y], index) => (index === 0 ? path.moveTo(x, y) : path.lineTo(x, y)));
         path.closePath();
+        return path;
+      };
+      const walls: [number, number, string][] = [
+        [0, 1, 'rgb(84, 10, 12)'],
+        [1, 2, 'rgb(44, 5, 7)'],
+        [2, 3, 'rgb(30, 4, 5)'],
+        [3, 0, 'rgb(58, 7, 9)'],
+      ];
+      for (const [from, to, fill] of walls) {
+        const a = corners[from],
+          b = corners[to],
+          c = behind[to],
+          d = behind[from];
+        if (!a || !b || !c || !d) continue;
+        const wall = quad([a, b, c, d]);
         context.fillStyle = fill;
-        context.fill(path);
-      };
-      if (x0 > vx && lower(block.col - 1, block.row))
-        side(
-          [
-            [x0, y0],
-            [x0, y1],
-            [fx0, fy1],
-            [fx0, fy0],
-          ],
-          'rgb(58, 7, 9)',
-        );
-      if (x1 < vx && lower(block.col + 1, block.row))
-        side(
-          [
-            [x1, y0],
-            [x1, y1],
-            [fx1, fy1],
-            [fx1, fy0],
-          ],
-          'rgb(44, 5, 7)',
-        );
-      if (y0 > vy && lower(block.col, block.row - 1))
-        side(
-          [
-            [x0, y0],
-            [x1, y0],
-            [fx1, fy0],
-            [fx0, fy0],
-          ],
-          'rgb(84, 10, 12)',
-        );
-      if (y1 < vy && lower(block.col, block.row + 1))
-        side(
-          [
-            [x0, y1],
-            [x1, y1],
-            [fx1, fy1],
-            [fx0, fy1],
-          ],
-          'rgb(30, 4, 5)',
-        );
-
-      const size = fx1 - fx0;
+        context.fill(wall);
+        context.strokeStyle = 'rgba(255, 50, 45, 0.35)';
+        context.lineWidth = 1;
+        context.stroke(wall);
+      }
+      const face = quad([...corners]);
       context.fillStyle = sheen;
-      context.fillRect(fx0, fy0, size, size);
-      context.strokeStyle = 'rgba(255, 50, 45, 0.18)';
-      context.lineWidth = 1;
-      context.strokeRect(fx0, fy0, size, size);
-      const edge = new Path2D();
-      const rim = (col: number, row: number, from: Point, to: Point) => {
-        if (!lower(col, row)) return;
-        edge.moveTo(...from);
-        edge.lineTo(...to);
-      };
-      rim(block.col - 1, block.row, [fx0, fy0], [fx0, fy1]);
-      rim(block.col + 1, block.row, [fx1, fy0], [fx1, fy1]);
-      rim(block.col, block.row - 1, [fx0, fy0], [fx1, fy0]);
-      rim(block.col, block.row + 1, [fx0, fy1], [fx1, fy1]);
-      strokeNeon(edge, 0.9);
+      context.fill(face);
+      strokeNeon(face, 0.9);
 
+      const [x0, y0] = corners[0];
+      const size = corners[1][0] - x0;
       const glow = mode === 'hold' ? 0.7 + 0.3 * Math.cos(t / 300 + block.pulse) : 1;
       const traces = new Path2D();
       for (const points of block.traces)
         points.forEach(([u, v], index) => {
-          const x = fx0 + u * size,
-            y = fy0 + v * size;
+          const x = x0 + u * size,
+            y = y0 + v * size;
           if (index === 0) traces.moveTo(x, y);
           else traces.lineTo(x, y);
         });
-      strokeNeon(traces, glow);
-      context.fillStyle = `rgba(255, 150, 140, ${glow})`;
-      for (const points of block.traces) {
-        const [u, v] = points[points.length - 1] ?? [0.5, 0.5];
-        context.fillRect(fx0 + u * size - 1.5, fy0 + v * size - 1.5, 3, 3);
-      }
+      strokeNeon(traces, 0.8 * glow);
     }
 
-    function drawSparks(t: number) {
-      if (!context) return;
+    function drawSparks(t: number, alpha: number) {
+      if (!context || alpha <= 0) return;
       const wrap = height + 20;
       for (const spark of sparks) {
         const y = ((((spark.y - (spark.speed * t) / 1000) % wrap) + wrap) % wrap) - 10;
         const x = spark.x + Math.sin(t / 400 + spark.phase) * 6;
-        const under = heights[Math.floor(y / cell) * cols + Math.floor(x / cell)] ?? 0;
-        if (under < 0.5) continue;
-        context.fillStyle = `rgba(255, 90, 70, ${0.5 + 0.5 * Math.sin(t / 90 + spark.phase)})`;
+        context.fillStyle = `rgba(255, 90, 70, ${alpha * (0.5 + 0.5 * Math.sin(t / 90 + spark.phase))})`;
         context.fillRect(x, y, spark.size, spark.size);
       }
     }
@@ -262,22 +313,18 @@ export function Corruption({
       if (!canvas || !context) return;
       const t = mode === 'still' ? 0 : now - start;
       context.clearRect(0, 0, width, height);
-      const grown = blocks.map((block) => ({ block, ...grow(block, t) }));
-      grown.forEach(({ block, h, alpha }) => {
-        heights[block.row * cols + block.col] = alpha > 0.01 ? h : 0;
-      });
-      for (const { block, h, glow } of grown) {
-        if (h > 0 || glow <= 0) continue;
-        context.fillStyle = `rgba(255, 36, 24, ${0.3 * glow})`;
-        context.fillRect(block.col * cell, block.row * cell, cell, cell);
-      }
-      const visible = grown.filter(({ alpha }) => alpha > 0.01).sort((a, b) => a.h - b.h);
-      for (const { block, h, alpha } of visible) {
+      for (const block of blocks) {
+        const { grow, lift, alpha } = stage(block, t);
+        if (alpha <= 0.01 || grow <= 0) continue;
         context.globalAlpha = alpha;
-        drawBlock(block, h, t);
+        drawBlock(block, grow, lift, t);
       }
       context.globalAlpha = 1;
-      drawSparks(t);
+      const progress = durationMs ? t / durationMs : 1;
+      drawSparks(
+        t,
+        mode === 'spread' ? clamp(progress * 2 - 1) : mode === 'retreat' ? 1 - clamp(progress) : 1,
+      );
     }
 
     function resize() {
@@ -288,20 +335,10 @@ export function Corruption({
       canvas.width = Math.round(width * ratio);
       canvas.height = Math.round(height * ratio);
       context.setTransform(ratio, 0, 0, ratio, 0, 0);
-      cols = Math.ceil(width / cell);
-      rows = Math.ceil(height / cell);
-      const ox = origin.x * width,
-        oy = origin.y * height;
-      vanish = [ox, oy];
-      const longest = Math.max(
-        Math.hypot(ox, oy),
-        Math.hypot(width - ox, height - oy),
-        Math.hypot(ox, height - oy),
-        Math.hypot(width - ox, oy),
-      );
-      blocks = layoutBlocks(cols, rows, (x, y) => Math.hypot(x - ox, y - oy) / longest);
+      vanish = [width / 2, height / 2];
+      blocks = growBlocks(width, height, origin.x * width, origin.y * height);
+      lastBirth = Math.max(...blocks.map((block) => block.birth), 1);
       sparks = layoutSparks(width, height);
-      heights = new Float64Array(cols * rows);
       const gradient = context.createLinearGradient(0, 0, width, height);
       gradient.addColorStop(0, '#050506');
       gradient.addColorStop(0.42, '#0b0b0e');
