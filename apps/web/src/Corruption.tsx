@@ -30,6 +30,7 @@ type Block = {
   depth: number;
   layer: number;
   pulse: number;
+  flare: number;
   traces: Point[][];
 };
 type Spark = { x: number; y: number; speed: number; size: number; phase: number };
@@ -65,6 +66,10 @@ function shuffled<T>(items: readonly T[], next: () => number) {
     [copy[index], copy[pick]] = [copy[pick] as T, copy[index] as T];
   }
   return copy;
+}
+
+function flare(next: () => number) {
+  return next() < 0.15 ? 1.5 + next() * 0.4 : 0.55 + next() * 0.45;
 }
 
 function trace(next: () => number): Point[] {
@@ -121,6 +126,7 @@ function growBlocks(width: number, height: number, ox: number, oy: number) {
       depth: size / (0.8 * width),
       layer: near(x + size / 2, y + size / 2),
       pulse: next() * Math.PI * 2,
+      flare: flare(next),
       traces: Array.from({ length: size > 280 ? 2 : size >= 200 ? 1 : 0 }, () => trace(next)),
     };
     blocks.push(block);
@@ -185,6 +191,7 @@ function growBlocks(width: number, height: number, ox: number, oy: number) {
         depth: size / (0.8 * width),
         layer: parent.layer + 0.0001,
         pulse: next() * Math.PI * 2,
+        flare: flare(next),
         traces: [],
       });
     }
@@ -253,13 +260,16 @@ export function Corruption({
       return { grow: 1, lift: 0, alpha: 1 };
     }
 
-    function strokeNeon(path: Path2D, glow: number) {
+    function strokeNeon(path: Path2D, glow: number, bloom = 0) {
       if (!context) return;
-      for (const [color, lineWidth] of [
+      const passes: [string, number][] = [
         [`rgba(255, 30, 30, ${0.22 * glow})`, 4],
         [`rgba(255, 60, 50, ${glow})`, 1.4],
         [`rgba(255, 190, 180, ${0.8 * glow})`, 0.6],
-      ] as const) {
+      ];
+      if (bloom > 0) passes.unshift([`rgba(255, 24, 20, ${0.14 * bloom})`, 14]);
+      if (glow > 1) passes.push([`rgba(255, 240, 235, ${glow - 1})`, 1]);
+      for (const [color, lineWidth] of passes) {
         context.strokeStyle = color;
         context.lineWidth = lineWidth;
         context.stroke(path);
@@ -295,6 +305,8 @@ export function Corruption({
       };
       const light = 0.12 + 0.88 * Math.min(block.layer, 1) ** 1.6;
       const fog = `rgba(0, 0, 0, ${0.65 * (1 - light)})`;
+      const edge = light * block.flare;
+      const bloom = clamp((block.layer - 0.55) / 0.45) * block.flare;
       const [[left, top], [right], [, bottom]] = corners;
       const walls: [number, number, string, boolean][] = [
         [0, 1, 'rgb(60, 8, 10)', top > vy],
@@ -314,14 +326,14 @@ export function Corruption({
         context.fill(wall);
         context.fillStyle = fog;
         context.fill(wall);
-        strokeNeon(wall, 0.9 * light);
+        strokeNeon(wall, 0.9 * edge, bloom);
       }
       const face = quad([...corners]);
       context.fillStyle = sheen;
       context.fill(face);
       context.fillStyle = fog;
       context.fill(face);
-      strokeNeon(face, 0.9 * light);
+      strokeNeon(face, 0.9 * edge, bloom);
 
       const [x0, y0] = corners[0];
       const size = corners[1][0] - x0;
