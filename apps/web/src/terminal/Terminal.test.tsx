@@ -1309,6 +1309,11 @@ it.each(['sell', 'buy', 'auction'])(
         button.textContent?.startsWith(`AA ${tag}`),
       )!;
     const checkIsolated = (tag: string | null) => {
+      for (const candidate of ['D', 'F']) {
+        expect(party(candidate).getAttribute('data-active')).toBe(
+          candidate === tag ? 'true' : null,
+        );
+      }
       expect(highlightedFills()).toHaveLength(9);
       for (const row of highlightedFills()) {
         const counterparty = cells(row)[direction === 'buy' ? 6 : 5];

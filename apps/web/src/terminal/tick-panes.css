@@ -164,6 +164,10 @@
   font: inherit;
   color: inherit;
 }
+.terminal-page .tick-counterparty[data-active='true'] {
+  color: var(--accent);
+  box-shadow: inset 0 -1px var(--accent);
+}
 .terminal-page .tick-summary-measure {
   position: absolute;
   visibility: hidden;

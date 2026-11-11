@@ -309,12 +309,14 @@ function BlockSummary({
   block,
   open,
   prices,
+  activeParty,
   onHover,
   onFocus,
 }: {
   block: Block;
   open: SessionOpen | null;
   prices: [number, number][];
+  activeParty: Party | null;
   onHover: (party: Party | null) => void;
   onFocus: (party: Party | null) => void;
 }) {
@@ -342,6 +344,10 @@ function BlockSummary({
           content: (
             <button
               className="tick-counterparty"
+              data-active={
+                (activeParty?.broker === party.broker && activeParty.foreign === party.foreign) ||
+                undefined
+              }
               onMouseEnter={() => onHover(party)}
               onMouseLeave={() => onHover(null)}
               onFocus={() => onFocus(party)}
@@ -500,6 +506,7 @@ function TradeTape({
             block={block}
             open={open}
             prices={prices}
+            activeParty={isolated}
             onHover={(party) => setHovered(party ? { block, party } : null)}
             onFocus={(party) => setFocused(party ? { block, party } : null)}
           />
