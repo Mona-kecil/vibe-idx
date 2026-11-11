@@ -1,6 +1,6 @@
 # Terminal UI hillclimb plan
 
-Status on 11 November 2026: the baseline is 181 steps and the total is now 177, after attempts 1 to 6. The owner confirmed the question list and the stop.
+Status on 11 November 2026: the baseline is 181 steps and the total is now 159, after attempts 1 to 6 and 12. The owner confirmed the question list and the stop.
 
 ## Goal
 
@@ -127,4 +127,4 @@ One change each, measured, then kept or reverted, with one commit per kept chang
 9. Give FF a price line and a common zero for bars and running total.
 10. Test TB and OB as one ladder.
 11. Test one dated feed per ticker from DISC, ticker CA and ticker NEWS.
-12. Order SIG by date, so one day's signals sit together. The baseline added this one.
+12. Kept, 177 to 159. Order SIG by date, so one day's signals sit together. The baseline added this one.
