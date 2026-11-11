@@ -1,6 +1,6 @@
 # Terminal UI hillclimb plan
 
-Status on 11 November 2026: the baseline is 181 steps and the total is now 159, after attempts 1 to 6 and 12. The owner confirmed the question list and the stop.
+Status on 11 November 2026: the baseline is 181 steps and the total is now 113, after attempts 1 to 6, 11 and 12. The owner confirmed the question list and the stop.
 
 ## Goal
 
@@ -44,7 +44,7 @@ A pane off the default slots still opens when its code is typed in the command b
 | Mode  | Job                   | Questions    | Panes                                                                              |
 | ----- | --------------------- | ------------ | ---------------------------------------------------------------------------------- |
 | GRID  | Find a ticker         | 1 to 3       | WL, SIG, MOV, NEWS with CA                                                         |
-| FOCUS | Study the company     | 4, 5, 11, 12 | GP with KEY folded in, HDS as rows, one feed of DISC, ticker news and action dates |
+| FOCUS | Study the company     | 4, 5, 11, 12 | GP over HDS, then one feed of disclosures, ticker news and action dates          |
 | FLOW  | See who is trading it | 6 to 10      | GP above FF, BRK, BFL and TB, then DD in a full-height column, then OB with RT   |
 
 GP stays in FLOW because shift-dragging it sets the date range for the broker panes. Views read together never share a pane: GP and FF, DD and RT, TB and OB. GP keeps enough height to read candles, and RT and DD get tall columns, because a tape needs height more than width.
@@ -126,5 +126,5 @@ One change each, measured, then kept or reverted, with one commit per kept chang
 8. Share one broker filter across panes.
 9. Give FF a price line and a common zero for bars and running total.
 10. Test TB and OB as one ladder.
-11. Test one dated feed per ticker from DISC, ticker CA and ticker NEWS.
+11. Kept, 159 to 113. One dated feed per ticker replaces DISC, ticker NEWS and ticker CA in FOCUS, with upcoming actions first. FOCUS puts a wide GP over HDS, with the feed in its own column.
 12. Kept, 177 to 159. Order SIG by date, so one day's signals sit together. The baseline added this one.
