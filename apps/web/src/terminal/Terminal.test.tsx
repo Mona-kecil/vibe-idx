@@ -18,9 +18,11 @@ vi.mock('./charts', async (importOriginal) => {
         ? (listener: typeof crosshair.move) => {
             crosshair.move = listener;
           }
-        : key === 'then'
-          ? undefined
-          : chart,
+        : key === 'width'
+          ? () => 1000
+          : key === 'then'
+            ? undefined
+            : chart,
     apply: () => chart,
   });
   return { ...actual, terminalChart: () => chart };
