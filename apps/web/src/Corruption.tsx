@@ -73,7 +73,7 @@ function shuffled<T>(items: readonly T[], next: () => number) {
 function litEdges(next: () => number): Edges {
   const levels: Edges['levels'] = [0.08 + next() * 0.12, 0.3 + next() * 0.2, 1.3 + next() * 0.6];
   const tiers = Array.from({ length: 12 }, (): Tier => (next() < 0.55 ? 0 : 1));
-  if (next() < 0.6) {
+  if (next() < 0.35) {
     const corner = Math.floor(next() * 4);
     tiers[corner] = 2;
     tiers[(corner + 3) % 4] = 2;
@@ -270,24 +270,30 @@ export function Corruption({
       return { grow: 1, lift: 0, alpha: 1 };
     }
 
-    function strokeNeon(path: Path2D, glow: number, bloom = 0) {
+    function strokeNeon(path: Path2D, glow: number, bloom = 0, hot = false) {
       if (!context) return;
+      const strength = Math.min(glow, 1);
       if (bloom > 0) {
         context.save();
         context.shadowColor = `rgba(255, 36, 28, ${Math.min(0.7 * bloom, 1)})`;
         context.shadowBlur = 16;
-        context.strokeStyle = `rgba(255, 60, 50, ${Math.min(glow, 1)})`;
-        context.lineWidth = 1.4;
+        context.strokeStyle = `rgba(255, 60, 50, ${strength})`;
+        context.lineWidth = hot ? 3 : 1.4;
         context.stroke(path);
         context.restore();
       }
-      const passes: [string, number][] = [
-        [`rgba(255, 30, 30, ${0.07 * glow})`, 7],
-        [`rgba(255, 30, 30, ${0.12 * glow})`, 3.5],
-        [`rgba(255, 60, 50, ${glow})`, 1.4],
-        [`rgba(255, 190, 180, ${0.8 * glow})`, 0.6],
-      ];
-      if (glow > 1) passes.push([`rgba(255, 240, 235, ${glow - 1})`, 1]);
+      const passes: [string, number][] = hot
+        ? [
+            [`rgba(255, 70, 60, ${0.18 * strength})`, 7],
+            [`rgba(255, 80, 70, ${strength})`, 3],
+            [`rgba(255, 245, 240, ${0.95 * strength})`, 1.6],
+          ]
+        : [
+            [`rgba(255, 30, 30, ${0.07 * glow})`, 7],
+            [`rgba(255, 30, 30, ${0.12 * glow})`, 3.5],
+            [`rgba(255, 60, 50, ${glow})`, 2],
+            [`rgba(255, 190, 180, ${0.8 * glow})`, 0.8],
+          ];
       for (const [color, lineWidth] of passes) {
         context.strokeStyle = color;
         context.lineWidth = lineWidth;
@@ -366,7 +372,7 @@ export function Corruption({
       }
       for (const tier of [0, 1, 2] as const) {
         const level = block.edges.levels[tier];
-        strokeNeon(edges[tier], 0.9 * light * level, tier === 2 ? outer * level : 0);
+        strokeNeon(edges[tier], 0.9 * light * level, tier === 2 ? outer * level : 0, tier === 2);
       }
 
       const [x0, y0] = corners[0];
