@@ -34,8 +34,7 @@ const bg = '#0a0c0b',
   head = '#141816',
   line = '#222826',
   ink = '#d9ded8',
-  muted = '#8d9790',
-  cursor = '#3fd68f';
+  muted = '#8d9790';
 const color = (change: number | null) =>
   change !== null && change > 0 ? '#22a6a0' : change !== null && change < 0 ? '#e4573f' : muted;
 
@@ -106,11 +105,9 @@ function brandCard() {
     { style: { ...root, justifyContent: 'center', padding: 88, gap: 40 } },
     h(
       'div',
-      { style: { display: 'flex', alignItems: 'flex-end', fontSize: 120, fontWeight: 700 } },
+      { style: { display: 'flex', alignItems: 'center', gap: 40, fontSize: 120, fontWeight: 700 } },
+      mark(150),
       'Vibe IDX',
-      h('div', {
-        style: { width: 60, height: 14, marginLeft: 16, marginBottom: 24, background: cursor },
-      }),
     ),
     h('div', { style: { fontSize: 30, color: muted } }, 'IDX prices, ownership and broker flow'),
   );
