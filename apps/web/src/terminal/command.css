@@ -95,11 +95,32 @@
 }
 .terminal-page .help > div {
   position: relative;
-  width: min(660px, 100%);
-  max-height: 90dvh;
-  overflow: auto;
+  display: flex;
+  width: min(1000px, 100%);
+  max-height: calc(100dvh - 32px);
+  overflow: hidden;
   background: var(--pane);
-  padding: 24px;
+  padding: 40px 24px 24px;
+}
+.terminal-page .help-content {
+  min-width: 0;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  scrollbar-width: auto;
+}
+.terminal-page .help-content::-webkit-scrollbar {
+  width: 12px;
+}
+.terminal-page .help-content::-webkit-scrollbar-track {
+  background: var(--head);
+}
+.terminal-page .help-content::-webkit-scrollbar-thumb {
+  background: var(--muted);
+}
+.terminal-page .help-reference {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: 32px;
 }
 .terminal-page .help h2 {
   font-size: 12px;
@@ -111,6 +132,9 @@
   grid-template-columns: 150px 1fr;
   gap: 9px 16px;
   margin: 0;
+}
+.terminal-page .help-reference section:last-child dl {
+  grid-template-columns: max-content 1fr;
 }
 .terminal-page .help dl > div {
   display: contents;

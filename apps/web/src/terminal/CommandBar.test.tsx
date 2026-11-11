@@ -1,6 +1,18 @@
 // @vitest-environment happy-dom
-import { describe, expect, it } from 'vite-plus/test';
-import { commandSuggestions } from './CommandBar';
+import { act } from 'react';
+import { createRoot } from 'react-dom/client';
+import { describe, expect, it, vi } from 'vite-plus/test';
+import { CommandBar, commandSuggestions } from './CommandBar';
+import { functions } from './state';
+
+vi.mock('./state', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./state')>()),
+  useTerminal: () => ({
+    data: { stocks: tickers },
+    pins: [],
+    ticker: 'BBCA',
+  }),
+}));
 
 // Real names and 9 Nov traded values for the codes that used to lose to another row.
 const tickers = [
@@ -36,4 +48,47 @@ describe('command ranking', () => {
       'OTHER',
     ]);
   });
+});
+
+it('keeps every shortcut and function in help and restores focus on close', async () => {
+  vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+  const host = document.createElement('div');
+  document.body.append(host);
+  const root = createRoot(host);
+  try {
+    await act(async () => {
+      root.render(
+        <CommandBar
+          layout="grid"
+          setLayout={vi.fn<() => void>()}
+          openFunction={vi.fn<() => void>()}
+          maximize={vi.fn<() => void>()}
+        />,
+      );
+    });
+    const help = host.querySelector<HTMLButtonElement>('[aria-label="Keyboard reference"]');
+    await act(async () => help?.click());
+    const dialog = host.querySelector('[role="dialog"]');
+    expect(dialog?.getAttribute('aria-label')).toBe('Keyboard reference');
+    const keys = dialog?.querySelector('[aria-labelledby="terminal-help-keys"]');
+    expect(keys?.querySelectorAll('dt')).toHaveLength(10);
+    expect(keys?.textContent).toContain('Shift-drag chart');
+    const reference = dialog?.querySelector('[aria-labelledby="terminal-help-functions"]');
+    expect(Array.from(reference?.querySelectorAll('dt') ?? [], (item) => item.textContent)).toEqual(
+      Object.keys(functions),
+    );
+    expect(Array.from(reference?.querySelectorAll('dd') ?? [], (item) => item.textContent)).toEqual(
+      Object.values(functions),
+    );
+    const close = dialog?.querySelector<HTMLButtonElement>(
+      '[aria-label="Close keyboard reference"]',
+    );
+    await act(async () => close?.click());
+    expect(host.querySelector('[role="dialog"]')).toBeNull();
+    expect(document.activeElement).toBe(help);
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+    vi.unstubAllGlobals();
+  }
 });
