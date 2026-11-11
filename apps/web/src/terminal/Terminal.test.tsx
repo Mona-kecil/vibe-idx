@@ -1449,3 +1449,34 @@ it('lets a small negotiated trade below the first page be reached in DD', async 
   await click('[aria-label="Done detail"] .tick-more');
   expect(cells(oddLot()!)[7]).toBe('NG');
 });
+
+it('keeps RT filters and the selected summary available while filtering its fills', async () => {
+  prepareBlocks();
+  await render();
+  await command('FLOW');
+  await clickBlock();
+  const rt = host.querySelector('[aria-label="Running trade"]')!;
+  expect(rt.querySelector('[aria-label="Previous session"]')).not.toBeNull();
+  expect(rt.querySelector('[aria-label="Trade side"]')).not.toBeNull();
+  const input = rt.querySelector<HTMLInputElement>('[aria-label="Filter by broker"]')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'AA');
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  expect(highlightedFills()).toHaveLength(2);
+  expect(highlightedFills().every((row) => cells(row)[5] === 'AA F')).toBe(true);
+  await click('[aria-label="Trade side"] button:nth-child(2)');
+  expect(highlightedFills()).toHaveLength(0);
+  expect(rt.querySelector('[aria-label="Selected block summary"]')).not.toBeNull();
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'ZZ');
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  expect(rt.textContent).toContain('No trades in this view');
+  expect(rt.querySelector('[aria-label="Selected block summary"]')).not.toBeNull();
+  await act(async () =>
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })),
+  );
+  expect(rt.querySelector('[aria-label="Selected block summary"]')).toBeNull();
+  expect(input.value).toBe('ZZ');
+});

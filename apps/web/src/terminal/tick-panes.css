@@ -118,6 +118,14 @@
   gap: 3px;
   vertical-align: middle;
 }
+.terminal-page .tick-summary-dock {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  height: calc(4 * 11px * 1.45 + 9px);
+  flex-shrink: 0;
+  overflow: auto;
+}
 .terminal-page .tick-summary {
   overflow: hidden;
   flex-shrink: 0;

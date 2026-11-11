@@ -223,24 +223,28 @@ export function RunningTradePane() {
   const { tickBlock } = useTerminal();
   const [broker, setBroker] = useState('');
   const [side, setSide] = useState<(typeof sides)[number]>('ALL');
+  useEffect(() => {
+    if (tickBlock) {
+      setBroker('');
+      setSide('ALL');
+    }
+  }, [tickBlock]);
   return (
     <TickPane
       kind="trades"
       controls={
-        !tickBlock && (
-          <>
-            <Segments label="Trade side" values={sides} value={side} onChange={setSide} />
-            <BrokerFilter value={broker} onChange={setBroker} />
-          </>
-        )
+        <>
+          <Segments label="Trade side" values={sides} value={side} onChange={setSide} />
+          <BrokerFilter value={broker} onChange={setBroker} />
+        </>
       }
     >
       {(trades) => (
         <TradeTape
           key={`${trades.ticker}${trades.date}`}
           trades={trades}
-          broker={tickBlock ? '' : broker}
-          side={tickBlock ? 'ALL' : side}
+          broker={broker}
+          side={side}
         />
       )}
     </TickPane>
@@ -421,20 +425,10 @@ function TradeTape({
     setLimit((previous) => Math.max(previous, lastFill + 51));
     firstFill.current?.scrollIntoView({ block: 'start' });
   }, [tickBlock, trades, lastFill]);
-  if (!rows.length) return <Empty>No trades in this view</Empty>;
   return (
     <>
-      {block && (
-        <BlockSummary
-          key={blockId(block)}
-          block={block}
-          open={open}
-          prices={prices}
-          onHover={(party) => setHovered(party ? { block, party } : null)}
-          onFocus={(party) => setFocused(party ? { block, party } : null)}
-        />
-      )}
       <Scroll reset={`${trades.ticker}${trades.date}${broker}${side}`}>
+        {!rows.length && <Empty>No trades in this view</Empty>}
         <table className="tick-table tick-tape tick-orders">
           <TradeHeader />
           <tbody>
@@ -499,6 +493,18 @@ function TradeTape({
           </button>
         )}
       </Scroll>
+      <div className="tick-summary-dock">
+        {block && (
+          <BlockSummary
+            key={blockId(block)}
+            block={block}
+            open={open}
+            prices={prices}
+            onHover={(party) => setHovered(party ? { block, party } : null)}
+            onFocus={(party) => setFocused(party ? { block, party } : null)}
+          />
+        )}
+      </div>
     </>
   );
 }
