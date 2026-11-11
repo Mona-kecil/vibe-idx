@@ -265,6 +265,33 @@ it('resumes a budgeted market crawl on a fresh runner without refreshing its clo
   expect(calls).toEqual(['ASC:200']);
   expect(await rows(resumed, 'running_trade')).toHaveLength(205);
 });
+it('takes the closing sequence from the highest number in the final second, not its first row', async () => {
+  const f = await fixture();
+  const request = async (input: string) => {
+    const u = new URL(input);
+    if (u.searchParams.get('sort') === 'DESC') return page([203, 205, 204]);
+    const cursor = Number(u.searchParams.get('trade_number') ?? 0);
+    return page(sequence(cursor + 1, Math.min(cursor + 100, 205)));
+  };
+  expect((await collectTicks({ ...f, request })).published).toEqual([`running_trade/${day}`]);
+  expect(await rows(f, 'running_trade')).toHaveLength(205);
+});
+it('raises a saved closing sequence that a later page proves too low', async () => {
+  const f = await fixture();
+  let closing = 200;
+  const request = async (input: string) => {
+    const u = new URL(input);
+    if (u.searchParams.get('sort') === 'DESC') return page([closing]);
+    const cursor = Number(u.searchParams.get('trade_number') ?? 0);
+    return page(sequence(cursor + 1, Math.min(cursor + 100, 205)));
+  };
+  const first = await collectTicks({ ...f, deadline: Date.now() + 600, request });
+  expect(first.stopped).toBe('Tick time budget reached');
+  closing = 205;
+  const resumed = await fixture({ objects: f.objects });
+  expect((await collectTicks({ ...resumed, request })).published).toEqual([`running_trade/${day}`]);
+  expect(await rows(resumed, 'running_trade')).toHaveLength(205);
+});
 it('recovers a successful daily upload when its response was lost, without overwriting it', async () => {
   const f = await fixture();
   let once = true;
