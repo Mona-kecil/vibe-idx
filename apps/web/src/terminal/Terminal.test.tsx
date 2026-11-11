@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 import { Terminal } from './Terminal';
 import { cumulativeFlows, foreignFlow } from './BrokerPanes';
 import type { BrokerDay } from '../brokers';
+import { tickTradesSchema, type TickTrades } from '../ticks';
 
 const crosshair = vi.hoisted(() => ({ move: (_event: { time?: number }) => {} }));
 
@@ -68,6 +69,8 @@ const days: BrokerDay[] = [
 let root: Root, host: HTMLDivElement;
 let newsAvailable = false;
 let tickSessions = false;
+let drilldown: TickTrades | null = null;
+let dailyOpen: number | null = null;
 let sourceFailed = false;
 const fetcher = vi.fn<typeof fetch>(async (input) => {
   const path = requestUrl(input);
@@ -104,13 +107,16 @@ const fetcher = vi.fn<typeof fetch>(async (input) => {
       ticker,
       name: `Company ${ticker}`,
       prices: tickSessions
-        ? ['2026-11-06', '2026-11-09'].map((date) => ({
-            date,
-            close: 7675,
-            volume: 100,
-            value: 767500,
-            net_foreign: 0,
-          }))
+        ? (drilldown ? ['2026-06-01', drilldown.date] : ['2026-11-06', '2026-11-09']).map(
+            (date) => ({
+              date,
+              open: dailyOpen,
+              close: 7675,
+              volume: 100,
+              value: 767500,
+              net_foreign: 0,
+            }),
+          )
         : [],
       holders: [],
       changes: [],
@@ -126,6 +132,7 @@ const fetcher = vi.fn<typeof fetch>(async (input) => {
       },
     ]);
   if (path.includes('view=ticks')) {
+    if (drilldown && path.includes('kind=trades')) return Response.json(drilldown);
     if (!path.includes('date=2026-11-09')) return new Response('', { status: 404 });
     return Response.json(
       path.includes('kind=book')
@@ -198,6 +205,7 @@ async function command(text: string) {
 }
 beforeEach(() => {
   tickSessions = false;
+  drilldown = null;
   sourceFailed = false;
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
   window.history.replaceState(null, '', '/terminal?t=BREN&l=grid');
@@ -669,7 +677,7 @@ describe('React terminal', () => {
     const rows = host.querySelectorAll('.tick-table:not(.tick-book) tbody tr');
     expect(rows).toHaveLength(1);
     expect(rows[0]?.textContent).toContain('1,450');
-    expect(rows[0]?.querySelector('.tick-foreign')?.textContent).toBe('YP');
+    expect(rows[0]?.querySelector('.tick-foreign')?.textContent).toBe('YP F');
   });
 });
 
@@ -965,3 +973,427 @@ it.each([
     );
   },
 );
+
+let drilldownSession = 0;
+function blockSession() {
+  const trade = (
+    buy: number,
+    sell: number,
+    buyer: string,
+    seller: string,
+    shares = 100,
+    auction = false,
+    board = 'RG',
+    foreign = false,
+  ) => ({
+    time: auction ? 57600 : 32400,
+    price: 100,
+    shares,
+    side: 's',
+    auction,
+    board,
+    buyer,
+    seller,
+    buyer_foreign: foreign,
+    seller_foreign: false,
+    buy_order: buy,
+    sell_order: sell,
+  });
+  const rows = [
+    trade(1, 99, 'AA', 'XL', 10000, false, 'RG', true),
+    trade(2, 99, 'BB', 'XL', 20000),
+    trade(5, 99, 'AA', 'XL', 5000, false, 'RG', true),
+    { ...trade(120, 121, 'CC', 'DD', 5000), side: 'b' },
+    trade(3, 505, 'AA', 'KK', 100),
+    trade(4, 505, 'AA', 'KK', 100, false, 'RG', true),
+    ...Array.from({ length: 510 }, (_, i) => ({
+      ...trade(1000 + i, 2000 + i, 'EE', 'FF'),
+      time: 36000 + i,
+    })),
+    trade(700, 99, 'PA', 'XL', 400, true),
+    trade(701, 8800, 'ZZ', 'YY', 100, true),
+    trade(702, 99, 'QB', 'XL', 500, true),
+    trade(99, 8801, 'XX', 'YY', 100, true),
+    trade(703, 99, 'RC', 'XL', 600, true),
+    trade(704, 99, 'NG', 'XL', 100, true, 'NG'),
+  ];
+  const columns = {
+    time: rows.map((r) => r.time),
+    price: rows.map((r) => r.price),
+    shares: rows.map((r) => r.shares),
+    side: rows.map((r) => r.side),
+    auction: rows.map((r) => r.auction),
+    board: rows.map((r) => r.board),
+    buyer: rows.map((r) => r.buyer),
+    seller: rows.map((r) => r.seller),
+    buyer_foreign: rows.map((r) => r.buyer_foreign),
+    seller_foreign: rows.map((r) => r.seller_foreign),
+    buy_order: rows.map((r) => r.buy_order),
+    sell_order: rows.map((r) => r.sell_order),
+  };
+  return tickTradesSchema.parse({
+    ticker: 'BREN',
+    date: `2026-07-${String(++drilldownSession).padStart(2, '0')}`,
+    ...columns,
+  });
+}
+function prepareBlocks() {
+  dailyOpen = null;
+  tickSessions = true;
+  auth.user = { id: 'test-user' };
+  drilldown = blockSession();
+}
+const highlightedFills = () => [...host.querySelectorAll('.tick-tape [data-highlighted="true"]')];
+
+const sharedTradeColumns = ['Time', 'Price', 'Action', 'Lot', 'Val', 'Buy', 'Sell', 'Market'];
+const cells = (row: Element) => [...row.querySelectorAll('td')].map((cell) => cell.textContent);
+async function clickBlock(index = 1) {
+  await act(async () =>
+    host.querySelector<HTMLElement>(`.tick-blocks tbody tr:nth-child(${index})`)?.click(),
+  );
+}
+
+it.each(['grid', 'focus', 'flow'])(
+  'selects a whole order row and opens the existing RT tab in %s with its morning fills',
+  async (mode) => {
+    prepareBlocks();
+    await render();
+    await command(`${mode.toUpperCase()} RT`);
+    await command('DD');
+    const first = host.querySelector('.tick-blocks tbody tr')!;
+    expect([...host.querySelectorAll('.tick-blocks th')].map((th) => th.textContent)).toEqual(
+      sharedTradeColumns,
+    );
+    expect(first.querySelectorAll('button')).toHaveLength(1);
+    expect(first.querySelector('button')?.tabIndex).toBe(0);
+    expect(cells(first)).toEqual([
+      '09:00:00',
+      '100.0 (0.00%)',
+      'SELL',
+      '350',
+      '3.5M',
+      '2',
+      'XL D',
+      'RG',
+    ]);
+    expect(first.querySelector('.tick-stack')?.getAttribute('aria-label')).toBe('2 brokers');
+    expect(first.querySelector('td')?.classList.contains('mut')).toBe(true);
+    expect(first.querySelector('td:nth-child(2) span')?.getAttribute('title')).toBe(
+      'First RG continuous trade 100',
+    );
+    await clickBlock();
+    expect(window.location.search).toContain(`l=${mode}`);
+    expect(button('[role="tab"][id$="-RT"]').getAttribute('aria-selected')).toBe('true');
+    expect([...host.querySelectorAll('.tick-tape th')].map((th) => th.textContent)).toEqual(
+      sharedTradeColumns,
+    );
+    expect(highlightedFills().map(cells)).toEqual([
+      ['09:00:00', '100 (0.00%)', 'SELL', '50', '500.0K', 'AA F', 'XL D', 'RG'],
+      ['09:00:00', '100 (0.00%)', 'SELL', '200', '2.0M', 'BB D', 'XL D', 'RG'],
+      ['09:00:00', '100 (0.00%)', 'SELL', '100', '1.0M', 'AA F', 'XL D', 'RG'],
+    ]);
+    expect(highlightedFills()[2]?.querySelector('.tick-foreign')?.textContent).toBe('AA F');
+    expect(host.querySelectorAll('.tick-tape tbody tr').length).toBeGreaterThan(500);
+    expect(host.querySelector('.tick-tape tbody tr:not([data-highlighted])')).not.toBeNull();
+    const summary = host.querySelector('.tick-summary')!;
+    expect(summary.querySelector('.tick-summary-main')?.textContent).toBe(
+      'XL DSELL350 lot100 (0.00%)',
+    );
+    expect(
+      [...summary.querySelectorAll('.tick-counterparties:not([aria-hidden]) > span')].map(
+        (party) => party.textContent,
+      ),
+    ).toEqual(['BB D 200', 'AA F 150']);
+    expect(host.textContent).not.toContain('Clear block');
+    expect(host.textContent).not.toContain('Aggressor');
+    await command('DD');
+    expect(host.querySelectorAll('.tick-blocks [aria-pressed="true"]')).toHaveLength(1);
+    await clickBlock();
+    expect(highlightedFills()).toHaveLength(0);
+    expect(host.querySelector('.tick-summary')).toBeNull();
+    expect(host.querySelector('.tick-blocks [aria-pressed="true"]')).toBeNull();
+  },
+);
+
+it('shows BUY, preserves selection across modes, and clears on Escape, date or ticker', async () => {
+  prepareBlocks();
+  await render();
+  await command('DD');
+  expect(
+    host.querySelector('.tick-blocks tbody tr:nth-child(2) td:nth-child(3)')?.textContent,
+  ).toBe('BUY');
+  await click('.tick-blocks tbody tr:nth-child(2) button');
+  expect(window.location.search).toContain('l=flow');
+  expect(highlightedFills().map(cells)).toEqual([
+    ['09:00:00', '100 (0.00%)', 'BUY', '50', '500.0K', 'CC D', 'DD D', 'RG'],
+  ]);
+  await command('FOCUS');
+  await command('FLOW');
+  expect(highlightedFills()).toHaveLength(1);
+  expect(host.querySelectorAll('.tick-blocks [aria-pressed="true"]')).toHaveLength(1);
+  await act(async () =>
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })),
+  );
+  expect(highlightedFills()).toHaveLength(0);
+  expect(button('[role="tab"][id$="-RT"]').getAttribute('aria-selected')).toBe('true');
+  expect(host.querySelectorAll('.tick-tape tbody tr').length).toBeGreaterThan(500);
+  expect(host.querySelector('.tick-summary')).toBeNull();
+  await clickBlock();
+  await click('[aria-label="Running trade"] [aria-label="Previous session"]');
+  expect(host.querySelector('.tick-blocks [aria-pressed="true"]')).toBeNull();
+  expect(host.querySelector('.tick-summary')).toBeNull();
+  await click('[aria-label="Running trade"] [aria-label="Next session"]');
+  await clickBlock();
+  expect(highlightedFills()).toHaveLength(3);
+  await command('BBCA');
+  expect(highlightedFills()).toHaveLength(0);
+  await command('BREN');
+  expect(host.querySelector('.tick-blocks [aria-pressed="true"]')).toBeNull();
+});
+
+it('shows AUC and groups interleaved auction counterparties by lots without matching other orders or boards', async () => {
+  prepareBlocks();
+  await render();
+  await command('FLOW');
+  const auction = host.querySelector('.tick-blocks tbody tr:nth-child(3)')!;
+  expect(cells(auction)).toEqual([
+    '16:00:00',
+    '100.0 (0.00%)',
+    'AUC',
+    '15',
+    '150.0K',
+    '3',
+    'XL D',
+    'RG',
+  ]);
+  await clickBlock(3);
+  expect(highlightedFills().map(cells)).toEqual([
+    ['16:00:00', '100 (0.00%)', 'AUC', '6', '60.0K', 'RC D', 'XL D', 'RG'],
+    ['16:00:00', '100 (0.00%)', 'AUC', '5', '50.0K', 'QB D', 'XL D', 'RG'],
+    ['16:00:00', '100 (0.00%)', 'AUC', '4', '40.0K', 'PA D', 'XL D', 'RG'],
+  ]);
+  expect(host.querySelector('.tick-summary-main')?.textContent).toBe('XL DAUC15 lot100 (0.00%)');
+  expect(
+    [...host.querySelectorAll('.tick-summary .tick-counterparties:not([aria-hidden]) > span')].map(
+      (party) => party.textContent,
+    ),
+  ).toEqual(['RC D 6', 'QB D 5', 'PA D 4']);
+  const tape = [...host.querySelectorAll('.tick-tape tbody tr')];
+  expect(tape.slice(1, 6).map((row) => row.hasAttribute('data-highlighted'))).toEqual([
+    true,
+    false,
+    true,
+    false,
+    true,
+  ]);
+});
+
+it('counts a broker once when its fills include domestic and foreign clients', async () => {
+  prepareBlocks();
+  await render();
+  await command('DD');
+  const order = [...host.querySelectorAll('.tick-blocks tbody tr')].find(
+    (row) => row.querySelector('.tick-sell')?.textContent === 'KK D',
+  );
+  expect(order?.querySelector('.tick-buy')?.textContent).toBe('AA F');
+  expect(order?.querySelector('.tick-stack')).toBeNull();
+  expect(order?.querySelector('.tick-foreign')?.textContent).toBe('AA F');
+});
+
+it('colours DD averages, RT prices and the summary against GP’s daily open', async () => {
+  prepareBlocks();
+  dailyOpen = 100;
+  drilldown!.price[0] = 110;
+  drilldown!.price[1] = 90;
+  await render();
+  await command('FLOW');
+  const first = host.querySelector('.tick-blocks tbody tr')!;
+  expect(first.querySelector('td:nth-child(2) .dn')?.textContent).toBe('97.1 (−2.86%)');
+  expect(first.querySelector('td:nth-child(2) span')?.getAttribute('title')).toBe(
+    'GP daily open 100',
+  );
+  await clickBlock();
+  const fills = highlightedFills();
+  expect(fills.map((row) => row.querySelector('td:nth-child(2) span')?.className)).toEqual([
+    'mut',
+    'dn',
+    'up',
+  ]);
+  expect(fills.map((row) => cells(row)[1])).toEqual([
+    '100 (0.00%)',
+    '90 (−10.00%)',
+    '110 (+10.00%)',
+  ]);
+  expect(fills.every((row) => row.querySelector('td')?.classList.contains('mut'))).toBe(true);
+  expect(host.querySelector('.tick-summary-main')?.textContent).toContain(
+    '90 (−10.00%) to 110 (+10.00%)',
+  );
+});
+
+it.each(['sell', 'buy', 'auction'])(
+  'isolates scattered %s counterparties by broker and investor tag on hover and focus',
+  async (direction) => {
+    prepareBlocks();
+    const trades = drilldown!;
+    for (const i of [0, 1, 2, 8, 10, 31, 32, 146, 361]) {
+      trades.sell_order[i] = 999;
+      trades.seller[i] = 'XL';
+      trades.buyer[i] = 'AA';
+      trades.buyer_foreign[i] = i !== 1 && i !== 8 && i !== 32;
+      if (direction === 'buy') {
+        trades.side[i] = 'b';
+        trades.buy_order[i] = 999;
+        trades.buyer[i] = 'XL';
+        trades.seller[i] = 'AA';
+        trades.seller_foreign[i] = trades.buyer_foreign[i]!;
+      }
+      if (direction === 'auction') trades.auction[i] = true;
+    }
+    await render();
+    await command('FLOW');
+    await clickBlock();
+    const party = (tag: string) =>
+      [...host.querySelectorAll<HTMLButtonElement>('.tick-counterparties button')].find((button) =>
+        button.textContent?.startsWith(`AA ${tag}`),
+      )!;
+    const checkIsolated = (tag: string | null) => {
+      expect(highlightedFills()).toHaveLength(9);
+      for (const row of highlightedFills()) {
+        const counterparty = cells(row)[direction === 'buy' ? 6 : 5];
+        expect(row.classList.contains('tick-dimmed')).toBe(
+          tag !== null && counterparty !== `AA ${tag}`,
+        );
+      }
+      expect(host.querySelector('.tick-tape tr:not([data-highlighted]).tick-dimmed')).toBeNull();
+    };
+    checkIsolated(null);
+    await act(async () => party('F').dispatchEvent(new MouseEvent('mouseover', { bubbles: true })));
+    checkIsolated('F');
+    await act(async () => party('F').dispatchEvent(new MouseEvent('mouseout', { bubbles: true })));
+    checkIsolated(null);
+    await act(async () => party('D').focus());
+    checkIsolated('D');
+    // Pointer inspection temporarily overrides keyboard focus, then restores it.
+    await act(async () => party('F').dispatchEvent(new MouseEvent('mouseover', { bubbles: true })));
+    checkIsolated('F');
+    await act(async () => party('F').dispatchEvent(new MouseEvent('mouseout', { bubbles: true })));
+    checkIsolated('D');
+    await act(async () => party('D').blur());
+    checkIsolated(null);
+    await act(async () => party('F').focus());
+    await clickBlock(2);
+    expect(host.querySelector('.tick-tape .tick-dimmed')).toBeNull();
+  },
+);
+
+it.each(['sell', 'buy', 'auction-sell', 'auction-buy'])(
+  'shows coloured lots per price in %s execution order only for multi-price fills',
+  async (direction) => {
+    prepareBlocks();
+    dailyOpen = 100;
+    const trades = drilldown!;
+    const buy = direction.endsWith('buy');
+    for (let i = 0; i < 4; i++) {
+      trades.price[i] = [110, 90, 100, 110][i]!;
+      trades.side[i] = buy ? 'b' : 's';
+      trades.auction[i] = direction.startsWith('auction');
+      if (buy) {
+        trades.buy_order[i] = 999;
+        trades.buyer[i] = 'XL';
+      } else {
+        trades.sell_order[i] = 999;
+        trades.seller[i] = 'XL';
+      }
+    }
+    await render();
+    await command('FLOW');
+    await clickBlock();
+    const line = host.querySelector('.tick-prices')!;
+    const descending = direction === 'sell';
+    expect([...line.children].map((item) => item.textContent)).toEqual(
+      descending
+        ? ['110 (+10.00%) 150', '100 (0.00%) 50', '90 (−10.00%) 200']
+        : ['90 (−10.00%) 200', '100 (0.00%) 50', '110 (+10.00%) 150'],
+    );
+    expect([...line.querySelectorAll('span > span')].map((price) => price.className)).toEqual(
+      descending ? ['up', 'mut', 'dn'] : ['dn', 'mut', 'up'],
+    );
+    const singlePrice = [...host.querySelectorAll('.tick-blocks tbody tr')].find(
+      (row) => cells(row)[1] === '100.0 (0.00%)',
+    )!;
+    await act(async () => singlePrice.querySelector<HTMLElement>('button')!.click());
+    expect(host.querySelector('.tick-summary')).not.toBeNull();
+    expect(host.querySelector('.tick-prices')).toBeNull();
+  },
+);
+
+it('shows each NEGO and CASH match with fractional lots and highlights only its RT row', async () => {
+  prepareBlocks();
+  const trades = drilldown!;
+  // Reuse a pair of orders across two off-board trades: they must stay separate rows.
+  trades.board[0] = 'NG';
+  trades.board[1] = 'TN';
+  trades.buy_order[1] = trades.buy_order[0]!;
+  trades.shares[0] = 25;
+  await render();
+  await command('FLOW');
+  await act(async () => {
+    const input = host.querySelector<HTMLInputElement>(
+      '[aria-label="Done detail"] [aria-label="Filter by broker"]',
+    )!;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'XL');
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  const rows = [...host.querySelectorAll('.tick-blocks tbody tr')];
+  const nego = rows.find((row) => cells(row)[2] === 'NEGO' && cells(row)[3] === '0.25')!;
+  const cash = rows.find((row) => cells(row)[2] === 'CASH')!;
+  expect(cells(nego).slice(2)).toEqual(['NEGO', '0.25', '2.5K', 'AA F', 'XL D', 'NG']);
+  expect(cells(cash)[7]).toBe('TN');
+  await act(async () => nego.querySelector('button')!.click());
+  expect(highlightedFills()).toHaveLength(1);
+  expect(cells(highlightedFills()[0]!).slice(2)).toEqual([
+    'NEGO',
+    '0.25',
+    '2.5K',
+    'AA F',
+    'XL D',
+    'NG',
+  ]);
+  expect(host.querySelector('.tick-summary-main')?.textContent).toContain('100 (0.00%)');
+  expect(host.querySelector('.tick-summary-main')?.textContent).not.toContain(' to ');
+  await act(async () => cash.querySelector('button')!.click());
+  expect(highlightedFills()).toHaveLength(1);
+  expect(cells(highlightedFills()[0]!)[2]).toBe('CASH');
+  expect(cells(highlightedFills()[0]!)[7]).toBe('TN');
+  await click('[aria-label="Block sort"] button:nth-child(2)');
+  const times = [...host.querySelectorAll('.tick-blocks tbody tr')].map((row) => cells(row)[0]);
+  expect(times).toEqual([...times].sort((a, b) => (a ?? '').localeCompare(b ?? '')));
+  await act(async () =>
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })),
+  );
+  for (const side of ['BUY', 'SELL']) {
+    await click(`[aria-label="Trade side"] button:nth-child(${side === 'BUY' ? 2 : 3})`);
+    expect(
+      [...host.querySelectorAll('.tick-tape tbody tr')].every((row) => cells(row)[7] === 'RG'),
+    ).toBe(true);
+    await click(`[aria-label="Block side"] button:nth-child(${side === 'BUY' ? 2 : 3})`);
+    expect(
+      [...host.querySelectorAll('.tick-blocks tbody tr')].every((row) => cells(row)[7] === 'RG'),
+    ).toBe(true);
+  }
+});
+
+it('lets a small negotiated trade below the first page be reached in DD', async () => {
+  prepareBlocks();
+  drilldown!.board[0] = 'NG';
+  drilldown!.shares[0] = 25;
+  await render();
+  await command('FLOW');
+  const oddLot = () =>
+    [...host.querySelectorAll('.tick-blocks tbody tr')].find(
+      (row) => cells(row)[2] === 'NEGO' && cells(row)[3] === '0.25',
+    );
+  expect(oddLot()).toBeUndefined();
+  await click('[aria-label="Done detail"] .tick-more');
+  expect(cells(oddLot()!)[7]).toBe('NG');
+});

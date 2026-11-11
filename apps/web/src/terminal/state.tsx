@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState } from 'react';
 import type { Ticker } from '../data';
 import type { BrokerDay, BrokerBoard, InvestorFilter } from '../brokers';
 import type { Selection } from '../ticker/logic';
+import type { BlockSelection } from '../ticks';
 import {
   fetchHeadlines,
   fetchCalendar,
@@ -117,6 +118,8 @@ type TerminalContextValue = {
   getToken: () => Promise<string | undefined>;
   tickDate: string | null;
   setTickDate: (date: string | null) => void;
+  tickBlock: BlockSelection | null;
+  selectTickBlock: (block: BlockSelection | null) => void;
   retryBrokers: () => void;
   publications: ReturnType<typeof usePublications>;
   tickerNews: Resource<Headline[]>;

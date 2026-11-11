@@ -84,7 +84,10 @@ export const questions: Question[] = [
       const orders = body(dd.getByRole('table'));
       await ui.see(top(orders));
       await ui.click(orders.first(), 'largest order');
-      await ui.see(orders.first());
+      await ui.see(
+        ui.page.getByLabel('Selected block summary'),
+        ui.page.locator('.tick-tape tbody > tr[data-highlighted="true"]').first(),
+      );
     },
   },
   {

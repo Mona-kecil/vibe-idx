@@ -1,4 +1,4 @@
-import { Fragment, useState, type ReactNode, type PointerEvent } from 'react';
+import { Fragment, useRef, useState, type ReactNode, type PointerEvent } from 'react';
 import { z } from 'zod';
 import { readStorage, writeStorage } from '../watchlist';
 import type { FunctionId, Layout } from './state';
@@ -6,7 +6,12 @@ import './layout.css';
 
 export type LayoutNode =
   | string
-  | { direction: 'row' | 'col'; sizes: number[]; children: LayoutNode[] };
+  | {
+      direction: 'row' | 'col';
+      sizes: number[];
+      widths?: (number | null)[];
+      children: LayoutNode[];
+    };
 export const layouts: Record<Layout, { tree: LayoutNode; slots: Record<string, FunctionId[]> }> = {
   grid: {
     tree: {
@@ -35,7 +40,8 @@ export const layouts: Record<Layout, { tree: LayoutNode; slots: Record<string, F
   flow: {
     tree: {
       direction: 'row',
-      sizes: [40, 36, 24],
+      sizes: [52, 24, 24],
+      widths: [null, 427, 398],
       children: [{ direction: 'col', sizes: [50, 50], children: ['b', 'e'] }, 'c', 'd'],
     },
     slots: {
@@ -55,13 +61,16 @@ export function SplitLayout({
   path: string;
   pane: (slot: string) => ReactNode;
 }) {
+  const boxRef = useRef<HTMLDivElement>(null);
   const defaults = typeof node === 'string' ? [] : node.sizes;
   const [sizes, setSizes] = useState(() => {
     try {
       const saved = z
         .array(z.number().positive().finite())
         .parse(JSON.parse(readStorage(`terminal:split:${path}`) ?? 'null'));
-      return saved.length === defaults.length ? saved : defaults;
+      return saved.length === defaults.length && saved.some((size, i) => size !== defaults[i])
+        ? saved
+        : defaults;
     } catch {
       return defaults;
     }
@@ -71,11 +80,22 @@ export function SplitLayout({
     setSizes(next);
     writeStorage(`terminal:split:${path}`, JSON.stringify(next));
   }
-  function resize(index: number, delta: number) {
-    const a = sizes[index],
-      b = sizes[index + 1];
+  function measuredSizes() {
+    const box = boxRef.current;
+    if (!box) return sizes;
+    const children = [...box.querySelectorAll(':scope > .split-child')];
+    const lengths = children.map((child) => {
+      const rect = child.getBoundingClientRect();
+      return typeof node !== 'string' && node.direction === 'row' ? rect.width : rect.height;
+    });
+    const total = lengths.reduce((sum, length) => sum + length, 0);
+    return total ? lengths.map((length) => (length / total) * 100) : sizes;
+  }
+  function resize(index: number, delta: number, current = measuredSizes()) {
+    const a = current[index],
+      b = current[index + 1];
     if (a === undefined || b === undefined) return;
-    const next = [...sizes],
+    const next = [...current],
       pair = a + b;
     next[index] = Math.max(pair * 0.1, Math.min(pair * 0.9, a + delta));
     next[index + 1] = pair - next[index];
@@ -89,11 +109,12 @@ export function SplitLayout({
     const horizontal = typeof node !== 'string' && node.direction === 'row';
     const total = horizontal ? box.clientWidth : box.clientHeight;
     const origin = horizontal ? event.clientX : event.clientY;
-    const weights = sizes.reduce((sum, value) => sum + value, 0);
+    const current = measuredSizes();
+    const weights = current.reduce((sum, value) => sum + value, 0);
     const handle = event.currentTarget;
     handle.setPointerCapture(event.pointerId);
     const move = (e: globalThis.PointerEvent) =>
-      resize(index, (((horizontal ? e.clientX : e.clientY) - origin) / total) * weights);
+      resize(index, (((horizontal ? e.clientX : e.clientY) - origin) / total) * weights, current);
     const end = () => {
       handle.removeEventListener('pointermove', move);
       handle.removeEventListener('pointerup', end);
@@ -104,7 +125,7 @@ export function SplitLayout({
     handle.addEventListener('pointercancel', end);
   }
   return (
-    <div className={`box ${node.direction}`}>
+    <div ref={boxRef} className={`box ${node.direction}`}>
       {node.children.map((child, index) => (
         <Fragment key={`${path}.${index}`}>
           {index > 0 && (
@@ -126,7 +147,15 @@ export function SplitLayout({
               }}
             />
           )}
-          <div className="split-child" style={{ flex: `${sizes[index]} 1 0px` }}>
+          <div
+            className="split-child"
+            style={{
+              flex:
+                sizes === defaults && node.widths?.[index] != null
+                  ? `0 1 ${node.widths[index]}px`
+                  : `${sizes[index]} 1 0px`,
+            }}
+          >
             <SplitLayout node={child} path={`${path}.${index}`} pane={pane} />
           </div>
         </Fragment>

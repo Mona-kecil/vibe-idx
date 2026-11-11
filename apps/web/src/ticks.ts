@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { Ticker } from './data';
 
 export const tickKinds = ['book', 'trades'] as const;
 export type TickKind = (typeof tickKinds)[number];
@@ -46,10 +47,17 @@ export const clock = (seconds: number) =>
     .join(':');
 
 export type Party = { broker: string; foreign: boolean; shares: number };
-export type Block = {
-  session: 'continuous' | 'auction';
-  side: 'buy' | 'sell';
-  order: number;
+type BlockIdentity =
+  | { session: 'continuous' | 'auction'; side: 'buy' | 'sell'; order: number; board: 'RG' }
+  | {
+      session: 'off-board';
+      side: 'none';
+      board: string;
+      buyOrder: number;
+      sellOrder: number;
+      tradeIndex: number;
+    };
+export type Block = BlockIdentity & {
   broker: string;
   foreign: boolean;
   start: number;
@@ -62,21 +70,64 @@ export type Block = {
   counterparties: Party[];
 };
 
+export type BlockSelection = BlockIdentity & Pick<TickTrades, 'ticker' | 'date'>;
+
+export const blockId = (block: BlockIdentity) =>
+  block.session === 'off-board'
+    ? `${block.board}:${block.buyOrder}:${block.sellOrder}:${block.tradeIndex}`
+    : `${block.session}:${block.side}:${block.order}`;
+
+export function isBlockTrade(trades: TickTrades, i: number, block: BlockSelection): boolean {
+  if (trades.ticker !== block.ticker || trades.date !== block.date) return false;
+  if (block.session === 'off-board')
+    return (
+      trades.board[i] === block.board &&
+      trades.buy_order[i] === block.buyOrder &&
+      trades.sell_order[i] === block.sellOrder &&
+      i === block.tradeIndex
+    );
+  return (
+    trades.board[i] === 'RG' &&
+    trades.auction[i] === (block.session === 'auction') &&
+    (block.side === 'buy' ? trades.buy_order[i] : trades.sell_order[i]) === block.order
+  );
+}
+
+export type SessionOpen = { price: number; source: 'GP daily open' | 'First RG continuous trade' };
+export function sessionOpen(prices: Ticker['prices'], trades: TickTrades): SessionOpen | null {
+  const open = prices.find((price) => price.date === trades.date)?.open;
+  if (open != null && open > 0) return { price: open, source: 'GP daily open' };
+  let first: number | undefined;
+  trades.time.forEach((time, i) => {
+    if (
+      trades.board[i] === 'RG' &&
+      !trades.auction[i] &&
+      trades.price[i]! > 0 &&
+      (first === undefined || time < trades.time[first]!)
+    )
+      first = i;
+  });
+  return first === undefined
+    ? null
+    : { price: trades.price[first]!, source: 'First RG continuous trade' };
+}
+
 /**
  * Done detail. A continuous-session trade belongs to the aggressive order that `side` names. Auction matches have
- * no aggressor, so each order on either side becomes its own block.
+ * no aggressor, so each order on either side becomes its own block. Other boards keep each trade separately.
  */
 export function doneDetail(trades: TickTrades): Block[] {
   const blocks = new Map<string, Block & { parties: Map<string, Party> }>();
-  const add = (i: number, side: 'buy' | 'sell', session: Block['session']) => {
+  const add = (i: number, side: 'buy' | 'sell', session: 'continuous' | 'auction') => {
     const buy = side === 'buy';
     const order = buy ? trades.buy_order[i]! : trades.sell_order[i]!;
     const key = `${session}:${side}:${order}`;
     const price = trades.price[i]!,
       shares = trades.shares[i]!,
       time = trades.time[i]!;
-    const block = blocks.get(key) ?? {
+    const block: Block & { parties: Map<string, Party> } = blocks.get(key) ?? {
       session,
+      board: 'RG',
       side,
       order,
       broker: buy ? trades.buyer[i]! : trades.seller[i]!,
@@ -105,7 +156,32 @@ export function doneDetail(trades: TickTrades): Block[] {
     blocks.set(key, block);
   };
   trades.time.forEach((_, i) => {
-    if (trades.board[i] !== 'RG') return;
+    if (trades.board[i] !== 'RG') {
+      const shares = trades.shares[i]!,
+        price = trades.price[i]!;
+      blocks.set(`trade:${i}`, {
+        session: 'off-board',
+        side: 'none',
+        board: trades.board[i]!,
+        buyOrder: trades.buy_order[i]!,
+        sellOrder: trades.sell_order[i]!,
+        tradeIndex: i,
+        broker: trades.seller[i]!,
+        foreign: trades.seller_foreign[i]!,
+        start: trades.time[i]!,
+        end: trades.time[i]!,
+        shares,
+        value: price * shares,
+        low: price,
+        high: price,
+        fills: 1,
+        counterparties: [],
+        parties: new Map([
+          ['buyer', { broker: trades.buyer[i]!, foreign: trades.buyer_foreign[i]!, shares }],
+        ]),
+      });
+      return;
+    }
     if (trades.auction[i]) {
       add(i, 'buy', 'auction');
       add(i, 'sell', 'auction');

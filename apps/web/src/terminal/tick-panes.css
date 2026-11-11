@@ -54,17 +54,84 @@
   border-top: 1px solid var(--line, #222826);
   color: var(--muted);
 }
+.terminal-page .tick-highlight,
+.terminal-page .tick-highlight:hover {
+  background: var(--sel);
+}
+.terminal-page .tick-tape .tick-highlight td:first-child {
+  box-shadow: inset 2px 0 var(--accent);
+}
+.terminal-page .tick-tape .tick-dimmed {
+  opacity: 0.45;
+}
+.terminal-page .tick-tape tr {
+  scroll-margin-top: 26px;
+}
+.terminal-page .tick-orders {
+  width: max-content;
+}
+.terminal-page .tick-orders td,
+.terminal-page .tick-orders th {
+  padding-left: 3px;
+  padding-right: 3px;
+}
 .terminal-page .tick-blocks tbody tr {
   cursor: pointer;
 }
-.terminal-page .tick-blocks tr.on {
-  background: #ffffff0a;
+.terminal-page .tick-blocks td {
+  vertical-align: middle;
 }
-.terminal-page .tick-blocks tr.on td.l {
-  white-space: normal;
+.terminal-page .tick-block-select {
+  padding: 0;
+  min-height: 0;
+  font: inherit;
+  color: inherit;
 }
-.terminal-page .tick-party {
-  margin-right: 8px;
+.terminal-page .tick-blocks tr:has(:focus-visible) {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+.terminal-page .tick-stack {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  vertical-align: middle;
+}
+.terminal-page .tick-summary {
+  overflow: hidden;
+  flex-shrink: 0;
+  position: relative;
+  padding: 3px 4px 6px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.terminal-page .tick-summary-main,
+.terminal-page .tick-summary-line {
+  display: flex;
+  gap: 12px;
+  white-space: nowrap;
+}
+.terminal-page .tick-summary-main {
+  flex-wrap: wrap;
+  gap: 0 12px;
+}
+.terminal-page .tick-summary-line {
+  overflow: hidden;
+}
+.terminal-page .tick-summary-line > span {
+  flex-shrink: 0;
+}
+.terminal-page .tick-counterparty {
+  padding: 0;
+  min-height: 0;
+  font: inherit;
+  color: inherit;
+}
+.terminal-page .tick-summary-measure {
+  position: absolute;
+  visibility: hidden;
+  width: max-content;
+  pointer-events: none;
 }
 .terminal-page .tick-split {
   width: 40%;
