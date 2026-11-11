@@ -9,7 +9,7 @@ const growUnits = 3.2;
 const nubGrowUnits = 1.6;
 const unitMs = 79;
 const liftShare = 0.3;
-const sparkCount = 90;
+const sparkCount = 260;
 const pulseGap = 300;
 const pulseSpeed = 0.15;
 const layoutSeed = Math.floor(Math.random() * 2 ** 32);
@@ -31,10 +31,12 @@ type Block = {
   layer: number;
   pulse: number;
   edges: Edges;
+  specks: Speck[];
   traces: Point[][];
 };
 type Tier = 0 | 1 | 2;
-type Edges = { levels: [number, number, number]; tiers: Tier[] };
+type Edges = { levels: [number, number, number]; tiers: Tier[]; spans: Point[] };
+type Speck = [u: number, v: number, size: number, phase: number];
 type Spark = { x: number; y: number; speed: number; size: number; phase: number };
 
 const spots: Point[] = [
@@ -79,7 +81,20 @@ function litEdges(next: () => number): Edges {
     tiers[(corner + 3) % 4] = 2;
     tiers[4 + corner] = 2;
   }
-  return { levels, tiers };
+  const spans = Array.from({ length: 12 }, (): Point => {
+    const start = next() * 0.5;
+    return [start, Math.min(start + 0.4 + next() * 0.4, 1)];
+  });
+  return { levels, tiers, spans };
+}
+
+function speckle(next: () => number, count: number): Speck[] {
+  return Array.from({ length: count }, () => [
+    0.04 + next() * 0.92,
+    0.04 + next() * 0.92,
+    1.2 + next() ** 2 * 2.6,
+    next() * Math.PI * 2,
+  ]);
 }
 
 function trace(next: () => number): Point[] {
@@ -137,6 +152,7 @@ function growBlocks(width: number, height: number, ox: number, oy: number) {
       layer: near(x + size / 2, y + size / 2),
       pulse: next() * Math.PI * 2,
       edges: litEdges(next),
+      specks: speckle(next, Math.round(size / 9)),
       traces: Array.from({ length: size > 280 ? 2 : size >= 200 ? 1 : 0 }, () => trace(next)),
     };
     blocks.push(block);
@@ -202,6 +218,7 @@ function growBlocks(width: number, height: number, ox: number, oy: number) {
         layer: parent.layer + 0.0001,
         pulse: next() * Math.PI * 2,
         edges: litEdges(next),
+        specks: speckle(next, Math.round(size / 9)),
         traces: [],
       });
     }
@@ -229,7 +246,7 @@ function layoutSparks(width: number, height: number): Spark[] {
     x: next() * width,
     y: next() * height,
     speed: 20 + next() * 50,
-    size: 1 + next() * 1.6,
+    size: 0.8 + next() ** 2 * 2.6,
     phase: next() * Math.PI * 2,
   }));
 }
@@ -270,34 +287,66 @@ export function Corruption({
       return { grow: 1, lift: 0, alpha: 1 };
     }
 
-    function strokeNeon(path: Path2D, glow: number, bloom = 0, hot = false) {
+    function strokeNeon(path: Path2D, glow: number) {
       if (!context) return;
-      const strength = Math.min(glow, 1);
-      if (bloom > 0) {
-        context.save();
-        context.shadowColor = `rgba(255, 36, 28, ${Math.min(0.7 * bloom, 1)})`;
-        context.shadowBlur = 16;
-        context.strokeStyle = `rgba(255, 60, 50, ${strength})`;
-        context.lineWidth = hot ? 3 : 1.4;
-        context.stroke(path);
-        context.restore();
-      }
-      const passes: [string, number][] = hot
-        ? [
-            [`rgba(255, 70, 60, ${0.18 * strength})`, 7],
-            [`rgba(255, 80, 70, ${strength})`, 3],
-            [`rgba(255, 245, 240, ${0.95 * strength})`, 1.6],
-          ]
-        : [
-            [`rgba(255, 30, 30, ${0.07 * glow})`, 7],
-            [`rgba(255, 30, 30, ${0.12 * glow})`, 3.5],
-            [`rgba(255, 60, 50, ${glow})`, 2],
-            [`rgba(255, 190, 180, ${0.8 * glow})`, 0.8],
-          ];
-      for (const [color, lineWidth] of passes) {
+      for (const [color, lineWidth] of [
+        [`rgba(255, 30, 30, ${0.07 * glow})`, 7],
+        [`rgba(255, 30, 30, ${0.12 * glow})`, 3.5],
+        [`rgba(255, 60, 50, ${glow})`, 2],
+        [`rgba(255, 190, 180, ${0.8 * glow})`, 0.8],
+      ] as const) {
         context.strokeStyle = color;
         context.lineWidth = lineWidth;
         context.stroke(path);
+      }
+    }
+
+    function glowSegment(from: Point, to: Point, [start, end]: Point, glow: number, bloom: number) {
+      if (!context) return;
+      const along = (share: number): Point => [
+        from[0] + (to[0] - from[0]) * share,
+        from[1] + (to[1] - from[1]) * share,
+      ];
+      const [a, b] = [along(start), along(end)];
+      const strength = Math.min(glow, 1);
+      const fade = (rgb: string, alpha: number) => {
+        const gradient = context.createLinearGradient(...a, ...b);
+        gradient.addColorStop(0, `rgba(${rgb}, 0)`);
+        gradient.addColorStop(0.35, `rgba(${rgb}, ${alpha})`);
+        gradient.addColorStop(0.65, `rgba(${rgb}, ${alpha})`);
+        gradient.addColorStop(1, `rgba(${rgb}, 0)`);
+        return gradient;
+      };
+      const path = new Path2D();
+      path.moveTo(...a);
+      path.lineTo(...b);
+      context.save();
+      context.lineCap = 'round';
+      if (bloom > 0) {
+        context.shadowColor = `rgba(255, 36, 28, ${Math.min(0.7 * bloom, 1)})`;
+        context.shadowBlur = 16;
+      }
+      for (const [rgb, alpha, lineWidth] of [
+        ['255, 80, 70', strength, 3],
+        ['255, 70, 60', 0.18 * strength, 7],
+        ['255, 245, 240', 0.95 * strength, 1.6],
+      ] as const) {
+        context.strokeStyle = fade(rgb, alpha);
+        context.lineWidth = lineWidth;
+        context.stroke(path);
+        context.shadowBlur = 0;
+      }
+      context.restore();
+    }
+
+    function drawSpecks(block: Block, corners: readonly Point[], light: number, t: number) {
+      if (!context) return;
+      const [[x0, y0] = [0, 0], [x1] = [0, 0]] = corners;
+      const size = x1 - x0;
+      for (const [u, v, speck, phase] of block.specks) {
+        const twinkle = mode === 'hold' ? 0.55 + 0.45 * Math.sin(t / 380 + phase) : 1;
+        context.fillStyle = `rgba(255, 55, 40, ${(0.35 + 0.65 * light) * twinkle})`;
+        context.fillRect(x0 + u * size, y0 + v * size, speck, speck);
       }
     }
 
@@ -338,10 +387,14 @@ export function Corruption({
         [2, 3, 'rgb(22, 3, 4)', bottom < vy],
         [3, 0, 'rgb(42, 5, 7)', left > vx],
       ];
-      const edges: [Path2D, Path2D, Path2D] = [new Path2D(), new Path2D(), new Path2D()];
+      const edges: [Path2D, Path2D] = [new Path2D(), new Path2D()];
+      const hot: [Point, Point, Point][] = [];
       const line = (index: number, from: Point | undefined, to: Point | undefined) => {
-        const path = edges[block.edges.tiers[index] ?? 0];
+        const tier = block.edges.tiers[index] ?? 0;
+        const span = block.edges.spans[index];
         if (!from || !to) return;
+        if (tier === 2 && span) hot.push([from, to, span]);
+        const path = edges[tier === 0 ? 0 : 1];
         path.moveTo(...from);
         path.lineTo(...to);
       };
@@ -363,6 +416,7 @@ export function Corruption({
       context.fill(face);
       context.fillStyle = fog;
       context.fill(face);
+      drawSpecks(block, corners, light, t);
       for (let side = 0; side < 4; side++) {
         const after = (side + 1) % 4,
           before = (side + 3) % 4;
@@ -370,10 +424,11 @@ export function Corruption({
         if (walls[side]?.[3] || walls[before]?.[3]) line(4 + side, corners[side], behind[side]);
         if (walls[side]?.[3]) line(8 + side, behind[side], behind[after]);
       }
-      for (const tier of [0, 1, 2] as const) {
-        const level = block.edges.levels[tier];
-        strokeNeon(edges[tier], 0.9 * light * level, tier === 2 ? outer * level : 0, tier === 2);
-      }
+      for (const tier of [0, 1] as const)
+        strokeNeon(edges[tier], 0.9 * light * block.edges.levels[tier]);
+      const heat = block.edges.levels[2];
+      for (const [from, to, span] of hot)
+        glowSegment(from, to, span, 0.9 * light * heat, outer * heat);
 
       const [x0, y0] = corners[0];
       const size = corners[1][0] - x0;
@@ -409,8 +464,17 @@ export function Corruption({
       for (const spark of sparks) {
         const y = ((((spark.y - (spark.speed * t) / 1000) % wrap) + wrap) % wrap) - 10;
         const x = spark.x + Math.sin(t / 400 + spark.phase) * 6;
-        context.fillStyle = `rgba(255, 90, 70, ${alpha * (0.5 + 0.5 * Math.sin(t / 90 + spark.phase))})`;
-        context.fillRect(x, y, spark.size, spark.size);
+        const flicker = alpha * (0.5 + 0.5 * Math.sin(t / 90 + spark.phase));
+        if (spark.size > 2) {
+          const radius = spark.size * 3;
+          const halo = context.createRadialGradient(x, y, 0, x, y, radius);
+          halo.addColorStop(0, `rgba(255, 50, 36, ${0.35 * flicker})`);
+          halo.addColorStop(1, 'rgba(255, 50, 36, 0)');
+          context.fillStyle = halo;
+          context.fillRect(x - radius, y - radius, radius * 2, radius * 2);
+        }
+        context.fillStyle = `rgba(255, 90, 70, ${flicker})`;
+        context.fillRect(x - spark.size / 2, y - spark.size / 2, spark.size, spark.size);
       }
     }
 
@@ -446,11 +510,11 @@ export function Corruption({
       lastBirth = Math.max(...blocks.map((block) => block.birth), 1);
       sparks = layoutSparks(width, height);
       const gradient = context.createLinearGradient(0, 0, width, height);
-      gradient.addColorStop(0, '#050506');
-      gradient.addColorStop(0.42, '#0b0b0e');
-      gradient.addColorStop(0.5, '#141418');
-      gradient.addColorStop(0.58, '#0b0b0e');
-      gradient.addColorStop(1, '#040405');
+      gradient.addColorStop(0, '#0f0203');
+      gradient.addColorStop(0.42, '#1c0406');
+      gradient.addColorStop(0.5, '#2a070a');
+      gradient.addColorStop(0.58, '#1c0406');
+      gradient.addColorStop(1, '#0c0203');
       sheen = gradient;
       start = performance.now();
       draw(start);
