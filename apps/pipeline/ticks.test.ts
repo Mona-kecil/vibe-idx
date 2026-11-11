@@ -1,6 +1,8 @@
 import { mkdtemp, mkdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { setImmediate } from 'node:timers';
+import { setTimeout as sleep } from 'node:timers/promises';
 import { gunzipSync } from 'node:zlib';
 import { DuckDBInstance } from '@duckdb/node-api';
 import { afterEach, beforeEach, expect, it, vi } from 'vite-plus/test';
@@ -8,14 +10,12 @@ import type { R2 } from './brokers';
 import { brokers } from './brokers';
 import { collectTicks } from './ticks';
 import { doneDetailSql, parseBook, parseTradePage } from './ticks-data';
-import { TickStore } from './ticks-store';
+import { progressSchema, TickStore, tradeLanes } from './ticks-store';
 import { nextPreOpen, tradingSessions } from './lib/idx-calendar';
 
 vi.mock('./lib/sentry', () => ({ reportError: vi.fn(), startSentry: vi.fn() }));
 vi.mock('node:timers/promises', () => ({
-  setTimeout: async (ms: number) => {
-    vi.setSystemTime(Date.now() + ms);
-  },
+  setTimeout: vi.fn(),
 }));
 const roots: string[] = [];
 const day = '2026-11-09';
@@ -24,6 +24,9 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(new Date('2026-11-10T02:00:00Z'));
   report.mockClear();
+  vi.mocked(sleep).mockImplementation(async (ms = 0) => {
+    vi.setSystemTime(Date.now() + ms);
+  });
 });
 afterEach(async () => {
   vi.useRealTimers();
@@ -156,8 +159,7 @@ it('derives continuous blocks from the aggressor order and auction histories fro
         chunks: [],
         expected: 4,
         phase: 'bulk',
-        cursor: 4,
-        seen: [],
+        lanes: tradeLanes(4, 4),
         repairs: 0,
       },
       parseTradePage({ data: { running_trade: r } }, day),
@@ -203,9 +205,9 @@ it('deduplicates non-monotonic market pages and re-reads skipped seconds before 
         return page([...sequence(1, 99), 105]);
       }
       if (cursor === 0) return page(sequence(5, 104));
-      if (cursor === 105) return page([...sequence(106, 204), 50]);
+      if (cursor === 105 || cursor === 51) return page([...sequence(106, 204), 50]);
       if (cursor === 50) return page([205]);
-      return page([]);
+      return page(sequence(cursor + 1, Math.min(cursor + 100, 205)));
     },
   });
   expect(result.published).toEqual([`running_trade/${day}`]);
@@ -251,19 +253,267 @@ it('resumes a budgeted market crawl on a fresh runner without refreshing its clo
           ),
         );
   };
-  const first = await collectTicks({ ...f, deadline: Date.now() + 600, request });
+  const first = await collectTicks({ ...f, deadline: Date.now() + 1200, request });
   expect(first.stopped).toBe('Tick time budget reached');
   expect(f.objects.has(`ticks/running_trade/${day}.parquet`)).toBe(false);
   const progress = JSON.parse(
     f.objects.get(`staging/ticks/running_trade/${day}/progress.json`)!.toString(),
   );
-  expect(progress.cursor).toBe(200);
+  expect(progress.lanes).toHaveLength(4);
+  expect(progress.lanes.some((lane: { done: boolean }) => !lane.done)).toBe(true);
   expect(progress.chunks).toHaveLength(1);
   const resumed = await fixture({ objects: f.objects });
   calls.length = 0;
   expect((await collectTicks({ ...resumed, request })).published).toEqual([`running_trade/${day}`]);
-  expect(calls).toEqual(['ASC:200']);
+  expect(calls.length).toBeGreaterThan(0);
+  expect(calls.every((call) => call.startsWith('ASC:'))).toBe(true);
   expect(await rows(resumed, 'running_trade')).toHaveLength(205);
+});
+it('converts old cursor progress into lanes and resumes the complete day', async () => {
+  const f = await fixture();
+  const legacy = {
+    dataset: 'running_trade',
+    date: day,
+    tickers: ['SINI', 'ZERO'],
+    chunks: [],
+    expected: 805,
+    phase: 'bulk',
+    cursor: 200,
+    seen: [0, 100],
+    repairs: 0,
+  };
+  const converted = progressSchema.parse(legacy);
+  expect(converted).not.toHaveProperty('cursor');
+  expect(converted).toMatchObject({ lanes: tradeLanes(805, 200) });
+  const store = await TickStore.open(f.data, f.r2);
+  try {
+    await store.checkpoint(
+      converted,
+      parseTradePage(
+        {
+          data: {
+            running_trade: sequence(1, 100).map((n) => trade(n)),
+          },
+        },
+        day,
+      ),
+      1,
+      100,
+    );
+    await store.checkpoint(
+      converted,
+      parseTradePage({ data: { running_trade: sequence(101, 200).map((n) => trade(n)) } }, day),
+      101,
+      200,
+    );
+  } finally {
+    store.close();
+  }
+  const key = `staging/ticks/running_trade/${day}/progress.json`;
+  const saved = JSON.parse(f.objects.get(key)!.toString());
+  f.objects.set(key, Buffer.from(JSON.stringify({ ...legacy, chunks: saved.chunks })));
+  const resumed = await fixture({ objects: f.objects });
+  const starts: number[] = [];
+  const result = await collectTicks({
+    ...resumed,
+    request: async (input) => {
+      const u = new URL(input);
+      expect(u.searchParams.get('sort')).toBe('ASC');
+      const cursor = Number(u.searchParams.get('trade_number') ?? 0);
+      starts.push(cursor);
+      return page(sequence(cursor + 1, Math.min(cursor + 100, 805)));
+    },
+  });
+  expect(starts).toEqual(expect.arrayContaining([200, 351, 502, 653]));
+  expect(result.published).toEqual([`running_trade/${day}`]);
+  expect(await rows(resumed, 'running_trade')).toHaveLength(805);
+});
+async function clocked<T>(run: () => Promise<T>) {
+  vi.useFakeTimers({ toFake: ['Date', 'setTimeout'] });
+  vi.mocked(sleep).mockImplementation(
+    (ms = 0) =>
+      new Promise((resolve) => {
+        globalThis.setTimeout(resolve, ms);
+      }),
+  );
+  let finished = false;
+  const result = run()
+    .then(
+      (value) => ({ value }),
+      (error: unknown) => ({ error }),
+    )
+    .finally(() => {
+      finished = true;
+    });
+  while (!finished) {
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    await vi.advanceTimersToNextTimerAsync();
+  }
+  const outcome = await result;
+  if ('error' in outcome) throw outcome.error;
+  return outcome.value;
+}
+it.each([800, 4000])('paces concurrent one-second requests for %i trades', async (total) => {
+  const f = await fixture();
+  const starts: number[] = [];
+  const before = Date.now();
+  let active = 0;
+  let peak = 0;
+  const result = await clocked(() =>
+    collectTicks({
+      ...f,
+      request: async (input) => {
+        starts.push(Date.now());
+        peak = Math.max(peak, ++active);
+        await sleep(1000);
+        active--;
+        const u = new URL(input);
+        if (u.searchParams.get('sort') === 'DESC') return page([total]);
+        const cursor = Number(u.searchParams.get('trade_number') ?? 0);
+        return page(sequence(cursor + 1, Math.min(cursor + 100, total)));
+      },
+    }),
+  );
+  expect(result.published).toEqual([`running_trade/${day}`]);
+  // Four pages per second, plus the initial DESC, lane startup, and final empty page.
+  expect(Date.now() - before).toBeLessThanOrEqual((total / 100) * 250 + 2750);
+  expect(starts).toHaveLength(total / 100 + 2);
+  expect(peak).toBe(4);
+  expect(active).toBe(0);
+  expect(starts.every((s, i) => !i || s - starts[i - 1] >= 250)).toBe(true);
+  expect(await rows(f, 'running_trade')).toHaveLength(total);
+});
+it('backs off an empty lane start to a served trade number', async () => {
+  const f = await fixture();
+  const cursors: number[] = [];
+  const result = await collectTicks({
+    ...f,
+    request: async (input) => {
+      const u = new URL(input);
+      if (u.searchParams.get('sort') === 'DESC') return page([800]);
+      const cursor = Number(u.searchParams.get('trade_number') ?? 0);
+      cursors.push(cursor);
+      if (cursor === 400) return page([]);
+      return page(sequence(cursor + 1, Math.min(cursor + 100, 800)));
+    },
+  });
+  expect(cursors).toContain(399);
+  expect(result.published).toEqual([`running_trade/${day}`]);
+  expect(await rows(f, 'running_trade')).toHaveLength(800);
+});
+it('shares a closing-sequence refresh between concurrent lanes', async () => {
+  const f = await fixture();
+  f.objects.set(
+    `staging/ticks/running_trade/${day}/progress.json`,
+    Buffer.from(
+      JSON.stringify({
+        dataset: 'running_trade',
+        date: day,
+        tickers: ['SINI', 'ZERO'],
+        chunks: [],
+        expected: 4,
+        phase: 'bulk',
+        lanes: tradeLanes(4),
+        repairs: 0,
+      }),
+    ),
+  );
+  let refreshes = 0;
+  const result = await clocked(() =>
+    collectTicks({
+      ...f,
+      request: async (input) => {
+        await sleep(1000);
+        const u = new URL(input);
+        if (u.searchParams.get('sort') === 'DESC') {
+          refreshes++;
+          return page([8]);
+        }
+        const cursor = Number(u.searchParams.get('trade_number') ?? 0);
+        return page(sequence(cursor + 1, 8));
+      },
+    }),
+  );
+  expect(refreshes).toBe(1);
+  expect(result.published).toEqual([`running_trade/${day}`]);
+  expect(await rows(f, 'running_trade')).toHaveLength(8);
+});
+it.each(['http', 'parse'])(
+  'settles other lanes and flushes accepted rows after a %s failure',
+  async (failure) => {
+    const f = await fixture();
+    const starts: number[] = [];
+    let failedAt = Infinity;
+    const run = () =>
+      collectTicks({
+        ...f,
+        request: async (input) => {
+          starts.push(Date.now());
+          await sleep(1000);
+          const u = new URL(input);
+          if (u.searchParams.get('sort') === 'DESC') return page([2000]);
+          const cursor = Number(u.searchParams.get('trade_number') ?? 0);
+          if (cursor === 100) {
+            failedAt = Date.now();
+            return failure === 'http'
+              ? new Response('', { status: 401 })
+              : Response.json({ invalid: true });
+          }
+          return page(sequence(cursor + 1, Math.min(cursor + 100, 2000)));
+        },
+      });
+    if (failure === 'http') expect((await clocked(run)).stopped).toContain('HTTP 401');
+    else await expect(clocked(run)).rejects.toThrow();
+    expect(starts.every((start) => start < failedAt)).toBe(true);
+    const progress = progressSchema.parse(
+      JSON.parse(f.objects.get(`staging/ticks/running_trade/${day}/progress.json`)!.toString()),
+    );
+    expect(progress.chunks.length).toBeGreaterThan(0);
+    expect(progress).toMatchObject({
+      phase: 'bulk',
+      lanes: [
+        expect.objectContaining({ cursor: 100 }),
+        expect.anything(),
+        expect.anything(),
+        expect.anything(),
+      ],
+    });
+    const resumed = await fixture({ objects: f.objects });
+    const result = await clocked(() =>
+      collectTicks({
+        ...resumed,
+        request: async (input) => {
+          const cursor = Number(new URL(input).searchParams.get('trade_number') ?? 0);
+          return page(sequence(cursor + 1, Math.min(cursor + 100, 2000)));
+        },
+      }),
+    );
+    expect(result.published).toEqual([`running_trade/${day}`]);
+    expect(await rows(resumed, 'running_trade')).toHaveLength(2000);
+  },
+);
+it('resumes a checkpoint interrupted while other lanes are advancing', async () => {
+  const f = await fixture();
+  const key = `staging/ticks/running_trade/${day}/progress.json`;
+  f.hooks.afterPut = (name) => {
+    if (name === key) throw new Error('checkpoint interrupted');
+  };
+  const request = async (input: string) => {
+    const u = new URL(input);
+    if (u.searchParams.get('sort') === 'DESC') return page([40000]);
+    const cursor = Number(u.searchParams.get('trade_number') ?? 0);
+    return page(sequence(cursor + 1, Math.min(cursor + 100, 40000)));
+  };
+  await expect(collectTicks({ ...f, request })).rejects.toThrow('checkpoint interrupted');
+  const progress = progressSchema.parse(JSON.parse(f.objects.get(key)!.toString()));
+  expect(progress.chunks).toHaveLength(1);
+  const chunk = progress.chunks[0];
+  const [bounds] = await sql(`SELECT min(trade_number)::INTEGER lo, max(trade_number)::INTEGER hi
+    FROM read_parquet('${f.data}/staging/ticks/running_trade/${day}/${chunk}')`);
+  expect(chunk).toBe(`chunk-0-${Number(bounds.lo)}-${Number(bounds.hi)}.parquet`);
+  const resumed = await fixture({ objects: f.objects });
+  expect((await collectTicks({ ...resumed, request })).published).toEqual([`running_trade/${day}`]);
+  expect(await rows(resumed, 'running_trade')).toHaveLength(40000);
 });
 it('takes the closing sequence from the highest number in the final second, not its first row', async () => {
   const f = await fixture();
@@ -285,7 +535,7 @@ it('raises a saved closing sequence that a later page proves too low', async () 
     const cursor = Number(u.searchParams.get('trade_number') ?? 0);
     return page(sequence(cursor + 1, Math.min(cursor + 100, 205)));
   };
-  const first = await collectTicks({ ...f, deadline: Date.now() + 600, request });
+  const first = await collectTicks({ ...f, deadline: Date.now() + 1200, request });
   expect(first.stopped).toBe('Tick time budget reached');
   closing = 205;
   const resumed = await fixture({ objects: f.objects });
@@ -324,7 +574,7 @@ it('never publishes an empty history response or a crawl with far more gaps than
   const progress = JSON.parse(
     g.objects.get(`staging/ticks/running_trade/${day}/progress.json`)!.toString(),
   );
-  expect(progress).toMatchObject({ phase: 'bulk', cursor: 0, repairs: 0 });
+  expect(progress).toMatchObject({ phase: 'bulk', lanes: tradeLanes(1000), repairs: 0 });
 });
 it('publishes a day whose few missing trade numbers Stockbit never serves, and records them', async () => {
   const f = await fixture();
@@ -334,7 +584,7 @@ it('publishes a day whose few missing trade numbers Stockbit never serves, and r
     return Number(u.searchParams.get('trade_number') ?? 0) === 0 ? page([1, 2, 4, 5]) : page([]);
   });
   expect((await collectTicks({ ...f, request })).published).toEqual([`running_trade/${day}`]);
-  expect(request).toHaveBeenCalledTimes(1 + 1 + 2 * 2);
+  expect(request).toHaveBeenCalledTimes(1 + 10 + 2 * 2);
   expect(
     await sql(
       `SELECT decode(key) AS key, decode(value) AS value FROM parquet_kv_metadata('${f.data}/ticks/running_trade/${day}.parquet') ORDER BY 1`,
@@ -487,7 +737,7 @@ it('shares a single broker authentication with running trades and books', async 
     },
   });
   expect(refreshes).toBe(1);
-  expect(ticks).toBe(3);
+  expect(ticks).toBe(6);
   expect(result.ticks?.published).toEqual([`closing_book/${day}`, `running_trade/${day}`]);
 });
 
