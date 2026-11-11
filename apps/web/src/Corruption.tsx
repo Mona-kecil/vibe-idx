@@ -39,6 +39,9 @@ const spots: Point[] = [
   [1, 0.5],
 ];
 
+const ease = (p: number) => 1 - (1 - p) ** 2;
+const clamp = (p: number) => Math.min(Math.max(p, 0), 1);
+
 function random(seed: number) {
   let state = seed;
   return () => {
@@ -78,6 +81,9 @@ function growBlocks(width: number, height: number, ox: number, oy: number) {
     rows = Math.ceil(height / coverCell);
   const covered = new Uint8Array(cols * rows);
   const blocks: Block[] = [];
+  const near = (x: number, y: number) =>
+    clamp(Math.hypot(x - width / 2, y - height / 2) / Math.hypot(width / 2, height / 2));
+  const sizeAt = (x: number, y: number) => (130 + 300 * near(x, y) ** 1.3) * (0.8 + next() * 0.5);
   const cells = (x: number, y: number, size: number) => {
     const found: number[] = [];
     for (
@@ -97,21 +103,14 @@ function growBlocks(width: number, height: number, ox: number, oy: number) {
     const inside = cells(x, y, size);
     return inside.length ? inside.filter((index) => !covered[index]).length / inside.length : 0;
   };
-  const add = (
-    x: number,
-    y: number,
-    size: number,
-    anchor: Point,
-    birth: number,
-    generation: number,
-  ) => {
+  const add = (x: number, y: number, size: number, anchor: Point, birth: number) => {
     const block: Block = {
       x,
       y,
       size,
       anchor,
       birth,
-      depth: Math.min(0.08 + generation * 0.03, 0.3),
+      depth: 0.04 + 0.5 * near(x + size / 2, y + size / 2) ** 1.5,
       pulse: next() * Math.PI * 2,
       traces: next() < 0.35 ? [] : [trace(next)],
     };
@@ -121,25 +120,19 @@ function growBlocks(width: number, height: number, ox: number, oy: number) {
     return block;
   };
 
-  const queue = [
-    { block: add(ox - rootSize / 2, oy - rootSize / 2, rootSize, [ox, oy], 0, 0), generation: 0 },
-  ];
-  for (let item = queue.shift(); item; item = queue.shift()) {
-    const { block: parent, generation } = item;
+  const queue = [add(ox - rootSize / 2, oy - rootSize / 2, rootSize, [ox, oy], 0)];
+  for (let parent = queue.shift(); parent; parent = queue.shift()) {
     let buds = 0;
     for (const [u, v] of shuffled(spots, next)) {
       if (buds >= maxBuds) break;
-      const size = Math.min(Math.max(parent.size * (0.9 + next() * 0.8), 64), 520);
       const px = parent.x + u * parent.size,
         py = parent.y + v * parent.size;
+      const size = sizeAt(px, py);
       const x = px + (u - 0.5) * size * 0.5 - size / 2,
         y = py + (v - 0.5) * size * 0.5 - size / 2;
       if (open(x, y, size) < 0.4) continue;
       const birth = parent.birth + 0.8 + buds * 0.9 + next() * 0.3;
-      queue.push({
-        block: add(x, y, size, [px, py], birth, generation + 1),
-        generation: generation + 1,
-      });
+      queue.push(add(x, y, size, [px, py], birth));
       buds++;
     }
   }
@@ -159,14 +152,14 @@ function growBlocks(width: number, height: number, ox: number, oy: number) {
       }
     }
     if (!nearest) return;
-    const size = Math.max(coverCell * 6, nearest.size, gap * 2 + coverCell * 2);
+    const size = Math.max(coverCell * 4, sizeAt(cx, cy), gap * 2 + coverCell * 2);
     const anchor: Point = [
       Math.min(Math.max(cx, nearest.x), nearest.x + nearest.size),
       Math.min(Math.max(cy, nearest.y), nearest.y + nearest.size),
     ];
-    add(cx - size / 2, cy - size / 2, size, anchor, nearest.birth + 0.6 + next() * 0.4, 6);
+    add(cx - size / 2, cy - size / 2, size, anchor, nearest.birth + 0.6 + next() * 0.4);
   });
-  return blocks.sort((a, b) => a.birth - b.birth);
+  return blocks.sort((a, b) => a.depth - b.depth);
 }
 
 function layoutSparks(width: number, height: number): Spark[] {
@@ -179,9 +172,6 @@ function layoutSparks(width: number, height: number): Spark[] {
     phase: next() * Math.PI * 2,
   }));
 }
-
-const ease = (p: number) => 1 - (1 - p) ** 2;
-const clamp = (p: number) => Math.min(Math.max(p, 0), 1);
 
 export function Corruption({
   mode,
