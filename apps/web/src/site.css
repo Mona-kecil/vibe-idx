@@ -10,7 +10,9 @@
   --amber: #8a5a00;
   --mono: ui-monospace, 'SF Mono', Menlo, monospace;
   --font: 'Manrope', sans-serif;
-  min-height: 100vh;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --press: scale(0.97);
+  min-height: 100dvh;
   background: var(--paper);
   color: var(--ink);
   font-family: var(--font);
@@ -19,6 +21,23 @@
 }
 .site * {
   box-sizing: border-box;
+}
+html {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
+}
+.site :is(button, a, summary, [role='button']) {
+  touch-action: manipulation;
+}
+.site :is(button, summary, .chip, .tabs a) {
+  user-select: none;
+  -webkit-user-select: none;
+}
+.site :is(button, summary) {
+  transition: transform 120ms var(--ease-out);
+}
+.site :is(button, summary):active {
+  transform: var(--press);
 }
 .site button,
 .site input,
@@ -31,8 +50,10 @@
   background: none;
   border: 0;
 }
-.site button:hover {
-  background: var(--hover);
+@media (hover: hover) and (pointer: fine) {
+  .site button:hover {
+    background: var(--hover);
+  }
 }
 .site a {
   color: inherit;
@@ -71,6 +92,7 @@
 .site-header {
   border-bottom: 1px solid var(--line);
   background: var(--surface);
+  padding-top: env(safe-area-inset-top, 0px);
 }
 .site-bar {
   height: 64px;
@@ -117,8 +139,13 @@
   box-shadow: inset 0 -2px 0 #167049;
   transition: background 0.15s;
 }
-.site-nav a.terminal-link:is(:hover, :focus-visible) {
+.site-nav a.terminal-link:focus-visible {
   background: #167049;
+}
+@media (hover: hover) and (pointer: fine) {
+  .site-nav a.terminal-link:hover {
+    background: #167049;
+  }
 }
 .site-search {
   position: relative;
@@ -453,5 +480,23 @@
     background: var(--surface);
     color: var(--down);
     font-size: 12px;
+  }
+}
+
+@media (pointer: coarse) {
+  .site :is(input, select, textarea) {
+    font-size: 16px;
+  }
+  /* A touch floor, so it outranks every page's control sizing. */
+  .site.site.site :is(button, summary) {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .site.site.site summary {
+    display: inline-flex;
+    align-items: center;
+  }
+  .site.site.site .risk > summary {
+    justify-content: center;
   }
 }

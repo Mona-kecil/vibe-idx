@@ -463,8 +463,10 @@
   line-height: 1.65;
   text-decoration: none;
 }
-.ticker-page .feed-title:hover {
-  text-decoration: underline;
+@media (hover: hover) and (pointer: fine) {
+  .ticker-page .feed-title:hover {
+    text-decoration: underline;
+  }
 }
 .ticker-page .feed-title svg {
   width: 12px;
@@ -481,9 +483,11 @@
   text-decoration: underline;
   text-underline-offset: 5px;
 }
-.ticker-page .show-all:hover {
-  background: none;
-  color: var(--muted);
+@media (hover: hover) and (pointer: fine) {
+  .ticker-page .show-all:hover {
+    background: none;
+    color: var(--muted);
+  }
 }
 .ticker-page footer {
   border-top: 1px solid var(--line);
@@ -802,8 +806,10 @@
   font-size: 11px;
   line-height: 1.4;
 }
-.ticker-page .holder-key:hover {
-  background: none;
+@media (hover: hover) and (pointer: fine) {
+  .ticker-page .holder-key:hover {
+    background: none;
+  }
 }
 .ticker-page .holder-key .swatch {
   margin-top: 4px;

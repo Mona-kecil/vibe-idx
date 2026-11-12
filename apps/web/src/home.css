@@ -205,8 +205,10 @@
   font: 11px var(--mono);
   transition: filter 0.1s;
 }
-.heat a:hover {
-  filter: brightness(0.92);
+@media (hover: hover) and (pointer: fine) {
+  .heat a:hover {
+    filter: brightness(0.92);
+  }
 }
 .heat a b {
   font-size: 12px;
@@ -248,9 +250,11 @@
   font: 700 12px var(--mono);
   color: var(--muted);
 }
-.tile-head:hover,
-.tile-row:hover {
-  background: var(--hover);
+@media (hover: hover) and (pointer: fine) {
+  .tile-head:hover,
+  .tile-row:hover {
+    background: var(--hover);
+  }
 }
 .tile-row {
   display: grid;
@@ -342,8 +346,10 @@
   white-space: nowrap;
   text-decoration: none;
 }
-.week a.what:hover .sym {
-  text-decoration: underline;
+@media (hover: hover) and (pointer: fine) {
+  .week a.what:hover .sym {
+    text-decoration: underline;
+  }
 }
 .week .tag {
   font: 700 11px var(--mono);
@@ -385,8 +391,10 @@
   padding: 8px 8px 8px 14px;
   border-top: 1px solid var(--line);
 }
-.watch-row:hover {
-  background: var(--hover);
+@media (hover: hover) and (pointer: fine) {
+  .watch-row:hover {
+    background: var(--hover);
+  }
 }
 .watch-row:has(details[open]) {
   z-index: 2;
@@ -468,8 +476,10 @@
   text-decoration: none;
   line-height: 1.45;
 }
-.news a:hover {
-  background: var(--hover);
+@media (hover: hover) and (pointer: fine) {
+  .news a:hover {
+    background: var(--hover);
+  }
 }
 .news time {
   font: 12px var(--mono);

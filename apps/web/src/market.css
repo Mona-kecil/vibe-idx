@@ -53,8 +53,10 @@
   opacity: 0.4;
   cursor: not-allowed;
 }
-.market-page .chips button:disabled:hover {
-  background: none;
+@media (hover: hover) and (pointer: fine) {
+  .market-page .chips button:disabled:hover {
+    background: none;
+  }
 }
 .market-page .filter {
   flex: 1;
@@ -181,8 +183,10 @@
 .market-page tbody tr {
   cursor: pointer;
 }
-.market-page tbody tr:hover td {
-  background: var(--hover);
+@media (hover: hover) and (pointer: fine) {
+  .market-page tbody tr:hover td {
+    background: var(--hover);
+  }
 }
 .market-page .stock-cell {
   display: flex;
