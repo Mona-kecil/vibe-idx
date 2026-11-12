@@ -1,21 +1,9 @@
-import { useState, useSyncExternalStore, type MouseEvent, type ReactNode } from 'react';
+import { useState, type MouseEvent, type ReactNode } from 'react';
 import { EventText, eventTitle, type Event } from './events';
 import { compact, pct } from './marketFormat';
 import { RiskBadge } from './RiskBadge';
 import type { Risk } from './terminal/sources';
 import { direction, nf, signed } from './ticker/format';
-
-const narrowQuery = '(max-width: 900px)';
-export const useNarrow = () =>
-  useSyncExternalStore(
-    (change) => {
-      const query = window.matchMedia(narrowQuery);
-      query.addEventListener('change', change);
-      return () => query.removeEventListener('change', change);
-    },
-    () => window.matchMedia(narrowQuery).matches,
-    () => false,
-  );
 
 export const openOnRowClick = (ticker: string) => (event: MouseEvent) => {
   if (

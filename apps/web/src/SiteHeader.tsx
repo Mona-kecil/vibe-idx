@@ -1,23 +1,12 @@
-import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { AccountControls, CompactAccountControls } from './BrokerPanel';
 import { TerminalLink } from './TerminalLink';
+import { useNarrow } from './useNarrow';
 import './site.css';
 
 type Page = 'home' | 'market' | 'ticker';
 type Listing = { ticker: string; name: string };
 type SearchState = 'closed' | 'open';
-
-const phoneQuery = '(max-width: 900px)';
-const usePhone = () =>
-  useSyncExternalStore(
-    (change) => {
-      const query = window.matchMedia(phoneQuery);
-      query.addEventListener('change', change);
-      return () => query.removeEventListener('change', change);
-    },
-    () => window.matchMedia(phoneQuery).matches,
-    () => false,
-  );
 
 export function SiteHeader({
   page,
@@ -31,7 +20,7 @@ export function SiteHeader({
   const [query, setQuery] = useState(''),
     [search, setSearch] = useState<SearchState>('closed'),
     [active, setActive] = useState(0);
-  const phone = usePhone();
+  const phone = useNarrow();
   const input = useRef<HTMLInputElement>(null),
     toggle = useRef<HTMLButtonElement>(null),
     box = useRef<HTMLDivElement>(null);

@@ -15,7 +15,8 @@ import {
   type Lens,
 } from './events';
 import { compact, pct } from './marketFormat';
-import { MarketRows, openOnRowClick, useNarrow, type RankRow } from './MarketRows';
+import { MarketRows, openOnRowClick, type RankRow } from './MarketRows';
+import { useNarrow } from './useNarrow';
 import { usePublished } from './publicData';
 import { RiskBadge } from './RiskBadge';
 import { PinButton, SiteHeader } from './SiteHeader';

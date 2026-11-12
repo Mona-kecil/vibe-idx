@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { load, type Feed, type Health, type Market, type Stock, type Ticker } from './data';
 import {
   briefing,
@@ -24,19 +24,8 @@ import { fetchHeadlines, type Headline } from './terminal/sources';
 import { treemap } from './treemap';
 import { calendarDate, dateText, direction, nf, wib } from './ticker/format';
 import { usePins } from './watchlist';
+import { useNarrow } from './useNarrow';
 import './home.css';
-
-const phoneQuery = '(max-width: 900px)';
-const usePhone = () =>
-  useSyncExternalStore(
-    (change) => {
-      const query = window.matchMedia(phoneQuery);
-      query.addEventListener('change', change);
-      return () => query.removeEventListener('change', change);
-    },
-    () => window.matchMedia(phoneQuery).matches,
-    () => false,
-  );
 
 type Data = { stocks: Stock[]; feed: Feed; health: Health; market: Market };
 
@@ -128,9 +117,11 @@ function Briefing({
       )}
       <div className="today">
         <Heatmap stocks={data.stocks} />
-        <Signals tiles={signalTiles(events)} stockMap={stockMap} />
+        <div className="today-side">
+          <Signals tiles={signalTiles(events)} stockMap={stockMap} />
+          <Week pins={pins} />
+        </div>
       </div>
-      <Week pins={pins} />
       <News news={news} />
     </>
   );
@@ -246,7 +237,7 @@ const heatTone = (change: number | null) => {
 const heatLimit = { phone: 20, desktop: 50 };
 
 function Heatmap({ stocks }: { stocks: Stock[] }) {
-  const phone = usePhone();
+  const phone = useNarrow();
   const ref = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
   useEffect(() => {
@@ -349,7 +340,7 @@ function Signals({ tiles, stockMap }: { tiles: SignalTile[]; stockMap: Map<strin
 const weekLimit = 6;
 
 function Week({ pins }: { pins: string[] }) {
-  const phone = usePhone(),
+  const phone = useNarrow(),
     calendar = usePublished('calendar'),
     actions = usePublished('actions');
   const items = weekAhead(
@@ -474,7 +465,7 @@ function WatchRow({ stock, events, pin }: { stock: Stock; events: Event[]; pin: 
 const newsLimit = { phone: 6, desktop: 12 };
 
 function News({ news }: { news: Headline[] | null }) {
-  const phone = usePhone();
+  const phone = useNarrow();
   if (news === null) return null;
   const rows = news
     .filter((n) => n.region === 'ID')

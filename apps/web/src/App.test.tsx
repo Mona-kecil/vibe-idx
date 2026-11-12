@@ -412,7 +412,9 @@ describe('daily briefing', () => {
     expect(watchlist.nextElementSibling?.classList.contains('today')).toBe(true);
     const [first, second] = [...watchlist.querySelectorAll('.watch-row')];
     expect(first?.querySelector('.watch-name .sym')?.textContent).toBe('AAAA');
-    expect([...(first?.querySelectorAll('.watch-name .risk-chip') ?? [])].map((c) => c.textContent)).toEqual(['UMA', 'FCA']);
+    expect(
+      [...(first?.querySelectorAll('.watch-name .risk-chip') ?? [])].map((c) => c.textContent),
+    ).toEqual(['UMA', 'FCA']);
     expect(second?.querySelector('.risk')).toBeNull();
   });
   it('lists high-impact events and ex-dates of the next seven days in date order', async () => {

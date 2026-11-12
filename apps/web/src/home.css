@@ -142,6 +142,20 @@
   grid-template-columns: minmax(0, 1fr) 380px;
   gap: 16px;
 }
+.today-side {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+.today-side .week {
+  margin-top: 0;
+}
+@media (min-width: 1101px) {
+  .today-side .week ol {
+    columns: 1;
+  }
+}
 .heat-panel {
   display: flex;
   flex-direction: column;

@@ -67,8 +67,11 @@ export function PriceChart({
   useEffect(() => {
     const element = shell.current;
     if (!element || typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver(() => setWidth(element.clientWidth));
-    setWidth(element.clientWidth);
+    const measure = () => {
+      if (element.clientWidth) setWidth(element.clientWidth);
+    };
+    const observer = new ResizeObserver(measure);
+    measure();
     observer.observe(element);
     return () => observer.disconnect();
   }, []);
