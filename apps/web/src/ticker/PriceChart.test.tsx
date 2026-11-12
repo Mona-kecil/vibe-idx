@@ -259,6 +259,11 @@ describe('ticker chart event badges', () => {
       { letter: 'F', left: '200px', label: 'Filing 21 Jan 2026' },
       { letter: 'D', left: '300px', label: 'Ex-div 31 Jan 2026' },
     ]);
+    const [front, back] = [...host.querySelectorAll<HTMLElement>('.event-badge')].filter(
+      (b) => b.style.left === '200px',
+    );
+    expect(parseFloat(back!.style.top) - parseFloat(front!.style.top)).toBe(-10);
+    expect(Number(front!.style.zIndex)).toBeGreaterThan(Number(back!.style.zIndex));
     await emit('subscribeCrosshairMove', { time: day(20) });
     expect([...host.querySelectorAll('.readout-mark')].map((m) => m.textContent)).toEqual([
       'Ownership change',

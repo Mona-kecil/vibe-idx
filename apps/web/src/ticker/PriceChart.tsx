@@ -107,7 +107,7 @@ const markLetter = (mark: ChartMark) =>
       ? '%'
       : (actionLetter[mark.label.split('\n')[0] ?? ''] ?? 'A');
 /** Badges sit in the price pane's bottom margin, one row per event kind, as TradingView draws them. */
-const BADGE = { size: 16, gap: 2, spacing: 14 };
+const BADGE = { size: 16, overlap: 6, spacing: 14 };
 const PRICE_BOTTOM = 0.12;
 type Badge = { date: string; x: number };
 const paneLabels = [
@@ -588,7 +588,8 @@ export function PriceChart({
                 className="event-badge"
                 style={{
                   left: x,
-                  top: heights[0]! - BADGE.size / 2 - 4 - row * (BADGE.size + BADGE.gap),
+                  top: heights[0]! - BADGE.size / 2 - 4 - row * (BADGE.size - BADGE.overlap),
+                  zIndex: 10 - row,
                   ['--mark' as string]: markColor[mark.kind],
                 }}
                 title={`${dateText(date)}\n${mark.label}`}
