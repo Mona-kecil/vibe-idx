@@ -127,11 +127,12 @@ describe('share card area chart', () => {
     ['falling', ramp(1000, 800), '#e4573f', '−20.00%'],
     ['flat', ramp(1000, 1000.5), '#8d9790', '+0.05%'],
   ])(
-    'renders a %s series in its tone with the window range and change',
+    'renders a %s series in its tone with the window range and only the day change',
     async (_, closes, stroke, change) => {
       const found = inspect(card(closes));
       expect(found.text).toContain('14 Aug – 12 Nov 2026');
-      expect(found.text).toContain(change);
+      expect(found.text).not.toContain(change);
+      expect(found.text).toContain('+0.50%');
       expect(found.strokes).toContain(stroke);
       const png = await renderCard(card(closes), loadFonts);
       expect([...png.slice(0, 4)]).toEqual([137, 80, 78, 71]);

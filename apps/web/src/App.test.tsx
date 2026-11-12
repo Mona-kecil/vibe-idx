@@ -546,11 +546,11 @@ describe('daily briefing', () => {
     ).toEqual(['3', '1']);
   });
   it.each([
-    [[5000, 5100, 5200, 5160], 'up', '+3.20% 60D'],
-    [[5000, 4900, 4800, 4845], 'down', '−3.10% 60D'],
-    [[5000, 5100, 4900, 5002], 'flat', '+0.04% 60D'],
+    [[5000, 5100, 5200, 5160], 'up', '+3.20%'],
+    [[5000, 4900, 4800, 4845], 'down', '−3.10%'],
+    [[5000, 5100, 4900, 5002], 'flat', '+0.04%'],
   ])(
-    'colours the IHSG area by its window change %j and prints the number',
+    'colours the IHSG area by its window change %j and keeps the number in the tooltip',
     async (closes, tone, text) => {
       serve('market.json', {
         date: dates.at(-1),
@@ -569,9 +569,10 @@ describe('daily briefing', () => {
       expect(spark.querySelector('title')?.textContent?.split('; ').at(-1)).toBe(
         `22 Oct 2026: ${(closes.at(-1) ?? 0).toLocaleString('en-US')}.00`,
       );
-      const change = element('.pulse .spark-change', HTMLElement);
-      expect(change.dataset.tone).toBe(tone);
-      expect(change.textContent).toBe(text);
+      expect(spark.querySelector('title')?.textContent).toMatch(
+        new RegExp(`^\\${text} over the window; `),
+      );
+      expect(host.querySelector('.pulse .spark-change')).toBeNull();
     },
   );
   it('gives every spark its own gradient and tones the watchlist rows', async () => {

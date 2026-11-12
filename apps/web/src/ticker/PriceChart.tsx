@@ -421,20 +421,17 @@ export function PriceChart({
                 key={p}
                 data-range={p}
                 aria-pressed={p === period}
+                title={
+                  p === period && first && last
+                    ? `${dateText(first.date)} – ${dateText(last.date)}  ${signed(periodChange, (v) => nf(v, 2))}%`
+                    : undefined
+                }
                 onClick={() => choosePeriod(p)}
               >
                 {p}
               </button>
             ))}
           </div>
-          {first && last && (
-            <strong
-              className={`period-change ${direction(periodChange)}`}
-              title={`${dateText(first.date)} – ${dateText(last.date)}`}
-            >
-              {signed(periodChange, (v) => nf(v, 2))}%
-            </strong>
-          )}
           {narrow ? (
             <button
               type="button"

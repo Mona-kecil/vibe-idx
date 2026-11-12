@@ -77,19 +77,14 @@
   color: var(--down);
   font-weight: 650;
 }
-.spark[data-tone='up'],
-.spark-change[data-tone='up'] {
+.spark[data-tone='up'] {
   color: var(--up);
 }
-.spark[data-tone='down'],
-.spark-change[data-tone='down'] {
+.spark[data-tone='down'] {
   color: var(--down);
 }
 .spark[data-tone='flat'] {
   color: #8b8c84;
-}
-.spark-change[data-tone='flat'] {
-  color: var(--muted);
 }
 .spark-line {
   fill: none;

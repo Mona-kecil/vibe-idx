@@ -92,11 +92,6 @@ function areaBlock(card: TickerCard) {
       'div',
       { style: { display: 'flex', alignItems: 'baseline', gap: 28, fontSize: 24 } },
       h('span', { style: { color: muted } }, windowLabel(card.start, card.date)),
-      h(
-        'span',
-        { style: { fontSize: 34, fontWeight: 700, color: stroke } },
-        `${signed(area.changePct, (v) => nf(v, 2))}%`,
-      ),
     ),
     h(
       'div',

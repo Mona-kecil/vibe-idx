@@ -151,11 +151,7 @@ function Pulse({ data, excluded }: { data: Data; excluded: number }) {
             {last.change === null ? '—' : signed(last.change, (v) => nf(v, 2))}{' '}
             {pct(last.change_pct)}
           </span>
-          <Spark
-            rows={history}
-            label="IHSG closing levels over 60 trading days"
-            windowLabel="60D"
-          />
+          <Spark rows={history} label="IHSG closing levels over 60 trading days" />
         </div>
       ) : (
         <p role="status">Market history unavailable</p>
@@ -209,15 +205,7 @@ function Breadth({ up, down }: { up: number; down: number }) {
   );
 }
 
-function Spark({
-  rows,
-  label,
-  windowLabel,
-}: {
-  rows: { date: string; close: number }[];
-  label: string;
-  windowLabel?: string;
-}) {
+function Spark({ rows, label }: { rows: { date: string; close: number }[]; label: string }) {
   const gradient = `spark-${useId().replace(/:/g, '')}`,
     area = areaChart(
       rows.map((r) => r.close),
@@ -235,7 +223,10 @@ function Spark({
         role="img"
         aria-label={label}
       >
-        <title>{rows.map((r) => `${date(r.date)}: ${nf(r.close, 2)}`).join('; ')}</title>
+        <title>
+          {`${pct(area.changePct)} over the window; `}
+          {rows.map((r) => `${date(r.date)}: ${nf(r.close, 2)}`).join('; ')}
+        </title>
         <defs>
           <linearGradient id={gradient} x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="currentColor" stopOpacity={0.25} />
@@ -245,11 +236,6 @@ function Spark({
         <path className="spark-fill" d={area.fill} fill={`url(#${gradient})`} />
         <path className="spark-line" d={area.line} vectorEffect="non-scaling-stroke" />
       </svg>
-      {windowLabel && (
-        <span className="spark-change num" data-tone={area.tone}>
-          {pct(area.changePct)} {windowLabel}
-        </span>
-      )}
     </>
   );
 }
