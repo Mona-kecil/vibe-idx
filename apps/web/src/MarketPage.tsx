@@ -37,12 +37,12 @@ type SortKey =
   | 'acc'
   | 'size';
 type Sort = { key: SortKey; ascending: boolean };
-const chips: { label: string; sort: Sort }[] = [
-  { label: 'Gainers', sort: { key: 'change_pct', ascending: false } },
-  { label: 'Losers', sort: { key: 'change_pct', ascending: true } },
-  { label: 'Value', sort: { key: 'value', ascending: false } },
-  { label: 'Foreign buy', sort: { key: 'net_foreign', ascending: false } },
-  { label: 'Foreign sell', sort: { key: 'net_foreign', ascending: true } },
+const chips: { label: string; slug: string; sort: Sort }[] = [
+  { label: 'Gainers', slug: 'gainers', sort: { key: 'change_pct', ascending: false } },
+  { label: 'Losers', slug: 'losers', sort: { key: 'change_pct', ascending: true } },
+  { label: 'Value', slug: 'value', sort: { key: 'value', ascending: false } },
+  { label: 'Foreign buy', slug: 'foreign-buy', sort: { key: 'net_foreign', ascending: false } },
+  { label: 'Foreign sell', slug: 'foreign-sell', sort: { key: 'net_foreign', ascending: true } },
 ];
 const sameSort = (a: Sort, b: Sort) => a.key === b.key && a.ascending === b.ascending;
 const columns: { key: SortKey; label: string; unit?: string; title?: string }[] = [
@@ -90,10 +90,11 @@ const defaultSort = (lens: Lens | null): Sort => ({
 });
 const barMetric = (key: SortKey) =>
   key === 'change_pct' || key === 'net_foreign' || key === 'value' ? key : null;
-const lensFromUrl = () =>
-  typeof window === 'undefined'
-    ? null
-    : parseLens(new URLSearchParams(window.location.search).get('show'));
+const param = (name: string) =>
+  typeof window === 'undefined' ? null : new URLSearchParams(window.location.search).get(name);
+const lensFromUrl = () => parseLens(param('show'));
+const sortFromUrl = () =>
+  chips.find((chip) => chip.slug === param('sort'))?.sort ?? defaultSort(lensFromUrl());
 
 export function MarketPage() {
   const { user, getAccessToken } = useAuth();
@@ -108,7 +109,17 @@ export function MarketPage() {
     return saved === '3d' || saved === '5d' ? saved : '1d';
   });
   const [lens, setLens] = useState<Lens | null>(lensFromUrl);
-  const [sort, setSort] = useState<Sort>(() => defaultSort(lensFromUrl()));
+  const [sort, setSort] = useState<Sort>(sortFromUrl);
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const slug = chips.find((chip) => sameSort(chip.sort, sort))?.slug;
+    if (lens) url.searchParams.set('show', lens);
+    else url.searchParams.delete('show');
+    if (slug && !sameSort(sort, defaultSort(lens))) url.searchParams.set('sort', slug);
+    else url.searchParams.delete('sort');
+    if (url.href !== window.location.href)
+      window.history.replaceState(window.history.state, '', url);
+  }, [lens, sort]);
   const [foreign, setForeign] = useState<ReadonlyMap<string, number> | null>(null);
   const [health, setHealth] = useState<Health | null>(null);
   const [feed, setFeed] = useState<Feed>([]);
@@ -198,10 +209,6 @@ export function MarketPage() {
   const chooseLens = (next: Lens | null) => {
     setLens(next);
     setSort(defaultSort(next));
-    const url = new URL(window.location.href);
-    if (next) url.searchParams.set('show', next);
-    else url.searchParams.delete('show');
-    window.history.replaceState(window.history.state, '', url);
   };
   const foreignOff =
     period !== '1d'

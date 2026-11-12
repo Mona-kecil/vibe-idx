@@ -295,9 +295,42 @@
 .market-page .rank-id .risk {
   flex: none;
 }
-.market-page .rank-event {
-  font-size: 12px;
-  line-height: 1.4;
+.market-page .rank-signal {
+  display: block;
+}
+.market-page .dumbbell {
+  display: block;
+  overflow: visible;
+}
+.market-page .dumbbell-track {
+  stroke: var(--hover);
+  stroke-width: 4;
+  stroke-linecap: round;
+}
+.market-page .dumbbell-move {
+  stroke: #8b8c84;
+  stroke-width: 4;
+}
+.market-page .dumbbell.up .dumbbell-move {
+  stroke: var(--up);
+}
+.market-page .dumbbell.down .dumbbell-move {
+  stroke: var(--down);
+}
+.market-page .dumbbell-before {
+  fill: var(--surface);
+  stroke: #8b8c84;
+  stroke-width: 1.5;
+}
+.market-page .dumbbell-after {
+  fill: var(--ink);
+}
+.market-page .dumbbell.up .dumbbell-after {
+  fill: var(--up);
+}
+.market-page .dumbbell.down .dumbbell-after,
+.market-page .dumbbell-exit {
+  fill: var(--down);
 }
 .market-page .rank-track {
   display: block;

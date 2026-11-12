@@ -1460,7 +1460,7 @@ describe('market summary', () => {
     expect(host.querySelector('table')).toBeNull();
   });
 
-  it('keeps the full signal text in phone rows', async () => {
+  it('draws each signal as a shape in phone rows and keeps the exact text in the title', async () => {
     fakeViewport(390);
     feed = [
       {
@@ -1469,14 +1469,61 @@ describe('market summary', () => {
         kind: 'foreign_streak',
         numbers: { streak_days: 20, net_foreign: 156.6e6 },
       },
+      {
+        ticker: 'BBCA',
+        date: dates[3],
+        kind: 'foreign_streak',
+        numbers: { streak_days: 7, net_foreign: 78.3e6 },
+      },
+      ownership('CCCC', 'Holder', 6, 9),
     ];
     window.history.replaceState(null, '', '/market?show=foreign_streak');
     await render();
-    expect(rankRows()).toHaveLength(1);
-    expect(rankRows()[0]?.querySelector('.rank-event')?.textContent).toBe(
-      '20-day foreign streak +156.60M IDR',
+    expect(rankRows().map((row) => row.querySelector('strong')?.textContent)).toEqual([
+      'AAAA',
+      'BBCA',
+    ]);
+    const first = rankRows()[0]!;
+    expect(first.querySelector('.rank-signal')?.getAttribute('title')).toContain(
+      'net foreign +156,600,000 IDR across 20 days',
     );
-    expect(host.querySelector('.rank-bar')).toBeNull();
+    expect(first.querySelector('.rank-nums span')?.textContent).toBe('20d +156.6M');
+    const widths = [...host.querySelectorAll<HTMLElement>('.rank-signal .rank-bar')].map((bar) =>
+      parseFloat(bar.style.width),
+    );
+    expect(widths).toEqual([100, 50]);
+    await act(async () =>
+      [...host.querySelectorAll<HTMLButtonElement>('.toolbar .tabs button')]
+        .find((button) => button.textContent?.startsWith('5%'))!
+        .click(),
+    );
+    const dumbbell = host.querySelector('#market-rows .dumbbell');
+    expect(dumbbell?.classList.contains('up')).toBe(true);
+    expect(dumbbell?.querySelector('.dumbbell-before')?.getAttribute('cx')).toBe('6%');
+    expect(dumbbell?.querySelector('.dumbbell-after')?.getAttribute('cx')).toBe('9%');
+    expect(rankRows()[0]?.querySelector('.rank-nums span')?.textContent).toBe('6.00 → 9.00%');
+  });
+
+  it('keeps the chosen sort in the address so a shared or revisited link restores it', async () => {
+    window.history.replaceState(null, '', '/market?sort=losers');
+    await render();
+    expect(
+      [...host.querySelectorAll('.chips button')]
+        .find((b) => b.textContent === 'Losers')
+        ?.getAttribute('aria-pressed'),
+    ).toBe('true');
+    await act(async () =>
+      [...host.querySelectorAll<HTMLButtonElement>('.chips button')]
+        .find((b) => b.textContent === 'Gainers')!
+        .click(),
+    );
+    expect(window.location.search).toBe('?sort=gainers');
+    await act(async () =>
+      [...host.querySelectorAll<HTMLButtonElement>('.chips button')]
+        .find((b) => b.textContent === 'Value')!
+        .click(),
+    );
+    expect(window.location.search).toBe('');
   });
 
   it('flags risky stocks in both the table and the phone rows', async () => {

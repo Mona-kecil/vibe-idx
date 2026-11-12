@@ -1,5 +1,5 @@
 import { useState, type MouseEvent, type ReactNode } from 'react';
-import { EventText, eventTitle, type Event } from './events';
+import { eventTitle, isExit, type Event } from './events';
 import { compact, pct } from './marketFormat';
 import { RiskBadge } from './RiskBadge';
 import type { Risk } from './terminal/sources';
@@ -26,6 +26,64 @@ export type RankRow = {
 };
 
 const pageSize = 50;
+type Ownership = Extract<Event, { kind: 'five_pct_change' }>;
+const signalSize = (event: Event) =>
+  event.kind === 'volume_spike'
+    ? event.numbers.multiple
+    : event.kind === 'foreign_streak'
+      ? event.numbers.net_foreign
+      : event.kind === 'five_pct_change'
+        ? null
+        : event.numbers.change_pct;
+
+function Dumbbell({ event }: { event: Ownership }) {
+  const n = event.numbers,
+    exit = isExit(event),
+    after = exit ? 5 : n.pct_after;
+  const tone = exit ? 'down' : direction(after === null ? null : after - n.pct_before);
+  const x = (pct: number) => `${Math.min(100, Math.max(0, pct))}%`;
+  return (
+    <svg className={`dumbbell ${tone}`} width="100%" height="14" aria-hidden="true">
+      <line className="dumbbell-track" x1="0" x2="100%" y1="7" y2="7" />
+      {after !== null && (
+        <line className="dumbbell-move" x1={x(n.pct_before)} x2={x(after)} y1="7" y2="7" />
+      )}
+      <circle className="dumbbell-before" cx={x(n.pct_before)} cy="7" r="3.5" />
+      {after !== null && (
+        <circle
+          className={exit ? 'dumbbell-exit' : 'dumbbell-after'}
+          cx={x(after)}
+          cy="7"
+          r="4.5"
+        />
+      )}
+    </svg>
+  );
+}
+
+function SignalNumber({ event, row }: { event: Event; row: RankRow }) {
+  switch (event.kind) {
+    case 'volume_spike':
+      return <span>{nf(event.numbers.multiple, 1)}×</span>;
+    case 'foreign_streak':
+      return (
+        <span className={direction(event.numbers.net_foreign)}>
+          {event.numbers.streak_days}d {signed(event.numbers.net_foreign, compact)}
+        </span>
+      );
+    case 'five_pct_change': {
+      const n = event.numbers;
+      return (
+        <span>
+          {nf(n.pct_before, 2)} →{' '}
+          {isExit(event) ? '<5%' : n.pct_after === null ? '—' : `${nf(n.pct_after, 2)}%`}
+        </span>
+      );
+    }
+    default:
+      return <span>{compact(row.value)}</span>;
+  }
+}
 const metricOf = (row: RankRow, metric: RankMetric | null) =>
   metric === 'change_pct'
     ? row.change
@@ -47,6 +105,10 @@ export function MarketRows({
   const [limit, setLimit] = useState(pageSize);
   const visible = rows.slice(0, limit);
   const max = Math.max(0, ...visible.map((row) => Math.abs(metricOf(row, metric) ?? 0)));
+  const signalMax = Math.max(
+    0,
+    ...visible.flatMap((row) => row.events.map((e) => Math.abs(signalSize(e) ?? 0))),
+  );
   const remaining = rows.length - visible.length;
   return (
     <>
@@ -67,11 +129,25 @@ export function MarketRows({
                   </a>
                   <RiskBadge risk={row.risk} />
                 </div>
-                {row.events.map((event, i) => (
-                  <span key={i} className="rank-event" title={eventTitle(event)}>
-                    <EventText event={event} />
-                  </span>
-                ))}
+                {row.events.map((event, i) => {
+                  const size = signalSize(event);
+                  return (
+                    <span key={i} className="rank-signal" title={eventTitle(event)}>
+                      {event.kind === 'five_pct_change' ? (
+                        <Dumbbell event={event} />
+                      ) : (
+                        <span className="rank-track" aria-hidden="true">
+                          <span
+                            className={`rank-bar ${event.kind === 'volume_spike' ? '' : direction(size)}`}
+                            style={{
+                              width: `${size && signalMax ? Math.max(1, (Math.abs(size) / signalMax) * 100) : 0}%`,
+                            }}
+                          />
+                        </span>
+                      )}
+                    </span>
+                  );
+                })}
                 {metric && (
                   <span className="rank-track" aria-hidden="true">
                     <span className={`rank-bar ${tone}`} style={{ width: `${width}%` }} />
@@ -85,7 +161,9 @@ export function MarketRows({
                 >
                   {pct(row.change)}
                 </b>
-                {metric === 'net_foreign' ? (
+                {row.events[0] ? (
+                  <SignalNumber event={row.events[0]} row={row} />
+                ) : metric === 'net_foreign' ? (
                   <span
                     className={direction(row.foreign)}
                     title={
