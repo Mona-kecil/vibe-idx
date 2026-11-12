@@ -1,10 +1,11 @@
 import { z } from 'zod';
-import { dateText, nf, signed } from '../src/ticker/format.js';
+import { dateText, monthsBefore, nf, signed } from '../src/ticker/format.js';
 
 export type TickerCard = {
   ticker: string;
   name: string;
   date: string;
+  start: string;
   close: number;
   changePct: number | null;
   closes: number[];
@@ -22,7 +23,9 @@ export function parseTickerCard(json: unknown): TickerCard | null {
   const { ticker, name, prices } = parsed.data;
   const last = prices.at(-1);
   if (!last) return null;
-  const previous = prices.at(-2);
+  const previous = prices.at(-2),
+    from = monthsBefore(last.date, 1),
+    recent = prices.filter((price) => price.date >= from);
   return {
     ticker,
     name: name
@@ -33,9 +36,10 @@ export function parseTickerCard(json: unknown): TickerCard | null {
       .replace(/\s+/g, ' ')
       .trim(),
     date: last.date,
+    start: recent[0]?.date ?? last.date,
     close: last.close,
     changePct: previous?.close ? ((last.close - previous.close) / previous.close) * 100 : null,
-    closes: prices.slice(-60).map((price) => price.close),
+    closes: recent.map((price) => price.close),
   };
 }
 

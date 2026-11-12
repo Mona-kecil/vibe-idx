@@ -23,21 +23,8 @@ import {
   type PriceBar,
 } from './charts';
 import { useTradeSessions } from './tick-data';
+import { ChartAttribution as Attribution } from '../ChartAttribution';
 import './charts.css';
-
-export function Attribution() {
-  return (
-    <a
-      className="chart-attribution"
-      href="https://www.tradingview.com/"
-      target="_blank"
-      rel="noreferrer"
-      title="TradingView Lightweight Charts™ Copyright (c) 2025 TradingView, Inc."
-    >
-      TradingView
-    </a>
-  );
-}
 
 const chartTypes = ['CANDLE', 'LINE'] as const;
 type ChartType = (typeof chartTypes)[number];

@@ -1,8 +1,12 @@
 import type { Ticker } from '../data';
+import { chartTheme } from '../ticker/chartTheme';
+import { dateText } from '../ticker/format';
 import { bars, type TickTrades } from '../ticks';
 import {
   ColorType,
   CrosshairMode,
+  TrackingModeExitMode,
+  LineStyle,
   createChart,
   type Time,
   type UTCTimestamp,
@@ -26,6 +30,46 @@ export function terminalChart(host: HTMLElement) {
     },
     rightPriceScale: { borderColor: '#222826', entireTextOnly: true },
     timeScale: { borderColor: '#222826', rightOffset: 4 },
+  });
+}
+
+export function publicChart(host: HTMLElement) {
+  const label = { color: chartTheme.ink, labelBackgroundColor: chartTheme.ink };
+  return createChart(host, {
+    autoSize: true,
+    layout: {
+      attributionLogo: false,
+      background: { type: ColorType.Solid, color: chartTheme.surface },
+      textColor: chartTheme.text,
+      fontFamily: chartTheme.font,
+      fontSize: 11,
+      panes: {
+        separatorColor: chartTheme.line,
+        separatorHoverColor: chartTheme.line,
+        enableResize: false,
+      },
+    },
+    grid: {
+      vertLines: { color: chartTheme.grid },
+      horzLines: { color: chartTheme.grid },
+    },
+    crosshair: {
+      mode: CrosshairMode.Normal,
+      vertLine: { ...label, style: LineStyle.Dashed },
+      horzLine: { ...label, style: LineStyle.Dashed },
+    },
+    trackingMode: { exitMode: TrackingModeExitMode.OnTouchEnd },
+    rightPriceScale: { borderVisible: false, entireTextOnly: true },
+    timeScale: {
+      borderColor: chartTheme.line,
+      fixLeftEdge: true,
+      lockVisibleTimeRangeOnResize: true,
+    },
+    localization: { timeFormatter: (time: Time) => dateText(chartDate(time)!) },
+    // Wheel scrolls the page, a vertical swipe scrolls the page, and the time axis is
+    // reserved for range selection.
+    handleScale: { mouseWheel: false, axisPressedMouseMove: { time: false, price: true } },
+    handleScroll: { vertTouchDrag: false },
   });
 }
 

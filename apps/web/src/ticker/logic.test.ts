@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vite-plus/test';
+import { dayMove } from './format';
 import { tickerSchema } from '../data';
 import tpiaFixture from './fixtures/TPIA-history.json';
 import {
@@ -6,15 +7,28 @@ import {
   attachments,
   bounds,
   composition,
+  cumulativeForeign,
   holdingSeries,
   moveEdge,
+  nextAction,
   ownershipEvents,
   pctAt,
   registryAt,
   selectionKey,
   sharesAt,
   summaryEvents,
+  timeline,
+  TIMELINE_SHOWN,
+  topSeries,
   totalAt,
+  pctAxis,
+  periodRange,
+  selectedRows,
+  visiblePrices,
+  visibleWindow,
+  holdingsMoved,
+  withoutSource,
+  chartMarks,
 } from './logic';
 
 const dates = ['2026-08-10', '2026-08-11', '2026-08-12', '2026-08-21', '2026-08-24'];
@@ -470,4 +484,252 @@ it('keeps the registry issued base when a newer monthly stake rounds to a differ
   const holder = holdingSeries(ticker, null)[0];
   if (!holder) throw new Error('Missing Alpha');
   expect(pctAt(ticker, holder, '2026-09-30')).toBe(30);
+});
+
+describe('ticker page summaries', () => {
+  it('sums net foreign flow into a running total that ends at the period sum', () => {
+    expect(cumulativeForeign(prices)).toEqual([-200, 100, -100, 200, 0]);
+    expect(cumulativeForeign(prices.slice(1, 3))).toEqual([300, 100]);
+    expect(cumulativeForeign([])).toEqual([]);
+  });
+  it('merges filings and news newest first, labels each kind and keeps attachments on filings', () => {
+    const withLamp = {
+      ...data.disclosures[0]!,
+      id: 'lamp',
+      title: 'Lamp filing',
+      published_at: '2026-08-12T09:00:00',
+      attachments: [{ name: 'x_lamp1.pdf', url: 'https://example.com/lamp1.pdf' }],
+    };
+    const rows = timeline(
+      [data.disclosures[0]!, withLamp],
+      [
+        {
+          title: 'Wire story',
+          url: 'https://example.com/news',
+          published_at: 'Wed, 12 Aug 2026 04:00:00 GMT',
+          source: 'Wire',
+        },
+      ],
+    );
+    expect(rows.map((r) => [r.kind, r.title])).toEqual([
+      ['news', 'Wire story'],
+      ['filing', 'Lamp filing'],
+      ['filing', 'Older filing'],
+    ]);
+    expect(rows[1]?.attachments).toEqual([
+      { url: 'https://example.com/lamp1.pdf', label: 'Lampiran 1' },
+    ]);
+    expect(rows[0]).toMatchObject({ source: 'Wire', attachments: [] });
+    expect(TIMELINE_SHOWN).toBe(5);
+  });
+  it('keeps only the largest holders at a date and ignores holders without shares', () => {
+    const mk = (key: string, shares: number | null) => ({
+      holder_key: key,
+      name: key,
+      events: [],
+      points: [{ date: '2026-08-01', shares, priority: 0 }],
+    });
+    const series = [
+      mk('A', 10),
+      mk('B', 70),
+      mk('C', 5),
+      mk('D', null),
+      mk('E', 0),
+      mk('F', 50),
+      mk('G', 30),
+    ];
+    expect(topSeries(series, '2026-08-02').map((s) => s.name)).toEqual(['B', 'F', 'G', 'A', 'C']);
+    expect(topSeries(series, '2026-08-02', 2)).toHaveLength(2);
+  });
+  it('puts a 1% holder and a 55% controller on one log axis', () => {
+    const axis = pctAxis([55, 1.2, 1.1]);
+    expect(axis.ticks).toEqual([1, 2, 5, 10, 20, 50]);
+    expect(axis.position(1)).toBe(0);
+    expect(axis.position(55)).toBeGreaterThan(0.8);
+    expect(axis.position(1.2)).toBeGreaterThan(0.03);
+  });
+  describe('next corporate action', () => {
+    const div = (ticker: string, ex: string) => ({
+      ticker,
+      kind: 'DIV' as const,
+      label: 'Final dividend',
+      amount: { value: 25, currency: 'IDR' },
+      steps: [
+        { step: 'cum' as const, date: ex.replace(/\d\d$/, '18') },
+        { step: 'ex' as const, date: ex },
+        { step: 'pay' as const, date: '2026-12-10' },
+      ],
+    });
+    it('shows the earliest ex date within 30 days with every step in the title', () => {
+      const chip = nextAction(
+        [div('TEST', '2026-11-26'), div('TEST', '2026-11-19'), div('OTHER', '2026-11-15')],
+        'TEST',
+        '2026-11-13',
+      );
+      expect(chip?.label).toBe('Ex-div 19 Nov');
+      expect(chip?.title).toBe(
+        'Final dividend IDR 25\nCum date 18 Nov 2026\nEx date 19 Nov 2026\nPayment 10 Dec 2026',
+      );
+    });
+    it('skips past dates, dates beyond 30 days and other tickers', () => {
+      const actions = [
+        div('TEST', '2026-11-12'),
+        div('TEST', '2026-12-14'),
+        div('OTHER', '2026-11-20'),
+      ];
+      expect(nextAction(actions, 'TEST', '2026-11-13')).toBeNull();
+      expect(nextAction([div('TEST', '2026-12-13')], 'TEST', '2026-11-13')?.label).toBe(
+        'Ex-div 13 Dec',
+      );
+      expect(nextAction([div('TEST', '2026-11-13')], 'TEST', '2026-11-13')?.label).toBe(
+        'Ex-div 13 Nov',
+      );
+    });
+  });
+});
+
+describe('chart windows', () => {
+  const monthly = [
+    '2026-05-12',
+    '2026-06-12',
+    '2026-07-12',
+    '2026-08-12',
+    '2026-09-12',
+    '2026-10-12',
+    '2026-11-12',
+  ].map((date) => ({ ...prices[0]!, date }));
+  const starts = (period: Parameters<typeof visiblePrices>[1]) =>
+    visiblePrices(monthly, period)[0]?.date;
+  it('starts each period exactly that many months before the last price and keeps YTD whole', () => {
+    expect(starts('1M')).toBe('2026-10-12');
+    expect(starts('3M')).toBe('2026-08-12');
+    expect(starts('6M')).toBe('2026-05-12');
+    expect(starts('YTD')).toBe('2026-05-12');
+    expect(visiblePrices([], '3M')).toEqual([]);
+  });
+  it('frames a period from its first bar to a little past the last one', () => {
+    const range = periodRange(monthly, '3M');
+    expect(range.from).toBe(2.5);
+    expect(range.to).toBeGreaterThan(6);
+    expect(range.to).toBeLessThan(10);
+    expect(periodRange(monthly, 'YTD').from).toBe(-0.5);
+  });
+  it('maps a logical range to the bars whose centers are visible', () => {
+    expect(visibleWindow(10, { from: -0.5, to: 13 })).toEqual({ first: 0, last: 9 });
+    expect(visibleWindow(10, { from: 2.4, to: 5.6 })).toEqual({ first: 3, last: 5 });
+    expect(visibleWindow(10, { from: 20, to: 30 })).toBeNull();
+    expect(visibleWindow(10, null)).toBeNull();
+  });
+  it('finds the trading days inside a selection even when its edges are not trading days', () => {
+    expect(selectedRows(dates, { anchor: '2026-08-21', end: '2026-08-11' })).toEqual({
+      first: 1,
+      last: 3,
+    });
+    expect(selectedRows(dates, { anchor: '2026-08-13', end: '2026-08-30' })).toEqual({
+      first: 3,
+      last: 4,
+    });
+    expect(selectedRows(dates, { anchor: '2026-08-13', end: '2026-08-20' })).toBeNull();
+    expect(selectedRows(dates, null)).toBeNull();
+  });
+});
+
+describe('holdingsMoved', () => {
+  const series = (shares: (number | null)[]) => ({
+    holder_key: 'H',
+    name: 'Holder',
+    events: [],
+    points: shares.map((value, i) => ({ date: `2026-0${i + 1}-01`, shares: value, priority: 0 })),
+  });
+  it('is false when every holder keeps the same share count', () => {
+    expect(holdingsMoved([series([100, 100, null, 100]), series([5])])).toBe(false);
+  });
+  it('is true once any holder reports a different count', () => {
+    expect(holdingsMoved([series([100, 100]), series([5, 6])])).toBe(true);
+  });
+});
+
+describe('timeline cleanup and chart marks', () => {
+  it('drops daily price recaps and the trailing source name from news headlines', () => {
+    const news = [
+      {
+        published_at: '2026-11-12T10:00:00',
+        title: 'Harga Saham BBCA Hari Ini, 12 November',
+        url: 'a',
+        source: 'Pintu',
+      },
+      {
+        published_at: '2026-11-12T09:00:00',
+        title: 'BBCA buyback lanjut - Bisnis.com - Market',
+        url: 'b',
+        source: 'Bisnis.com - Market',
+      },
+    ];
+    expect(timeline([], news as never).map((i) => i.title)).toEqual(['BBCA buyback lanjut']);
+    expect(withoutSource('Title | CNBC Indonesia', 'CNBC Indonesia')).toBe('Title');
+    expect(withoutSource('Title', '')).toBe('Title');
+  });
+  it('snaps marks to the next trading day and merges same-day marks of one kind', () => {
+    const data = tickerSchema.parse({
+      ...tickerSchema.parse(tpiaFixture),
+      ticker: 'TEST',
+      prices: ['2026-11-06', '2026-11-09', '2026-11-10'].map((date) => ({
+        date,
+        open: 1,
+        high: 1,
+        low: 1,
+        close: 1,
+        volume: 1,
+        value: 1,
+        net_foreign: 0,
+      })),
+      disclosures: [
+        {
+          id: '1',
+          title: 'Weekend filing',
+          published_at: '2026-11-07T10:00:00',
+          url: 'https://x/1',
+          kind: 'other',
+          attachments: [],
+        },
+        {
+          id: '2',
+          title: 'Second',
+          published_at: '2026-11-09T08:00:00',
+          url: 'https://x/2',
+          kind: 'other',
+          attachments: [],
+        },
+      ],
+    });
+    const marks = chartMarks(data, [], [
+      {
+        ticker: 'TEST',
+        kind: 'DIV',
+        label: 'Dividend',
+        amount: null,
+        steps: [{ step: 'ex', date: '2026-11-10' }],
+      },
+      {
+        ticker: 'OTHER',
+        kind: 'DIV',
+        label: 'Dividend',
+        amount: null,
+        steps: [{ step: 'ex', date: '2026-11-10' }],
+      },
+    ] as never);
+    expect(marks).toEqual([
+      { date: '2026-11-09', kind: 'filing', label: 'Weekend filing\nSecond' },
+      { date: '2026-11-10', kind: 'action', label: 'Ex-div' },
+    ]);
+  });
+});
+
+describe('dayMove', () => {
+  it('names the direction so the day change reads without its sign', () => {
+    expect(dayMove(2.8169)).toBe('Up 2.82% today');
+    expect(dayMove(-1.96)).toBe('Down 1.96% today');
+    expect(dayMove(0)).toBe('Unchanged today');
+    expect(dayMove(null)).toBe('—');
+  });
 });

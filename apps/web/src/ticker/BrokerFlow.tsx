@@ -27,6 +27,13 @@ export function BrokerFlow({
 }) {
   const { user, isLoading } = useAuth();
   const b = bounds(selection);
+  if (!user)
+    return (
+      <section className="broker-compact" id="broker-section" aria-labelledby="broker-heading">
+        <h2 id="broker-heading">Broker flow</h2>
+        <AccountControls />
+      </section>
+    );
   return (
     <section className="section" id="broker-section" aria-labelledby="broker-heading">
       <div className="section-head">
@@ -40,11 +47,7 @@ export function BrokerFlow({
           </span>
         )}
       </div>
-      {!user ? (
-        <div className="signin">
-          <AccountControls />
-        </div>
-      ) : isLoading ? (
+      {isLoading ? (
         <p role="status">Loading data…</p>
       ) : (
         <BrokerData

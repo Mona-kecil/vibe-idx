@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import type { Feed, Stock } from '../data';
+import { treemap } from '../treemap';
 import { nf, short, signed, dateText } from '../ticker/format';
 import { useTerminal } from './state';
 import { Empty, Scroll, Segments, TickerLink, percent, direction } from './ui';
@@ -297,67 +298,10 @@ export function SignalsPane() {
     </>
   );
 }
-type Tile = { stock: Stock; x: number; y: number; w: number; h: number };
 function heatColour(change: number) {
   const strength = Math.min(1, Math.abs(change) / 4) ** 0.8;
   const end = change >= 0 ? [20, 122, 117] : [170, 62, 44];
   return `rgb(${[43, 48, 46].map((n, i) => Math.round(n + ((end[i] ?? 0) - n) * strength)).join(',')})`;
-}
-function treemap(stocks: Stock[], width: number, height: number): Tile[] {
-  const total = stocks.reduce((sum, stock) => sum + stock.value, 0);
-  if (!total || !width || !height) return [];
-  const remaining = stocks.map((stock) => ({
-    stock,
-    area: (stock.value / total) * width * height,
-  }));
-  const out: Tile[] = [];
-  let x = 0,
-    y = 0,
-    w = width,
-    h = height;
-  type Node = (typeof remaining)[number];
-  let row: Node[] = [];
-  const worst = (nodes: Node[], edge: number) => {
-    if (!nodes.length) return Infinity;
-    const sum = nodes.reduce((n, node) => n + node.area, 0);
-    return Math.max(
-      (edge ** 2 * Math.max(...nodes.map((node) => node.area))) / sum ** 2,
-      sum ** 2 / (edge ** 2 * Math.min(...nodes.map((node) => node.area))),
-    );
-  };
-  function place(nodes: Node[]) {
-    const sum = nodes.reduce((n, node) => n + node.area, 0);
-    if (w >= h) {
-      const rw = sum / h;
-      let yy = y;
-      for (const node of nodes) {
-        const rh = node.area / rw;
-        out.push({ stock: node.stock, x, y: yy, w: rw, h: rh });
-        yy += rh;
-      }
-      x += rw;
-      w -= rw;
-    } else {
-      const rh = sum / w;
-      let xx = x;
-      for (const node of nodes) {
-        const rw = node.area / rh;
-        out.push({ stock: node.stock, x: xx, y, w: rw, h: rh });
-        xx += rw;
-      }
-      y += rh;
-      h -= rh;
-    }
-  }
-  for (const node of remaining) {
-    if (worst([...row, node], Math.min(w, h)) > worst(row, Math.min(w, h))) {
-      place(row);
-      row = [];
-    }
-    row.push(node);
-  }
-  if (row.length) place(row);
-  return out;
 }
 export function HeatmapPane() {
   const { data, ticker, setTicker } = useTerminal();
@@ -390,21 +334,21 @@ export function HeatmapPane() {
         {treemap(stocks, size.width, size.height).map((tile) => {
           return (
             <button
-              key={tile.stock.ticker}
-              className={`tile${ticker === tile.stock.ticker ? ' on' : ''}`}
-              aria-label={`${tile.stock.ticker} ${tile.stock.name}, change ${percent(tile.stock.change_pct)}, last ${nf(tile.stock.close)} IDR, traded value ${nf(tile.stock.value)} IDR`}
-              title={`${tile.stock.name}\n${nf(tile.stock.close)} IDR\n${nf(tile.stock.value)} IDR value`}
-              onClick={() => setTicker(tile.stock.ticker)}
+              key={tile.item.ticker}
+              className={`tile${ticker === tile.item.ticker ? ' on' : ''}`}
+              aria-label={`${tile.item.ticker} ${tile.item.name}, change ${percent(tile.item.change_pct)}, last ${nf(tile.item.close)} IDR, traded value ${nf(tile.item.value)} IDR`}
+              title={`${tile.item.name}\n${nf(tile.item.close)} IDR\n${nf(tile.item.value)} IDR value`}
+              onClick={() => setTicker(tile.item.ticker)}
               style={{
                 left: tile.x + 1,
                 top: tile.y + 1,
                 width: Math.max(0, tile.w - 2),
                 height: Math.max(0, tile.h - 2),
-                background: heatColour(tile.stock.change_pct ?? 0),
+                background: heatColour(tile.item.change_pct ?? 0),
               }}
             >
-              {tile.w > 34 && tile.h > 18 && <b>{tile.stock.ticker}</b>}
-              {tile.w > 46 && tile.h > 34 && <span>{percent(tile.stock.change_pct)}</span>}
+              {tile.w > 34 && tile.h > 18 && <b>{tile.item.ticker}</b>}
+              {tile.w > 46 && tile.h > 34 && <span>{percent(tile.item.change_pct)}</span>}
             </button>
           );
         })}

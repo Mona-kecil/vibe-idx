@@ -1,24 +1,38 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { AccountControls } from '../BrokerPanel';
-import { load, type Health, type Market, type Stock, type Ticker } from '../data';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { load, type Health, type Stock, type Ticker } from '../data';
+import { usePublished } from '../publicData';
+import { RiskBadge, useRiskFor } from '../RiskBadge';
+import { PinButton, SiteHeader } from '../SiteHeader';
 import { Stale } from '../Stale';
-import { holdingSeries, ownershipEvents, registryAt, type Selection } from './logic';
-import { dateText, direction, nf, short, signed } from './format';
-import { PriceChart, visiblePrices, type Period } from './PriceChart';
-import { SelectionSummary, FilingsNews } from './Feeds';
+import { usePins } from '../watchlist';
+import {
+  holdingSeries,
+  nextAction,
+  ownershipEvents,
+  registryAt,
+  visiblePrices,
+  type Period,
+  type Selection,
+  chartMarks,
+  openingPeriod,
+} from './logic';
+import { calendarDate, dateText, direction, nf, short, signed, moveWord } from './format';
+import { Freshness } from './Freshness';
+import { PriceChart } from './PriceChart';
+import { SelectionSummary, Timeline } from './Feeds';
 import { Ownership } from './Ownership';
 import { BrokerFlow } from './BrokerFlow';
 import { ShareButton } from './ShareButton';
 import './ticker.css';
-import { TerminalLink } from '../TerminalLink';
 
 export function TickerPage({ ticker }: { ticker: string }) {
   const [state, setState] = useState<
     { kind: 'loading' | 'error' | 'missing' } | { kind: 'ready'; data: Ticker }
   >({ kind: 'loading' });
   const [health, setHealth] = useState<Health | null>(null),
-    [market, setMarket] = useState<Market | null>(null),
     [stocks, setStocks] = useState<Stock[]>([]);
+  const [pins, toggle] = usePins(),
+    [announcement, announce] = useState('');
   useEffect(() => {
     let active = true;
     void load(`ticker/${ticker}.json`).then(
@@ -32,12 +46,6 @@ export function TickerPage({ ticker }: { ticker: string }) {
     void load('health.json').then(
       (data) => {
         if (active) setHealth(data);
-      },
-      () => {},
-    );
-    void load('market.json').then(
-      (data) => {
-        if (active) setMarket(data);
       },
       () => {},
     );
@@ -57,18 +65,25 @@ export function TickerPage({ ticker }: { ticker: string }) {
       document.title = 'Vibe IDX';
     };
   }, [ticker]);
+  const pin = (symbol: string) => (
+    <PinButton
+      ticker={symbol}
+      pinned={pins.includes(symbol)}
+      toggle={() => announce(`${symbol} ${toggle(symbol) ? 'added to' : 'removed from'} watchlist`)}
+    />
+  );
   return (
-    <div className="ticker-page">
-      <TickerNav market={market} stocks={stocks} />
+    <div className="site ticker-page">
+      <SiteHeader page="ticker" stocks={stocks} pin={pin} />
       {state.kind === 'ready' ? (
-        <TickerDetail key={ticker} data={state.data} health={health} />
+        <TickerDetail key={ticker} data={state.data} health={health} pin={pin} />
       ) : (
         <main className="wrap ticker-state">
           {state.kind === 'loading' ? (
             <p role="status">Loading data…</p>
           ) : state.kind === 'missing' ? (
             <p>
-              Ticker {ticker} not found. <a href="/">Open home</a>
+              Ticker {ticker} not found. <a href="/market">Open Market</a>
             </p>
           ) : (
             <p role="alert">
@@ -78,116 +93,25 @@ export function TickerPage({ ticker }: { ticker: string }) {
           )}
         </main>
       )}
+      <div className="sr-only" role="status" aria-live="polite">
+        {announcement}
+      </div>
     </div>
   );
 }
-function TickerNav({ market, stocks }: { market: Market | null; stocks: Stock[] }) {
-  const [query, setQuery] = useState(''),
-    [open, setOpen] = useState(false),
-    search = useRef<HTMLInputElement>(null),
-    container = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const key = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
-      if (
-        e.key === '/' &&
-        !(e.target instanceof HTMLElement && /INPUT|TEXTAREA|SELECT/.test(e.target.tagName))
-      ) {
-        e.preventDefault();
-        search.current?.focus();
-      }
-    };
-    const outside = (e: MouseEvent) => {
-      if (e.target instanceof Node && !container.current?.contains(e.target)) setOpen(false);
-    };
-    document.addEventListener('keydown', key);
-    document.addEventListener('click', outside);
-    return () => {
-      document.removeEventListener('keydown', key);
-      document.removeEventListener('click', outside);
-    };
-  }, []);
-  const matches = stocks
-      .filter((s) => (s.ticker + ' ' + s.name).toLowerCase().includes(query.toLowerCase()))
-      .slice(0, 12),
-    latest = market?.history.at(-1);
-  return (
-    <header className="topbar">
-      <div className="wrap topbar-inner">
-        <a className="wordmark" href="/" aria-label="Vibe IDX home">
-          Vibe <span>IDX</span>
-        </a>
-        <nav className="main-nav" aria-label="Main">
-          <a href="/">Home</a>
-          <a href="/market">Market</a>
-          <TerminalLink />
-        </nav>
-        <div className="search" ref={container}>
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            aria-hidden="true"
-          >
-            <circle cx="10.5" cy="10.5" r="6.5" />
-            <path d="m16 16 4.5 4.5" />
-          </svg>
-          <input
-            ref={search}
-            type="search"
-            placeholder="Search tickers"
-            aria-label="Search tickers"
-            autoComplete="off"
-            aria-controls="ticker-results"
-            aria-expanded={open && !!query}
-            value={query}
-            onChange={(e) => {
-              setQuery(e.target.value);
-              setOpen(true);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && matches[0])
-                window.location.assign(`/t/${matches[0].ticker}`);
-            }}
-          />
-          <span className="keyhint">/</span>
-          {open && query && (
-            <div className="search-results" id="ticker-results">
-              {matches.length ? (
-                matches.map((s) => (
-                  <a className="search-option" key={s.ticker} href={`/t/${s.ticker}`}>
-                    <b>{s.ticker}</b>
-                    <small>{s.name}</small>
-                  </a>
-                ))
-              ) : (
-                <div className="search-option">No tickers found</div>
-              )}
-            </div>
-          )}
-        </div>
-        {latest && (
-          <div className="ihsg">
-            <span className="market-label">IHSG</span>
-            <strong>{nf(latest.close, 3)}</strong>
-            {latest.change_pct !== null && (
-              <span className={`change ${direction(latest.change_pct)}`}>
-                {signed(latest.change_pct, (v) => nf(v, 2))}%
-              </span>
-            )}
-          </div>
-        )}
-        <div className="signin">
-          <AccountControls />
-        </div>
-      </div>
-    </header>
-  );
-}
-function TickerDetail({ data, health }: { data: Ticker; health: Health | null }) {
+function TickerDetail({
+  data,
+  health,
+  pin,
+}: {
+  data: Ticker;
+  health: Health | null;
+  pin: (ticker: string) => ReactNode;
+}) {
   const [selection, select] = useState<Selection>(null),
-    [period, setPeriod] = useState<Period>('3M');
+    [period, setPeriod] = useState<Period>(openingPeriod);
+  const risk = useRiskFor(data.ticker),
+    actions = usePublished('actions');
   const dailyDate =
     health?.five_pct ??
     data.changes
@@ -197,6 +121,11 @@ function TickerDetail({ data, health }: { data: Ticker; health: Health | null })
     null;
   const events = useMemo(() => ownershipEvents(data), [data]);
   const series = useMemo(() => holdingSeries(data, dailyDate, events), [data, dailyDate, events]);
+  const actionList = actions.kind === 'ready' ? actions.data.actions : null;
+  const marks = useMemo(
+    () => chartMarks(data, events, actionList ?? []),
+    [data, events, actionList],
+  );
   const prices = data.prices,
     last = prices.at(-1),
     previous = prices.at(-2),
@@ -206,9 +135,12 @@ function TickerDetail({ data, health }: { data: Ticker; health: Health | null })
     pct = change !== null && previous?.close ? (change / previous.close) * 100 : null,
     ytd = last && first?.close ? (last.close / first.close - 1) * 100 : null;
   const visible = visiblePrices(prices, period);
+  const chip =
+    actions.kind === 'ready'
+      ? nextAction(actions.data.actions, data.ticker, calendarDate(new Date().toISOString()))
+      : null;
   const stats = last
     ? [
-        { label: 'Volume', value: short(last.volume), title: nf(last.volume) + ' shares', cls: '' },
         {
           label: 'Value',
           unit: 'IDR',
@@ -217,16 +149,11 @@ function TickerDetail({ data, health }: { data: Ticker; health: Health | null })
           cls: '',
         },
         {
-          label: 'Net foreign (est.)',
+          label: 'Net foreign',
+          unit: 'IDR (est.)',
           value: signed(last.net_foreign),
           title: nf(last.net_foreign) + ' IDR',
           cls: direction(last.net_foreign),
-        },
-        {
-          label: 'YTD change',
-          value: ytd === null ? '—' : signed(ytd, (v) => nf(v, 2)) + '%',
-          title: first ? `From first available close: ${dateText(first.date)}` : '',
-          cls: direction(ytd),
         },
         {
           label: 'Free float',
@@ -235,6 +162,17 @@ function TickerDetail({ data, health }: { data: Ticker; health: Health | null })
             ? `${registry.free_float_shares === null ? '' : nf(registry.free_float_shares) + ' shares  '}${dateText(registry.date)}`
             : '',
           cls: '',
+        },
+      ]
+    : [];
+  const more = last
+    ? [
+        { label: 'Volume', value: short(last.volume), title: nf(last.volume) + ' shares', cls: '' },
+        {
+          label: 'YTD change',
+          value: ytd === null ? '—' : signed(ytd, (v) => nf(v, 2)) + '%',
+          title: first ? `From first available close: ${dateText(first.date)}` : '',
+          cls: direction(ytd),
         },
         {
           label: 'Shareholders',
@@ -252,52 +190,77 @@ function TickerDetail({ data, health }: { data: Ticker; health: Health | null })
         },
       ]
     : [];
+  const statList = (rows: typeof stats) =>
+    rows.map((s) => (
+      <div className="stat" key={s.label}>
+        <dt>
+          {s.label}
+          {'unit' in s && s.unit && <small className="unit-suffix">{s.unit}</small>}
+        </dt>
+        <dd className={s.cls} title={s.title || undefined}>
+          {s.value}
+        </dd>
+      </div>
+    ));
   return (
     <main className="wrap">
-      <div className="freshness">
-        {health && <Stale health={health} />}
-        {last && <span>Prices {dateText(health?.prices ?? last.date)}</span>}
-        {dailyDate && <span>5% ownership {dateText(dailyDate)}</span>}
-        {registry && <span>Registry {dateText(registry.date)}</span>}
-      </div>
-      <div className="ticker-header">
-        <div className="identity">
-          <div className="identity-heading">
-            <h1>{data.ticker}</h1>
-            <ShareButton ticker={data.ticker} name={data.name} />
-          </div>
-          <p>{data.name.replace(/\.$/, '')}</p>
-        </div>
-        {last && (
-          <div className="price">
-            <div className="price-main">
-              <span className="currency">IDR</span>
-              {nf(last.close)}
-            </div>
-            <div className="price-change">
-              <span className={direction(change)}>
-                {change === null
-                  ? '—'
-                  : `${signed(change, nf)} (${signed(pct ?? 0, (v) => nf(v, 2))}%)`}
+      <header className="ticker-header">
+        <div className="identity-heading">
+          <h1>{data.ticker}</h1>
+          {last && (
+            <div className="quote">
+              <span className="price-main">
+                <span className="currency">IDR</span>
+                {nf(last.close)}
               </span>
-              <span className="price-date">{dateText(last.date)}</span>
+              <span className={`price-change ${direction(change)}`}>
+                {change === null || pct === null ? (
+                  '—'
+                ) : change === 0 ? (
+                  'Unchanged today'
+                ) : (
+                  <>
+                    {moveWord(change)} <span className="change-abs">{nf(Math.abs(change))} (</span>
+                    {nf(Math.abs(pct), 2)}%<span className="change-abs">)</span> today
+                  </>
+                )}
+              </span>
             </div>
-          </div>
-        )}
-      </div>
-      <dl className="stats">
-        {stats.map((s) => (
-          <div className="stat" key={s.label}>
-            <dt>
-              {s.label}
-              {s.unit && <small className="unit-suffix">{s.unit}</small>}
-            </dt>
-            <dd className={s.cls} title={s.title || undefined}>
-              {s.value}
-            </dd>
-          </div>
-        ))}
-      </dl>
+          )}
+          <span className="identity-actions">
+            {pin(data.ticker)}
+            <ShareButton ticker={data.ticker} name={data.name} />
+          </span>
+        </div>
+        <div className="identity-sub">
+          <p>{data.name.replace(/\.$/, '')}</p>
+          <RiskBadge risk={risk} />
+          {chip && (
+            <span className="action-chip" title={chip.title} tabIndex={0}>
+              {chip.label}
+            </span>
+          )}
+          {last && (
+            <Freshness label={dateText(last.date)}>
+              <dt>Prices</dt>
+              <dd>{dateText(health?.prices ?? last.date)}</dd>
+              {dailyDate && (
+                <>
+                  <dt>5% ownership</dt>
+                  <dd>{dateText(dailyDate)}</dd>
+                </>
+              )}
+              {registry && (
+                <>
+                  <dt>Registry</dt>
+                  <dd>{dateText(registry.date)}</dd>
+                </>
+              )}
+            </Freshness>
+          )}
+          {health && <Stale health={health} />}
+        </div>
+      </header>
       <PriceChart
         ticker={data.ticker}
         prices={prices}
@@ -305,6 +268,7 @@ function TickerDetail({ data, health }: { data: Ticker; health: Health | null })
         setPeriod={setPeriod}
         selection={selection}
         select={select}
+        marks={marks}
       >
         <SelectionSummary
           data={data}
@@ -313,13 +277,14 @@ function TickerDetail({ data, health }: { data: Ticker; health: Health | null })
           clear={() => select(null)}
         />
       </PriceChart>
-      {last && (
-        <BrokerFlow
-          ticker={data.ticker}
-          selection={selection}
-          start={visible[0]?.date ?? last.date}
-          end={last.date}
-        />
+      {stats.length > 0 && (
+        <div className="stats-block">
+          <dl className="stats">{statList(stats)}</dl>
+          <details className="more-stats">
+            <summary>More</summary>
+            <dl className="stats">{statList(more)}</dl>
+          </details>
+        </div>
       )}
       <Ownership
         data={data}
@@ -328,7 +293,15 @@ function TickerDetail({ data, health }: { data: Ticker; health: Health | null })
         selection={selection}
         dailyDate={dailyDate}
       />
-      <FilingsNews data={data} events={events} selection={selection} />
+      <Timeline data={data} events={events} selection={selection} />
+      {last && (
+        <BrokerFlow
+          ticker={data.ticker}
+          selection={selection}
+          start={visible[0]?.date ?? last.date}
+          end={last.date}
+        />
+      )}
       <footer>
         <span className="footer-brand">Vibe IDX</span>
         <span>

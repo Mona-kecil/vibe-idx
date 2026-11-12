@@ -4,6 +4,7 @@ export type Locale = 'en' | 'id';
 const indonesian: Record<string, string> = {
   'Sign in': 'Masuk',
   'Sign out': 'Keluar akun',
+  Account: 'Akun',
   'Signing you in…': 'Memproses masuk…',
   'Could not sign in. Try again.': 'Gagal masuk. Coba lagi.',
   'The terminal is not available on mobile yet.': 'Terminal belum tersedia di ponsel.',

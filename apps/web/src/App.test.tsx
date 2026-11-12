@@ -1,10 +1,12 @@
 // @vitest-environment happy-dom
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { App } from './App';
 import { arrivalMs } from './Corruption';
 import { tickerSchema, type Feed, type Ticker } from './data';
+import { HoldingsChart } from './ticker/Ownership';
+import { holdingSeries } from './ticker/logic';
 import tpiaFixture from './ticker/fixtures/TPIA-history.json';
 
 const auth = vi.hoisted(() => ({
@@ -21,10 +23,10 @@ vi.mock('@workos-inc/authkit-react', () => ({
 vi.mock('./terminal/charts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./terminal/charts')>();
   const chart: object = new Proxy(() => chart, {
-    get: (_, key) => (key === 'then' ? undefined : chart),
+    get: (_, key) => (key === 'then' ? undefined : key === Symbol.toPrimitive ? () => 0 : chart),
     apply: () => chart,
   });
-  return { ...actual, terminalChart: () => chart };
+  return { ...actual, terminalChart: () => chart, publicChart: () => chart };
 });
 const dates = ['2026-10-19', '2026-10-20', '2026-10-21', '2026-10-22'];
 const row = (broker: string, shares: number) => ({
@@ -151,8 +153,63 @@ const marketAccumulation = {
     },
   })),
 };
+const riskFlags = {
+  AAAA: {
+    notes: [{ code: 'X', text: 'Special monitoring' }],
+    susp: null,
+    uma: { date: '2026-10-22', url: 'https://example.com/uma' },
+  },
+  CCCC: {
+    notes: [],
+    susp: { since: '2026-10-20', reason: null, url: 'https://example.com/susp' },
+    uma: null,
+  },
+};
+const weekEvent = (ts: string, ev: string, imp: number, extra: object = {}) => ({
+  ts,
+  c: 'US',
+  imp,
+  ev,
+  url: 'https://example.com/event',
+  by: 'Example Source',
+  ...extra,
+});
+const weekAction = (ticker: string, kind: string, step: string, date: string) => ({
+  ticker,
+  kind,
+  label: `${kind} ${ticker}`,
+  amount: null,
+  steps: [{ step, date }],
+});
+const weekCalendar = {
+  cal: [
+    weekEvent('2026-11-12T13:30:00Z', 'Yesterday release', 3),
+    weekEvent('2026-11-13T01:00:00Z', 'Already out', 3),
+    weekEvent('2026-11-13T13:30:00Z', 'Core PPI m/m', 3),
+    weekEvent('2026-11-14T01:00:00Z', 'Retail sales', 2),
+    weekEvent('2026-11-17T17:00:00Z', 'BI rate decision', 3, {
+      c: 'ID',
+      est: 'Date only; release time not published by source',
+    }),
+    weekEvent('2026-11-20T01:00:00Z', 'Next week release', 3),
+  ],
+};
+const weekActions = [
+  weekAction('AAAA', 'DIV', 'ex', '2026-11-16'),
+  weekAction('BBBB', 'RIGHTS', 'ex', '2026-11-14'),
+  weekAction('CCCC', 'RUPS', 'meeting', '2026-11-13T14:00'),
+  weekAction('DDDD', 'DIV', 'ex', '2026-11-12'),
+  weekAction('EEEE', 'DIV', 'ex', '2026-11-25'),
+  weekAction('FFFF', 'IPO', 'listing', '2026-11-14'),
+  weekAction('GGGG', 'DIV', 'cum', '2026-11-15'),
+  weekAction('HHHH', 'BONUS', 'ex', '2026-11-15'),
+  weekAction('IIII', 'SPLIT', 'ex', '2026-11-15'),
+];
 const fetcher = vi.fn<(input: string) => Promise<Response>>(async (input) => {
   const url = String(input);
+  if (url.includes('calendar.json')) return Response.json(weekCalendar);
+  if (url.includes('corporate-actions.json')) return Response.json(weekActions);
+  if (url.includes('risk.json')) return Response.json(riskFlags);
   if (url.includes('market-summary.json')) return Response.json(summary);
   if (url.includes('/api/brokers?view=market')) return Response.json(marketAccumulation);
   if (url.includes('/api/brokers'))
@@ -205,13 +262,16 @@ async function render() {
 }
 const stockOrder = (selector: string) =>
   [...host.querySelectorAll(selector)].map((el) => el.textContent);
-async function typeQuery(query: string) {
+async function typeQuery(query: string, selector = 'input[type="search"]') {
   await act(async () => {
-    const input = element('input[type="search"]', HTMLInputElement);
+    const input = element(selector, HTMLInputElement);
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(input, query);
     input.dispatchEvent(new Event('input', { bubbles: true }));
   });
 }
+beforeAll(async () => {
+  await import('./ticker/TickerPage');
+});
 beforeEach(() => {
   window.localStorage.clear();
   window.history.replaceState(null, '', '/');
@@ -235,129 +295,299 @@ afterEach(async () => {
 });
 
 describe('daily briefing', () => {
-  it('keeps latest ownership alphabetic, merges holder aliases, ranks stock and holder moves, and renders exits without invented shares', async () => {
-    feed = [
-      ownership('BBBB', 'Exit holder', 15, null, { exited: true, net_shares: 123 }),
-      ownership('AAAA', 'Zeta', 6, 8),
-      ownership('AAAA', 'PT Alpha Tbk.', 6, 6.5),
-      ownership('AAAA', 'Alpha', 6, 6.5),
-      ...symbols
-        .slice(2, 12)
-        .map((t) => ownership(t, 'Holder', t === 'CCCC' ? 5.1 : 5, t === 'CCCC' ? null : 6)),
-      { ...ownership('BBCA', 'Old filing', 5, 99), date: '2026-10-21' },
-      ownership('UNKNOWN', 'Missing stock', 5, 6),
-    ];
-    await render();
-    expect(stockOrder('#ownership-rows .stock-id strong')).toEqual(symbols.slice(0, 10));
-    expect(stockOrder('#ownership-rows .holder').slice(0, 3)).toEqual([
-      'PT Alpha Tbk.',
-      'Zeta',
-      'Exit holder',
-    ]);
-    expect(host.textContent).not.toContain('Old filing');
-    expect(host.textContent).not.toContain('Missing stock');
-    const exit = [...host.querySelectorAll('.holder-row')].find((el) =>
-      el.textContent?.includes('Exit holder'),
-    );
-    expect(exit?.textContent).toContain('15.00 → <5%');
-    expect(exit?.querySelector('.net')?.textContent).toBe('Exit');
-    expect(host.querySelectorAll('.net.exit')).toHaveLength(2);
-    expect(host.querySelector('.sources')?.textContent).toContain('1 feed record excluded');
-    await click('[aria-controls="ownership-rows"]');
-    expect(host.querySelectorAll('#ownership-rows > div')).toHaveLength(12);
-    await click('[aria-controls="ownership-rows"]');
-    expect(host.querySelectorAll('#ownership-rows > div')).toHaveLength(10);
-    await act(async () => {
-      const select = element('select[aria-label="Sort ownership moves"]', HTMLSelectElement);
-      select.value = 'move';
-      select.dispatchEvent(new Event('change', { bubbles: true }));
+  const baseFetch = fetcher.getMockImplementation()!;
+  const tiles = () =>
+    [...host.querySelectorAll('.tile')].map((tile) => ({
+      tag: tile.querySelector('.tile-head b')?.textContent,
+      count: tile.querySelector('.tile-head .num')?.textContent,
+      href: tile.querySelector('.tile-head')?.getAttribute('href'),
+      rows: [...tile.querySelectorAll('.tile-row')].map((row) => ({
+        ticker: row.querySelector('.sym')?.textContent,
+        href: row.getAttribute('href'),
+        width: row.querySelector<HTMLElement>('.mag i')?.style.width,
+      })),
+    }));
+  const pin = (...tickers: string[]) =>
+    window.localStorage.setItem('vibe-idx:watchlist', JSON.stringify(tickers));
+  function viewport(width: number) {
+    const matchMedia = window.matchMedia.bind(window);
+    vi.spyOn(window, 'matchMedia').mockImplementation((query) => {
+      const media = matchMedia(query);
+      vi.spyOn(media, 'matches', 'get').mockReturnValue(
+        query === '(max-width: 900px)' && width <= 900,
+      );
+      return media;
     });
-    expect(stockOrder('#ownership-rows .stock-id strong').slice(0, 2)).toEqual(['BBBB', 'AAAA']);
-    expect(stockOrder('#ownership-rows .holder').slice(0, 3)).toEqual([
-      'Exit holder',
-      'Zeta',
-      'PT Alpha Tbk.',
-    ]);
-    expect(window.localStorage.getItem('vibe-idx:ownership-sort')).toBe('move');
-    await act(async () => root.unmount());
-    root = createRoot(host);
-    await render();
-    expect(stockOrder('#ownership-rows .stock-id strong')[0]).toBe('BBBB');
+  }
+  const serve = (path: string, body: unknown) =>
+    fetcher.mockImplementation(async (input) =>
+      String(input).includes(path) ? Response.json(body) : baseFetch(input),
+    );
+  const today = (iso: string) => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(iso));
+  };
+  afterEach(() => {
+    vi.useRealTimers();
+    fetcher.mockImplementation(baseFetch);
   });
-  it('groups multiple signals first, sorts each kind by strength, ignores new kinds, and lists each stock once', async () => {
+
+  it('shows one tile per kind with distinct stocks counted, the top three by strength, scaled bars and links', async () => {
     feed = [
-      ara('AAAA', 40),
-      volume('AAAA', 12),
-      ...['BBBB', 'CCCC', 'DDDD', 'EEEE', 'FFFF', 'GGGG'].map((t, i) => ara(t, 35 + i)),
       volume('HHHH', 7),
+      ara('BBBB', 30),
       volume('IIII', 9),
+      volume('IIII', 3),
+      ara('AAAA', 40),
+      ara('CCCC', 20),
+      ara('DDDD', 10),
       {
         ticker: 'JJJJ',
         date: dates[3],
         kind: 'foreign_streak',
         numbers: { streak_days: 7, net_foreign: 1e8 },
       },
-      {
-        ticker: 'KKKK',
-        date: dates[3],
-        kind: 'foreign_streak',
-        numbers: { streak_days: 7, net_foreign: 2e8 },
-      },
-      {
-        ticker: 'LLLL',
-        date: dates[3],
-        kind: 'green_on_red',
-        numbers: { change_pct: 5, market_change_pct: -3, value: 1e9 },
-      },
-      {
-        ticker: 'BBCA',
-        date: dates[3],
-        kind: 'foreign_streak',
-        numbers: { streak_days: 8, net_foreign: 1e7 },
-      },
-      {
-        ticker: 'MMMM',
-        date: dates[3],
-        kind: 'green_on_red',
-        numbers: { change_pct: 2, market_change_pct: -3, value: 1e9 },
-      },
+      ownership('CCCC', 'Exit holder', 15, null, { exited: true, net_shares: 123 }),
+      ownership('DDDD', 'PT Alpha Tbk.', 6, 8),
+      ownership('DDDD', 'Alpha', 6, 9),
+      ownership('EEEE', 'Unchanged', 6.001, 6.002),
+      { ...ownership('FFFF', 'Old filing', 5, 99), date: '2026-10-21' },
+      ownership('UNKNOWN', 'Missing stock', 5, 6),
       { kind: 'future_signal', ticker: 'BBCA', numbers: {} },
     ];
     await render();
-    expect(stockOrder('.signal-list h3')).toEqual([
-      'Multiple signals',
-      'ARA',
-      'Volume spike',
-      'Foreign streak',
-      'Green on red',
+    expect(tiles()).toEqual([
+      {
+        tag: 'ARA',
+        count: '4',
+        href: '/market?show=ara',
+        rows: [
+          { ticker: 'AAAA', href: '/t/AAAA', width: '100%' },
+          { ticker: 'BBBB', href: '/t/BBBB', width: '75%' },
+          { ticker: 'CCCC', href: '/t/CCCC', width: '50%' },
+        ],
+      },
+      {
+        tag: 'Volume',
+        count: '2',
+        href: '/market?show=volume_spike',
+        rows: [
+          { ticker: 'IIII', href: '/t/IIII', width: '100%' },
+          { ticker: 'HHHH', href: '/t/HHHH', width: expect.stringMatching(/^77\.7/) },
+        ],
+      },
+      {
+        tag: 'Foreign',
+        count: '1',
+        href: '/market?show=foreign_streak',
+        rows: [{ ticker: 'JJJJ', href: '/t/JJJJ', width: '100%' }],
+      },
+      {
+        tag: '5%',
+        count: '2',
+        href: '/market?show=five_pct_change',
+        rows: [
+          { ticker: 'CCCC', href: '/t/CCCC', width: '100%' },
+          { ticker: 'DDDD', href: '/t/DDDD', width: expect.any(String) },
+        ],
+      },
     ]);
-    expect(stockOrder('#signals-multiple-rows strong')).toEqual(['AAAA']);
-    expect(stockOrder('#signals-ara-rows strong')).toEqual([
-      'GGGG',
-      'FFFF',
-      'EEEE',
-      'DDDD',
-      'CCCC',
-    ]);
-    await click('[aria-controls="signals-ara-rows"]');
-    expect(stockOrder('#signals-ara-rows strong')).toEqual([
-      'GGGG',
-      'FFFF',
-      'EEEE',
-      'DDDD',
-      'CCCC',
-      'BBBB',
-    ]);
-    const listed = stockOrder('.signal-group .stock-id strong');
-    expect(listed).toHaveLength(14);
-    expect(new Set(listed).size).toBe(14);
-    expect(stockOrder('#signals-volume_spike-rows strong')).toEqual(['IIII', 'HHHH']);
-    expect(stockOrder('#signals-foreign_streak-rows strong')).toEqual(['BBCA', 'KKKK', 'JJJJ']);
-    expect(stockOrder('#signals-green_on_red-rows strong')).toEqual(['LLLL', 'MMMM']);
-    expect(host.querySelector('#signals-volume_spike-rows .signal-item .up')).toBeNull();
+    const exit = host.querySelectorAll('.tile')[3]!.querySelector('.tile-row');
+    expect(exit?.textContent).toContain('15.00 → <5%');
+    expect(host.querySelector('a a')).toBeNull();
+    expect(host.querySelector('.tabs')).toBeNull();
+    expect(host.textContent).not.toContain('Old filing');
+    expect(host.textContent).not.toContain('Missing stock');
+    expect(host.querySelector('.sources')?.textContent).toContain('1 feed record excluded');
+  });
+  it('says when the latest day has no signals', async () => {
+    await render();
+    expect(host.querySelectorAll('.tile')).toHaveLength(0);
+    expect(host.querySelector('.signals-empty')?.textContent).toBe('No signals on the latest day.');
+  });
+  it('shows the watchlist right under the pulse line with each stock risk badge', async () => {
+    pin('AAAA', 'BBBB');
+    await render();
+    const watchlist = element('.watchlist', HTMLElement);
+    expect(watchlist.previousElementSibling?.classList.contains('pulse')).toBe(true);
+    expect(watchlist.nextElementSibling?.classList.contains('today')).toBe(true);
+    const [first, second] = [...watchlist.querySelectorAll('.watch-row')];
+    expect(first?.querySelector('.watch-name .sym')?.textContent).toBe('AAAA');
     expect(
-      host.querySelector('#signals-ara-rows .signal-link')?.textContent?.match(/%/g),
-    ).toHaveLength(1);
+      [...(first?.querySelectorAll('.watch-name .risk-chip') ?? [])].map((c) => c.textContent),
+    ).toEqual(['UMA', 'FCA']);
+    expect(second?.querySelector('.risk')).toBeNull();
+  });
+  const weekDays = () =>
+    [...host.querySelectorAll<HTMLButtonElement>('.week-days button')].map((b) => ({
+      label: `${b.querySelector('.week-day')?.textContent}${b.querySelector('.week-date')?.textContent}`,
+      off: b.disabled,
+      on: b.getAttribute('aria-pressed') === 'true',
+    }));
+  const weekList = () =>
+    [...host.querySelectorAll('.week-list li')].map((li) =>
+      li.textContent?.replace(/\s+/g, ' ').trim(),
+    );
+  const pressDay = (label: string) =>
+    act(async () =>
+      [...host.querySelectorAll<HTMLButtonElement>('.week-days button')]
+        .find((b) => b.textContent?.startsWith(label))!
+        .click(),
+    );
+  it('shows a watchlist event only when it happened on the latest data day', async () => {
+    pin('BBCA');
+    history.disclosures = [
+      {
+        id: 'old',
+        title: 'Older disclosure',
+        published_at: '2026-10-01T09:00:00',
+        url: 'https://idx.id/old',
+        kind: 'other',
+        attachments: [],
+      },
+    ];
+    await render();
+    expect(host.querySelector('.watch-row')).not.toBeNull();
+    expect(host.querySelector('.watch-row .latest-event')).toBeNull();
+    expect(host.querySelector('.watch-row')?.textContent).not.toContain('Older disclosure');
+  });
+  it('lays the next five weekdays out as a strip and lists the first busy day', async () => {
+    today('2026-11-13T03:00:00Z');
+    await render();
+    expect(weekDays()).toEqual([
+      { label: 'Fri13', off: false, on: true },
+      { label: 'Mon16', off: false, on: false },
+      { label: 'Tue17', off: true, on: false },
+      { label: 'Wed18', off: false, on: false },
+      { label: 'Thu19', off: true, on: false },
+    ]);
+    expect(weekList()).toEqual(['USCore PPI m/m20:30 WIB']);
+    expect(host.querySelector('.week-more')?.textContent).toBe('1 corporate action');
+    await click('.week-more');
+    expect(weekList()).toEqual(['USCore PPI m/m20:30 WIB', 'CCCCRUPSRUPS CCCC']);
+    await pressDay('Wed');
+    expect(weekList()).toEqual(['IDBI rate decision']);
+    await pressDay('Mon');
+    expect(host.querySelector('.week a[href="/t/AAAA"]')).toBeNull();
+    await click('.week-more');
+    expect(host.querySelector('.week a[href="/t/AAAA"]')).not.toBeNull();
+    for (const hidden of ['Yesterday', 'Already out', 'Retail', 'Next week', 'DDDD', 'EEEE'])
+      expect(host.querySelector('.week')?.textContent).not.toContain(hidden);
+  });
+  it('lists pinned tickers with the day and fills their dots', async () => {
+    today('2026-11-13T03:00:00Z');
+    pin('CCCC', 'AAAA');
+    await render();
+    expect(weekList()).toEqual(['USCore PPI m/m20:30 WIB', 'CCCCRUPSRUPS CCCC']);
+    expect(host.querySelector('.week-list li.pinned .sym')?.textContent).toBe('CCCC');
+    expect(host.querySelector('.week-more')).toBeNull();
+    expect(host.querySelectorAll('.week-days button:nth-child(2) .dot.pinned')).toHaveLength(1);
+  });
+  it('renders nothing when the week is empty', async () => {
+    today('2027-03-01T03:00:00Z');
+    await render();
+    expect(host.querySelector('.week')).toBeNull();
+  });
+  it('limits the heatmap to the 20 most traded stocks on phones and 50 on desktop, each labelled', async () => {
+    const many = Array.from({ length: 60 }, (_, i) => ({
+      ticker: `T${String(i).padStart(3, '0')}`,
+      name: `Company ${i}`,
+      close: 100,
+      change_pct: 1.5,
+      volume: 1,
+      value: (i + 1) * 1e9,
+      net_foreign: 0,
+    }));
+    serve('tickers.json', many);
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(600);
+    vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(600);
+    await render();
+    expect(host.querySelectorAll('.heat a')).toHaveLength(50);
+    await act(async () => root.unmount());
+    root = createRoot(host);
+    viewport(390);
+    await render();
+    const tilesOnPhone = [...host.querySelectorAll('.heat a')];
+    expect(tilesOnPhone).toHaveLength(20);
+    expect(tilesOnPhone[0]?.textContent).toBe('T059+1.50%');
+    expect(tilesOnPhone.every((a) => /^T\d{3}\+1\.50%$/.test(a.textContent ?? ''))).toBe(true);
+    expect(tilesOnPhone.at(-1)?.getAttribute('href')).toBe('/t/T040');
+  });
+  it('limits news to 3 items on phones and 12 on desktop', async () => {
+    const news = Array.from({ length: 14 }, (_, i) => ({
+      ts: `2026-11-12T${String(10 + (i % 10)).padStart(2, '0')}:00:00+07:00`,
+      src: 'Antara',
+      title: `Headline ${i}`,
+      link: `https://example.com/${i}`,
+      region: 'ID',
+      tags: [],
+    }));
+    serve('news.json', { news });
+    await render();
+    expect(host.querySelectorAll('.news li')).toHaveLength(12);
+    await act(async () => root.unmount());
+    root = createRoot(host);
+    viewport(390);
+    await render();
+    expect(host.querySelectorAll('.news li')).toHaveLength(3);
+  });
+  it('draws advancers against decliners as a split bar that carries both numbers', async () => {
+    serve('market.json', {
+      date: dates.at(-1),
+      up: 3,
+      down: 1,
+      history: dates.map((date) => ({ date, close: 5000, change: 10, change_pct: 1 })),
+    });
+    await render();
+    const breadth = element('.breadth', HTMLElement);
+    expect(breadth.getAttribute('aria-label')).toBe('3 up, 1 down');
+    expect(
+      [...breadth.querySelectorAll<HTMLElement>('.split span')].map((s) => s.style.flexGrow),
+    ).toEqual(['3', '1']);
+  });
+  it.each([
+    [[5000, 5100, 5200, 5160], 'up', '+3.20%'],
+    [[5000, 4900, 4800, 4845], 'down', '−3.10%'],
+    [[5000, 5100, 4900, 5002], 'flat', '+0.04%'],
+  ])(
+    'colours the IHSG area by its window change %j and keeps the number in the tooltip',
+    async (closes, tone, text) => {
+      serve('market.json', {
+        date: dates.at(-1),
+        up: 1,
+        down: 1,
+        history: dates.map((date, i) => ({
+          date,
+          close: closes[i],
+          change: 10,
+          change_pct: 1,
+        })),
+      });
+      await render();
+      const spark = element('.pulse .spark', SVGSVGElement);
+      expect(spark.dataset.tone).toBe(tone);
+      expect(spark.querySelector('title')?.textContent?.split('; ').at(-1)).toBe(
+        `22 Oct 2026: ${(closes.at(-1) ?? 0).toLocaleString('en-US')}.00`,
+      );
+      expect(spark.querySelector('title')?.textContent).toMatch(
+        new RegExp(`^\\${text} over the window; `),
+      );
+      expect(host.querySelector('.pulse .spark-change')).toBeNull();
+    },
+  );
+  it('gives every spark its own gradient and tones the watchlist rows', async () => {
+    pin('AAAA', 'BBBB');
+    await render();
+    const sparks = [...host.querySelectorAll('svg.spark')];
+    expect(sparks).toHaveLength(3);
+    const ids = sparks.map((svg) => svg.querySelector('linearGradient')?.id);
+    expect(new Set(ids).size).toBe(3);
+    sparks.forEach((svg, i) =>
+      expect(svg.querySelector('.spark-fill')?.getAttribute('fill')).toBe(`url(#${ids[i]})`),
+    );
+    expect(
+      [...host.querySelectorAll<SVGSVGElement>('.watch-row svg.spark')].map((s) => s.dataset.tone),
+    ).toEqual(['up', 'up']);
   });
   it('searches company names and codes, supports the slash shortcut, and opens the selected research page', async () => {
     const navigate = vi.spyOn(window.location, 'assign').mockImplementation(() => {});
@@ -398,38 +628,36 @@ describe('daily briefing', () => {
       },
     ];
     await render();
-    expect(host.querySelectorAll('.watch-group')).toHaveLength(1);
-    expect(host.querySelector('.watch-link .signal-price')?.textContent).toBe('100');
-    expect(host.querySelector('.watch-link .latest-event')?.textContent).toContain(
+    expect(host.querySelectorAll('.watch-row')).toHaveLength(1);
+    expect(host.querySelector('.watch-row .close')?.textContent).toBe('100');
+    expect(host.querySelector('.watch-row .latest-event')?.textContent).toContain(
       'Newer disclosure',
     );
-    expect(host.querySelector('.watch-link svg')).not.toBeNull();
-    await click('.watch-group [aria-label="Unpin BBCA"]');
-    expect(host.querySelectorAll('.watch-group')).toHaveLength(0);
+    expect(host.querySelector('.watch-row svg')).not.toBeNull();
+    await click('.watch-row [aria-label="Unpin BBCA"]');
+    expect(host.querySelectorAll('.watch-row')).toHaveLength(0);
     await act(async () => root.unmount());
     root = createRoot(host);
     await render();
-    expect(host.querySelectorAll('.watch-group')).toHaveLength(0);
-    await click('.signal-group [aria-label="Pin BBCA"]');
-    expect(host.querySelectorAll('.watch-group')).toHaveLength(1);
+    expect(host.querySelectorAll('.watch-row')).toHaveLength(0);
+    await typeQuery('BBCA');
+    await click('.search-results [aria-label="Pin BBCA"]');
+    expect(host.querySelectorAll('.watch-row')).toHaveLength(1);
     expect(JSON.parse(window.localStorage.getItem('vibe-idx:watchlist') ?? 'null')).toEqual([
       'BBCA',
     ]);
   });
-  it('keeps the briefing, sort and pins working when sandbox storage throws', async () => {
+  it('keeps the briefing, tiles and pins working when sandbox storage throws', async () => {
     vi.spyOn(window, 'localStorage', 'get').mockImplementation(() => {
       throw new DOMException('Blocked', 'SecurityError');
     });
     feed = [ownership('AAAA', 'Holder', 5, 6)];
     await render();
     expect(host.querySelector('h1')?.textContent).toBe('IHSG');
-    await click('[aria-label="Pin AAAA"]');
-    expect(host.querySelector('.watch-group')).not.toBeNull();
-    await act(async () => {
-      const select = element('select', HTMLSelectElement);
-      select.value = 'move';
-      select.dispatchEvent(new Event('change', { bubbles: true }));
-    });
+    await typeQuery('AAAA');
+    await click('.search-results [aria-label="Pin AAAA"]');
+    expect(host.querySelector('.watch-row')).not.toBeNull();
+    expect(tiles().map((t) => t.tag)).toEqual(['5%']);
     expect(host.querySelector('[role="alert"]')).toBeNull();
   });
 });
@@ -603,7 +831,7 @@ describe('ticker research regressions', () => {
     expect(host.querySelector('#broker-section button')?.textContent).toBe('Sign in');
     expect(auth.getAccessToken).not.toHaveBeenCalled();
     expect(fetcher.mock.calls.some(([url]) => String(url).includes('/api/brokers'))).toBe(false);
-    expect(window.localStorage.getItem('vibe-idx:watchlist')).toBeNull();
+    expect(JSON.parse(window.localStorage.getItem('vibe-idx:watchlist') ?? '[]')).toEqual([]);
     await act(async () => {
       window.history.pushState(null, '', '/');
       window.dispatchEvent(new PopStateEvent('popstate'));
@@ -621,6 +849,135 @@ describe('ticker research regressions', () => {
     });
     expect(auth.signIn).toHaveBeenCalled();
     auth.signIn.mockClear();
+  });
+  it('orders identity, chart, key stats, ownership, timeline and a compact broker row', async () => {
+    window.history.replaceState(null, '', '/t/BBCA');
+    await render();
+    expect(host.querySelector('.ticker-header .price-change')?.textContent).toBe(
+      'Up 1 (0.98%) today',
+    );
+    const order = [
+      '.ticker-header',
+      '#price-section',
+      '.stats-block',
+      '#ownership-section',
+      '#timeline-section',
+      '#broker-section',
+    ];
+    const nodes = order.map((selector) => element(selector, HTMLElement));
+    nodes
+      .slice(1)
+      .forEach((node, i) =>
+        expect(
+          nodes[i]!.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING,
+        ).toBeTruthy(),
+      );
+    expect(host.querySelector('.ticker-header .pin')?.getAttribute('aria-label')).toBe('Pin BBCA');
+    expect(
+      [...host.querySelectorAll('.stats-block > .stats .stat dt')].map((dt) => dt.textContent),
+    ).toEqual(['ValueIDR', 'Net foreignIDR (est.)', 'Free float']);
+    expect(host.querySelector('.more-stats')?.hasAttribute('open')).toBe(false);
+    expect(element('#broker-section', HTMLElement).className).toBe('broker-compact');
+    expect(element('#broker-section', HTMLElement).textContent).toBe('Broker flowSign in');
+    await click('.ticker-header .pin');
+    expect(JSON.parse(window.localStorage.getItem('vibe-idx:watchlist') ?? '[]')).toEqual(['BBCA']);
+  });
+  it('keeps source dates behind the price date and shows a warning only for a stale source', async () => {
+    const base = fetcher.getMockImplementation();
+    const run = (run_at: string) =>
+      fetcher.mockImplementation(async (input) =>
+        String(input).includes('health.json')
+          ? Response.json({
+              prices: dates.at(-1),
+              indices: dates.at(-1),
+              five_pct: dates.at(-1),
+              one_pct: '2026-09-30',
+              issuers: dates.at(-1),
+              run_at,
+            })
+          : base!(input),
+      );
+    window.history.replaceState(null, '', '/t/BBCA');
+    run(new Date().toISOString());
+    await render();
+    expect(host.querySelector('.ticker-header .stale')).toBeNull();
+    const panel = element('.freshness', HTMLDetailsElement);
+    expect(panel.open).toBe(false);
+    expect(panel.querySelector('summary')?.textContent).toBe('22 Oct 2026');
+    expect(panel.querySelector('.freshness-panel')?.textContent).toContain('Prices22 Oct 2026');
+    await act(async () => root.render(null));
+    run('2020-01-01T10:30:00Z');
+    await render();
+    expect(host.querySelector('.ticker-header .stale')?.textContent).toContain(
+      'Not updated since 1 Jan 2020',
+    );
+    fetcher.mockImplementation(base!);
+  });
+  it('caps holders at five', async () => {
+    window.history.replaceState(null, '', '/t/BBCA');
+    await render();
+    expect(element('.chart-host', HTMLElement).dataset.bars).toBe(String(dates.length));
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(948);
+    history = tickerSchema.parse(tpiaFixture);
+    window.history.replaceState(null, '', '/t/TPIA');
+    await act(async () => root.render(null));
+    await render();
+    expect(host.querySelectorAll('#holders li')).toHaveLength(5);
+    expect(host.querySelectorAll('.holder-key')).toHaveLength(5);
+    expect(element('#ownership-section .show-all', HTMLButtonElement).textContent).toBe(
+      'Show all 6',
+    );
+    await click('#ownership-section .show-all');
+    expect(host.querySelectorAll('#holders li')).toHaveLength(6);
+    expect(
+      host.querySelector('.holdings-mode [aria-pressed="true"]')?.getAttribute('data-unit'),
+    ).toBe('pct');
+  });
+  it('merges filings and news into one newest-first timeline of five with a show-all', async () => {
+    const filing = (n: number) => ({
+      id: `f${n}`,
+      title: `Filing ${n}`,
+      published_at: `2026-10-0${n}T10:00:00`,
+      url: `https://example.com/f${n}.pdf`,
+      kind: 'other' as const,
+      attachments: [],
+    });
+    history = { ...ticker('BBCA'), disclosures: [1, 2, 3, 4].map(filing) };
+    const base = fetcher.getMockImplementation();
+    fetcher.mockImplementation(async (input) =>
+      String(input).includes('/api/news')
+        ? Response.json(
+            [5, 6, 7].map((n) => ({
+              title: `News ${n}`,
+              url: `https://example.com/n${n}`,
+              published_at: `2026-10-0${n}T12:00:00Z`,
+              source: 'Wire',
+            })),
+          )
+        : base!(input),
+    );
+    window.history.replaceState(null, '', '/t/BBCA');
+    await render();
+    await act(() => new Promise((resolve) => setTimeout(resolve, 350)));
+    const rows = () => [...host.querySelectorAll('#timeline li')];
+    expect(
+      rows().map((li) => [
+        li.getAttribute('data-kind'),
+        li.querySelector('.feed-title')?.textContent,
+      ]),
+    ).toEqual([
+      ['news', 'News 7'],
+      ['news', 'News 6'],
+      ['news', 'News 5'],
+      ['filing', 'Filing 4'],
+      ['filing', 'Filing 3'],
+    ]);
+    expect(rows()[0]?.querySelector('.kind')).toBeNull();
+    expect(rows()[3]?.querySelector('.kind')?.textContent).toBe('Filing');
+    await click('#timeline-toggle');
+    expect(rows()).toHaveLength(7);
+    expect(element('#timeline-toggle', HTMLButtonElement).textContent).toBe('Show less');
+    fetcher.mockImplementation(base!);
   });
   it('clusters overlapping TPIA reports on the drawn line without changing anchored values or extending HSBC', async () => {
     vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(948);
@@ -704,6 +1061,17 @@ describe('ticker research regressions', () => {
     await act(async () => single.dispatchEvent(new Event('click', { bubbles: true })));
     expect(host.querySelectorAll('#holdings-tooltip .tooltip-date')).toHaveLength(1);
     expect(host.querySelector('#holdings-tooltip .tooltip-date')?.textContent).toBe('13 Jan 2026');
+    expect(host.querySelectorAll('.holder-key').length).toBeLessThanOrEqual(5);
+    expect(keys.some((el) => el.textContent?.includes('HSBC'))).toBe(false);
+  });
+  it('draws full TPIA holder lines as steps and anchors without extending HSBC', async () => {
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(948);
+    const data = tickerSchema.parse(tpiaFixture);
+    const series = holdingSeries(data, '2026-10-26');
+    await act(async () =>
+      root.render(<HoldingsChart data={data} series={series} selection={null} end="2026-10-26" />),
+    );
+    const keys = [...host.querySelectorAll('.holder-key')];
     const prajogo = keys.find((el) => el.textContent?.includes('PRAJOGO PANGESTU'));
     const prajogoLine = host.querySelector(
       `.holdings-series[data-holder="${prajogo?.getAttribute('data-holder')}"]`,
@@ -807,12 +1175,17 @@ describe('ticker research regressions', () => {
     await tap('buy');
     expect(dimmed()).toEqual(['AK', 'SQ', 'PD', 'CC']);
     await click('.broker-unit button:nth-child(2)');
-    expect(host.querySelector('#news')?.textContent).not.toContain('No news');
+    expect(host.querySelector('#timeline')?.textContent).not.toContain('No filings or news');
     await act(() => new Promise((resolve) => setTimeout(resolve, 350)));
     expect(fetcher.mock.calls.some(([url]) => String(url).includes('/api/news?ticker=BBCA'))).toBe(
       true,
     );
-    expect(host.querySelector('#news')?.textContent).toContain('No news');
+    expect(host.querySelector('#timeline')?.textContent).toContain('No filings or news');
+    expect(
+      element('#timeline-section', HTMLElement).compareDocumentPosition(
+        element('#broker-section', HTMLElement),
+      ) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     expect(host.querySelector('[role="alert"]')).toBeNull();
     const code = host.querySelector<HTMLElement>('.broker-ledger.buy tbody td')!;
     await act(async () => {
@@ -859,7 +1232,7 @@ describe('market summary', () => {
     expect(order()).toEqual(['BBCA', 'AAAA', 'CCCC']);
     await click('th:nth-child(6) button');
     expect(order()).toEqual(['AAAA', 'BBCA', 'CCCC']);
-    await typeQuery('company bbca');
+    await typeQuery('company bbca', '.filter');
     expect(order()).toEqual(['BBCA']);
     await click('[aria-label="Pin BBCA"]');
     expect(JSON.parse(window.localStorage.getItem('vibe-idx:watchlist') ?? 'null')).toEqual([
@@ -898,46 +1271,291 @@ describe('market summary', () => {
           }),
     );
     await render();
-    expect(host.querySelector('th:nth-child(7)')?.textContent).toContain('Buy size');
-    const cells = () => [...host.querySelectorAll('#market-rows td:nth-child(7)')];
+    expect(host.querySelector('th:nth-child(8)')?.textContent).toContain('Buy size');
+    const cells = () => [...host.querySelectorAll('#market-rows td:nth-child(8)')];
     expect(cells().map((cell) => cell.textContent)).toEqual(['', '2.0×', '4.1×']);
     expect(cells()[2]?.getAttribute('title')).toBe(
       'XL avg 12,400 shares per buy trade over 214 trades; stock avg 3,020 over 18,512 trades',
     );
-    await click('th:nth-child(7) button');
+    await click('th:nth-child(8) button');
     expect(order()).toEqual(['AAAA', 'BBCA', 'CCCC']);
-    expect(host.querySelector('th:nth-child(7)')?.getAttribute('aria-sort')).toBe('descending');
-    await click('th:nth-child(7) button');
+    expect(host.querySelector('th:nth-child(8)')?.getAttribute('aria-sort')).toBe('descending');
+    await click('th:nth-child(8) button');
     expect(order()).toEqual(['BBCA', 'AAAA', 'CCCC']);
-    expect(host.querySelector('th:nth-child(7)')?.getAttribute('aria-sort')).toBe('ascending');
+    expect(host.querySelector('th:nth-child(8)')?.getAttribute('aria-sort')).toBe('ascending');
     await click('.ranges button:nth-child(2)');
     expect(host.textContent).toContain('30.0%AA');
     expect(cells().map((cell) => cell.textContent)).toEqual(['', '', '']);
     expect(host.querySelector('[role="alert"]')).toBeNull();
     fetcher.mockImplementation(baseFetch);
   });
-  it('keeps prices and sorting public, offers sign-in once and never requests private data while signed out', async () => {
+  it('keeps prices and sorting public, hides broker columns and never requests private data while signed out', async () => {
     window.history.replaceState(null, '', '/market');
     await render();
     expect(order()).toHaveLength(3);
     expect(host.textContent).toContain('3.0B');
-    expect(host.querySelectorAll('.accumulation-gate button')).toHaveLength(1);
+    expect(stockOrder('th')).toEqual([
+      'Stock',
+      'CloseIDR',
+      'Change %',
+      'Value tradedIDR↓',
+      'Net foreignIDR',
+      'Volume × average',
+      'Pin',
+    ]);
     expect(
       [...host.querySelectorAll('button')].filter((button) => button.textContent === 'Sign in'),
     ).toHaveLength(1);
-    expect(host.querySelector('.broker')).toBeNull();
-    expect(host.querySelector('th:nth-child(7)')?.textContent).toBe('');
-    expect(
-      [...host.querySelectorAll('#market-rows td:nth-child(7)')].every(
-        (cell) => cell.textContent === '',
-      ),
-    ).toBe(true);
     await click('.ranges button:nth-child(2)');
     await click('th:nth-child(3) button');
     expect(order()).toEqual(['BBCA', 'AAAA', 'CCCC']);
     expect(auth.getAccessToken).not.toHaveBeenCalled();
     expect(fetcher.mock.calls.every(([url]) => !url.includes('/api/brokers'))).toBe(true);
-    await click('.accumulation-gate button');
+    await click('.site-account button');
     expect(window.sessionStorage.getItem('vibe-idx-return-to')).toBe('/market');
+  });
+  it('opens a signal view from the URL, ranks it by strength and clears it from the address on All', async () => {
+    feed = [
+      ara('AAAA', 30),
+      ara('CCCC', 40),
+      volume('BBCA', 5),
+      ownership('UNKNOWN', 'Untraded', 5, 6),
+    ];
+    window.history.replaceState(null, '', '/market?show=ara');
+    await render();
+    expect(order()).toEqual(['CCCC', 'AAAA']);
+    expect(host.querySelector('th:nth-child(2)')?.textContent).toContain('Signal');
+    expect(host.querySelector('#market-rows td.event')?.textContent).toContain('+40.0% ARA');
+    expect(stockOrder('.toolbar .tabs button')).toEqual(['All', 'ARA 2', 'Volume 1']);
+    await act(async () =>
+      [...host.querySelectorAll<HTMLButtonElement>('.toolbar .tabs button')]
+        .find((b) => b.textContent === 'All')!
+        .click(),
+    );
+    expect(window.location.search).toBe('');
+    expect(order()).toEqual(['CCCC', 'BBCA', 'AAAA']);
+    expect(host.querySelector('td.event')).toBeNull();
+  });
+  let restoreFetch = () => {};
+  afterEach(() => restoreFetch());
+  function stubData(overrides: Record<string, unknown>) {
+    const base = fetcher.getMockImplementation()!;
+    fetcher.mockImplementation(async (input) => {
+      const hit = Object.entries(overrides).find(([part]) => String(input).includes(part));
+      return hit ? Response.json(hit[1]) : base(input);
+    });
+    restoreFetch = () => fetcher.mockImplementation(base);
+  }
+  const listeners = new Set<EventListener>();
+  let viewport = 1024;
+  function fakeViewport(width: number) {
+    viewport = width;
+    vi.spyOn(window, 'matchMedia').mockImplementation((query) => {
+      const bound = (kind: 'min' | 'max') =>
+        Number(new RegExp(`${kind}-width: (\\d+)px`).exec(query)?.[1]);
+      const matches = () =>
+        query.includes('max-width')
+          ? viewport <= bound('max')
+          : query.includes('min-width') && viewport >= bound('min');
+      return {
+        media: query,
+        get matches() {
+          return matches();
+        },
+        addEventListener: (_: string, listener: EventListener) => listeners.add(listener),
+        removeEventListener: (_: string, listener: EventListener) => listeners.delete(listener),
+      } as unknown as MediaQueryList;
+    });
+  }
+  const resize = (width: number) =>
+    act(async () => {
+      viewport = width;
+      listeners.forEach((listener) => listener(new Event('change')));
+    });
+  const chip = (label: string) =>
+    [...host.querySelectorAll<HTMLButtonElement>('.chips button')].find(
+      (button) => button.textContent === label,
+    )!;
+  const rankRows = () => [...host.querySelectorAll<HTMLElement>('#market-rows li')];
+  const barWidths = () =>
+    [...host.querySelectorAll<HTMLElement>('.rank-bar')].map((bar) => parseFloat(bar.style.width));
+  const foreignNet = { AAAA: 5e8, BBCA: -7e8, CCCC: 1e8 };
+  const withForeign = () =>
+    stubData({
+      'tickers.json': Object.entries(foreignNet).map(([ticker, net_foreign]) => ({
+        ticker,
+        name: `Company ${ticker}`,
+        close: 100,
+        change_pct: 1,
+        volume: 700,
+        value: 70000,
+        net_foreign,
+      })),
+    });
+  const manyStocks = Array.from({ length: 120 }, (_, i) =>
+    marketStock(`S${String(i).padStart(3, '0')}`, 1e9 * (i + 1), i % 2 ? -i / 4 : i / 4),
+  );
+
+  it('ranks with sort chips that mirror the headers and turns the foreign chips off after 1D', async () => {
+    withForeign();
+    window.history.replaceState(null, '', '/market');
+    await render();
+    const pressed = () =>
+      [...host.querySelectorAll('.chips button[aria-pressed="true"]')].map((b) => b.textContent);
+    const sortOf = (n: number) =>
+      host.querySelector(`th:nth-child(${n})`)?.getAttribute('aria-sort');
+    expect(stockOrder('.chips button')).toEqual([
+      'Gainers',
+      'Losers',
+      'Value',
+      'Foreign buy',
+      'Foreign sell',
+    ]);
+    expect(pressed()).toEqual(['Value']);
+    await act(async () => chip('Gainers').click());
+    expect(order()).toEqual(['AAAA', 'BBCA', 'CCCC']);
+    expect(sortOf(3)).toBe('descending');
+    await act(async () => chip('Losers').click());
+    expect(order()).toEqual(['BBCA', 'AAAA', 'CCCC']);
+    expect(sortOf(3)).toBe('ascending');
+    await act(async () => chip('Foreign buy').click());
+    expect(order()).toEqual(['AAAA', 'CCCC', 'BBCA']);
+    expect(sortOf(5)).toBe('descending');
+    expect(stockOrder('#market-rows td:nth-child(5)')).toEqual(['+500.0M', '+100.0M', '−700.0M']);
+    await act(async () => chip('Foreign sell').click());
+    expect(order()).toEqual(['BBCA', 'CCCC', 'AAAA']);
+    expect(sortOf(5)).toBe('ascending');
+    await click('th:nth-child(4) button');
+    expect(order()).toEqual(['CCCC', 'BBCA', 'AAAA']);
+    expect(pressed()).toEqual(['Value']);
+    await act(async () => chip('Foreign sell').click());
+    await click('.ranges button:nth-child(2)');
+    expect(order()).toEqual(['CCCC', 'BBCA', 'AAAA']);
+    expect(pressed()).toEqual(['Value']);
+    for (const label of ['Foreign buy', 'Foreign sell']) {
+      expect(chip(label).disabled).toBe(true);
+      expect(chip(label).title).toBe('Foreign estimates are available for one session only');
+    }
+    expect(chip('Gainers').disabled).toBe(false);
+    expect(stockOrder('th')).not.toContain('Net foreignIDR');
+  });
+
+  it('swaps the table for ranked rows on a phone, caps them at 50 and scales bars to the largest visible value', async () => {
+    fakeViewport(390);
+    withForeign();
+    stubData({ 'market-summary.json': { date: summary.date, stocks: manyStocks } });
+    window.history.replaceState(null, '', '/market');
+    await render();
+    expect(host.querySelector('table')).toBeNull();
+    expect(rankRows()).toHaveLength(50);
+    expect(order()[0]).toBe('S119');
+    const widths = barWidths();
+    expect(widths[0]).toBe(100);
+    expect(widths).toEqual([...widths].sort((a, b) => b - a));
+    expect(widths[49]).toBeLessThan(widths[0]!);
+    expect(host.querySelector('.rank-bar')?.className.trim()).toBe('rank-bar');
+    const more = () =>
+      [...host.querySelectorAll('button')].find((b) => /^Show \d+ more$/.test(b.textContent ?? ''));
+    expect(more()?.textContent).toBe('Show 50 more');
+    await act(async () => more()!.click());
+    expect(rankRows()).toHaveLength(100);
+    await act(async () => more()!.click());
+    expect(rankRows()).toHaveLength(120);
+    expect(more()).toBeUndefined();
+    await act(async () => chip('Gainers').click());
+    expect(rankRows()).toHaveLength(50);
+    expect(order()[0]).toBe('S118');
+    expect(host.querySelector('.rank-bar')?.classList.contains('up')).toBe(true);
+    await act(async () => chip('Losers').click());
+    expect(order()[0]).toBe('S119');
+    expect(host.querySelector('.rank-bar')?.classList.contains('down')).toBe(true);
+    const losing = barWidths();
+    expect(losing[0]).toBe(100);
+    expect(losing).toEqual([...losing].sort((a, b) => b - a));
+    await resize(1200);
+    expect(rankRows()).toHaveLength(0);
+    expect(host.querySelector('table')).not.toBeNull();
+    await resize(390);
+    expect(host.querySelector('table')).toBeNull();
+  });
+
+  it('draws each signal as a shape in phone rows and keeps the exact text in the title', async () => {
+    fakeViewport(390);
+    feed = [
+      {
+        ticker: 'AAAA',
+        date: dates[3],
+        kind: 'foreign_streak',
+        numbers: { streak_days: 20, net_foreign: 156.6e6 },
+      },
+      {
+        ticker: 'BBCA',
+        date: dates[3],
+        kind: 'foreign_streak',
+        numbers: { streak_days: 7, net_foreign: 78.3e6 },
+      },
+      ownership('CCCC', 'Holder', 6, 9),
+    ];
+    window.history.replaceState(null, '', '/market?show=foreign_streak');
+    await render();
+    expect(rankRows().map((row) => row.querySelector('strong')?.textContent)).toEqual([
+      'AAAA',
+      'BBCA',
+    ]);
+    const first = rankRows()[0]!;
+    expect(first.querySelector('.rank-signal')?.getAttribute('title')).toContain(
+      'net foreign +156,600,000 IDR across 20 days',
+    );
+    expect(first.querySelector('.rank-nums span')?.textContent).toBe('20d +156.6M');
+    const widths = [...host.querySelectorAll<HTMLElement>('.rank-signal .rank-bar')].map((bar) =>
+      parseFloat(bar.style.width),
+    );
+    expect(widths).toEqual([100, 50]);
+    await act(async () =>
+      [...host.querySelectorAll<HTMLButtonElement>('.toolbar .tabs button')]
+        .find((button) => button.textContent?.startsWith('5%'))!
+        .click(),
+    );
+    const dumbbell = host.querySelector('#market-rows .dumbbell');
+    expect(dumbbell?.classList.contains('up')).toBe(true);
+    expect(dumbbell?.querySelector('.dumbbell-before')?.getAttribute('cx')).toBe('6%');
+    expect(dumbbell?.querySelector('.dumbbell-after')?.getAttribute('cx')).toBe('9%');
+    expect(rankRows()[0]?.querySelector('.rank-nums span')?.textContent).toBe('6.00 → 9.00%');
+  });
+
+  it('keeps the chosen sort in the address so a shared or revisited link restores it', async () => {
+    window.history.replaceState(null, '', '/market?sort=losers');
+    await render();
+    expect(
+      [...host.querySelectorAll('.chips button')]
+        .find((b) => b.textContent === 'Losers')
+        ?.getAttribute('aria-pressed'),
+    ).toBe('true');
+    await act(async () =>
+      [...host.querySelectorAll<HTMLButtonElement>('.chips button')]
+        .find((b) => b.textContent === 'Gainers')!
+        .click(),
+    );
+    expect(window.location.search).toBe('?sort=gainers');
+    await act(async () =>
+      [...host.querySelectorAll<HTMLButtonElement>('.chips button')]
+        .find((b) => b.textContent === 'Value')!
+        .click(),
+    );
+    expect(window.location.search).toBe('');
+  });
+
+  it('flags risky stocks in both the table and the phone rows', async () => {
+    fakeViewport(1024);
+    window.history.replaceState(null, '', '/market');
+    await render();
+    const flags = (selector: string) => stockOrder(`${selector} .risk-chip`);
+    expect(flags('#market-rows tr:nth-child(1)')).toEqual(['SUSP']);
+    expect(flags('#market-rows tr:nth-child(2)')).toEqual([]);
+    expect(flags('#market-rows tr:nth-child(3)')).toEqual(['UMA', 'FCA']);
+    await resize(390);
+    expect(flags('#market-rows li:nth-child(1)')).toEqual(['SUSP']);
+    expect(flags('#market-rows li:nth-child(2)')).toEqual([]);
+    expect(flags('#market-rows li:nth-child(3)')).toEqual(['UMA', 'FCA']);
   });
 });

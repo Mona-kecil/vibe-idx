@@ -33,3 +33,34 @@ export function rangeText(start: string, end: string, year = false) {
     return Number(start.slice(8)) + '–' + dateText(end, year);
   return dateText(start, start.slice(0, 4) !== end.slice(0, 4)) + '–' + dateText(end, year);
 }
+
+const publicationDate = (value: string) =>
+  new Date(/T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?$/.test(value) ? `${value}+07:00` : value);
+export const wib = (value: string, options: Intl.DateTimeFormatOptions = {}) =>
+  new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Jakarta',
+    day: '2-digit',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+    ...options,
+  })
+    .format(publicationDate(value))
+    .replace('Sept', 'Sep');
+export const calendarDate = (value: string) =>
+  new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(publicationDate(value));
+export const publishedMs = (value: string) => publicationDate(value).getTime();
+
+/** First day of an N-month window ending on `last`, the rule behind 1M, 3M and 6M. */
+export function monthsBefore(last: string, months: number) {
+  const start = new Date(last.slice(0, 10) + 'T00:00:00Z');
+  start.setUTCMonth(start.getUTCMonth() - months);
+  return start.toISOString().slice(0, 10);
+}
+
+/** "Up", "Down" or "Unchanged", so a day's change reads without relying on its sign or colour. */
+export const moveWord = (change: number) => (change > 0 ? 'Up' : change < 0 ? 'Down' : 'Unchanged');
+export function dayMove(pct: number | null) {
+  if (pct === null) return '—';
+  return pct === 0 ? 'Unchanged today' : `${moveWord(pct)} ${nf(Math.abs(pct), 2)}% today`;
+}

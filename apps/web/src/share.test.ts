@@ -2,15 +2,26 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vite-plus/test';
 import { defaultMeta, parseTickerCard, tickerMeta, withShareMeta } from '../api/_share';
 import history from './ticker/fixtures/TPIA-history.json';
+import { tickerSchema } from './data';
+import { openingPeriod, visiblePrices } from './ticker/logic';
 
 const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 
 describe('share metadata', () => {
-  it('uses the latest two closes and retains the last 60 sessions', () => {
+  it('draws the same window the ticker page opens on', () => {
     const card = parseTickerCard(history);
+    const page = visiblePrices(tickerSchema.parse(history).prices, openingPeriod);
     expect(card).not.toBeNull();
-    expect(card?.closes).toEqual(history.prices.slice(-60).map((p) => p.close));
+    expect(card?.closes).toEqual(page.map((p) => p.close));
+    expect(card?.start).toBe(page[0]?.date);
     expect(card?.date).toBe(history.prices.at(-1)?.date);
+    const daily = Array.from({ length: 200 }, (_, i) => ({
+      date: new Date(Date.UTC(2026, 0, 1 + i)).toISOString().slice(0, 10),
+      close: 100 + i,
+    }));
+    const windowed = parseTickerCard({ ticker: 'BBCA', name: 'Bank', prices: daily });
+    expect(windowed?.start).toBe('2026-06-19');
+    expect(windowed?.closes.at(-1)).toBe(299);
   });
 
   it('cleans company suffixes and formats the price, daily change and date', () => {

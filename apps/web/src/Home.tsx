@@ -1,395 +1,44 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { initialPins, readStorage, writeStorage } from './watchlist';
-import { AccountControls } from './BrokerPanel';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import { areaChart } from './area';
 import { load, type Feed, type Health, type Market, type Stock, type Ticker } from './data';
+import {
+  briefing,
+  date,
+  EventMetric,
+  EventText,
+  eventTitle,
+  lensOf,
+  magnitude,
+  pct,
+  signalTiles,
+  signed,
+  tone,
+  weekAhead,
+  weekStrip,
+  type WeekItem,
+  type Event,
+  type SignalTile,
+} from './events';
+import { usePublished } from './publicData';
+import { RiskBadge, useRiskFor } from './RiskBadge';
+import { PinButton, SiteHeader } from './SiteHeader';
 import { Stale } from './Stale';
-import { TerminalLink } from './TerminalLink';
-import { dateText, direction, nf } from './ticker/format';
+import { fetchHeadlines, type Headline } from './terminal/sources';
+import { treemap } from './treemap';
+import { calendarDate, dateText, direction, moveWord, nf, wib } from './ticker/format';
+import { usePins } from './watchlist';
+import { useNarrow } from './useNarrow';
+import './home.css';
 
-type Event = Feed[number];
-type Ownership = Extract<Event, { kind: 'five_pct_change' }>;
-type Signal = Exclude<Event, Ownership>;
-const short = (n: number) => {
-  const a = Math.abs(n);
-  return a >= 1e12
-    ? nf(a / 1e12, 2) + 'T'
-    : a >= 1e9
-      ? nf(a / 1e9, 2) + 'B'
-      : a >= 1e6
-        ? nf(a / 1e6, 2) + 'M'
-        : a >= 1e3
-          ? nf(a / 1e3, 2) + 'K'
-          : nf(a);
-};
-const signed = (n: number, format = short) =>
-  (n > 0 ? '+' : n < 0 ? '−' : '') + format(Math.abs(n));
-const pct = (n: number | null) => (n === null ? '—' : signed(n, (v) => nf(v, 2)) + '%');
-const date = (d: string | null) => (d ? dateText(d) : 'Not reported');
-const isExit = (row: Ownership) =>
-  row.numbers.exited === true ||
-  (row.numbers.pct_after === null && row.numbers.net_shares === null);
-function move(row: Ownership) {
-  return isExit(row)
-    ? row.numbers.pct_before - 5
-    : row.numbers.pct_after === null
-      ? -1
-      : Math.abs(row.numbers.pct_after - row.numbers.pct_before);
-}
-function group<T extends Event>(rows: T[]) {
-  const groups = new Map<string, T[]>();
-  for (const row of rows) groups.set(row.ticker, [...(groups.get(row.ticker) ?? []), row]);
-  return [...groups];
-}
-const rank = { ara: 0, volume_spike: 1, foreign_streak: 2, green_on_red: 3 };
-const strength = (s: Signal) =>
-  s.kind === 'volume_spike'
-    ? s.numbers.multiple
-    : s.kind === 'foreign_streak'
-      ? s.numbers.streak_days
-      : s.numbers.change_pct;
-const compareSignal = (a: Signal, b: Signal) =>
-  rank[a.kind] - rank[b.kind] ||
-  strength(b) - strength(a) ||
-  (a.kind === 'foreign_streak' && b.kind === 'foreign_streak'
-    ? b.numbers.net_foreign - a.numbers.net_foreign
-    : 0);
-function SignalText({ row }: { row: Signal }) {
-  switch (row.kind) {
-    case 'ara':
-      return (
-        <>
-          <b className={direction(row.numbers.change_pct)}>
-            {signed(row.numbers.change_pct, (v) => nf(v, 1))}%
-          </b>{' '}
-          ARA
-        </>
-      );
-    case 'volume_spike':
-      return (
-        <>
-          <b>{nf(row.numbers.multiple, 1)}×</b> volume{' '}
-          <span>vs {row.numbers.prior_days}-day avg</span>
-        </>
-      );
-    case 'green_on_red':
-      return (
-        <>
-          <b className={direction(row.numbers.change_pct)}>{pct(row.numbers.change_pct)}</b> vs
-          market{' '}
-          <b className={direction(row.numbers.market_change_pct)}>
-            {pct(row.numbers.market_change_pct)}
-          </b>
-        </>
-      );
-    case 'foreign_streak':
-      return (
-        <>
-          <b>{row.numbers.streak_days}-day</b> foreign streak{' '}
-          <b className={direction(row.numbers.net_foreign)}>
-            {signed(row.numbers.net_foreign)} IDR
-          </b>
-        </>
-      );
-    default: {
-      const exhaustive: never = row;
-      return exhaustive;
-    }
-  }
-}
-function signalTitle(s: Signal) {
-  switch (s.kind) {
-    case 'ara':
-      return `${date(s.date)}; previous close ${nf(s.numbers.prev)}; close ${nf(s.numbers.close)} IDR; ARA band ${s.numbers.band_pct}%`;
-    case 'volume_spike':
-      return `${date(s.date)}; ${nf(s.numbers.volume)} shares vs ${nf(s.numbers.avg_volume)} average over ${s.numbers.prior_days} days; value ${nf(s.numbers.value)} IDR`;
-    case 'green_on_red':
-      return `${date(s.date)}; stock ${pct(s.numbers.change_pct)}; market ${pct(s.numbers.market_change_pct)}; value ${nf(s.numbers.value)} IDR`;
-    case 'foreign_streak':
-      return `${date(s.date)}; net foreign ${signed(s.numbers.net_foreign, nf)} IDR across ${s.numbers.streak_days} days`;
-  }
-}
-function Line({
-  rows,
-  width,
-  height,
-  label,
-  market = false,
-}: {
-  rows: { date: string; close: number; change_pct?: number | null }[];
-  width: number;
-  height: number;
-  label: string;
-  market?: boolean;
-}) {
-  const [inspected, inspect] = useState<number | null>(null);
-  const values = rows.map((r) => r.close),
-    min = Math.min(...values),
-    max = Math.max(...values);
-  const x = (i: number) => 3 + (i / Math.max(1, rows.length - 1)) * (width - 6);
-  const y = (value: number) => height - 3 - ((value - min) / (max - min || 1)) * (height - 6);
-  const selected = inspected === null ? null : rows[inspected];
-  return (
-    <>
-      <svg
-        viewBox={`0 0 ${width} ${height}`}
-        preserveAspectRatio="none"
-        role="img"
-        aria-label={label}
-        onPointerMove={
-          market
-            ? (e) => {
-                const rect = e.currentTarget.getBoundingClientRect();
-                inspect(
-                  Math.max(
-                    0,
-                    Math.min(
-                      rows.length - 1,
-                      Math.round(((e.clientX - rect.left) / rect.width) * (rows.length - 1)),
-                    ),
-                  ),
-                );
-              }
-            : undefined
-        }
-        onPointerLeave={() => inspect(null)}
-      >
-        <title>{rows.map((r) => `${date(r.date)}: ${nf(r.close, 3)}`).join('; ')}</title>
-        {market &&
-          [24, 47, 70, 93].map((y) => (
-            <line key={y} x1="0" x2={width} y1={y} y2={y} stroke="#e3e3da" strokeDasharray="2 4" />
-          ))}
-        <path
-          d={rows
-            .map((r, i) => `${i ? 'L' : 'M'}${x(i).toFixed(2)},${y(r.close).toFixed(2)}`)
-            .join(' ')}
-          fill="none"
-          stroke={market ? '#222320' : '#62635c'}
-          strokeWidth={market ? 1.8 : 1.4}
-          vectorEffect="non-scaling-stroke"
-        />
-      </svg>
-      {selected && (
-        <div className="chart-tip">
-          {date(selected.date)} {nf(selected.close, 3)}{' '}
-          {selected.change_pct !== undefined && pct(selected.change_pct)}
-        </div>
-      )}
-    </>
-  );
-}
-function MarketBlock({ market }: { market: Market }) {
-  const history = market.history.slice(-60),
-    last = history.at(-1);
-  if (!last) return <p role="status">Market history unavailable</p>;
-  return (
-    <section className="market-line" aria-label="IDX market">
-      <div>
-        <div className="market-title">
-          <h1>IHSG</h1>
-        </div>
-        <div className="market-level">{nf(last.close, 2)}</div>
-        <div className={`market-change ${direction(last.change)}`}>
-          <span>{last.change === null ? '—' : signed(last.change, (v) => nf(v, 2))}</span>
-          <span>{pct(last.change_pct)}</span>
-        </div>
-      </div>
-      <div className="market-chart">
-        <Line
-          rows={history}
-          width={650}
-          height={94}
-          label="Index closing levels over 60 trading days"
-          market
-        />
-        <div className="chart-axis">
-          <span>{dateText(history[0]?.date ?? last.date, false)}</span>
-          <span>{dateText(last.date, false)}</span>
-        </div>
-        <details className="market-details">
-          <summary className="inspect">View records</summary>
-          <div className="market-records">
-            <table>
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Close</th>
-                  <th>Change</th>
-                  <th>%</th>
-                </tr>
-              </thead>
-              <tbody>
-                {[...history].reverse().map((r) => (
-                  <tr key={r.date}>
-                    <td>{date(r.date)}</td>
-                    <td>{nf(r.close, 3)}</td>
-                    <td className={direction(r.change)}>
-                      {r.change === null ? '—' : signed(r.change, (v) => nf(v, 3))}
-                    </td>
-                    <td className={direction(r.change_pct)}>{pct(r.change_pct)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </details>
-      </div>
-      <div className="breadth">
-        <div className="breadth-bar" aria-hidden="true">
-          <span style={{ width: `${(market.up / (market.up + market.down || 1)) * 100}%` }} />
-          <span style={{ flex: 1 }} />
-        </div>
-        <div className="breadth-line">
-          <span>Advancers</span>
-          <strong>{nf(market.up)}</strong>
-        </div>
-        <div className="breadth-line">
-          <span>Decliners</span>
-          <strong>{nf(market.down)}</strong>
-        </div>
-      </div>
-    </section>
-  );
-}
-function Identity({ stock, ownership = false }: { stock: Stock; ownership?: boolean }) {
-  return (
-    <div className="stock-id">
-      <strong>{stock.ticker}</strong>
-      {ownership && (
-        <span className="ownership-mark" title="Also has a 5% ownership move">
-          5% move
-        </span>
-      )}
-      <span className="company">{stock.name}</span>
-    </div>
-  );
-}
-function More({
-  total,
-  limit,
-  expanded,
-  toggle,
-  controls,
-}: {
-  total: number;
-  limit: number;
-  expanded: boolean;
-  toggle: () => void;
-  controls: string;
-}) {
-  return (
-    total > limit && (
-      <button
-        className="show-all"
-        type="button"
-        aria-controls={controls}
-        aria-expanded={expanded}
-        onClick={toggle}
-      >
-        {expanded ? 'Show less' : `Show all ${total}`}
-      </button>
-    )
-  );
-}
-function WatchRow({ stock, feed, pin }: { stock: Stock; feed: Feed; pin: ReactNode }) {
-  const [history, setHistory] = useState<Ticker | null>(null),
-    [failed, setFailed] = useState(false);
-  useEffect(() => {
-    let active = true;
-    void load(`ticker/${stock.ticker}.json`).then(
-      (data) => {
-        if (active) {
-          setHistory(data);
-          setFailed(!data);
-        }
-      },
-      () => {
-        if (active) setFailed(true);
-      },
-    );
-    return () => {
-      active = false;
-    };
-  }, [stock.ticker]);
-  const prices = history?.prices.slice(-60) ?? [];
-  const events: { date: string; text: ReactNode }[] = feed
-    .filter((s) => s.ticker === stock.ticker)
-    .map((s) => ({
-      date: s.date,
-      text:
-        s.kind === 'five_pct_change' ? (
-          <>
-            {s.numbers.investor}{' '}
-            {isExit(s)
-              ? `${nf(s.numbers.pct_before, 2)} → <5%`
-              : s.numbers.net_shares === null
-                ? 'holding not reported'
-                : `${signed(s.numbers.net_shares)} shares`}
-          </>
-        ) : (
-          <SignalText row={s} />
-        ),
-    }));
-  for (const d of history?.disclosures ?? []) events.push({ date: d.published_at, text: d.title });
-  const event = events.sort((a, b) => b.date.localeCompare(a.date))[0];
-  return (
-    <div className="watch-group">
-      <a
-        className="ticker-row watch-link"
-        href={`/t/${stock.ticker}`}
-        aria-label={`Open ${stock.ticker}, ${stock.name}, watchlist`}
-      >
-        <Identity stock={stock} />
-        <div className="spark">
-          {prices.length ? (
-            <Line
-              rows={prices}
-              width={150}
-              height={44}
-              label={`${stock.ticker} closing price over 60 trading days`}
-            />
-          ) : (
-            <span className="spark-empty">
-              {failed ? 'History unavailable' : 'Loading history…'}
-            </span>
-          )}
-        </div>
-        <span className="signal-price num">{nf(stock.close)}</span>
-        <span className={`signal-change num ${direction(stock.change_pct)}`}>
-          {pct(stock.change_pct)}
-        </span>
-        <span className="latest-event">
-          {event ? (
-            <>
-              {event.text}
-              <time dateTime={event.date}>{date(event.date)}</time>
-            </>
-          ) : (
-            'No event in this snapshot'
-          )}
-        </span>
-      </a>
-      {pin}
-    </div>
-  );
-}
+type Data = { stocks: Stock[]; feed: Feed; health: Health; market: Market };
+
 export function Home() {
   const [state, setState] = useState<
-    | { kind: 'loading' }
-    | { kind: 'error' }
-    | { kind: 'ready'; stocks: Stock[]; feed: Feed; health: Health; market: Market }
+    { kind: 'loading' } | { kind: 'error' } | ({ kind: 'ready' } & Data)
   >({ kind: 'loading' });
-  const [pins, setPins] = useState(initialPins),
+  const [news, setNews] = useState<Headline[] | null>(null);
+  const [pins, toggle] = usePins(),
     [announcement, announce] = useState('');
-  const [sort, setSort] = useState(() =>
-    readStorage('vibe-idx:ownership-sort') === 'move' ? 'move' : 'az',
-  );
-  const [expanded, setExpanded] = useState(false),
-    [openSignals, setOpenSignals] = useState<string[]>([]);
-  const [query, setQuery] = useState(''),
-    [searchOpen, setSearchOpen] = useState(false),
-    [active, setActive] = useState(0);
-  const search = useRef<HTMLInputElement>(null),
-    searchBox = useRef<HTMLDivElement>(null);
   useEffect(() => {
     let active = true;
     void Promise.all([
@@ -405,212 +54,24 @@ export function Home() {
         if (active) setState({ kind: 'error' });
       },
     );
+    void fetchHeadlines().then((r) => {
+      if (active) setNews(r.kind === 'ready' ? r.data.news : []);
+    });
     return () => {
       active = false;
     };
   }, []);
-  useEffect(() => {
-    const key = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        setSearchOpen(false);
-        if (e.target instanceof Node && searchBox.current?.contains(e.target))
-          search.current?.focus();
-      }
-      if (
-        e.key === '/' &&
-        !(e.target instanceof HTMLElement && /INPUT|TEXTAREA|SELECT/.test(e.target.tagName))
-      ) {
-        e.preventDefault();
-        search.current?.focus();
-      }
-    };
-    const outside = (e: MouseEvent) => {
-      if (e.target instanceof Node && !searchBox.current?.contains(e.target)) setSearchOpen(false);
-    };
-    document.addEventListener('keydown', key);
-    document.addEventListener('click', outside);
-    return () => {
-      document.removeEventListener('keydown', key);
-      document.removeEventListener('click', outside);
-    };
-  }, []);
-  function pin(ticker: string) {
-    const pinned = pins.includes(ticker);
-    return (
-      <button
-        className="pin"
-        type="button"
-        aria-label={`${pinned ? 'Unpin' : 'Pin'} ${ticker}`}
-        aria-pressed={pinned}
-        onClick={(event) => {
-          const button = event.currentTarget;
-          const next = pinned ? pins.filter((t) => t !== ticker) : [...pins, ticker];
-          setPins(next);
-          writeStorage('vibe-idx:watchlist', JSON.stringify(next));
-          announce(`${ticker} ${pinned ? 'removed from' : 'added to'} watchlist`);
-          requestAnimationFrame(() => {
-            if (!document.contains(button)) {
-              const next = document.querySelector('.home-page .watch-group .pin');
-              if (next instanceof HTMLButtonElement) next.focus();
-              else search.current?.focus();
-            }
-          });
-        }}
-      >
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M7 3h10v18l-5-3-5 3z" />
-        </svg>
-      </button>
-    );
-  }
+  const pin = (ticker: string) => (
+    <PinButton
+      ticker={ticker}
+      pinned={pins.includes(ticker)}
+      toggle={() => announce(`${ticker} ${toggle(ticker) ? 'added to' : 'removed from'} watchlist`)}
+    />
+  );
   const stocks = state.kind === 'ready' ? state.stocks : [];
-  const q = query.trim().toLowerCase();
-  const matches = stocks
-    .filter((s) => s.ticker.toLowerCase().includes(q) || s.name.toLowerCase().includes(q))
-    .sort(
-      (a, b) =>
-        Number(b.ticker.toLowerCase() === q) - Number(a.ticker.toLowerCase() === q) ||
-        a.ticker.localeCompare(b.ticker),
-    )
-    .slice(0, 12);
-  const stockMap = new Map(stocks.map((s) => [s.ticker, s]));
-  const feed = state.kind === 'ready' ? state.feed.filter((s) => stockMap.has(s.ticker)) : [];
-  const owners = feed.filter((s) => s.kind === 'five_pct_change');
-  const latest = owners
-    .map((s) => s.date)
-    .sort()
-    .at(-1);
-  const byHolder = (a: Ownership, b: Ownership) =>
-    a.numbers.investor.localeCompare(b.numbers.investor);
-  const ownership = group(owners.filter((s) => s.date === latest))
-    .map(([ticker, rows]) => {
-      const holders = new Map<string, Ownership>();
-      for (const row of rows) {
-        const key = row.numbers.investor
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, ' ')
-          .split(' ')
-          .filter((t) => t && !['pt', 'tbk'].includes(t))
-          .join(' ');
-        if (!holders.has(key)) holders.set(key, row);
-      }
-      return {
-        ticker,
-        rows: [...holders.values()].sort(
-          (a, b) => (sort === 'move' ? move(b) - move(a) : 0) || byHolder(a, b),
-        ),
-      };
-    })
-    .sort(
-      (a, b) =>
-        (sort === 'move' ? Math.max(...b.rows.map(move)) - Math.max(...a.rows.map(move)) : 0) ||
-        a.ticker.localeCompare(b.ticker),
-    );
-  const signals = group(feed.filter((s) => s.kind !== 'five_pct_change'))
-    .map(([ticker, rows]) => ({ ticker, rows: rows.sort(compareSignal) }))
-    .sort((a, b) =>
-      a.rows[0] && b.rows[0]
-        ? compareSignal(a.rows[0], b.rows[0]) || a.ticker.localeCompare(b.ticker)
-        : 0,
-    );
-  const lists = [
-    {
-      kind: 'multiple',
-      label: 'Multiple signals',
-      groups: signals.filter((g) => g.rows.length >= 2),
-    },
-    ...[
-      { kind: 'ara', label: 'ARA' },
-      { kind: 'volume_spike', label: 'Volume spike' },
-      { kind: 'foreign_streak', label: 'Foreign streak' },
-      { kind: 'green_on_red', label: 'Green on red' },
-    ].map((list) => ({
-      ...list,
-      groups: signals.filter((g) => g.rows.length === 1 && g.rows[0]?.kind === list.kind),
-    })),
-  ].filter((list) => list.groups.length);
-  const ownerTickers = new Set(owners.map((s) => s.ticker));
   return (
-    <div className="home-page">
-      <header className="topbar">
-        <div className="wrap topbar-inner">
-          <a className="wordmark" href="/" aria-label="Vibe IDX home">
-            Vibe <span>IDX</span>
-          </a>
-          <nav className="main-nav" aria-label="Main">
-            <a href="/" aria-current="page">
-              Home
-            </a>
-            <a href="/market">Market</a>
-            <TerminalLink />
-          </nav>
-          <div className="search" ref={searchBox}>
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              aria-hidden="true"
-            >
-              <circle cx="10.5" cy="10.5" r="6.5" />
-              <path d="m16 16 4.5 4.5" />
-            </svg>
-            <input
-              ref={search}
-              type="search"
-              placeholder="Search tickers"
-              aria-label="Search tickers or companies"
-              autoComplete="off"
-              aria-controls="search-results"
-              aria-expanded={searchOpen && !!q}
-              value={query}
-              onChange={(e) => {
-                setQuery(e.target.value);
-                setActive(0);
-                setSearchOpen(true);
-              }}
-              onFocus={() => setSearchOpen(true)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && searchOpen && q && matches[active]) {
-                  e.preventDefault();
-                  window.location.assign(`/t/${matches[active].ticker}`);
-                }
-                if (['ArrowDown', 'ArrowUp'].includes(e.key) && matches.length) {
-                  e.preventDefault();
-                  const next =
-                    (active + (e.key === 'ArrowDown' ? 1 : -1) + matches.length) % matches.length;
-                  setActive(next);
-                  setSearchOpen(true);
-                  searchBox.current
-                    ?.querySelectorAll('.search-option')
-                    [next]?.scrollIntoView({ block: 'nearest' });
-                }
-              }}
-            />
-            <span className="keyhint">/</span>
-            {searchOpen && q && (
-              <div className="search-results" id="search-results">
-                {matches.length ? (
-                  matches.map((s, i) => (
-                    <div className={`search-option ${i === active ? 'active' : ''}`} key={s.ticker}>
-                      <a href={`/t/${s.ticker}`} aria-label={`Open ${s.ticker}, ${s.name}`}>
-                        <b>{s.ticker}</b>
-                        <small>{s.name}</small>
-                      </a>
-                      {pin(s.ticker)}
-                    </div>
-                  ))
-                ) : (
-                  <div className="search-empty">No stocks found</div>
-                )}
-              </div>
-            )}
-          </div>
-          <div className="signin">
-            <AccountControls />
-          </div>
-        </div>
-      </header>
+    <div className="site home-page">
+      <SiteHeader page="home" stocks={stocks} pin={pin} />
       <main className="wrap">
         {state.kind === 'loading' ? (
           <p role="status">Loading data…</p>
@@ -619,234 +80,494 @@ export function Home() {
             Could not load data. <button onClick={() => window.location.reload()}>Reload</button>
           </p>
         ) : (
-          <>
-            <div className="freshness">
-              <Stale health={state.health} />
-              <span>Prices {date(state.health.prices)}</span>
-              <span>5% ownership {date(state.health.five_pct)}</span>
-              <span>Registry {date(state.health.one_pct)}</span>
-              <details className="sources">
-                <summary>Sources</summary>
-                <div className="source-panel">
-                  <dl>
-                    <dt>Indices</dt>
-                    <dd>{date(state.health.indices)}</dd>
-                    <dt>Issuers</dt>
-                    <dd>{date(state.health.issuers)}</dd>
-                    <dt>Snapshot</dt>
-                    <dd>{date(state.health.run_at)}</dd>
-                  </dl>
-                  {state.feed.length > feed.length && (
-                    <p>
-                      {state.feed.length - feed.length} feed{' '}
-                      {state.feed.length - feed.length === 1
-                        ? 'record excluded'
-                        : 'records excluded'}
-                      : ticker absent from the stock directory.
-                    </p>
-                  )}
-                </div>
-              </details>
-            </div>
-            <MarketBlock market={state.market} />
-            <section className="section" aria-labelledby="watch-heading">
-              <div className="section-head">
-                <h2 id="watch-heading">Watchlist</h2>
-              </div>
-              {pins.some((t) => stockMap.has(t)) ? (
-                <>
-                  <div className="table-head watch-head" aria-hidden="true">
-                    <span>Stock</span>
-                    <span>Price history</span>
-                    <span className="num">
-                      Close <small>IDR</small>
-                    </span>
-                    <span className="num">Day change</span>
-                    <span>Latest event</span>
-                    <span />
-                  </div>
-                  {pins.map((t) => {
-                    const s = stockMap.get(t);
-                    return s && <WatchRow key={t} stock={s} feed={feed} pin={pin(t)} />;
-                  })}
-                </>
-              ) : (
-                <div className="empty-state">Pin a stock from search or a row.</div>
-              )}
-            </section>
-            <section className="section" aria-labelledby="ownership-heading">
-              <div className="section-head">
-                <h2 id="ownership-heading">Ownership moves</h2>
-                <select
-                  className="ownership-sort"
-                  aria-label="Sort ownership moves"
-                  value={sort}
-                  onChange={(e) => {
-                    const value = e.target.value === 'move' ? 'move' : 'az';
-                    setSort(value);
-                    setExpanded(false);
-                    writeStorage('vibe-idx:ownership-sort', value);
-                  }}
-                >
-                  <option value="az">A–Z</option>
-                  <option value="move">Largest move</option>
-                </select>
-              </div>
-              <div className="table-head ownership-head" aria-hidden="true">
-                <span>Stock</span>
-                <span>Holder</span>
-                <span className="num">Net shares</span>
-                <span className="num">Holding %</span>
-                <span />
-              </div>
-              <div id="ownership-rows">
-                {ownership.slice(0, expanded ? undefined : 10).map((g) => {
-                  const s = stockMap.get(g.ticker);
-                  return (
-                    s && (
-                      <div className="stock-group" key={g.ticker}>
-                        <a
-                          className="ticker-row stock-link"
-                          href={`/t/${s.ticker}`}
-                          aria-label={`Open ${s.ticker}, ${s.name}, ownership moves`}
-                        >
-                          <Identity stock={s} />
-                          <div className="holder-list">
-                            {g.rows.map((row) => {
-                              const n = row.numbers,
-                                exit = isExit(row);
-                              return (
-                                <div className="holder-row" key={n.investor}>
-                                  <span className="holder">{n.investor}</span>
-                                  <span
-                                    className={`net num ${exit ? 'exit' : n.net_shares === null ? 'unreported' : direction(n.net_shares)}`}
-                                    title={
-                                      exit
-                                        ? 'Exited the 5% report; net shares unknown'
-                                        : n.net_shares === null
-                                          ? 'Net shares not reported'
-                                          : signed(n.net_shares, nf) + ' shares'
-                                    }
-                                  >
-                                    {exit
-                                      ? 'Exit'
-                                      : n.net_shares === null
-                                        ? 'Not reported'
-                                        : signed(n.net_shares)}
-                                  </span>
-                                  <span
-                                    className="transition num"
-                                    title={`${nf(n.shares_before)} → ${exit ? 'unknown' : n.shares_after === null ? 'not reported' : nf(n.shares_after)} shares; previous report ${date(n.previous_date)}`}
-                                  >
-                                    <span className="before">{nf(n.pct_before, 2)}</span> →{' '}
-                                    {exit
-                                      ? '<5%'
-                                      : n.pct_after === null
-                                        ? '—'
-                                        : nf(n.pct_after, 2) + '%'}
-                                  </span>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </a>
-                        {pin(s.ticker)}
-                      </div>
-                    )
-                  );
-                })}
-              </div>
-              <More
-                total={ownership.length}
-                limit={10}
-                expanded={expanded}
-                toggle={() => setExpanded(!expanded)}
-                controls="ownership-rows"
-              />
-            </section>
-            <section className="section" aria-labelledby="signals-heading">
-              <div className="section-head">
-                <h2 id="signals-heading">Signals</h2>
-              </div>
-              <div className="table-head signal-head" aria-hidden="true">
-                <span>Stock</span>
-                <span>Signal</span>
-                <span className="num">
-                  Close <small>IDR</small>
-                </span>
-                <span className="num">Day change</span>
-                <span />
-              </div>
-              {lists.map((list) => {
-                const expanded = openSignals.includes(list.kind);
-                return (
-                  <div className="signal-list" key={list.kind}>
-                    <h3 id={`signals-${list.kind}-heading`}>{list.label}</h3>
-                    <div
-                      id={`signals-${list.kind}-rows`}
-                      aria-labelledby={`signals-${list.kind}-heading`}
-                    >
-                      {list.groups.slice(0, expanded ? undefined : 5).map((g) => {
-                        const s = stockMap.get(g.ticker),
-                          hasChange = g.rows.some(
-                            (s) => s.kind === 'ara' || s.kind === 'green_on_red',
-                          );
-                        return (
-                          s && (
-                            <div className="signal-group" key={g.ticker}>
-                              <a
-                                className="ticker-row signal-link"
-                                href={`/t/${s.ticker}`}
-                                aria-label={`Open ${s.ticker}, ${s.name}, signals`}
-                              >
-                                <Identity stock={s} ownership={ownerTickers.has(s.ticker)} />
-                                <div className="signal-items">
-                                  {g.rows.map((row) => (
-                                    <span
-                                      className="signal-item"
-                                      key={row.kind}
-                                      title={signalTitle(row)}
-                                    >
-                                      <SignalText row={row} />
-                                    </span>
-                                  ))}
-                                </div>
-                                <span className="signal-price num">{nf(s.close)}</span>
-                                <span
-                                  className={`signal-change num ${hasChange ? '' : direction(s.change_pct)}`}
-                                >
-                                  {hasChange ? '' : pct(s.change_pct)}
-                                </span>
-                              </a>
-                              {pin(s.ticker)}
-                            </div>
-                          )
-                        );
-                      })}
-                    </div>
-                    <More
-                      total={list.groups.length}
-                      limit={5}
-                      expanded={expanded}
-                      toggle={() =>
-                        setOpenSignals(
-                          expanded
-                            ? openSignals.filter((s) => s !== list.kind)
-                            : [...openSignals, list.kind],
-                        )
-                      }
-                      controls={`signals-${list.kind}-rows`}
-                    />
-                  </div>
-                );
-              })}
-            </section>
-          </>
+          <Briefing data={state} news={news} pins={pins} pin={pin} />
         )}
       </main>
       <div className="sr-only" role="status" aria-live="polite">
         {announcement}
       </div>
     </div>
+  );
+}
+
+function Briefing({
+  data,
+  news,
+  pins,
+  pin,
+}: {
+  data: Data;
+  news: Headline[] | null;
+  pins: string[];
+  pin: (ticker: string) => ReactNode;
+}) {
+  const stockMap = new Map(data.stocks.map((s) => [s.ticker, s]));
+  const events = briefing(data.feed, (t) => stockMap.has(t));
+  const watched = pins.flatMap((t) => stockMap.get(t) ?? []);
+  return (
+    <>
+      <Pulse
+        data={data}
+        excluded={data.feed.length - data.feed.filter((e) => stockMap.has(e.ticker)).length}
+      />
+      {watched.length > 0 && (
+        <section className="panel watchlist" aria-labelledby="watch-heading">
+          <h2 id="watch-heading">Watchlist</h2>
+          {watched.map((s) => (
+            <WatchRow
+              key={s.ticker}
+              stock={s}
+              events={events}
+              asOf={data.market.date ?? data.health.prices}
+              pin={pin(s.ticker)}
+            />
+          ))}
+        </section>
+      )}
+      <div className="today">
+        <Heatmap stocks={data.stocks} />
+        <div className="today-side">
+          <Signals tiles={signalTiles(events)} stockMap={stockMap} />
+          <Week pins={pins} />
+        </div>
+      </div>
+      <News news={news} />
+    </>
+  );
+}
+
+function Pulse({ data, excluded }: { data: Data; excluded: number }) {
+  const history = data.market.history.slice(-60),
+    last = history.at(-1),
+    foreign = data.stocks.reduce((sum, s) => sum + s.net_foreign, 0),
+    h = data.health;
+  return (
+    <section className="pulse" aria-label="IDX market">
+      {last ? (
+        <div className="pulse-index">
+          <h1>IHSG</h1>
+          <strong className="num">{nf(last.close, 2)}</strong>
+          <span className={`num ${direction(last.change)}`}>
+            {last.change === null || last.change_pct === null
+              ? '—'
+              : last.change === 0
+                ? 'Unchanged today'
+                : `${moveWord(last.change)} ${nf(Math.abs(last.change), 2)} (${nf(Math.abs(last.change_pct), 2)}%) today`}
+          </span>
+          <Spark rows={history} label="IHSG closing levels over 60 trading days" />
+        </div>
+      ) : (
+        <p role="status">Market history unavailable</p>
+      )}
+      <Breadth up={data.market.up} down={data.market.down} />
+      <div className="pulse-stat" title="Sum of estimated net foreign flow across listed stocks">
+        Foreign est. <span className={`num ${direction(foreign)}`}>{signed(foreign)} IDR</span>
+      </div>
+      <Stale health={h} />
+      <details className="sources">
+        <summary>{date(h.prices)}</summary>
+        <div className="source-panel">
+          <dl>
+            <dt>Prices</dt>
+            <dd>{date(h.prices)}</dd>
+            <dt>Indices</dt>
+            <dd>{date(h.indices)}</dd>
+            <dt>5% ownership</dt>
+            <dd>{date(h.five_pct)}</dd>
+            <dt>Registry</dt>
+            <dd>{date(h.one_pct)}</dd>
+            <dt>Issuers</dt>
+            <dd>{date(h.issuers)}</dd>
+            <dt>Snapshot</dt>
+            <dd>{date(h.run_at)}</dd>
+          </dl>
+          {excluded > 0 && (
+            <p>
+              {excluded} feed {excluded === 1 ? 'record' : 'records'} excluded: ticker absent from
+              the stock directory.
+            </p>
+          )}
+        </div>
+      </details>
+    </section>
+  );
+}
+
+function Breadth({ up, down }: { up: number; down: number }) {
+  return (
+    <div className="pulse-stat breadth" role="img" aria-label={`${nf(up)} up, ${nf(down)} down`}>
+      <span className="up num">{nf(up)}</span>
+      {up + down > 0 && (
+        <span className="split">
+          <span className="up" style={{ flexGrow: up }} />
+          <span className="down" style={{ flexGrow: down }} />
+        </span>
+      )}
+      <span className="down num">{nf(down)}</span>
+    </div>
+  );
+}
+
+function Spark({ rows, label }: { rows: { date: string; close: number }[]; label: string }) {
+  const gradient = `spark-${useId().replace(/:/g, '')}`,
+    area = areaChart(
+      rows.map((r) => r.close),
+      120,
+      28,
+    );
+  if (!area) return null;
+  return (
+    <>
+      <svg
+        className="spark"
+        data-tone={area.tone}
+        viewBox="0 0 120 28"
+        preserveAspectRatio="none"
+        role="img"
+        aria-label={label}
+      >
+        <title>
+          {`${pct(area.changePct)} over the window; `}
+          {rows.map((r) => `${date(r.date)}: ${nf(r.close, 2)}`).join('; ')}
+        </title>
+        <defs>
+          <linearGradient id={gradient} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="currentColor" stopOpacity={0.25} />
+            <stop offset="100%" stopColor="currentColor" stopOpacity={0} />
+          </linearGradient>
+        </defs>
+        <path className="spark-fill" d={area.fill} fill={`url(#${gradient})`} />
+        <path className="spark-line" d={area.line} vectorEffect="non-scaling-stroke" />
+      </svg>
+    </>
+  );
+}
+
+const heatTone = (change: number | null) => {
+  const c = change ?? 0,
+    strength = Math.min(1, Math.abs(c) / 4) ** 0.8,
+    end = c >= 0 ? [22, 112, 73] : [180, 60, 54],
+    base = [231, 230, 223];
+  return {
+    background: `rgb(${base.map((n, i) => Math.round(n + (end[i]! - n) * strength)).join(',')})`,
+    color: strength > 0.45 ? '#fdfcf9' : '#222320',
+  };
+};
+
+const heatLimit = { phone: 20, desktop: 50 };
+
+function Heatmap({ stocks }: { stocks: Stock[] }) {
+  const phone = useNarrow();
+  const ref = useRef<HTMLDivElement>(null);
+  const [size, setSize] = useState({ width: 0, height: 0 });
+  useEffect(() => {
+    const host = ref.current;
+    if (!host) return;
+    const measure = () => setSize({ width: host.clientWidth, height: host.clientHeight });
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(host);
+    return () => observer.disconnect();
+  }, []);
+  const top = stocks
+    .filter((s) => s.value > 0)
+    .sort((a, b) => b.value - a.value)
+    .slice(0, phone ? heatLimit.phone : heatLimit.desktop)
+    .map((stock) => ({ stock, value: phone ? Math.sqrt(stock.value) : stock.value }));
+  return (
+    <section className="panel heat-panel" aria-labelledby="heat-heading">
+      <div className="panel-head">
+        <h2 id="heat-heading">Most traded</h2>
+        <div className="heat-scale" aria-label="Daily change colour scale">
+          {[-4, -2, 0, 2, 4].map((c) => (
+            <span key={c} style={heatTone(c)}>
+              {c === -4 ? '≤−4%' : c === 4 ? '≥+4%' : `${signed(c, nf)}%`}
+            </span>
+          ))}
+        </div>
+      </div>
+      <div ref={ref} className="heat">
+        {treemap(top, size.width, size.height).map(({ item: { stock: s }, x, y, w, h }) => (
+          <a
+            key={s.ticker}
+            href={`/t/${s.ticker}`}
+            aria-label={`${s.ticker} ${s.name}, change ${pct(s.change_pct)}, traded value ${nf(s.value)} IDR`}
+            title={`${s.name}\n${nf(s.close)} IDR\n${nf(s.value)} IDR traded`}
+            style={{
+              left: x,
+              top: y,
+              width: Math.max(0, w - 2),
+              height: Math.max(0, h - 2),
+              ...heatTone(s.change_pct),
+            }}
+          >
+            {(phone || (w > 40 && h > 22)) && <b>{s.ticker}</b>}
+            {(phone || (w > 52 && h > 40)) && <span>{pct(s.change_pct)}</span>}
+          </a>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function Signals({ tiles, stockMap }: { tiles: SignalTile[]; stockMap: Map<string, Stock> }) {
+  if (!tiles.length) return <p className="signals-empty">No signals on the latest day.</p>;
+  return (
+    <section className="tiles" aria-label="Signals">
+      {tiles.map(({ kind, count, top }) => {
+        const lens = lensOf(kind);
+        return (
+          <div className="tile" key={kind}>
+            <a
+              className="tile-head"
+              href={`/market?show=${kind}`}
+              title={lens.label}
+              aria-label={`${lens.label}, ${count} ${count === 1 ? 'stock' : 'stocks'}, open in Market`}
+            >
+              <b>{lens.tag}</b>
+              <span className="num">{count}</span>
+            </a>
+            <ul>
+              {top.map((e) => (
+                <li key={e.ticker}>
+                  <a
+                    className="tile-row"
+                    href={`/t/${e.ticker}`}
+                    title={`${stockMap.get(e.ticker)?.name ?? e.ticker}\n${eventTitle(e)}`}
+                  >
+                    <b className="sym">{e.ticker}</b>
+                    <span className="metric">
+                      <EventMetric event={e} />
+                    </span>
+                    <span className="mag">
+                      <i
+                        className={tone(e)}
+                        style={{ width: `${Math.max(6, magnitude(e, top[0]!) * 100)}%` }}
+                      />
+                    </span>
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </div>
+        );
+      })}
+    </section>
+  );
+}
+
+function WeekLine({ item }: { item: WeekItem }) {
+  return item.type === 'event' ? (
+    <li title={item.source}>
+      <span className="what">
+        <span className="tag">{item.country}</span>
+        {item.title}
+      </span>
+      {item.timed && (
+        <span className="when">{wib(item.ts, { day: undefined, month: undefined })} WIB</span>
+      )}
+    </li>
+  ) : (
+    <li className={item.pinned ? 'pinned' : undefined}>
+      <a className="what" href={`/t/${item.ticker}`}>
+        <b className="sym">{item.ticker}</b>
+        <span className="tag">{item.kind}</span>
+        <span className="label">{item.label}</span>
+      </a>
+    </li>
+  );
+}
+
+function Week({ pins }: { pins: string[] }) {
+  const calendar = usePublished('calendar'),
+    actions = usePublished('actions');
+  const days = weekStrip(
+    weekAhead(
+      calendar.kind === 'ready' ? calendar.data.cal : [],
+      actions.kind === 'ready' ? actions.data.actions : [],
+      pins,
+      new Date(),
+    ),
+    new Date(),
+  );
+  const busy = days.filter((d) => d.events.length + d.pinned.length + d.others.length > 0);
+  const [chosen, choose] = useState<string | null>(null);
+  const [expanded, expand] = useState(false);
+  const day = days.find((d) => d.date === chosen) ?? busy[0];
+  if (!day) return null;
+  return (
+    <section className="panel week" aria-labelledby="week-heading">
+      <h2 id="week-heading">This week</h2>
+      <div className="week-days" role="group" aria-label="Day">
+        {days.map((d) => {
+          const count = d.events.length + d.pinned.length + d.others.length;
+          return (
+            <button
+              key={d.date}
+              type="button"
+              aria-pressed={d.date === day.date}
+              disabled={!count}
+              onClick={() => {
+                choose(d.date);
+                expand(false);
+              }}
+            >
+              <span className="week-day">
+                {new Date(d.date + 'T00:00:00Z').toLocaleDateString('en-GB', {
+                  weekday: 'short',
+                  timeZone: 'UTC',
+                })}
+              </span>
+              <span className="week-date">{Number(d.date.slice(8))}</span>
+              <span className="week-dots" aria-label={`${count} items`}>
+                {d.events.map((_, i) => (
+                  <i key={`e${i}`} className="dot event" />
+                ))}
+                {d.pinned.map((_, i) => (
+                  <i key={`p${i}`} className="dot pinned" />
+                ))}
+                {d.others.length > 0 && <small>{d.others.length}</small>}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      <ol className="week-list" aria-label={dateText(day.date)}>
+        {[...day.events, ...day.pinned, ...(expanded ? day.others : [])].map((item) => (
+          <WeekLine
+            key={item.type === 'event' ? `${item.ts}:${item.title}` : `${item.ticker}:${item.kind}`}
+            item={item}
+          />
+        ))}
+      </ol>
+      {day.others.length > 0 && (
+        <button
+          type="button"
+          className="week-more"
+          aria-expanded={expanded}
+          onClick={() => expand(!expanded)}
+        >
+          {expanded
+            ? 'Show less'
+            : `${day.others.length} ${day.others.length === 1 ? 'corporate action' : 'corporate actions'}`}
+        </button>
+      )}
+    </section>
+  );
+}
+
+function WatchRow({
+  stock,
+  events,
+  asOf,
+  pin,
+}: {
+  stock: Stock;
+  events: Event[];
+  asOf: string | null;
+  pin: ReactNode;
+}) {
+  const [history, setHistory] = useState<Ticker | null | 'failed'>(null);
+  useEffect(() => {
+    let active = true;
+    void load(`ticker/${stock.ticker}.json`).then(
+      (data) => {
+        if (active) setHistory(data ?? 'failed');
+      },
+      () => {
+        if (active) setHistory('failed');
+      },
+    );
+    return () => {
+      active = false;
+    };
+  }, [stock.ticker]);
+  const risk = useRiskFor(stock.ticker);
+  const detail = history && history !== 'failed' ? history : null;
+  const latest: { date: string; text: ReactNode }[] = [
+    ...events
+      .filter((e) => e.ticker === stock.ticker)
+      .map((e) => ({ date: e.date, text: <EventText event={e} /> })),
+    ...(detail?.disclosures ?? []).map((d) => ({ date: d.published_at, text: d.title })),
+  ].sort((a, b) => b.date.localeCompare(a.date));
+  const event = latest.find((item) => asOf !== null && item.date.slice(0, 10) >= asOf);
+  return (
+    <div className="watch-row">
+      <div className="watch-id">
+        <span className="watch-name">
+          <a
+            className="watch-link"
+            href={`/t/${stock.ticker}`}
+            aria-label={`Open ${stock.ticker}, ${stock.name}, watchlist`}
+          >
+            <b className="sym">{stock.ticker}</b>
+          </a>
+          <RiskBadge risk={risk} />
+        </span>
+        <small>{stock.name}</small>
+      </div>
+      {detail?.prices.length ? (
+        <Spark
+          rows={detail.prices.slice(-60)}
+          label={`${stock.ticker} closing price over 60 trading days`}
+        />
+      ) : (
+        <span className="spark spark-empty">
+          {history === 'failed' ? 'History unavailable' : ''}
+        </span>
+      )}
+      <span className="num close">{nf(stock.close)}</span>
+      <span className={`num change ${direction(stock.change_pct)}`}>{pct(stock.change_pct)}</span>
+      {event && (
+        <span className="latest-event">
+          {event.text} <time dateTime={event.date}>{dateText(event.date, false)}</time>
+        </span>
+      )}
+      {pin}
+    </div>
+  );
+}
+
+const newsLimit = { phone: 3, desktop: 12 };
+
+function News({ news }: { news: Headline[] | null }) {
+  const phone = useNarrow();
+  if (news === null) return null;
+  const rows = news
+    .filter((n) => n.region === 'ID')
+    .sort((a, b) => b.ts.localeCompare(a.ts))
+    .slice(0, phone ? newsLimit.phone : newsLimit.desktop);
+  if (!rows.length) return null;
+  let day = '';
+  return (
+    <section className="panel news" aria-labelledby="news-heading">
+      <h2 id="news-heading">News</h2>
+      <ol>
+        {rows.map((item) => {
+          const d = calendarDate(item.ts),
+            heading = d !== day;
+          day = d;
+          return (
+            <li key={item.link}>
+              {heading && <h3>{dateText(d)}</h3>}
+              <a href={item.link} target="_blank" rel="noreferrer">
+                <time dateTime={item.ts} title={`${wib(item.ts)} WIB`}>
+                  {wib(item.ts, { day: undefined, month: undefined })}
+                </time>
+                <span>
+                  <strong>{item.title}</strong> <small>{item.src}</small>
+                  {item.tags.map((t) => (
+                    <span className="tag" key={t}>
+                      {t}
+                    </span>
+                  ))}
+                </span>
+              </a>
+            </li>
+          );
+        })}
+      </ol>
+    </section>
   );
 }

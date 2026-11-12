@@ -1,13 +1,16 @@
 import './styles.css';
+import './site.css';
 import './terminal/terminal.css';
 import { lazy, Suspense, useEffect, useState, useSyncExternalStore } from 'react';
 import { LocaleProvider, useLocale, type Locale } from './locale';
 import { LoginPage } from './BrokerPanel';
-import { TickerPage } from './ticker/TickerPage';
 import { Home } from './Home';
 import { MarketPage } from './MarketPage';
 import { TerminalBoot, useTerminalBoot } from './terminal/TerminalBoot';
 
+const TickerPage = lazy(() =>
+  import('./ticker/TickerPage').then((m) => ({ default: m.TickerPage })),
+);
 const Terminal = lazy(() => import('./terminal/Terminal').then((m) => ({ default: m.Terminal })));
 
 export function App({
@@ -35,7 +38,13 @@ function AppRoute({ initialUrl }: { initialUrl?: string }) {
   if (path === '/terminal') return <TerminalAvailability />;
   if (path === '/market') return <MarketPage />;
   const ticker = /^\/t\/([A-Z0-9-]{1,12})\/?$/i.exec(path)?.[1]?.toUpperCase();
-  return ticker ? <TickerPage key={ticker} ticker={ticker} /> : <Home />;
+  return ticker ? (
+    <Suspense fallback={<div className="site ticker-page" />}>
+      <TickerPage key={ticker} ticker={ticker} />
+    </Suspense>
+  ) : (
+    <Home />
+  );
 }
 
 const desktop = '(min-width: 901px)';
@@ -53,7 +62,7 @@ function TerminalAvailability() {
   return wide ? (
     <TerminalRoute />
   ) : (
-    <main className="home-page terminal-unavailable">
+    <main className="site terminal-unavailable">
       <p>{t('The terminal is not available on mobile yet.')}</p>
       <a href="/">{t('Back to home')}</a>
     </main>

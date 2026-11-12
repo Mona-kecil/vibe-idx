@@ -1,4 +1,6 @@
-import type { Ticker } from '../data';
+import type { z } from 'zod';
+import type { corporateActionSchema, Ticker } from '../data';
+import { dateText, monthsBefore, publishedMs } from './format';
 
 export type Price = Ticker['prices'][number];
 export type Filing = Ticker['disclosures'][number];
@@ -59,6 +61,37 @@ export function selectionKey(
   if (!day) return selection;
   if (edge) return moveEdge(selection, edge, day);
   return shift ? { ...selection, end: day } : { anchor: day, end: day };
+}
+export type Period = '1M' | '3M' | '6M' | 'YTD';
+export function visiblePrices(prices: Price[], period: Period) {
+  const last = prices.at(-1);
+  if (!last || period === 'YTD') return prices;
+  const start = monthsBefore(last.date, parseInt(period));
+  return prices.filter((p) => p.date >= start);
+}
+/** The period the ticker page and its share card open on, so both draw the same window. */
+export const openingPeriod: Period = '1M';
+export type RowWindow = { first: number; last: number };
+const RIGHT_PADDING = 3;
+export function periodRange(prices: Price[], period: Period) {
+  const first = prices.length - visiblePrices(prices, period).length;
+  return { from: first - 0.5, to: prices.length - 1 + RIGHT_PADDING };
+}
+export function visibleWindow(
+  length: number,
+  range: { from: number; to: number } | null,
+): RowWindow | null {
+  if (!range) return null;
+  const first = Math.max(0, Math.ceil(range.from)),
+    last = Math.min(length - 1, Math.floor(range.to));
+  return first <= last ? { first, last } : null;
+}
+export function selectedRows(dates: string[], selection: Selection): RowWindow | null {
+  const b = bounds(selection);
+  if (!b) return null;
+  const first = dates.findIndex((d) => d >= b.start);
+  const last = dates.filter((d) => d <= b.end).length - 1;
+  return first >= 0 && first <= last ? { first, last } : null;
 }
 export function aggregateRange(prices: Price[], selection: Selection) {
   const rows = prices.filter((p) => inRange(p.date, selection));
@@ -334,4 +367,173 @@ export function summaryEvents(events: HoldingEvent[], filings: Filing[], selecti
       Number(b.kind === 'ownership') - Number(a.kind === 'ownership') ||
       b.time.localeCompare(a.time),
   );
+}
+
+export type NewsItem = { title: string; url: string; published_at: string; source: string };
+export type TimelineItem = {
+  at: string;
+  kind: 'filing' | 'news';
+  title: string;
+  url: string;
+  source?: string;
+  attachments: { url: string; label: string }[];
+};
+export const TIMELINE_SHOWN = 5;
+/** Daily "share price today" recaps repeat the chart and crowd out filings. */
+const priceRecap = /\bharga saham\b.*\bhari ini\b/i;
+const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+export function withoutSource(title: string, source: string) {
+  const tail = new RegExp(`\\s+[-–—|]\\s+${escape(source.trim())}$`, 'i');
+  return source.trim() ? title.replace(tail, '') : title;
+}
+export function timeline(filings: Filing[], news: NewsItem[]): TimelineItem[] {
+  return [
+    ...filings.map((f) => ({
+      at: f.published_at,
+      kind: 'filing' as const,
+      title: f.title,
+      url: f.url,
+      attachments: attachments(f).map(({ url, label }) => ({ url, label })),
+    })),
+    ...news
+      .filter((n) => !priceRecap.test(n.title))
+      .map((n) => ({
+        at: n.published_at,
+        kind: 'news' as const,
+        title: withoutSource(n.title, n.source),
+        url: n.url,
+        source: n.source,
+        attachments: [],
+      })),
+  ].sort((a, b) => publishedMs(b.at) - publishedMs(a.at));
+}
+
+export function cumulativeForeign(rows: Price[]) {
+  let sum = 0;
+  return rows.map((p) => (sum += p.net_foreign));
+}
+
+/** True when at least one holder's reported share count changes over the series. */
+export function holdingsMoved(series: HoldingSeries[]) {
+  return series.some(
+    (s) => new Set(s.points.flatMap((p) => (p.shares === null ? [] : [p.shares]))).size > 1,
+  );
+}
+export const TOP_HOLDERS = 5;
+export function topSeries(series: HoldingSeries[], date: string, count = TOP_HOLDERS) {
+  return series
+    .map((s) => ({ s, shares: sharesAt(s, date) }))
+    .filter((h): h is { s: HoldingSeries; shares: number } => typeof h.shares === 'number')
+    .filter((h) => h.shares > 0)
+    .sort((a, b) => b.shares - a.shares)
+    .slice(0, count)
+    .map((h) => h.s);
+}
+
+// A log scale keeps a 1% holder readable next to a 55% controller.
+const pctTicks = [0.5, 1, 2, 5, 10, 20, 50, 100];
+export function pctAxis(values: number[]) {
+  const positive = values.filter((v) => v > 0);
+  const floor = positive.length
+    ? ([...pctTicks].reverse().find((t) => t <= Math.min(...positive)) ?? pctTicks[0] ?? 0.5)
+    : 1;
+  const ceiling = Math.max(floor * 2, ...positive) * 1.15;
+  return {
+    floor,
+    ceiling,
+    ticks: pctTicks.filter((t) => t >= floor && t <= ceiling),
+    position: (pct: number) => Math.log(Math.max(pct, floor) / floor) / Math.log(ceiling / floor),
+  };
+}
+
+export type ActionChip = { label: string; date: string; title: string };
+type CorporateAction = z.infer<typeof corporateActionSchema>;
+type ActionStep = CorporateAction['steps'][number]['step'];
+const stepNames: Record<ActionStep, string> = {
+  cum: 'Cum date',
+  ex: 'Ex date',
+  record: 'Record date',
+  pay: 'Payment',
+  distribution: 'Distribution',
+  listing: 'Listing',
+  trade_start: 'Trading starts',
+  trade_end: 'Trading ends',
+  meeting: 'RUPS',
+  delisting: 'Delisting',
+};
+const headline: Record<CorporateAction['kind'], { step: ActionStep; label: string }> = {
+  DIV: { step: 'ex', label: 'Ex-div' },
+  RIGHTS: { step: 'ex', label: 'Ex-rights' },
+  BONUS: { step: 'ex', label: 'Ex-bonus' },
+  SPLIT: { step: 'ex', label: 'Ex-split' },
+  RUPS: { step: 'meeting', label: 'RUPS' },
+  IPO: { step: 'listing', label: 'Listing' },
+  DELIST: { step: 'delisting', label: 'Delisting' },
+};
+export function nextAction(
+  actions: CorporateAction[],
+  ticker: string,
+  today: string,
+  days = 30,
+): ActionChip | null {
+  const limit = new Date(today + 'T00:00:00Z');
+  limit.setUTCDate(limit.getUTCDate() + days);
+  const last = limit.toISOString().slice(0, 10);
+  const upcoming = actions
+    .filter((a) => a.ticker === ticker)
+    .flatMap((action) => {
+      const key = headline[action.kind];
+      const step = action.steps.find((s) => s.step === key.step);
+      const date = step?.date.slice(0, 10);
+      return date && date >= today && date <= last ? [{ action, key, date }] : [];
+    })
+    .sort((a, b) => a.date.localeCompare(b.date));
+  const next = upcoming[0];
+  if (!next) return null;
+  const { action, key, date } = next;
+  const amount = action.amount ? ` ${action.amount.currency} ${action.amount.value}` : '';
+  return {
+    label: `${key.label} ${dateText(date, false)}`,
+    date,
+    title: [
+      `${action.label}${amount}`,
+      ...action.steps.map((s) => `${stepNames[s.step]} ${dateText(s.date)}`),
+    ].join('\n'),
+  };
+}
+
+export type ChartMark = { date: string; kind: 'filing' | 'ownership' | 'action'; label: string };
+/** Filings, ownership changes and past corporate-action dates, each snapped to the next trading day. */
+export function chartMarks(
+  data: Ticker,
+  events: HoldingEvent[],
+  actions: CorporateAction[],
+): ChartMark[] {
+  const days = data.prices.map((p) => p.date);
+  const trading = (date: string) => days.find((d) => d >= date.slice(0, 10));
+  const raw: ChartMark[] = [
+    ...data.disclosures.map((f) => ({
+      date: f.published_at,
+      kind: 'filing' as const,
+      label: f.title,
+    })),
+    ...events.map((e) => ({ date: e.date, kind: 'ownership' as const, label: e.name })),
+    ...actions
+      .filter((a) => a.ticker === data.ticker)
+      .flatMap((a) => {
+        const step = a.steps.find((s) => s.step === headline[a.kind].step);
+        return step
+          ? [{ date: step.date, kind: 'action' as const, label: headline[a.kind].label }]
+          : [];
+      }),
+  ];
+  const marks = new Map<string, ChartMark>();
+  for (const mark of raw) {
+    const date = trading(mark.date);
+    if (!date) continue;
+    const key = `${date} ${mark.kind}`;
+    const seen = marks.get(key);
+    marks.set(key, seen ? { ...seen, label: `${seen.label}\n${mark.label}` } : { ...mark, date });
+  }
+  return [...marks.values()].sort((a, b) => a.date.localeCompare(b.date));
 }

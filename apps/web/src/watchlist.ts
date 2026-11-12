@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { z } from 'zod';
 
 export function readStorage(key: string) {
@@ -27,4 +28,15 @@ export function initialPins() {
   } catch {
     return [];
   }
+}
+
+export function usePins() {
+  const [pins, setPins] = useState(initialPins);
+  const toggle = (ticker: string) => {
+    const next = pins.includes(ticker) ? pins.filter((t) => t !== ticker) : [...pins, ticker];
+    setPins(next);
+    writeStorage('vibe-idx:watchlist', JSON.stringify(next));
+    return next.includes(ticker);
+  };
+  return [pins, toggle] as const;
 }
