@@ -69,6 +69,8 @@ export function visiblePrices(prices: Price[], period: Period) {
   const start = monthsBefore(last.date, parseInt(period));
   return prices.filter((p) => p.date >= start);
 }
+/** The period the ticker page and its share card open on, so both draw the same window. */
+export const openingPeriod: Period = '1M';
 export type RowWindow = { first: number; last: number };
 const RIGHT_PADDING = 3;
 export function periodRange(prices: Price[], period: Period) {

@@ -3,14 +3,14 @@ import { describe, expect, it } from 'vite-plus/test';
 import { defaultMeta, parseTickerCard, tickerMeta, withShareMeta } from '../api/_share';
 import history from './ticker/fixtures/TPIA-history.json';
 import { tickerSchema } from './data';
-import { visiblePrices } from './ticker/logic';
+import { openingPeriod, visiblePrices } from './ticker/logic';
 
 const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 
 describe('share metadata', () => {
-  it('draws the same three-month window the ticker page opens on', () => {
+  it('draws the same window the ticker page opens on', () => {
     const card = parseTickerCard(history);
-    const page = visiblePrices(tickerSchema.parse(history).prices, '3M');
+    const page = visiblePrices(tickerSchema.parse(history).prices, openingPeriod);
     expect(card).not.toBeNull();
     expect(card?.closes).toEqual(page.map((p) => p.close));
     expect(card?.start).toBe(page[0]?.date);
@@ -20,7 +20,7 @@ describe('share metadata', () => {
       close: 100 + i,
     }));
     const windowed = parseTickerCard({ ticker: 'BBCA', name: 'Bank', prices: daily });
-    expect(windowed?.start).toBe('2026-04-19');
+    expect(windowed?.start).toBe('2026-06-19');
     expect(windowed?.closes.at(-1)).toBe(299);
   });
 

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vite-plus/test';
+import { dayMove } from './format';
 import { tickerSchema } from '../data';
 import tpiaFixture from './fixtures/TPIA-history.json';
 import {
@@ -721,5 +722,14 @@ describe('timeline cleanup and chart marks', () => {
       { date: '2026-11-09', kind: 'filing', label: 'Weekend filing\nSecond' },
       { date: '2026-11-10', kind: 'action', label: 'Ex-div' },
     ]);
+  });
+});
+
+describe('dayMove', () => {
+  it('names the direction so the day change reads without its sign', () => {
+    expect(dayMove(2.8169)).toBe('Up 2.82% today');
+    expect(dayMove(-1.96)).toBe('Down 1.96% today');
+    expect(dayMove(0)).toBe('Unchanged today');
+    expect(dayMove(null)).toBe('—');
   });
 });

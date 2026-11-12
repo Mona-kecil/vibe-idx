@@ -132,7 +132,7 @@ describe('share card area chart', () => {
       const found = inspect(card(closes));
       expect(found.text).toContain('14 Aug – 12 Nov 2026');
       expect(found.text).not.toContain(change);
-      expect(found.text).toContain('+0.50%');
+      expect(found.text).toContain('Up 0.50% today');
       expect(found.strokes).toContain(stroke);
       const png = await renderCard(card(closes), loadFonts);
       expect([...png.slice(0, 4)]).toEqual([137, 80, 78, 71]);

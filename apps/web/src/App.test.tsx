@@ -853,6 +853,9 @@ describe('ticker research regressions', () => {
   it('orders identity, chart, key stats, ownership, timeline and a compact broker row', async () => {
     window.history.replaceState(null, '', '/t/BBCA');
     await render();
+    expect(host.querySelector('.ticker-header .price-change')?.textContent).toBe(
+      'Up 1 (0.98%) today',
+    );
     const order = [
       '.ticker-header',
       '#price-section',

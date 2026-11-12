@@ -57,3 +57,10 @@ export function monthsBefore(last: string, months: number) {
   start.setUTCMonth(start.getUTCMonth() - months);
   return start.toISOString().slice(0, 10);
 }
+
+/** "Up", "Down" or "Unchanged", so a day's change reads without relying on its sign or colour. */
+export const moveWord = (change: number) => (change > 0 ? 'Up' : change < 0 ? 'Down' : 'Unchanged');
+export function dayMove(pct: number | null) {
+  if (pct === null) return '—';
+  return pct === 0 ? 'Unchanged today' : `${moveWord(pct)} ${nf(Math.abs(pct), 2)}% today`;
+}

@@ -25,7 +25,7 @@ import { PinButton, SiteHeader } from './SiteHeader';
 import { Stale } from './Stale';
 import { fetchHeadlines, type Headline } from './terminal/sources';
 import { treemap } from './treemap';
-import { calendarDate, dateText, direction, nf, wib } from './ticker/format';
+import { calendarDate, dateText, direction, moveWord, nf, wib } from './ticker/format';
 import { usePins } from './watchlist';
 import { useNarrow } from './useNarrow';
 import './home.css';
@@ -148,8 +148,11 @@ function Pulse({ data, excluded }: { data: Data; excluded: number }) {
           <h1>IHSG</h1>
           <strong className="num">{nf(last.close, 2)}</strong>
           <span className={`num ${direction(last.change)}`}>
-            {last.change === null ? '—' : signed(last.change, (v) => nf(v, 2))}{' '}
-            {pct(last.change_pct)}
+            {last.change === null || last.change_pct === null
+              ? '—'
+              : last.change === 0
+                ? 'Unchanged today'
+                : `${moveWord(last.change)} ${nf(Math.abs(last.change), 2)} (${nf(Math.abs(last.change_pct), 2)}%) today`}
           </span>
           <Spark rows={history} label="IHSG closing levels over 60 trading days" />
         </div>

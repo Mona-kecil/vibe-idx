@@ -24,7 +24,7 @@ export function parseTickerCard(json: unknown): TickerCard | null {
   const last = prices.at(-1);
   if (!last) return null;
   const previous = prices.at(-2),
-    from = monthsBefore(last.date, 3),
+    from = monthsBefore(last.date, 1),
     recent = prices.filter((price) => price.date >= from);
   return {
     ticker,

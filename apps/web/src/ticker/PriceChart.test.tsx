@@ -185,7 +185,7 @@ describe('ticker price chart', () => {
     expect(host.querySelector('.readout')).toBeNull();
   });
 
-  it('colours the line by the visible window and keeps candles behind the toggle on phones', async () => {
+  it('opens on candles on phones and colours the line by the visible window', async () => {
     vi.stubGlobal('matchMedia', (query: string) => ({
       matches: query.includes('max-width: 900px'),
       addEventListener() {},
@@ -193,10 +193,11 @@ describe('ticker price chart', () => {
     }));
     await mount();
     expect(calls('addSeries').map((c) => (c.args[0] as { type: string }).type)).toEqual([
-      'Area',
+      'Candlestick',
       'Histogram',
       'Histogram',
     ]);
+    await click('[data-type="line"]');
     expect(lastArg('series:Area@0.applyOptions')).toMatchObject({ lineColor: '#167049' });
     await emit('timeScale().subscribeVisibleLogicalRangeChange', { from: 10, to: 20.4 });
     expect(element('[data-range][aria-pressed="true"]').getAttribute('title')).toMatch(/\+9\.09%$/);

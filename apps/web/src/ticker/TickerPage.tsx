@@ -14,8 +14,9 @@ import {
   type Period,
   type Selection,
   chartMarks,
+  openingPeriod,
 } from './logic';
-import { calendarDate, dateText, direction, nf, short, signed } from './format';
+import { calendarDate, dateText, direction, nf, short, signed, moveWord } from './format';
 import { Freshness } from './Freshness';
 import { PriceChart } from './PriceChart';
 import { SelectionSummary, Timeline } from './Feeds';
@@ -108,7 +109,7 @@ function TickerDetail({
   pin: (ticker: string) => ReactNode;
 }) {
   const [selection, select] = useState<Selection>(null),
-    [period, setPeriod] = useState<Period>('3M');
+    [period, setPeriod] = useState<Period>(openingPeriod);
   const risk = useRiskFor(data.ticker),
     actions = usePublished('actions');
   const dailyDate =
@@ -213,12 +214,14 @@ function TickerDetail({
                 {nf(last.close)}
               </span>
               <span className={`price-change ${direction(change)}`}>
-                {change === null ? (
+                {change === null || pct === null ? (
                   '—'
+                ) : change === 0 ? (
+                  'Unchanged today'
                 ) : (
                   <>
-                    <span className="change-abs">{signed(change, nf)} (</span>
-                    {signed(pct ?? 0, (v) => nf(v, 2))}%<span className="change-abs">)</span>
+                    {moveWord(change)} <span className="change-abs">{nf(Math.abs(change))} (</span>
+                    {nf(Math.abs(pct), 2)}%<span className="change-abs">)</span> today
                   </>
                 )}
               </span>

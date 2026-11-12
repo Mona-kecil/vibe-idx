@@ -4,7 +4,7 @@ import { createElement as h, type CSSProperties } from 'react';
 import satori, { type Font } from 'satori';
 import { areaChart, type Pad, type Tone } from '../src/area.js';
 import { brokerTickerSchema } from '../src/brokers.js';
-import { dateText, nf, signed } from '../src/ticker/format.js';
+import { dateText, dayMove, nf } from '../src/ticker/format.js';
 import { markSvg } from './_mark.js';
 import { reportFailure } from './_sentry.js';
 import { loadTickerCard } from './_share-data.js';
@@ -259,8 +259,8 @@ export function tickerCard(card: TickerCard) {
         ),
         h(
           'div',
-          { style: { fontSize: 38, fontWeight: 700, color: color(card.changePct) } },
-          card.changePct === null ? '—' : `${signed(card.changePct, (v) => nf(v, 2))}%`,
+          { style: { fontSize: 34, fontWeight: 700, color: color(card.changePct) } },
+          dayMove(card.changePct),
         ),
       ),
     ),

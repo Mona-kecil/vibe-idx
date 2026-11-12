@@ -213,7 +213,7 @@ export function PriceChart({
   const rows = useMemo(() => chartRows(prices), [prices]);
   const [type, setType] = useState<ChartType>(() => {
     const saved = readStorage(typeKey);
-    return saved === 'line' || saved === 'candles' ? saved : narrow ? 'line' : 'candles';
+    return saved === 'line' ? 'line' : 'candles';
   });
   const [totalOpen, setTotalOpen] = useState(false);
   const withTotal = !narrow || totalOpen;
