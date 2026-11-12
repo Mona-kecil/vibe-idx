@@ -221,6 +221,25 @@ export function weekAhead(
   );
 }
 
+export type WeekDay = { date: string; events: WeekItem[]; pinned: WeekItem[]; others: WeekItem[] };
+/** The next five weekdays from `now` in Jakarta, each with its items split for display. */
+export function weekStrip(items: WeekItem[], now: Date, days = 5): WeekDay[] {
+  const out: WeekDay[] = [];
+  for (let offset = 0; out.length < days && offset < days + 4; offset++) {
+    const date = calendarDate(new Date(now.getTime() + offset * 864e5).toISOString());
+    const weekday = new Date(date + 'T00:00:00Z').getUTCDay();
+    if (weekday === 0 || weekday === 6) continue;
+    const day = items.filter((item) => item.date === date);
+    out.push({
+      date,
+      events: day.filter((item) => item.type === 'event'),
+      pinned: day.filter((item) => item.type === 'action' && item.pinned),
+      others: day.filter((item) => item.type === 'action' && !item.pinned),
+    });
+  }
+  return out;
+}
+
 export function byTicker(events: Event[]) {
   const map = new Map<string, Event[]>();
   for (const event of events) map.set(event.ticker, [...(map.get(event.ticker) ?? []), event]);

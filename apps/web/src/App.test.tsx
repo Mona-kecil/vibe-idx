@@ -307,8 +307,6 @@ describe('daily briefing', () => {
         width: row.querySelector<HTMLElement>('.mag i')?.style.width,
       })),
     }));
-  const weekRows = () =>
-    [...host.querySelectorAll('.week li')].map((li) => li.textContent?.replace(/\s+/g, ' '));
   const pin = (...tickers: string[]) =>
     window.localStorage.setItem('vibe-idx:watchlist', JSON.stringify(tickers));
   function viewport(width: number) {
@@ -420,55 +418,72 @@ describe('daily briefing', () => {
     ).toEqual(['UMA', 'FCA']);
     expect(second?.querySelector('.risk')).toBeNull();
   });
-  it('lists high-impact events and ex-dates of the next seven days in date order', async () => {
+  const weekDays = () =>
+    [...host.querySelectorAll<HTMLButtonElement>('.week-days button')].map((b) => ({
+      label: `${b.querySelector('.week-day')?.textContent}${b.querySelector('.week-date')?.textContent}`,
+      off: b.disabled,
+      on: b.getAttribute('aria-pressed') === 'true',
+    }));
+  const weekList = () =>
+    [...host.querySelectorAll('.week-list li')].map((li) =>
+      li.textContent?.replace(/\s+/g, ' ').trim(),
+    );
+  const pressDay = (label: string) =>
+    act(async () =>
+      [...host.querySelectorAll<HTMLButtonElement>('.week-days button')]
+        .find((b) => b.textContent?.startsWith(label))!
+        .click(),
+    );
+  it('shows a watchlist event only when it happened on the latest data day', async () => {
+    pin('BBCA');
+    history.disclosures = [
+      {
+        id: 'old',
+        title: 'Older disclosure',
+        published_at: '2026-10-01T09:00:00',
+        url: 'https://idx.id/old',
+        kind: 'other',
+        attachments: [],
+      },
+    ];
+    await render();
+    expect(host.querySelector('.watch-row')).not.toBeNull();
+    expect(host.querySelector('.watch-row .latest-event')).toBeNull();
+    expect(host.querySelector('.watch-row')?.textContent).not.toContain('Older disclosure');
+  });
+  it('lays the next five weekdays out as a strip and lists the first busy day', async () => {
     today('2026-11-13T03:00:00Z');
     await render();
-    expect(weekRows()).toEqual([
-      '13 NovUSCore PPI m/m20:30 WIB',
-      '14 NovBBBBRIGHTSRIGHTS BBBB',
-      '15 NovHHHHBONUSBONUS HHHH',
-      '15 NovIIIISPLITSPLIT IIII',
-      '16 NovAAAADIVDIV AAAA',
-      '18 NovIDBI rate decision',
+    expect(weekDays()).toEqual([
+      { label: 'Fri13', off: false, on: true },
+      { label: 'Mon16', off: false, on: false },
+      { label: 'Tue17', off: true, on: false },
+      { label: 'Wed18', off: false, on: false },
+      { label: 'Thu19', off: true, on: false },
     ]);
-    expect(host.querySelector('.week .more')?.textContent).toBe('1 more in Terminal');
-    expect(host.querySelector('.week a[href="/t/BBBB"]')).not.toBeNull();
-    for (const hidden of [
-      'Yesterday',
-      'Already out',
-      'Retail',
-      'Next week',
-      'DDDD',
-      'EEEE',
-      'FFFF',
-      'GGGG',
-    ])
+    expect(weekList()).toEqual(['USCore PPI m/m20:30 WIB']);
+    expect(host.querySelector('.week-more')?.textContent).toBe('1 corporate action');
+    await click('.week-more');
+    expect(weekList()).toEqual(['USCore PPI m/m20:30 WIB', 'CCCCRUPSRUPS CCCC']);
+    await pressDay('Wed');
+    expect(weekList()).toEqual(['IDBI rate decision']);
+    await pressDay('Mon');
+    expect(host.querySelector('.week a[href="/t/AAAA"]')).toBeNull();
+    await click('.week-more');
+    expect(host.querySelector('.week a[href="/t/AAAA"]')).not.toBeNull();
+    for (const hidden of ['Yesterday', 'Already out', 'Retail', 'Next week', 'DDDD', 'EEEE'])
       expect(host.querySelector('.week')?.textContent).not.toContain(hidden);
   });
-  it('puts pinned tickers first and keeps unpinned shareholder meetings last', async () => {
+  it('lists pinned tickers with the day and fills their dots', async () => {
     today('2026-11-13T03:00:00Z');
     pin('CCCC', 'AAAA');
     await render();
-    expect(weekRows().map((r) => r?.slice(0, 11))).toEqual([
-      '13 NovCCCCR',
-      '16 NovAAAAD',
-      '13 NovUSCor',
-      '14 NovBBBBR',
-      '15 NovHHHHB',
-      '15 NovIIIIS',
-    ]);
-    expect(
-      [...host.querySelectorAll('.week .pinned')].map((li) => li.textContent?.slice(6, 10)),
-    ).toEqual(['CCCC', 'AAAA']);
+    expect(weekList()).toEqual(['USCore PPI m/m20:30 WIB', 'CCCCRUPSRUPS CCCC']);
+    expect(host.querySelector('.week-list li.pinned .sym')?.textContent).toBe('CCCC');
+    expect(host.querySelector('.week-more')).toBeNull();
+    expect(host.querySelectorAll('.week-days button:nth-child(2) .dot.pinned')).toHaveLength(1);
   });
-  it('keeps the terminal link off phones and renders nothing when the week is empty', async () => {
-    today('2026-11-13T03:00:00Z');
-    viewport(390);
-    await render();
-    expect(weekRows()).toHaveLength(6);
-    expect(host.querySelector('.week .more')).toBeNull();
-    await act(async () => root.unmount());
-    root = createRoot(host);
+  it('renders nothing when the week is empty', async () => {
     today('2027-03-01T03:00:00Z');
     await render();
     expect(host.querySelector('.week')).toBeNull();
@@ -498,7 +513,7 @@ describe('daily briefing', () => {
     expect(tilesOnPhone.every((a) => /^T\d{3}\+1\.50%$/.test(a.textContent ?? ''))).toBe(true);
     expect(tilesOnPhone.at(-1)?.getAttribute('href')).toBe('/t/T040');
   });
-  it('limits news to 6 items on phones and 12 on desktop', async () => {
+  it('limits news to 3 items on phones and 12 on desktop', async () => {
     const news = Array.from({ length: 14 }, (_, i) => ({
       ts: `2026-11-12T${String(10 + (i % 10)).padStart(2, '0')}:00:00+07:00`,
       src: 'Antara',
@@ -514,7 +529,7 @@ describe('daily briefing', () => {
     root = createRoot(host);
     viewport(390);
     await render();
-    expect(host.querySelectorAll('.news li')).toHaveLength(6);
+    expect(host.querySelectorAll('.news li')).toHaveLength(3);
   });
   it('draws advancers against decliners as a split bar that carries both numbers', async () => {
     serve('market.json', {

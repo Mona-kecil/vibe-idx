@@ -14,6 +14,8 @@ import {
   signed,
   tone,
   weekAhead,
+  weekStrip,
+  type WeekItem,
   type Event,
   type SignalTile,
 } from './events';
@@ -112,7 +114,13 @@ function Briefing({
         <section className="panel watchlist" aria-labelledby="watch-heading">
           <h2 id="watch-heading">Watchlist</h2>
           {watched.map((s) => (
-            <WatchRow key={s.ticker} stock={s} events={events} pin={pin(s.ticker)} />
+            <WatchRow
+              key={s.ticker}
+              stock={s}
+              events={events}
+              asOf={data.market.date ?? data.health.prices}
+              pin={pin(s.ticker)}
+            />
           ))}
         </section>
       )}
@@ -360,68 +368,117 @@ function Signals({ tiles, stockMap }: { tiles: SignalTile[]; stockMap: Map<strin
   );
 }
 
-const weekLimit = 6;
+function WeekLine({ item }: { item: WeekItem }) {
+  return item.type === 'event' ? (
+    <li title={item.source}>
+      <span className="what">
+        <span className="tag">{item.country}</span>
+        {item.title}
+      </span>
+      {item.timed && (
+        <span className="when">{wib(item.ts, { day: undefined, month: undefined })} WIB</span>
+      )}
+    </li>
+  ) : (
+    <li className={item.pinned ? 'pinned' : undefined}>
+      <a className="what" href={`/t/${item.ticker}`}>
+        <b className="sym">{item.ticker}</b>
+        <span className="tag">{item.kind}</span>
+        <span className="label">{item.label}</span>
+      </a>
+    </li>
+  );
+}
 
 function Week({ pins }: { pins: string[] }) {
-  const phone = useNarrow(),
-    calendar = usePublished('calendar'),
+  const calendar = usePublished('calendar'),
     actions = usePublished('actions');
-  const items = weekAhead(
-    calendar.kind === 'ready' ? calendar.data.cal : [],
-    actions.kind === 'ready' ? actions.data.actions : [],
-    pins,
+  const days = weekStrip(
+    weekAhead(
+      calendar.kind === 'ready' ? calendar.data.cal : [],
+      actions.kind === 'ready' ? actions.data.actions : [],
+      pins,
+      new Date(),
+    ),
     new Date(),
   );
-  if (!items.length) return null;
+  const busy = days.filter((d) => d.events.length + d.pinned.length + d.others.length > 0);
+  const [chosen, choose] = useState<string | null>(null);
+  const [expanded, expand] = useState(false);
+  const day = days.find((d) => d.date === chosen) ?? busy[0];
+  if (!day) return null;
   return (
     <section className="panel week" aria-labelledby="week-heading">
       <h2 id="week-heading">This week</h2>
-      <ol>
-        {items.slice(0, weekLimit).map((item) => {
-          const chip = (
-            <time dateTime={item.date} title={dateText(item.date)}>
-              {dateText(item.date, false)}
-            </time>
-          );
-          return item.type === 'event' ? (
-            <li key={`${item.ts}:${item.country}:${item.title}`} title={item.source}>
-              {chip}
-              <span className="what">
-                <span className="tag">{item.country}</span>
-                {item.title}
-              </span>
-              {item.timed && (
-                <span className="when">
-                  {wib(item.ts, { day: undefined, month: undefined })} WIB
-                </span>
-              )}
-            </li>
-          ) : (
-            <li
-              key={`${item.ticker}:${item.kind}:${item.date}`}
-              className={item.pinned ? 'pinned' : undefined}
-              title={item.pinned ? 'On your watchlist' : undefined}
+      <div className="week-days" role="group" aria-label="Day">
+        {days.map((d) => {
+          const count = d.events.length + d.pinned.length + d.others.length;
+          return (
+            <button
+              key={d.date}
+              type="button"
+              aria-pressed={d.date === day.date}
+              disabled={!count}
+              onClick={() => {
+                choose(d.date);
+                expand(false);
+              }}
             >
-              {chip}
-              <a className="what" href={`/t/${item.ticker}`}>
-                <b className="sym">{item.ticker}</b>
-                <span className="tag">{item.kind}</span>
-                <span className="label">{item.label}</span>
-              </a>
-            </li>
+              <span className="week-day">
+                {new Date(d.date + 'T00:00:00Z').toLocaleDateString('en-GB', {
+                  weekday: 'short',
+                  timeZone: 'UTC',
+                })}
+              </span>
+              <span className="week-date">{Number(d.date.slice(8))}</span>
+              <span className="week-dots" aria-label={`${count} items`}>
+                {d.events.map((_, i) => (
+                  <i key={`e${i}`} className="dot event" />
+                ))}
+                {d.pinned.map((_, i) => (
+                  <i key={`p${i}`} className="dot pinned" />
+                ))}
+                {d.others.length > 0 && <small>{d.others.length}</small>}
+              </span>
+            </button>
           );
         })}
+      </div>
+      <ol className="week-list" aria-label={dateText(day.date)}>
+        {[...day.events, ...day.pinned, ...(expanded ? day.others : [])].map((item) => (
+          <WeekLine
+            key={item.type === 'event' ? `${item.ts}:${item.title}` : `${item.ticker}:${item.kind}`}
+            item={item}
+          />
+        ))}
       </ol>
-      {!phone && items.length > weekLimit && (
-        <a className="more" href="/terminal">
-          {items.length - weekLimit} more in Terminal
-        </a>
+      {day.others.length > 0 && (
+        <button
+          type="button"
+          className="week-more"
+          aria-expanded={expanded}
+          onClick={() => expand(!expanded)}
+        >
+          {expanded
+            ? 'Show less'
+            : `${day.others.length} ${day.others.length === 1 ? 'corporate action' : 'corporate actions'}`}
+        </button>
       )}
     </section>
   );
 }
 
-function WatchRow({ stock, events, pin }: { stock: Stock; events: Event[]; pin: ReactNode }) {
+function WatchRow({
+  stock,
+  events,
+  asOf,
+  pin,
+}: {
+  stock: Stock;
+  events: Event[];
+  asOf: string | null;
+  pin: ReactNode;
+}) {
   const [history, setHistory] = useState<Ticker | null | 'failed'>(null);
   useEffect(() => {
     let active = true;
@@ -445,7 +502,7 @@ function WatchRow({ stock, events, pin }: { stock: Stock; events: Event[]; pin: 
       .map((e) => ({ date: e.date, text: <EventText event={e} /> })),
     ...(detail?.disclosures ?? []).map((d) => ({ date: d.published_at, text: d.title })),
   ].sort((a, b) => b.date.localeCompare(a.date));
-  const event = latest[0];
+  const event = latest.find((item) => asOf !== null && item.date.slice(0, 10) >= asOf);
   return (
     <div className="watch-row">
       <div className="watch-id">
@@ -473,19 +530,17 @@ function WatchRow({ stock, events, pin }: { stock: Stock; events: Event[]; pin: 
       )}
       <span className="num close">{nf(stock.close)}</span>
       <span className={`num change ${direction(stock.change_pct)}`}>{pct(stock.change_pct)}</span>
-      <span className="latest-event">
-        {event && (
-          <>
-            {event.text} <time dateTime={event.date}>{dateText(event.date, false)}</time>
-          </>
-        )}
-      </span>
+      {event && (
+        <span className="latest-event">
+          {event.text} <time dateTime={event.date}>{dateText(event.date, false)}</time>
+        </span>
+      )}
       {pin}
     </div>
   );
 }
 
-const newsLimit = { phone: 6, desktop: 12 };
+const newsLimit = { phone: 3, desktop: 12 };
 
 function News({ news }: { news: Headline[] | null }) {
   const phone = useNarrow();
