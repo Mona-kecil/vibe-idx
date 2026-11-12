@@ -17,6 +17,8 @@ const recorder = vi.hoisted(() => {
     'timeScale().width': () => 1000,
     'timeScale().coordinateToLogical': (x) => (x as number) / 10,
     'timeScale().logicalToCoordinate': (i) => (i as number) * 10,
+    'timeScale().timeToCoordinate': (t) =>
+      ((Date.parse(t as string) - Date.parse('2026-01-01')) / 864e5) * 10,
     'timeScale().getVisibleLogicalRange': () => null,
   };
   function node(path: string): object {
@@ -38,11 +40,6 @@ const recorder = vi.hoisted(() => {
   }
   return { calls, chart: node('') };
 });
-vi.mock('lightweight-charts', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('lightweight-charts')>()),
-  createSeriesMarkers: (...args: unknown[]) =>
-    (recorder.chart as { markers: (...a: unknown[]) => unknown }).markers(...args),
-}));
 vi.mock('../terminal/charts', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../terminal/charts')>()),
   publicChart: () => recorder.chart,
@@ -239,20 +236,40 @@ describe('ticker price chart', () => {
   });
 });
 
-describe('ticker chart event marks', () => {
-  it('draws filings, ownership changes and actions as markers and selects a tapped day', async () => {
-    await mount(prices(300), [
-      { date: day(250), kind: 'filing', label: 'Annual report' },
-      { date: day(260), kind: 'ownership', label: 'Holder' },
-      { date: day(270), kind: 'action', label: 'Ex-div' },
+describe('ticker chart event badges', () => {
+  const marks: ChartMark[] = [
+    { date: day(10), kind: 'filing', label: 'Annual report\nPublic expose' },
+    { date: day(20), kind: 'filing', label: 'Monthly report' },
+    { date: day(20), kind: 'ownership', label: 'Holder' },
+    { date: day(30), kind: 'action', label: 'Ex-div' },
+    { date: day(31), kind: 'filing', label: 'Too close to draw' },
+  ];
+  const badges = () =>
+    [...host.querySelectorAll<HTMLButtonElement>('.event-badge')].map((b) => ({
+      letter: b.textContent,
+      left: b.style.left,
+      label: b.getAttribute('aria-label'),
+    }));
+  it('draws a lettered badge per event at its bar, stacking same-day events and thinning crowded days', async () => {
+    await mount(prices(300), marks);
+    await emit('timeScale().subscribeVisibleLogicalRangeChange', { from: 0, to: 60 });
+    expect(badges()).toEqual([
+      { letter: 'F', left: '100px', label: '2 filings 11 Jan 2026' },
+      { letter: '%', left: '200px', label: 'Ownership change 21 Jan 2026' },
+      { letter: 'F', left: '200px', label: 'Filing 21 Jan 2026' },
+      { letter: 'D', left: '300px', label: 'Ex-div 31 Jan 2026' },
     ]);
-    expect(calls('markers').at(-1)?.args[1]).toEqual([
-      expect.objectContaining({ time: day(250), shape: 'circle', position: 'belowBar' }),
-      expect.objectContaining({ time: day(260), shape: 'circle', position: 'aboveBar' }),
-      expect.objectContaining({ time: day(270), shape: 'arrowUp', position: 'belowBar' }),
+    await emit('subscribeCrosshairMove', { time: day(20) });
+    expect([...host.querySelectorAll('.readout-mark')].map((m) => m.textContent)).toEqual([
+      'Ownership change',
+      'Filing',
     ]);
-    await emit('subscribeClick', { hoveredObjectId: day(260) });
-    expect(selected).toHaveBeenLastCalledWith({ anchor: day(260), end: day(260) });
+  });
+  it('selects the day of a tapped badge', async () => {
+    await mount(prices(300), marks);
+    await emit('timeScale().subscribeVisibleLogicalRangeChange', { from: 0, to: 60 });
+    await click('.event-badge[aria-label^="Ex-div"]');
+    expect(selected).toHaveBeenLastCalledWith({ anchor: day(30), end: day(30) });
   });
 });
 

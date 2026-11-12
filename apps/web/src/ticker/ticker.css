@@ -1435,6 +1435,19 @@
   color: var(--muted);
   font-weight: 500;
 }
+.ticker-page .readout-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-weight: 600;
+}
+.ticker-page .readout-mark::before {
+  content: '';
+  width: 8px;
+  height: 3px;
+  border-radius: 1px;
+  background: var(--mark);
+}
 .ticker-page .pane-toggle {
   padding: 6px 10px;
   border: 1px solid var(--line);
@@ -1454,5 +1467,36 @@
   .ticker-page .readout {
     right: 52px;
     font-size: 11px;
+  }
+}
+.ticker-page .event-badge {
+  position: absolute;
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  translate: -50% -50%;
+  border-radius: 50%;
+}
+.ticker-page .event-badge span {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid var(--surface);
+  border-radius: 50%;
+  background: var(--mark);
+  color: #fff;
+  font: 700 9px/1 var(--font);
+  box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.12);
+}
+@media (hover: hover) and (pointer: fine) {
+  .ticker-page .event-badge:hover {
+    background: none;
+  }
+  .ticker-page .event-badge:hover span {
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--mark) 35%, transparent);
   }
 }

@@ -4,7 +4,6 @@ import {
   AreaSeries,
   BaselineSeries,
   CandlestickSeries,
-  createSeriesMarkers,
   HistogramSeries,
   LineStyle,
   type IChartApi,
@@ -74,11 +73,43 @@ const areaColors = (tone: Tone) => ({
   bottomColor: `${toneColor[tone]}00`,
 });
 const noMarks: ChartMark[] = [];
-const markStyle = {
-  filing: { position: 'belowBar', shape: 'circle', color: theme.text },
-  ownership: { position: 'aboveBar', shape: 'circle', color: '#2858ae' },
-  action: { position: 'belowBar', shape: 'arrowUp', color: '#8a5a00' },
-} as const;
+const markColor: Record<ChartMark['kind'], string> = {
+  ownership: '#2858ae',
+  action: '#a86b00',
+  filing: '#a3a49b',
+};
+const markRank: Record<ChartMark['kind'], number> = { ownership: 0, action: 1, filing: 2 };
+const markName = (mark: ChartMark) => {
+  const count = mark.label.split('\n').length;
+  return mark.kind === 'action'
+    ? mark.label.split('\n')[0]
+    : mark.kind === 'ownership'
+      ? count > 1
+        ? `${count} ownership changes`
+        : 'Ownership change'
+      : count > 1
+        ? `${count} filings`
+        : 'Filing';
+};
+const actionLetter: Record<string, string> = {
+  'Ex-div': 'D',
+  'Ex-rights': 'R',
+  'Ex-bonus': 'B',
+  'Ex-split': 'S',
+  RUPS: 'M',
+  Listing: 'L',
+  Delisting: 'X',
+};
+const markLetter = (mark: ChartMark) =>
+  mark.kind === 'filing'
+    ? 'F'
+    : mark.kind === 'ownership'
+      ? '%'
+      : (actionLetter[mark.label.split('\n')[0] ?? ''] ?? 'A');
+/** Badges sit in the price pane's bottom margin, one row per event kind, as TradingView draws them. */
+const BADGE = { size: 16, gap: 2, spacing: 14 };
+const PRICE_BOTTOM = 0.12;
+type Badge = { date: string; x: number };
 const paneLabels = [
   ['Price', 'IDR'],
   ['Volume', 'shares'],
@@ -177,7 +208,7 @@ function addPanes(api: IChartApi, rows: ChartRow[], type: ChartType, heights: re
       lineStyle: LineStyle.Solid,
       axisLabelVisible: false,
     });
-  api.priceScale('right', 0).applyOptions({ scaleMargins: { top: 0.1, bottom: 0.06 } });
+  api.priceScale('right', 0).applyOptions({ scaleMargins: { top: 0.1, bottom: PRICE_BOTTOM } });
   api.priceScale('right', 1).applyOptions({ scaleMargins: { top: 0.3, bottom: 0 } });
   api.priceScale('right', 2).applyOptions({ scaleMargins: { top: 0.3, bottom: 0.08 } });
   if (cumulative)
@@ -225,11 +256,18 @@ export function PriceChart({
     host = useRef<HTMLDivElement>(null),
     chart = useRef<IChartApi | null>(null),
     priceSeries = useRef<ISeriesApi<'Candlestick'> | ISeriesApi<'Area'> | null>(null);
-  const latest = useRef({ selection, period, select });
-  latest.current = { selection, period, select };
+  const [badges, setBadges] = useState<Badge[]>([]);
+  const latest = useRef({ selection, period, select, days: [] as string[] });
   const savedRange = useRef<IRange<number> | null>(null);
   const redraw = useRef(() => {});
   const drag = useRef<number | null>(null);
+  const marksByDay = useMemo(() => {
+    const days = new Map<string, ChartMark[]>();
+    for (const mark of marks) days.set(mark.date, [...(days.get(mark.date) ?? []), mark]);
+    for (const list of days.values()) list.sort((a, b) => markRank[a.kind] - markRank[b.kind]);
+    return days;
+  }, [marks]);
+  latest.current = { selection, period, select, days: [...marksByDay.keys()].sort() };
   const heights = useMemo(
     () => paneHeights[narrow ? 'narrow' : 'wide'].slice(0, withTotal ? 4 : 3),
     [narrow, withTotal],
@@ -246,19 +284,6 @@ export function PriceChart({
     const dates = rows.map((row) => row.date);
     const { price, cumulative } = addPanes(api, rows, type, heights);
     priceSeries.current = price;
-    createSeriesMarkers(
-      price,
-      marks.map((mark) => ({
-        id: mark.date,
-        time: mark.date,
-        size: 0.6,
-        ...markStyle[mark.kind],
-      })),
-    );
-    api.subscribeClick((event) => {
-      const day = typeof event.hoveredObjectId === 'string' ? event.hoveredObjectId : null;
-      if (day) latest.current.select({ anchor: day, end: day });
-    });
 
     redraw.current = () => {
       const selected = selectedRows(dates, latest.current.selection);
@@ -266,6 +291,17 @@ export function PriceChart({
       const left = selected && at(selected.first),
         right = selected && at(selected.last),
         next = selected && at(selected.first + 1);
+      let previous = -Infinity;
+      const placed: Badge[] = [];
+      for (const date of latest.current.days) {
+        const x = time.timeToCoordinate(date);
+        if (x === null || x < 0 || x > time.width() || x - previous < BADGE.spacing) continue;
+        placed.push({ date, x });
+        previous = x;
+      }
+      setBadges((old) =>
+        old.length === placed.length && old.every((b, i) => b.x === placed[i]!.x) ? old : placed,
+      );
       if (left == null || right == null || next == null) return setBand(null);
       const half = (next - left) / 2;
       const from = Math.max(0, left - half),
@@ -304,7 +340,7 @@ export function PriceChart({
       priceSeries.current = null;
       api.remove();
     };
-  }, [rows, prices, type, heights, marks]);
+  }, [rows, prices, type, heights, marksByDay]);
 
   useEffect(() => {
     redraw.current();
@@ -524,6 +560,16 @@ export function PriceChart({
                   </span>
                 </>
               )}
+              {(marksByDay.get(shown.date) ?? []).map((mark) => (
+                <span
+                  key={mark.kind}
+                  className="readout-mark"
+                  style={{ ['--mark' as string]: markColor[mark.kind] }}
+                  title={mark.label}
+                >
+                  {markName(mark)}
+                </span>
+              ))}
               {shown.estimated && (
                 <span
                   className="readout-status"
@@ -533,6 +579,25 @@ export function PriceChart({
                 </span>
               )}
             </div>
+          )}
+          {badges.flatMap(({ date, x }) =>
+            (marksByDay.get(date) ?? []).map((mark, row) => (
+              <button
+                key={`${date}:${mark.kind}`}
+                type="button"
+                className="event-badge"
+                style={{
+                  left: x,
+                  top: heights[0]! - BADGE.size / 2 - 4 - row * (BADGE.size + BADGE.gap),
+                  ['--mark' as string]: markColor[mark.kind],
+                }}
+                title={`${dateText(date)}\n${mark.label}`}
+                aria-label={`${markName(mark)} ${dateText(date)}`}
+                onClick={() => select({ anchor: date, end: date })}
+              >
+                <span aria-hidden="true">{markLetter(mark)}</span>
+              </button>
+            )),
           )}
           {band && <div className="selection-band" style={band} />}
           <div className="chart-axis" />
