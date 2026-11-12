@@ -1,6 +1,6 @@
 import type { z } from 'zod';
 import type { corporateActionSchema, Ticker } from '../data';
-import { dateText, publishedMs } from './format';
+import { dateText, monthsBefore, publishedMs } from './format';
 
 export type Price = Ticker['prices'][number];
 export type Filing = Ticker['disclosures'][number];
@@ -66,9 +66,8 @@ export type Period = '1M' | '3M' | '6M' | 'YTD';
 export function visiblePrices(prices: Price[], period: Period) {
   const last = prices.at(-1);
   if (!last || period === 'YTD') return prices;
-  const start = new Date(last.date + 'T00:00:00Z');
-  start.setUTCMonth(start.getUTCMonth() - parseInt(period));
-  return prices.filter((p) => p.date >= start.toISOString().slice(0, 10));
+  const start = monthsBefore(last.date, parseInt(period));
+  return prices.filter((p) => p.date >= start);
 }
 export type RowWindow = { first: number; last: number };
 const RIGHT_PADDING = 3;

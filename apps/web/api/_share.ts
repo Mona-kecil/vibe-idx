@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { dateText, nf, signed } from '../src/ticker/format.js';
+import { dateText, monthsBefore, nf, signed } from '../src/ticker/format.js';
 
 export type TickerCard = {
   ticker: string;
@@ -24,7 +24,8 @@ export function parseTickerCard(json: unknown): TickerCard | null {
   const last = prices.at(-1);
   if (!last) return null;
   const previous = prices.at(-2),
-    recent = prices.slice(-60);
+    from = monthsBefore(last.date, 3),
+    recent = prices.filter((price) => price.date >= from);
   return {
     ticker,
     name: name

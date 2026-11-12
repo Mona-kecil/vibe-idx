@@ -50,3 +50,10 @@ export const wib = (value: string, options: Intl.DateTimeFormatOptions = {}) =>
 export const calendarDate = (value: string) =>
   new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(publicationDate(value));
 export const publishedMs = (value: string) => publicationDate(value).getTime();
+
+/** First day of an N-month window ending on `last`, the rule behind 1M, 3M and 6M. */
+export function monthsBefore(last: string, months: number) {
+  const start = new Date(last.slice(0, 10) + 'T00:00:00Z');
+  start.setUTCMonth(start.getUTCMonth() - months);
+  return start.toISOString().slice(0, 10);
+}

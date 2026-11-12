@@ -94,7 +94,7 @@ function areaBlock(card: TickerCard) {
       h('span', { style: { color: muted } }, windowLabel(card.start, card.date)),
       h(
         'span',
-        { style: { fontWeight: 700, color: stroke } },
+        { style: { fontSize: 34, fontWeight: 700, color: stroke } },
         `${signed(area.changePct, (v) => nf(v, 2))}%`,
       ),
     ),
