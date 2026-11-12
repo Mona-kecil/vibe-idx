@@ -12,7 +12,7 @@ import { dateText, rangeText, nf, short, signed } from '../ticker/format';
 import { useTerminal, type BrokerFilters } from './state';
 import { Empty, Scroll, Segments, SignInPrompt, direction } from './ui';
 import { terminalChart, chartDate } from './charts';
-import { Attribution } from './PricePane';
+import { ChartAttribution as Attribution } from '../ChartAttribution';
 import './broker-panes.css';
 
 function BrokerGate({ children }: { children: (days: BrokerDay[]) => ReactNode }) {

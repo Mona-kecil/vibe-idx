@@ -1,3 +1,4 @@
+import { ChartAttribution } from '../ChartAttribution';
 import { useEffect, useMemo, useRef, useState, type PointerEvent, type ReactNode } from 'react';
 import {
   AreaSeries,
@@ -499,15 +500,7 @@ export function PriceChart({
           <span className="chart-selection">
             <SelectionLabel prices={prices} selection={selection} />
           </span>
-          <a
-            className="chart-attribution"
-            href="https://www.tradingview.com/"
-            target="_blank"
-            rel="noreferrer"
-            title="TradingView Lightweight Charts™ Copyright (c) 2025 TradingView, Inc."
-          >
-            TradingView
-          </a>
+          <ChartAttribution />
         </div>
         {children}
       </section>

@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { App } from './App';
 import { arrivalMs } from './Corruption';
 import { tickerSchema, type Feed, type Ticker } from './data';
@@ -269,6 +269,9 @@ async function typeQuery(query: string, selector = 'input[type="search"]') {
     input.dispatchEvent(new Event('input', { bubbles: true }));
   });
 }
+beforeAll(async () => {
+  await import('./ticker/TickerPage');
+});
 beforeEach(() => {
   window.localStorage.clear();
   window.history.replaceState(null, '', '/');
