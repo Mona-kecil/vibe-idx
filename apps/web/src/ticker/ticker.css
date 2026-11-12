@@ -174,28 +174,85 @@
 .ticker-page .chart-summary strong {
   font-size: 14px;
 }
-.ticker-page .chart-shell {
+.ticker-page .chart-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.ticker-page .readout {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 22px;
+  min-height: 20px;
+  margin-bottom: 10px;
+  font-size: 12px;
+  font-weight: 650;
+}
+.ticker-page .readout i {
+  margin-right: 6px;
+  color: var(--muted);
+  font-style: normal;
+  font-weight: 500;
+}
+.ticker-page .readout-date {
+  min-width: 86px;
+  font-weight: 750;
+}
+.ticker-page .readout-status {
+  color: var(--muted);
+  font-weight: 500;
+}
+.ticker-page .readout [title] {
+  cursor: help;
+}
+.ticker-page .price-chart {
+  --axis: 29px;
   position: relative;
   width: 100%;
   min-width: 0;
-}
-.ticker-page .chart-svg {
-  display: block;
-  width: 100%;
-  height: 455px;
-  overflow: visible;
-  touch-action: pan-y;
   user-select: none;
 }
-.ticker-page .chart-svg text {
-  font-family: var(--font);
-  font-size: 11px;
-  fill: var(--muted);
-  font-variant-numeric: tabular-nums;
+.ticker-page .chart-host {
+  position: absolute;
+  inset: 0;
 }
-.ticker-page .chart-svg .axis-label {
+.ticker-page .selection-band {
+  position: absolute;
+  z-index: 3;
+  top: 0;
+  bottom: var(--axis);
+  pointer-events: none;
+  background: #647b9822;
+  border-inline: 1px solid #566d8a;
+}
+.ticker-page .chart-axis {
+  position: absolute;
+  z-index: 4;
+  inset: auto 0 0;
+  height: var(--axis);
+  touch-action: none;
+  cursor: ew-resize;
+}
+.ticker-page .chart-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 24px;
+  margin-top: 8px;
+  font-size: 12px;
+  font-weight: 700;
+}
+.ticker-page .chart-selection .selection-count {
+  display: inline-flex;
+  margin: 0 0 0 14px;
+}
+.ticker-page .chart-attribution {
+  margin-left: auto;
+  color: var(--muted);
   font-size: 10px;
-  font-weight: 600;
+  font-weight: 500;
 }
 .ticker-page .tooltip {
   position: absolute;
@@ -231,29 +288,6 @@
   margin: 0;
   text-align: right;
   font-weight: 650;
-}
-.ticker-page .chart-legend {
-  display: flex;
-  justify-content: flex-end;
-  gap: 18px;
-  font-size: 11px;
-  color: var(--muted);
-  padding-top: 7px;
-}
-.ticker-page .legend-line {
-  display: inline-block;
-  width: 14px;
-  height: 2px;
-  background: var(--ink);
-  vertical-align: middle;
-  margin-right: 6px;
-}
-.ticker-page .legend-square {
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  background: #aaa79e;
-  margin-right: 6px;
 }
 .ticker-page table {
   width: 100%;
@@ -574,18 +608,28 @@
     font-size: 10px;
     margin-left: 0;
   }
-  .ticker-page .chart-svg {
-    height: 400px;
+  .ticker-page .chart-controls {
+    width: 100%;
+    justify-content: space-between;
   }
-  .ticker-page .chart-svg text {
-    font-size: 9px;
+  .ticker-page .readout {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px 8px;
+    font-size: 11px;
   }
-  .ticker-page .chart-svg .axis-label {
-    font-size: 9px;
+  .ticker-page .readout-date,
+  .ticker-page .readout-change,
+  .ticker-page .readout-volume,
+  .ticker-page .readout-foreign,
+  .ticker-page .readout-status {
+    grid-column: span 2;
   }
-  .ticker-page .chart-legend {
-    gap: 12px;
-    font-size: 10px;
+  .ticker-page .readout-change {
+    text-align: right;
+  }
+  .ticker-page .readout-foreign {
+    text-align: right;
   }
   .ticker-page .date-label {
     font-size: 10px;
@@ -952,10 +996,6 @@
   color: var(--muted);
   margin-left: 12px;
 }
-.ticker-page .suspension-label {
-  font-size: 10px !important;
-  fill: #65645c !important;
-}
 @media (max-width: 850px) {
   .ticker-page .holdings-layout {
     grid-template-columns: minmax(0, 1fr);
@@ -1022,18 +1062,12 @@
   color: var(--muted);
   margin-left: 6px;
 }
-.ticker-page .axis-unit {
-  font-size: 9px;
-}
 .ticker-page .footer-exchange {
   margin-left: 18px;
 }
 .ticker-page .event-delta {
   display: inline-block;
   margin-left: 16px;
-}
-.ticker-page .chart-svg {
-  touch-action: none;
 }
 .ticker-page .selection-fill {
   fill: #647b98;
@@ -1044,54 +1078,6 @@
   stroke: #566d8a;
   stroke-width: 1;
   pointer-events: none;
-}
-.ticker-page .selection-handle {
-  cursor: ew-resize;
-  touch-action: none;
-  outline: none;
-}
-.ticker-page .selection-handle .handle-grip {
-  fill: var(--surface);
-  stroke: #566d8a;
-  stroke-width: 1;
-}
-.ticker-page .selection-handle:focus-visible .handle-grip {
-  stroke: var(--ink);
-  stroke-width: 2.5;
-}
-.ticker-page .selection-handle .handle-hit {
-  fill: transparent;
-}
-.ticker-page .selection-handle:focus-visible {
-  outline: none;
-}
-.ticker-page .selection-handle:focus-visible .handle-hit {
-  fill: #647b98;
-  fill-opacity: 0.15;
-}
-.ticker-page #selection-axis {
-  position: relative;
-  height: 65px;
-  margin-top: 7px;
-}
-.ticker-page #selection-axis[hidden] {
-  display: none;
-}
-.ticker-page #selection-bracket {
-  position: absolute;
-  top: 0;
-  height: 7px;
-  border: 1px solid #566d8a;
-  border-top: 0;
-}
-.ticker-page #selection-label {
-  position: absolute;
-  top: 12px;
-  transform: translateX(-50%);
-  white-space: nowrap;
-  text-align: center;
-  font-size: 12px;
-  font-weight: 700;
 }
 .ticker-page .selection-count {
   display: block;
@@ -1241,9 +1227,6 @@
 .ticker-page th {
   text-transform: none;
   letter-spacing: normal;
-}
-.ticker-page .chart-legend {
-  margin: 0;
 }
 .ticker-page .identity-heading {
   flex-wrap: wrap;

@@ -62,6 +62,36 @@ export function selectionKey(
   if (edge) return moveEdge(selection, edge, day);
   return shift ? { ...selection, end: day } : { anchor: day, end: day };
 }
+export type Period = '1M' | '3M' | '6M' | 'YTD';
+export function visiblePrices(prices: Price[], period: Period) {
+  const last = prices.at(-1);
+  if (!last || period === 'YTD') return prices;
+  const start = new Date(last.date + 'T00:00:00Z');
+  start.setUTCMonth(start.getUTCMonth() - parseInt(period));
+  return prices.filter((p) => p.date >= start.toISOString().slice(0, 10));
+}
+export type RowWindow = { first: number; last: number };
+const RIGHT_PADDING = 3;
+export function periodRange(prices: Price[], period: Period) {
+  const first = prices.length - visiblePrices(prices, period).length;
+  return { from: first - 0.5, to: prices.length - 1 + RIGHT_PADDING };
+}
+export function visibleWindow(
+  length: number,
+  range: { from: number; to: number } | null,
+): RowWindow | null {
+  if (!range) return null;
+  const first = Math.max(0, Math.ceil(range.from)),
+    last = Math.min(length - 1, Math.floor(range.to));
+  return first <= last ? { first, last } : null;
+}
+export function selectedRows(dates: string[], selection: Selection): RowWindow | null {
+  const b = bounds(selection);
+  if (!b) return null;
+  const first = dates.findIndex((d) => d >= b.start);
+  const last = dates.filter((d) => d <= b.end).length - 1;
+  return first >= 0 && first <= last ? { first, last } : null;
+}
 export function aggregateRange(prices: Price[], selection: Selection) {
   const rows = prices.filter((p) => inRange(p.date, selection));
   const first = rows[0],

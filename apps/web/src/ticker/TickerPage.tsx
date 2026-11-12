@@ -5,10 +5,18 @@ import { RiskBadge, useRiskFor } from '../RiskBadge';
 import { PinButton, SiteHeader } from '../SiteHeader';
 import { Stale } from '../Stale';
 import { usePins } from '../watchlist';
-import { holdingSeries, nextAction, ownershipEvents, registryAt, type Selection } from './logic';
+import {
+  holdingSeries,
+  nextAction,
+  ownershipEvents,
+  registryAt,
+  visiblePrices,
+  type Period,
+  type Selection,
+} from './logic';
 import { calendarDate, dateText, direction, nf, short, signed } from './format';
 import { Freshness } from './Freshness';
-import { PriceChart, visiblePrices, type Period } from './PriceChart';
+import { PriceChart } from './PriceChart';
 import { SelectionSummary, Timeline } from './Feeds';
 import { Ownership } from './Ownership';
 import { BrokerFlow } from './BrokerFlow';

@@ -23,10 +23,10 @@ vi.mock('@workos-inc/authkit-react', () => ({
 vi.mock('./terminal/charts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./terminal/charts')>();
   const chart: object = new Proxy(() => chart, {
-    get: (_, key) => (key === 'then' ? undefined : chart),
+    get: (_, key) => (key === 'then' ? undefined : key === Symbol.toPrimitive ? () => 0 : chart),
     apply: () => chart,
   });
-  return { ...actual, terminalChart: () => chart };
+  return { ...actual, terminalChart: () => chart, publicChart: () => chart };
 });
 const dates = ['2026-10-19', '2026-10-20', '2026-10-21', '2026-10-22'];
 const row = (broker: string, shares: number) => ({
@@ -848,27 +848,10 @@ describe('ticker research regressions', () => {
     );
     fetcher.mockImplementation(base!);
   });
-  it('plots the cumulative foreign line from public prices and caps holders at five', async () => {
-    history = tickerSchema.parse({
-      ...ticker('BBCA'),
-      prices: dates.map((date, i) => ({
-        date,
-        open: null,
-        high: null,
-        low: null,
-        close: 100,
-        volume: 1,
-        value: 1,
-        net_foreign: [-5, 8, 2, -1][i],
-      })),
-    });
+  it('caps holders at five', async () => {
     window.history.replaceState(null, '', '/t/BBCA');
     await render();
-    const line = element('.cumulative-foreign', SVGPathElement);
-    expect(line.getAttribute('d')?.match(/[ML]/g)).toHaveLength(4);
-    expect(host.querySelector('#price-chart')?.textContent).toContain(
-      'Cumulative foreign IDR (est.)',
-    );
+    expect(element('.chart-host', HTMLElement).dataset.bars).toBe(String(dates.length));
     vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(948);
     history = tickerSchema.parse(tpiaFixture);
     window.history.replaceState(null, '', '/t/TPIA');

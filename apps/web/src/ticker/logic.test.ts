@@ -21,6 +21,10 @@ import {
   topSeries,
   totalAt,
   pctAxis,
+  periodRange,
+  selectedRows,
+  visiblePrices,
+  visibleWindow,
 } from './logic';
 
 const dates = ['2026-08-10', '2026-08-11', '2026-08-12', '2026-08-21', '2026-08-24'];
@@ -577,5 +581,51 @@ describe('ticker page summaries', () => {
         'Ex-div 13 Nov',
       );
     });
+  });
+});
+
+describe('chart windows', () => {
+  const monthly = [
+    '2026-05-12',
+    '2026-06-12',
+    '2026-07-12',
+    '2026-08-12',
+    '2026-09-12',
+    '2026-10-12',
+    '2026-11-12',
+  ].map((date) => ({ ...prices[0]!, date }));
+  const starts = (period: Parameters<typeof visiblePrices>[1]) =>
+    visiblePrices(monthly, period)[0]?.date;
+  it('starts each period exactly that many months before the last price and keeps YTD whole', () => {
+    expect(starts('1M')).toBe('2026-10-12');
+    expect(starts('3M')).toBe('2026-08-12');
+    expect(starts('6M')).toBe('2026-05-12');
+    expect(starts('YTD')).toBe('2026-05-12');
+    expect(visiblePrices([], '3M')).toEqual([]);
+  });
+  it('frames a period from its first bar to a little past the last one', () => {
+    const range = periodRange(monthly, '3M');
+    expect(range.from).toBe(2.5);
+    expect(range.to).toBeGreaterThan(6);
+    expect(range.to).toBeLessThan(10);
+    expect(periodRange(monthly, 'YTD').from).toBe(-0.5);
+  });
+  it('maps a logical range to the bars whose centers are visible', () => {
+    expect(visibleWindow(10, { from: -0.5, to: 13 })).toEqual({ first: 0, last: 9 });
+    expect(visibleWindow(10, { from: 2.4, to: 5.6 })).toEqual({ first: 3, last: 5 });
+    expect(visibleWindow(10, { from: 20, to: 30 })).toBeNull();
+    expect(visibleWindow(10, null)).toBeNull();
+  });
+  it('finds the trading days inside a selection even when its edges are not trading days', () => {
+    expect(selectedRows(dates, { anchor: '2026-08-21', end: '2026-08-11' })).toEqual({
+      first: 1,
+      last: 3,
+    });
+    expect(selectedRows(dates, { anchor: '2026-08-13', end: '2026-08-30' })).toEqual({
+      first: 3,
+      last: 4,
+    });
+    expect(selectedRows(dates, { anchor: '2026-08-13', end: '2026-08-20' })).toBeNull();
+    expect(selectedRows(dates, null)).toBeNull();
   });
 });
