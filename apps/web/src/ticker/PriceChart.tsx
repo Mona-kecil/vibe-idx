@@ -1,24 +1,33 @@
-import { useEffect, useRef, useState, type PointerEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type PointerEvent, type ReactNode } from 'react';
+import {
+  AreaSeries,
+  BaselineSeries,
+  CandlestickSeries,
+  HistogramSeries,
+  LineStyle,
+  type IChartApi,
+  type IRange,
+  type Logical,
+} from 'lightweight-charts';
+import { chartDate, dailyBars, publicChart, type PriceBar } from '../terminal/charts';
+import { useNarrow } from '../useNarrow';
+import { readStorage, writeStorage } from '../watchlist';
+import { chartTheme as theme, paneLabel } from './chartTheme';
+import { dateText, direction, nf, rangeText, short, signed } from './format';
 import {
   aggregateRange,
   bounds,
   cumulativeForeign,
-  moveEdge,
+  periodRange,
+  selectedRows,
   selectionKey,
-  type Edge,
+  visibleWindow,
+  type Period,
   type Price,
+  type RowWindow,
   type Selection,
 } from './logic';
-import { dateText, direction, nf, rangeText, short, signed } from './format';
 
-export type Period = '1M' | '3M' | '6M' | 'YTD';
-export function visiblePrices(prices: Price[], period: Period) {
-  const last = prices.at(-1);
-  if (!last || period === 'YTD') return prices;
-  const start = new Date(last.date + 'T00:00:00Z');
-  start.setUTCMonth(start.getUTCMonth() - parseInt(period));
-  return prices.filter((p) => p.date >= start.toISOString().slice(0, 10));
-}
 export function SelectionLabel({ prices, selection }: { prices: Price[]; selection: Selection }) {
   const b = bounds(selection),
     totals = aggregateRange(prices, selection);
@@ -35,6 +44,141 @@ export function SelectionLabel({ prices, selection }: { prices: Price[]; selecti
     </>
   );
 }
+
+const periods = ['1M', '3M', '6M', 'YTD'] satisfies Period[];
+const chartTypes = { candles: 'Candles', line: 'Line' };
+type ChartType = keyof typeof chartTypes;
+const typeKey = 'ticker:chart:type';
+
+type ChartRow = PriceBar & { netForeign: number };
+const chartRows = (prices: Price[]): ChartRow[] =>
+  dailyBars(prices).map((bar, i) => ({ ...bar, netForeign: prices[i]?.net_foreign ?? 0 }));
+// Missing OHLC and suspended days have no range to show, so they draw flat and neutral.
+const tone = (row: ChartRow) =>
+  row.estimated || row.volume === 0 ? theme.flat : row.close >= row.open ? theme.up : theme.down;
+const flowTone = (value: number) => (value >= 0 ? theme.up : theme.down);
+
+const paneHeights = {
+  wide: [420, 90, 90, 110],
+  narrow: [360, 64, 64, 84],
+};
+const paneLabels = [
+  ['Price', 'IDR'],
+  ['Volume', 'shares'],
+  ['Net foreign', 'IDR (est.)'],
+  ['Cumulative foreign', 'IDR (est.)'],
+] as const;
+const AXIS_HEIGHT = 29;
+const SEPARATORS = 3;
+
+function cumulativeData(prices: Price[], { first, last }: RowWindow) {
+  const window = prices.slice(first, last + 1);
+  const sums = cumulativeForeign(window);
+  return window.map((price, i) => ({ time: price.date, value: sums[i] ?? 0 }));
+}
+
+function addPanes(api: IChartApi, rows: ChartRow[], type: ChartType, heights: readonly number[]) {
+  const priceFormat = { type: 'custom', minMove: 1, formatter: (v: number) => nf(v) } as const;
+  const flow = { type: 'custom', minMove: 1, formatter: (v: number) => signed(v) } as const;
+  if (type === 'candles')
+    api
+      .addSeries(
+        CandlestickSeries,
+        {
+          upColor: theme.up,
+          downColor: theme.down,
+          wickUpColor: theme.up,
+          wickDownColor: theme.down,
+          borderVisible: false,
+          priceFormat,
+        },
+        0,
+      )
+      .setData(
+        rows.map((row) => ({
+          time: row.time,
+          open: row.open,
+          high: row.high,
+          low: row.low,
+          close: row.close,
+          color: tone(row),
+          wickColor: tone(row),
+          borderColor: tone(row),
+        })),
+      );
+  else
+    api
+      .addSeries(
+        AreaSeries,
+        {
+          lineColor: theme.ink,
+          topColor: `${theme.ink}24`,
+          bottomColor: `${theme.ink}00`,
+          lineWidth: 2,
+          priceFormat,
+        },
+        0,
+      )
+      .setData(rows.map((row) => ({ time: row.time, value: row.close })));
+  api
+    .addSeries(
+      HistogramSeries,
+      {
+        priceFormat: { type: 'custom', minMove: 1, formatter: (v: number) => short(v) },
+        lastValueVisible: false,
+        priceLineVisible: false,
+      },
+      1,
+    )
+    .setData(rows.map((row) => ({ time: row.time, value: row.volume, color: `${tone(row)}73` })));
+  const netForeign = api.addSeries(
+    HistogramSeries,
+    { priceFormat: flow, lastValueVisible: false, priceLineVisible: false },
+    2,
+  );
+  netForeign.setData(
+    rows.map((row) => ({
+      time: row.time,
+      value: row.netForeign,
+      color: `${flowTone(row.netForeign)}cc`,
+    })),
+  );
+  const cumulative = api.addSeries(
+    BaselineSeries,
+    {
+      baseValue: { type: 'price', price: 0 },
+      topLineColor: theme.up,
+      topFillColor1: `${theme.up}40`,
+      topFillColor2: `${theme.up}08`,
+      bottomLineColor: theme.down,
+      bottomFillColor1: `${theme.down}08`,
+      bottomFillColor2: `${theme.down}40`,
+      lineWidth: 2,
+      priceFormat: flow,
+      priceLineVisible: false,
+    },
+    3,
+  );
+  for (const series of [netForeign, cumulative])
+    series.createPriceLine({
+      price: 0,
+      color: theme.line,
+      lineWidth: 1,
+      lineStyle: LineStyle.Solid,
+      axisLabelVisible: false,
+    });
+  api.priceScale('right', 0).applyOptions({ scaleMargins: { top: 0.1, bottom: 0.06 } });
+  api.priceScale('right', 1).applyOptions({ scaleMargins: { top: 0.3, bottom: 0 } });
+  api.priceScale('right', 2).applyOptions({ scaleMargins: { top: 0.3, bottom: 0.08 } });
+  api.priceScale('right', 3).applyOptions({ scaleMargins: { top: 0.3, bottom: 0.08 } });
+  api.panes().forEach((pane, i) => {
+    pane.setStretchFactor(heights[i] ?? 1);
+    const [name, unit] = paneLabels[i] ?? ['', ''];
+    pane.attachPrimitive(paneLabel(name, unit));
+  });
+  return cumulative;
+}
+
 export function PriceChart({
   ticker,
   prices,
@@ -50,37 +194,94 @@ export function PriceChart({
   setPeriod: (p: Period) => void;
   selection: Selection;
   select: (s: Selection) => void;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
-  const shell = useRef<HTMLDivElement>(null);
-  const svg = useRef<SVGSVGElement>(null);
-  const gesture = useRef<{ kind: 'range'; anchor: string } | { kind: 'edge'; edge: Edge } | null>(
-    null,
+  const narrow = useNarrow();
+  const rows = useMemo(() => chartRows(prices), [prices]);
+  const [type, setType] = useState<ChartType>(() =>
+    readStorage(typeKey) === 'line' ? 'line' : 'candles',
   );
-  const [width, setWidth] = useState(1248);
   const [hover, setHover] = useState<number | null>(null);
+  const [view, setView] = useState(() => visibleWindow(rows.length, periodRange(prices, period)));
+  const [band, setBand] = useState<{ left: number; width: number } | null>(null);
   const [docked, setDocked] = useState(false);
-  const visible = visiblePrices(prices, period);
-  const first = visible[0],
-    last = visible.at(-1);
-  const b = bounds(selection);
+  const wrap = useRef<HTMLDivElement>(null),
+    host = useRef<HTMLDivElement>(null),
+    chart = useRef<IChartApi | null>(null);
+  const latest = useRef({ selection, period });
+  latest.current = { selection, period };
+  const savedRange = useRef<IRange<number> | null>(null);
+  const redraw = useRef(() => {});
+  const drag = useRef<number | null>(null);
+  const heights = paneHeights[narrow ? 'narrow' : 'wide'];
+  const height = heights.reduce((sum, h) => sum + h, AXIS_HEIGHT + SEPARATORS);
+
   useEffect(() => {
-    const element = shell.current;
-    if (!element || typeof ResizeObserver === 'undefined') return;
-    const measure = () => {
-      if (element.clientWidth) setWidth(element.clientWidth);
+    const element = host.current;
+    if (!element || !rows.length) return;
+    const api = publicChart(element);
+    chart.current = api;
+    const time = api.timeScale();
+    const index = new Map(rows.map((row, i) => [row.date, i]));
+    const dates = rows.map((row) => row.date);
+    const cumulative = addPanes(api, rows, type, heights);
+
+    redraw.current = () => {
+      const selected = selectedRows(dates, latest.current.selection);
+      const at = (i: number) => time.logicalToCoordinate(i as Logical);
+      const left = selected && at(selected.first),
+        right = selected && at(selected.last),
+        next = selected && at(selected.first + 1);
+      if (left == null || right == null || next == null) return setBand(null);
+      const half = (next - left) / 2;
+      const from = Math.max(0, left - half),
+        to = Math.min(time.width(), right + half);
+      setBand(to > from ? { left: from, width: to - from } : null);
     };
-    const observer = new ResizeObserver(measure);
-    measure();
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, []);
+    let shown = '';
+    const sync = (range: IRange<number> | null) => {
+      const next = visibleWindow(rows.length, range);
+      const key = next ? `${next.first}:${next.last}` : '';
+      if (key !== shown) {
+        shown = key;
+        cumulative.setData(next ? cumulativeData(prices, next) : []);
+        setView(next);
+      }
+      redraw.current();
+    };
+    time.subscribeVisibleLogicalRangeChange(sync);
+    time.subscribeSizeChange(() => redraw.current());
+    api.subscribeCrosshairMove((event) =>
+      setHover(event.time === undefined ? null : (index.get(chartDate(event.time) ?? '') ?? null)),
+    );
+    const initial = savedRange.current ?? periodRange(prices, latest.current.period);
+    sync(initial);
+    // The chart only knows its plot width after the first layout.
+    let fitted = false;
+    const frame = requestAnimationFrame(() => {
+      time.setVisibleLogicalRange(initial);
+      fitted = true;
+    });
+    return () => {
+      cancelAnimationFrame(frame);
+      if (fitted) savedRange.current = time.getVisibleLogicalRange();
+      redraw.current = () => {};
+      chart.current = null;
+      api.remove();
+    };
+  }, [rows, prices, type, heights]);
+
   useEffect(() => {
-    const scroll = () => setDocked((shell.current?.getBoundingClientRect().bottom ?? 1) <= 0);
+    redraw.current();
+  }, [selection]);
+
+  useEffect(() => {
+    const scroll = () => setDocked((wrap.current?.getBoundingClientRect().bottom ?? 1) <= 0);
     scroll();
     window.addEventListener('scroll', scroll, { passive: true });
     return () => window.removeEventListener('scroll', scroll);
   }, []);
+
   useEffect(() => {
     const keydown = (e: KeyboardEvent) => {
       if (
@@ -89,105 +290,78 @@ export function PriceChart({
         /INPUT|TEXTAREA|SELECT/.test(e.target.tagName)
       )
         return;
-      if (!selection) return;
-      const focused = document.activeElement?.getAttribute('data-edge');
-      const edge = focused === 'start' || focused === 'end' ? focused : undefined;
-      if (
-        e.key === 'Escape' ||
-        ['ArrowLeft', 'ArrowRight'].includes(e.key) ||
-        (edge && ['Home', 'End'].includes(e.key))
-      ) {
-        e.preventDefault();
-        setHover(null);
-        select(
-          selectionKey(
-            selection,
-            prices.map((p) => p.date),
-            e.key,
-            e.shiftKey,
-            edge,
-          ),
-        );
-      }
+      if (!selection || !['Escape', 'ArrowLeft', 'ArrowRight'].includes(e.key)) return;
+      e.preventDefault();
+      select(
+        selectionKey(
+          selection,
+          prices.map((p) => p.date),
+          e.key,
+          e.shiftKey,
+        ),
+      );
     };
     document.addEventListener('keydown', keydown);
     return () => document.removeEventListener('keydown', keydown);
   }, [selection, prices, select]);
-  if (!first || !last)
+
+  function choosePeriod(next: Period) {
+    setPeriod(next);
+    chart.current?.timeScale().setVisibleLogicalRange(periodRange(prices, next));
+  }
+  function chooseType(next: ChartType) {
+    setType(next);
+    writeStorage(typeKey, next);
+  }
+  function rowAt(event: PointerEvent<HTMLDivElement>) {
+    const rect = wrap.current?.getBoundingClientRect();
+    const logical =
+      rect && chart.current?.timeScale().coordinateToLogical(event.clientX - rect.left);
+    return logical == null
+      ? undefined
+      : Math.max(0, Math.min(rows.length - 1, Math.round(logical)));
+  }
+  function start(event: PointerEvent<HTMLDivElement>) {
+    const rect = wrap.current?.getBoundingClientRect(),
+      api = chart.current;
+    if (!rect || !api || event.button !== 0) return;
+    const onAxis = event.target instanceof Element && event.target.closest('.chart-axis') !== null;
+    const shiftDrag =
+      event.shiftKey &&
+      event.pointerType === 'mouse' &&
+      event.clientX - rect.left <= api.timeScale().width();
+    const index = onAxis || shiftDrag ? rowAt(event) : undefined;
+    const day = index === undefined ? undefined : rows[index]?.date;
+    if (index === undefined || !day) return;
+    event.preventDefault();
+    event.stopPropagation();
+    drag.current = index;
+    select({ anchor: day, end: day });
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+  function move(event: PointerEvent<HTMLDivElement>) {
+    const anchor = drag.current === null ? undefined : rows[drag.current]?.date;
+    const index = anchor === undefined ? undefined : rowAt(event);
+    const end = index === undefined ? undefined : rows[index]?.date;
+    if (anchor !== undefined && end !== undefined) select({ anchor, end });
+  }
+  function finish() {
+    drag.current = null;
+  }
+
+  const first = view && prices[view.first],
+    last = view && prices[view.last];
+  const periodChange = first?.close && last ? (last.close / first.close - 1) * 100 : 0;
+  const shown = rows[hover ?? rows.length - 1];
+  const previous = rows[(hover ?? rows.length - 1) - 1];
+  const change = shown && previous ? shown.close - previous.close : null;
+  if (!rows.length)
     return (
       <section className="section">
         <h2>Price & volume</h2>
         <p className="empty-state">No price data</p>
       </section>
     );
-  const mobile = width < 650,
-    W = width,
-    H = mobile ? 486 : 541,
-    L = mobile ? 5 : 8,
-    R = mobile ? 49 : 64;
-  const plot = W - L - R,
-    T = 22,
-    priceBottom = mobile ? 224 : 260,
-    volTop = mobile ? 261 : 296,
-    volBottom = mobile ? 311 : 351,
-    foreignTop = mobile ? 337 : 376,
-    foreignBottom = mobile ? 369 : 416,
-    cumTop = mobile ? 407 : 454,
-    cumBottom = mobile ? 455 : 506;
-  const min = Math.min(...visible.map((p) => p.close)),
-    max = Math.max(...visible.map((p) => p.close)),
-    pad = (max - min) * 0.12 || 100,
-    lo = Math.max(0, min - pad),
-    hi = max + pad;
-  const cumulative = cumulativeForeign(visible),
-    cumLow = Math.min(0, ...cumulative),
-    cumHigh = Math.max(0, ...cumulative),
-    cumLast = cumulative.at(-1) ?? 0;
-  const cumY = (v: number) =>
-    cumBottom - ((v - cumLow) / Math.max(1, cumHigh - cumLow)) * (cumBottom - cumTop);
-  const tickStep = hi - lo >= 800 ? 100 : hi - lo >= 80 ? 10 : 1;
-  const x = (i: number) => L + (i / Math.max(1, visible.length - 1)) * plot;
-  const y = (v: number) => T + ((hi - v) / (hi - lo)) * (priceBottom - T);
-  const maxVolume = Math.max(1, ...visible.map((p) => p.volume)),
-    maxForeign = Math.max(1, ...visible.map((p) => Math.abs(p.net_foreign))),
-    midForeign = (foreignTop + foreignBottom) / 2;
-  const bw = Math.max(1, (plot / visible.length) * 0.65),
-    half = plot / Math.max(1, visible.length - 1) / 2;
-  const startIndex = prices.indexOf(first);
-  const dayX = (day: string) => x(prices.findIndex((p) => p.date === day) - startIndex);
-  const left = b ? Math.max(L, dayX(b.start) - (b.start === b.end ? half : 0)) : 0;
-  const right = b ? Math.min(W - R, dayX(b.end) + (b.start === b.end ? half : 0)) : 0;
-  const selectionVisible = b && right >= left;
-  const bands: { start: number; end: number }[] = [];
-  visible.forEach((p, i) => {
-    if (p.volume !== 0) return;
-    const previous = bands.at(-1);
-    if (previous && previous.end === i - 1) previous.end = i;
-    else bands.push({ start: i, end: i });
-  });
-  function indexAt(e: PointerEvent<SVGSVGElement>) {
-    return Math.max(
-      0,
-      Math.min(
-        visible.length - 1,
-        Math.round(
-          ((e.clientX - e.currentTarget.getBoundingClientRect().left - L) / plot) *
-            (visible.length - 1),
-        ),
-      ),
-    );
-  }
-  const hoverRow = hover === null ? undefined : visible[hover];
-  const hoverTotal = hoverRow
-    ? aggregateRange(prices, { anchor: hoverRow.date, end: hoverRow.date })
-    : null;
-  const marker =
-    hover ??
-    (selection?.anchor === selection?.end
-      ? visible.findIndex((p) => p.date === selection?.end)
-      : -1);
-  const markerRow = visible[marker];
-  const periodChange = first.close ? (last.close / first.close - 1) * 100 : 0;
   return (
     <>
       <div id="selection-sticky" hidden={!selection || !docked}>
@@ -203,397 +377,137 @@ export function PriceChart({
       <section className="section" id="price-section" aria-labelledby="price-heading">
         <div className="section-head">
           <h2 id="price-heading">Price & volume</h2>
-          <div className="ranges" aria-label="Chart period">
-            {(['1M', '3M', '6M', 'YTD'] satisfies Period[]).map((p) => (
-              <button
-                key={p}
-                data-range={p}
-                aria-pressed={p === period}
-                onClick={() => {
-                  setHover(null);
-                  setPeriod(p);
-                }}
-              >
-                {p}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="chart-summary">
-          <strong className={direction(periodChange)}>
-            {signed(periodChange, (v) => nf(v, 2))}%
-          </strong>
-          <span>{period}</span>
-          <span className="date-label">
-            {dateText(first.date, false)} – {dateText(last.date)}
-          </span>
-        </div>
-        <div className="chart-shell" id="chart-shell" ref={shell}>
-          <svg
-            ref={svg}
-            id="price-chart"
-            className="chart-svg"
-            viewBox={`0 0 ${W} ${H}`}
-            style={{ height: H }}
-            role="group"
-            aria-label={`${ticker} close price, trading volume, net foreign flow and cumulative foreign flow`}
-            onPointerDown={(e) => {
-              if (e.button !== 0) return;
-              e.preventDefault();
-              const day = visible[indexAt(e)]?.date;
-              if (!day) return;
-              const target = e.target instanceof Element ? e.target.closest('[data-edge]') : null;
-              const edge = target?.getAttribute('data-edge');
-              if (!e.shiftKey && (edge === 'start' || edge === 'end')) {
-                gesture.current = { kind: 'edge', edge };
-                if (target instanceof SVGElement) target.focus();
-              } else {
-                if (
-                  document.activeElement instanceof SVGElement &&
-                  document.activeElement.hasAttribute('data-edge')
-                )
-                  document.activeElement.blur();
-                const anchor = e.shiftKey && selection ? selection.anchor : day;
-                gesture.current = { kind: 'range', anchor };
-                select({ anchor, end: day });
-              }
-              e.currentTarget.setPointerCapture(e.pointerId);
-              setHover(null);
-            }}
-            onPointerMove={(e) => {
-              const index = indexAt(e),
-                day = visible[index]?.date;
-              const drag = gesture.current;
-              if (!drag) {
-                setHover(index);
-                return;
-              }
-              if (!day) return;
-              if (drag.kind === 'edge' && selection) select(moveEdge(selection, drag.edge, day));
-              else if (drag.kind === 'range') select({ anchor: drag.anchor, end: day });
-            }}
-            onPointerUp={(e) => {
-              const drag = gesture.current;
-              gesture.current = null;
-              if (e.currentTarget.hasPointerCapture(e.pointerId))
-                e.currentTarget.releasePointerCapture(e.pointerId);
-              if (drag?.kind === 'edge')
-                svg.current?.querySelector<SVGElement>(`[data-edge="${drag.edge}"]`)?.focus();
-            }}
-            onPointerCancel={() => {
-              gesture.current = null;
-            }}
-            onPointerLeave={() => setHover(null)}
-          >
-            {bands.map((band) => {
-              const l = Math.max(L, x(band.start) - half),
-                r = Math.min(W - R, x(band.end) + half);
-              return (
-                <g key={band.start}>
-                  <rect
-                    className="suspension-band"
-                    x={l}
-                    y={0}
-                    width={r - l}
-                    height={cumBottom}
-                    fill="#999587"
-                    opacity=".13"
-                  />
-                  <text className="suspension-label" x={(l + r) / 2} y={13} textAnchor="middle">
-                    Suspended
-                  </text>
-                </g>
-              );
-            })}
-            {Array.from({ length: 5 }, (_, i) => {
-              const v = lo + ((hi - lo) * i) / 4;
-              return (
-                <g key={i}>
-                  <line
-                    x1={L}
-                    x2={W - R}
-                    y1={y(v)}
-                    y2={y(v)}
-                    stroke="#e3e3da"
-                    strokeDasharray="2 4"
-                  />
-                  <text x={W - R + 10} y={y(v) + 4}>
-                    {nf(Math.round(v / tickStep) * tickStep)}
-                  </text>
-                </g>
-              );
-            })}
-            {visible.map((p, i) => {
-              const a = visible[i - 1];
-              if (!a) return null;
-              const suspended = a.volume === 0 || p.volume === 0;
-              return (
-                <g key={p.date}>
-                  {!suspended && (
-                    <path
-                      d={`M${x(i - 1)},${y(a.close)} L${x(i)},${y(p.close)} L${x(i)},${priceBottom} L${x(i - 1)},${priceBottom} Z`}
-                      fill="#77746e"
-                      fillOpacity=".075"
-                    />
-                  )}
-                  <path
-                    d={`M${x(i - 1)},${y(a.close)} L${x(i)},${y(p.close)}`}
-                    fill="none"
-                    stroke="#30312e"
-                    strokeWidth="1.8"
-                    strokeDasharray={suspended ? '3 4' : undefined}
-                    strokeLinejoin="round"
-                    strokeLinecap="round"
-                  />
-                </g>
-              );
-            })}
-            <circle cx={x(visible.length - 1)} cy={y(last.close)} r={3} fill="#30312e" />
-            <rect
-              x={W - R + 4}
-              y={y(last.close) - 10}
-              width={R - 4}
-              height={20}
-              rx={3}
-              fill="#30312e"
-            />
-            <text x={W - R + 9} y={y(last.close) + 4} style={{ fill: '#fff', fontWeight: 700 }}>
-              {nf(last.close)}
-            </text>
-            <text className="axis-label" x={L} y={volTop - 10}>
-              Volume
-            </text>
-            <text x={W - R + 9} y={volTop + 5}>
-              {short(maxVolume)}
-            </text>
-            <text className="axis-label" x={L} y={foreignTop - 10}>
-              Net foreign{' '}
-              <tspan dx={6} className="axis-unit">
-                IDR (est.)
-              </tspan>
-            </text>
-            <text x={W - R + 9} y={foreignTop + 5}>
-              {short(maxForeign)}
-            </text>
-            <line x1={L} x2={W - R} y1={midForeign} y2={midForeign} stroke="#d0d2c6" />
-            <text className="axis-label" x={L} y={cumTop - 10}>
-              Cumulative foreign{' '}
-              <tspan dx={6} className="axis-unit">
-                IDR (est.)
-              </tspan>
-            </text>
-            <line x1={L} x2={W - R} y1={cumY(0)} y2={cumY(0)} stroke="#d0d2c6" />
-            <path
-              className="cumulative-foreign"
-              d={cumulative.map((v, i) => `${i ? 'L' : 'M'}${x(i)},${cumY(v)}`).join(' ')}
-              fill="none"
-              stroke={cumLast >= 0 ? '#167049' : '#b43c36'}
-              strokeWidth="1.8"
-              strokeLinejoin="round"
-              strokeLinecap="round"
-            />
-            <text
-              x={W - R + 9}
-              y={cumY(cumLast) + 4}
-              style={{ fill: cumLast >= 0 ? '#167049' : '#b43c36', fontWeight: 700 }}
-            >
-              {signed(cumLast)}
-            </text>
-            {visible.map((p, i) => {
-              const vh = (p.volume / maxVolume) * (volBottom - volTop),
-                fh = ((Math.abs(p.net_foreign) / maxForeign) * (foreignBottom - foreignTop)) / 2;
-              return (
-                <g key={p.date}>
-                  <rect
-                    x={x(i) - bw / 2}
-                    y={volBottom - vh}
-                    width={bw}
-                    height={vh}
-                    fill="#aaa79e"
-                  />
-                  <rect
-                    x={x(i) - bw / 2}
-                    y={p.net_foreign >= 0 ? midForeign - fh : midForeign}
-                    width={bw}
-                    height={fh}
-                    fill={p.net_foreign >= 0 ? '#167049' : '#b43c36'}
-                    opacity=".8"
-                  />
-                </g>
-              );
-            })}
-            {Array.from({ length: mobile ? 4 : 7 }).map((_, i, all) => {
-              const index = Math.round((i / (all.length - 1)) * (visible.length - 1));
-              const p = visible[index];
-              return (
-                p && (
-                  <text
-                    key={i}
-                    x={x(index)}
-                    y={H - 7}
-                    textAnchor={i === 0 ? 'start' : i === all.length - 1 ? 'end' : 'middle'}
-                  >
-                    {dateText(p.date, false)}
-                  </text>
-                )
-              );
-            })}
-            {markerRow && (
-              <g pointerEvents="none">
-                <line
-                  x1={x(marker)}
-                  x2={x(marker)}
-                  y1={T}
-                  y2={cumBottom}
-                  stroke="#84887b"
-                  strokeDasharray="3 3"
-                />
-                <circle
-                  cx={x(marker)}
-                  cy={cumY(cumulative[marker] ?? 0)}
-                  r={3}
-                  fill="#fdfcf9"
-                  stroke={(cumulative[marker] ?? 0) >= 0 ? '#167049' : '#b43c36'}
-                  strokeWidth={2}
-                />
-                <circle
-                  cx={x(marker)}
-                  cy={y(markerRow.close)}
-                  r={4}
-                  fill="#fdfcf9"
-                  stroke="#30312e"
-                  strokeWidth={2}
-                />
-              </g>
-            )}
-            <rect id="chart-hit" x={L} y={0} width={plot} height={cumBottom} fill="transparent" />
-            {selectionVisible && (
-              <g>
-                <rect
-                  className="selection-fill"
-                  x={left}
-                  y={0}
-                  width={Math.max(1, right - left)}
-                  height={cumBottom}
-                />
-                {(['start', 'end'] satisfies Edge[]).map((edge) => {
-                  const day = b[edge];
-                  if (day < first.date || day > last.date) return null;
-                  const position = edge === 'start' ? left : right;
-                  return (
-                    <g key={edge}>
-                      <line
-                        className="selection-edge"
-                        x1={position}
-                        x2={position}
-                        y1={0}
-                        y2={cumBottom}
-                      />
-                      <g
-                        className="selection-handle"
-                        data-edge={edge}
-                        role="slider"
-                        tabIndex={0}
-                        aria-label={edge === 'start' ? 'Range start' : 'Range end'}
-                        aria-orientation="horizontal"
-                        aria-valuemin={
-                          edge === 'start' ? 0 : prices.findIndex((p) => p.date === b.start)
-                        }
-                        aria-valuemax={
-                          edge === 'start'
-                            ? prices.findIndex((p) => p.date === b.end)
-                            : prices.length - 1
-                        }
-                        aria-valuenow={prices.findIndex((p) => p.date === day)}
-                        aria-valuetext={dateText(day)}
-                        transform={`translate(${position},0)`}
-                      >
-                        <rect className="handle-hit" x={-12} y={104} width={24} height={46} />
-                        <rect
-                          className="handle-grip"
-                          x={-5}
-                          y={112}
-                          width={10}
-                          height={30}
-                          rx={3}
-                        />
-                        <path d="M-1.5 121v12 M1.5 121v12" stroke="#566d8a" strokeWidth={1} />
-                      </g>
-                    </g>
-                  );
-                })}
-              </g>
-            )}
-          </svg>
-          {hoverRow && hoverTotal && (
-            <div
-              className="tooltip"
-              id="chart-tooltip"
-              style={{
-                left: Math.max(
-                  0,
-                  Math.min(W - 226, x(hover ?? 0) + (x(hover ?? 0) > W / 2 ? -241 : 15)),
-                ),
-                top: 37,
-              }}
-            >
-              <div className="tooltip-date">{dateText(hoverRow.date)}</div>
-              <dl>
-                <dt>
-                  Close <small className="unit-suffix">IDR</small>
-                </dt>
-                <dd>{nf(hoverRow.close)}</dd>
-                <dt>Change</dt>
-                <dd className={direction(hoverTotal.change)}>
-                  {hoverTotal.change === null
-                    ? '—'
-                    : `${signed(hoverTotal.change, nf)} (${signed(hoverTotal.changePct ?? 0, (v) => nf(v, 2))}%)`}
-                </dd>
-                {hoverRow.volume === 0 ? (
-                  <>
-                    <dt>Status</dt>
-                    <dd>Suspended</dd>
-                  </>
-                ) : (
-                  <>
-                    <dt>Volume</dt>
-                    <dd>{nf(hoverRow.volume)}</dd>
-                    <dt>
-                      Value <small className="unit-suffix">IDR</small>
-                    </dt>
-                    <dd>{nf(hoverRow.value)}</dd>
-                    <dt>Net foreign (est.)</dt>
-                    <dd className={direction(hoverRow.net_foreign)}>
-                      {signed(hoverRow.net_foreign, nf)}
-                    </dd>
-                  </>
-                )}
-                <dt>Cumulative foreign (est.)</dt>
-                <dd className={direction(cumulative[hover ?? 0] ?? 0)}>
-                  {signed(cumulative[hover ?? 0] ?? 0, nf)}
-                </dd>
-              </dl>
+          <div className="chart-controls">
+            <div className="ranges" aria-label="Chart period">
+              {periods.map((p) => (
+                <button
+                  key={p}
+                  data-range={p}
+                  aria-pressed={p === period}
+                  onClick={() => choosePeriod(p)}
+                >
+                  {p}
+                </button>
+              ))}
             </div>
-          )}
-        </div>
-        <div id="selection-axis" hidden={!selectionVisible}>
-          <div id="selection-bracket" style={{ left, width: Math.max(1, right - left) }} />
-          <div
-            id="selection-label"
-            style={{ left: Math.max(100, Math.min(W - 100, (left + right) / 2)) }}
-          >
-            <SelectionLabel prices={prices} selection={selection} />
+            <div className="ranges" aria-label="Chart type">
+              {(Object.keys(chartTypes) as ChartType[]).map((t) => (
+                <button
+                  key={t}
+                  data-type={t}
+                  aria-pressed={t === type}
+                  onClick={() => chooseType(t)}
+                >
+                  {chartTypes[t]}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
-        <div className="chart-legend">
-          <span>
-            <i className="legend-line" />
-            Close <small className="unit-suffix">IDR</small>
+        {first && last && (
+          <div className="chart-summary">
+            <strong className={direction(periodChange)}>
+              {signed(periodChange, (v) => nf(v, 2))}%
+            </strong>
+            <span className="date-label">
+              {dateText(first.date, false)} – {dateText(last.date)}
+            </span>
+          </div>
+        )}
+        {shown && (
+          <div className="readout">
+            <time className="readout-date" dateTime={shown.date}>
+              {dateText(shown.date)}
+            </time>
+            <span className={`readout-change ${direction(change)}`}>
+              {change === null || !previous?.close
+                ? '—'
+                : `${signed(change, nf)} (${signed((change / previous.close) * 100, (v) => nf(v, 2))}%)`}
+            </span>
+            {type === 'candles' && (
+              <>
+                <span>
+                  <i>O</i>
+                  {nf(shown.open)}
+                </span>
+                <span>
+                  <i>H</i>
+                  {nf(shown.high)}
+                </span>
+                <span>
+                  <i>L</i>
+                  {nf(shown.low)}
+                </span>
+              </>
+            )}
+            <span>
+              <i>C</i>
+              {nf(shown.close)}
+            </span>
+            {shown.volume === 0 ? (
+              <span className="readout-status">Suspended</span>
+            ) : (
+              <>
+                <span className="readout-volume" title={`${nf(shown.volume)} shares`}>
+                  <i>Volume</i>
+                  {short(shown.volume)}
+                </span>
+                <span
+                  className={`readout-foreign ${direction(shown.netForeign)}`}
+                  title={`${signed(shown.netForeign, nf)} IDR`}
+                >
+                  <i>Net foreign</i>
+                  {signed(shown.netForeign)}
+                </span>
+              </>
+            )}
+            {shown.estimated && (
+              <span
+                className="readout-status"
+                title="Missing open, high or low values use the close. The traded range is unavailable."
+              >
+                Est.
+              </span>
+            )}
+          </div>
+        )}
+        <div
+          className="price-chart"
+          ref={wrap}
+          style={{ height }}
+          onPointerLeave={(event) => event.pointerType === 'mouse' && setHover(null)}
+          onPointerDownCapture={start}
+          onMouseDownCapture={(event) => {
+            if (drag.current !== null) event.stopPropagation();
+          }}
+          onPointerMove={move}
+          onPointerUp={finish}
+          onPointerCancel={finish}
+        >
+          <div
+            className="chart-host"
+            ref={host}
+            role="img"
+            aria-label={`${ticker} price, volume, net foreign flow and cumulative foreign flow`}
+            data-series={type}
+            data-bars={rows.length}
+          />
+          {band && <div className="selection-band" style={band} />}
+          <div className="chart-axis" />
+        </div>
+        <div className="chart-foot">
+          <span className="chart-selection">
+            <SelectionLabel prices={prices} selection={selection} />
           </span>
-          <span>
-            <i className="legend-square" />
-            Volume <small className="unit-suffix">shares</small>
-          </span>
+          <a
+            className="chart-attribution"
+            href="https://www.tradingview.com/"
+            target="_blank"
+            rel="noreferrer"
+            title="TradingView Lightweight Charts™ Copyright (c) 2025 TradingView, Inc."
+          >
+            TradingView
+          </a>
         </div>
         {children}
       </section>
