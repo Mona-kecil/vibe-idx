@@ -47,6 +47,7 @@
   white-space: nowrap;
 }
 .pulse .spark {
+  flex: none;
   width: 120px;
   height: 28px;
 }
@@ -76,10 +77,25 @@
   color: var(--down);
   font-weight: 650;
 }
-.spark path {
+.spark[data-tone='up'],
+.spark-change[data-tone='up'] {
+  color: var(--up);
+}
+.spark[data-tone='down'],
+.spark-change[data-tone='down'] {
+  color: var(--down);
+}
+.spark[data-tone='flat'] {
+  color: #8b8c84;
+}
+.spark-change[data-tone='flat'] {
+  color: var(--muted);
+}
+.spark-line {
   fill: none;
   stroke: currentColor;
-  stroke-width: 1.4;
+  stroke-width: 1.6;
+  stroke-linejoin: round;
 }
 .sources {
   position: relative;
@@ -407,7 +423,6 @@
 .watch-row .spark {
   width: 120px;
   height: 28px;
-  color: var(--muted);
 }
 .spark-empty {
   font-size: 11px;
@@ -524,10 +539,13 @@
     gap: 8px 16px;
   }
   .pulse-index {
+    flex-wrap: wrap;
     width: 100%;
   }
   .pulse-index .spark {
-    margin-left: auto;
+    flex: 1 1 140px;
+    width: auto;
+    max-width: 220px;
   }
   .source-panel {
     right: auto;

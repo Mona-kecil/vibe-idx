@@ -527,6 +527,49 @@ describe('daily briefing', () => {
       [...breadth.querySelectorAll<HTMLElement>('.split span')].map((s) => s.style.flexGrow),
     ).toEqual(['3', '1']);
   });
+  it.each([
+    [[5000, 5100, 5200, 5160], 'up', '+3.20% 60D'],
+    [[5000, 4900, 4800, 4845], 'down', '−3.10% 60D'],
+    [[5000, 5100, 4900, 5002], 'flat', '+0.04% 60D'],
+  ])(
+    'colours the IHSG area by its window change %j and prints the number',
+    async (closes, tone, text) => {
+      serve('market.json', {
+        date: dates.at(-1),
+        up: 1,
+        down: 1,
+        history: dates.map((date, i) => ({
+          date,
+          close: closes[i],
+          change: 10,
+          change_pct: 1,
+        })),
+      });
+      await render();
+      const spark = element('.pulse .spark', SVGSVGElement);
+      expect(spark.dataset.tone).toBe(tone);
+      expect(spark.querySelector('title')?.textContent?.split('; ').at(-1)).toBe(
+        `22 Oct 2026: ${(closes.at(-1) ?? 0).toLocaleString('en-US')}.00`,
+      );
+      const change = element('.pulse .spark-change', HTMLElement);
+      expect(change.dataset.tone).toBe(tone);
+      expect(change.textContent).toBe(text);
+    },
+  );
+  it('gives every spark its own gradient and tones the watchlist rows', async () => {
+    pin('AAAA', 'BBBB');
+    await render();
+    const sparks = [...host.querySelectorAll('svg.spark')];
+    expect(sparks).toHaveLength(3);
+    const ids = sparks.map((svg) => svg.querySelector('linearGradient')?.id);
+    expect(new Set(ids).size).toBe(3);
+    sparks.forEach((svg, i) =>
+      expect(svg.querySelector('.spark-fill')?.getAttribute('fill')).toBe(`url(#${ids[i]})`),
+    );
+    expect(
+      [...host.querySelectorAll<SVGSVGElement>('.watch-row svg.spark')].map((s) => s.dataset.tone),
+    ).toEqual(['up', 'up']);
+  });
   it('searches company names and codes, supports the slash shortcut, and opens the selected research page', async () => {
     const navigate = vi.spyOn(window.location, 'assign').mockImplementation(() => {});
     await render();

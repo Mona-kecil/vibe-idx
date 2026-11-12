@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import { areaChart } from './area';
 import { load, type Feed, type Health, type Market, type Stock, type Ticker } from './data';
 import {
   briefing,
@@ -142,7 +143,11 @@ function Pulse({ data, excluded }: { data: Data; excluded: number }) {
             {last.change === null ? '—' : signed(last.change, (v) => nf(v, 2))}{' '}
             {pct(last.change_pct)}
           </span>
-          <Spark rows={history} label="IHSG closing levels over 60 trading days" />
+          <Spark
+            rows={history}
+            label="IHSG closing levels over 60 trading days"
+            windowLabel="60D"
+          />
         </div>
       ) : (
         <p role="status">Market history unavailable</p>
@@ -196,30 +201,48 @@ function Breadth({ up, down }: { up: number; down: number }) {
   );
 }
 
-function Spark({ rows, label }: { rows: { date: string; close: number }[]; label: string }) {
-  const width = 120,
-    height = 28,
-    values = rows.map((r) => r.close),
-    min = Math.min(...values),
-    max = Math.max(...values);
-  const d = rows
-    .map((r, i) => {
-      const x = (i / Math.max(1, rows.length - 1)) * width,
-        y = height - 2 - ((r.close - min) / (max - min || 1)) * (height - 4);
-      return `${i ? 'L' : 'M'}${x.toFixed(1)},${y.toFixed(1)}`;
-    })
-    .join(' ');
+function Spark({
+  rows,
+  label,
+  windowLabel,
+}: {
+  rows: { date: string; close: number }[];
+  label: string;
+  windowLabel?: string;
+}) {
+  const gradient = `spark-${useId().replace(/:/g, '')}`,
+    area = areaChart(
+      rows.map((r) => r.close),
+      120,
+      28,
+    );
+  if (!area) return null;
   return (
-    <svg
-      className="spark"
-      viewBox={`0 0 ${width} ${height}`}
-      preserveAspectRatio="none"
-      role="img"
-      aria-label={label}
-    >
-      <title>{rows.map((r) => `${date(r.date)}: ${nf(r.close, 2)}`).join('; ')}</title>
-      <path d={d} vectorEffect="non-scaling-stroke" />
-    </svg>
+    <>
+      <svg
+        className="spark"
+        data-tone={area.tone}
+        viewBox="0 0 120 28"
+        preserveAspectRatio="none"
+        role="img"
+        aria-label={label}
+      >
+        <title>{rows.map((r) => `${date(r.date)}: ${nf(r.close, 2)}`).join('; ')}</title>
+        <defs>
+          <linearGradient id={gradient} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="currentColor" stopOpacity={0.25} />
+            <stop offset="100%" stopColor="currentColor" stopOpacity={0} />
+          </linearGradient>
+        </defs>
+        <path className="spark-fill" d={area.fill} fill={`url(#${gradient})`} />
+        <path className="spark-line" d={area.line} vectorEffect="non-scaling-stroke" />
+      </svg>
+      {windowLabel && (
+        <span className="spark-change num" data-tone={area.tone}>
+          {pct(area.changePct)} {windowLabel}
+        </span>
+      )}
+    </>
   );
 }
 

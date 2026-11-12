@@ -11,6 +11,14 @@ describe('share metadata', () => {
     expect(card).not.toBeNull();
     expect(card?.closes).toEqual(history.prices.slice(-60).map((p) => p.close));
     expect(card?.date).toBe(history.prices.at(-1)?.date);
+    expect(card?.start).toBe(history.prices.slice(-60)[0]?.date);
+    const long = Array.from({ length: 70 }, (_, i) => ({
+      date: new Date(Date.UTC(2026, 0, 1 + i)).toISOString().slice(0, 10),
+      close: 100 + i,
+    }));
+    const windowed = parseTickerCard({ ticker: 'BBCA', name: 'Bank', prices: long });
+    expect(windowed?.closes).toHaveLength(60);
+    expect(windowed?.start).toBe(long[10]?.date);
   });
 
   it('cleans company suffixes and formats the price, daily change and date', () => {
