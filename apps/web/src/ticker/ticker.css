@@ -1328,7 +1328,7 @@
   gap: 4px 12px;
   margin-top: 10px;
 }
-.ticker-page .identity-sub p {
+.ticker-page .identity-sub > p {
   margin: 0;
   font-size: 16px;
   font-weight: 500;
@@ -1378,7 +1378,7 @@
     margin-top: 6px;
     gap: 2px 10px;
   }
-  .ticker-page .identity-sub p {
+  .ticker-page .identity-sub > p {
     max-width: 100%;
     overflow: hidden;
     color: var(--muted);

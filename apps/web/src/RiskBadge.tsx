@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { usePublished } from './publicData';
 import type { Risk } from './terminal/sources';
 import { dateText } from './ticker/format';
@@ -13,6 +13,15 @@ export function useRiskFor(ticker: string): Risk | undefined {
 export function RiskBadge({ risk }: { risk: Risk | undefined }) {
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDetailsElement>(null);
+  useLayoutEffect(() => {
+    const panel = box.current?.querySelector<HTMLElement>('.risk-panel');
+    if (!open || !panel) return;
+    panel.style.transform = '';
+    const rect = panel.getBoundingClientRect(),
+      edge = 16;
+    const shift = Math.max(edge - rect.left, Math.min(0, window.innerWidth - edge - rect.right));
+    if (shift) panel.style.transform = `translateX(${shift}px)`;
+  }, [open]);
   useEffect(() => {
     if (!open) return;
     const close = () => box.current?.removeAttribute('open');

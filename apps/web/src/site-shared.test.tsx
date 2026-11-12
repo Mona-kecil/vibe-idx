@@ -187,6 +187,21 @@ describe('RiskBadge', () => {
     expect(find('details.risk', HTMLDetailsElement).open).toBe(false);
   });
 
+  it('slides the open panel back inside the screen edge', async () => {
+    const { RiskBadge } = await import('./RiskBadge');
+    vi.stubGlobal('innerWidth', 390);
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(
+      function (this: HTMLElement) {
+        return this.classList.contains('risk-panel')
+          ? DOMRect.fromRect({ x: 204, y: 0, width: 320, height: 80 })
+          : DOMRect.fromRect();
+      },
+    );
+    await render(<RiskBadge risk={flagged} />);
+    await click('.risk summary');
+    expect(find('.risk-panel', HTMLElement).style.transform).toBe('translateX(-150px)');
+  });
+
   it('renders nothing without flags', async () => {
     const { RiskBadge } = await import('./RiskBadge');
     await render(<RiskBadge risk={{ susp: null, uma: null, notes: [] }} />);

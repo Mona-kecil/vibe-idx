@@ -409,3 +409,7 @@
     min-height: 32px;
   }
 }
+
+.market-page .rank-rows li:active {
+  background: var(--hover);
+}

@@ -198,12 +198,20 @@
   border-radius: 2px;
   text-decoration: none;
   font: 11px var(--mono);
-  transition: filter 0.1s;
+  transition:
+    opacity 120ms ease,
+    transform 120ms var(--ease-out);
 }
 @media (hover: hover) and (pointer: fine) {
   .heat a:hover {
-    filter: brightness(0.92);
+    opacity: 0.86;
   }
+}
+.heat a:active {
+  transform: var(--press);
+}
+:is(.tile-row, .tile-head, .watch-row, .news a, .week-list a):active {
+  background: var(--hover);
 }
 .heat a b {
   font-size: 12px;
