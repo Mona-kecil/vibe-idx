@@ -5,6 +5,7 @@ import {
   composition,
   holderLabel,
   holderRole,
+  holdingsMoved,
   inRange,
   registryAt,
   pctAt,
@@ -31,16 +32,8 @@ const palette = [
   '#b24c91',
   '#6d6b78',
 ];
-const grays = [
-  '#373632',
-  '#5c5a55',
-  '#7d7a74',
-  '#9d9991',
-  '#b8b4aa',
-  '#ccc8bd',
-  '#e1dfd2',
-  '#aaa59c',
-];
+const neutral: Record<string, string> = { 'Free float': '#d6d4c9', Other: '#a8a59b' };
+const unlisted = '#6d6b78';
 export function Ownership({
   data,
   series,
@@ -82,6 +75,8 @@ export function Ownership({
     });
   const activity = events.filter((e) => inRange(e.date, selection));
   const chartSeries = topSeries(series, latest);
+  const color = new Map(chartSeries.map((s, i) => [s.name, palette[i % palette.length]!]));
+  const tint = (name: string) => color.get(name) ?? neutral[name] ?? unlisted;
   return (
     <section className="section" id="ownership-section" aria-labelledby="ownership-heading">
       <div className="section-head">
@@ -119,7 +114,7 @@ export function Ownership({
                   x={parts.slice(0, i).reduce((sum, p) => sum + p.pct, 0)}
                   width={part.pct}
                   height={36}
-                  fill={grays[i % grays.length]}
+                  fill={tint(part.name)}
                 >
                   <title>
                     {part.name} {nf(part.pct, 2)}%
@@ -130,13 +125,13 @@ export function Ownership({
             </svg>
           </div>
           <div className="composition-legend">
-            {parts.map((part, i) => (
+            {parts.map((part) => (
               <div
                 key={part.name}
                 className="composition-item"
                 title={part.note ? `${dateText(part.note.slice(0, 10))} registry` : undefined}
               >
-                <i className="swatch" style={{ background: grays[i % grays.length] }} />
+                <i className="swatch" style={{ background: tint(part.name) }} />
                 <span className="label">{part.name}</span>
                 <strong>{nf(part.pct, 2)}%</strong>
               </div>
@@ -158,33 +153,36 @@ export function Ownership({
                 .sort((a, b) => b.date.localeCompare(a.date))[0]?.sources[0] ?? snapshot?.url;
           return (
             <li key={s.name} data-holder={s.name} data-shares={shares}>
-              <div className="holder-head">
-                <span className="holder-name">
-                  {source ? (
-                    <a href={source} target="_blank" rel="noopener noreferrer">
-                      {s.name}
-                    </a>
-                  ) : (
-                    s.name
-                  )}
-                  {role && <span className="role">{role}</span>}
-                </span>
-                <strong>{nf(pct, 2)}%</strong>
-              </div>
-              <svg className="holder-track" width="100%" height="6" aria-hidden="true">
-                <rect width="100%" height="6" fill="#e7e7de" />
-                <rect width={`${Math.min(100, pct)}%`} height="6" fill="#4d4b46" />
-              </svg>
-              <span className="holder-shares" title={nf(shares) + ' shares'}>
-                {changed ? (
-                  <span className="holder-transition">
-                    {typeof before === 'number' ? short(before) : '—'} → {short(shares)}
+              <details className="holder">
+                <summary className="holder-head">
+                  <span className="holder-name">
+                    {s.name}
+                    {role && <span className="role">{role}</span>}
                   </span>
-                ) : (
-                  short(shares)
-                )}{' '}
-                shares
-              </span>
+                  <strong>{nf(pct, 2)}%</strong>
+                  <svg className="holder-track" width="100%" height="6" aria-hidden="true">
+                    <rect width="100%" height="6" fill="#e7e7de" />
+                    <rect width={`${Math.min(100, pct)}%`} height="6" fill={tint(s.name)} />
+                  </svg>
+                </summary>
+                <p className="holder-detail">
+                  <span className="holder-shares" title={nf(shares) + ' shares'}>
+                    {changed ? (
+                      <span className="holder-transition">
+                        {typeof before === 'number' ? short(before) : '—'} → {short(shares)}
+                      </span>
+                    ) : (
+                      short(shares)
+                    )}{' '}
+                    shares
+                  </span>
+                  {source && (
+                    <a href={source} target="_blank" rel="noopener noreferrer">
+                      Source
+                    </a>
+                  )}
+                </p>
+              </details>
             </li>
           );
         })}
@@ -258,7 +256,7 @@ export function Ownership({
           {allChanges ? 'Show less' : `Show all ${activity.length}`}
         </button>
       )}
-      {chartSeries.length > 0 && (
+      {holdingsMoved(chartSeries) && (
         <HoldingsChart data={data} series={chartSeries} selection={selection} end={end} />
       )}
       {typeParts.length > 0 && (

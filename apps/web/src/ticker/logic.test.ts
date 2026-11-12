@@ -25,6 +25,7 @@ import {
   selectedRows,
   visiblePrices,
   visibleWindow,
+  holdingsMoved,
 } from './logic';
 
 const dates = ['2026-08-10', '2026-08-11', '2026-08-12', '2026-08-21', '2026-08-24'];
@@ -627,5 +628,20 @@ describe('chart windows', () => {
     });
     expect(selectedRows(dates, { anchor: '2026-08-13', end: '2026-08-20' })).toBeNull();
     expect(selectedRows(dates, null)).toBeNull();
+  });
+});
+
+describe('holdingsMoved', () => {
+  const series = (shares: (number | null)[]) => ({
+    holder_key: 'H',
+    name: 'Holder',
+    events: [],
+    points: shares.map((value, i) => ({ date: `2026-0${i + 1}-01`, shares: value, priority: 0 })),
+  });
+  it('is false when every holder keeps the same share count', () => {
+    expect(holdingsMoved([series([100, 100, null, 100]), series([5])])).toBe(false);
+  });
+  it('is true once any holder reports a different count', () => {
+    expect(holdingsMoved([series([100, 100]), series([5, 6])])).toBe(true);
   });
 });

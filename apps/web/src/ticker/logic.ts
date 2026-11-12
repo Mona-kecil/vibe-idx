@@ -403,6 +403,12 @@ export function cumulativeForeign(rows: Price[]) {
   return rows.map((p) => (sum += p.net_foreign));
 }
 
+/** True when at least one holder's reported share count changes over the series. */
+export function holdingsMoved(series: HoldingSeries[]) {
+  return series.some(
+    (s) => new Set(s.points.flatMap((p) => (p.shares === null ? [] : [p.shares]))).size > 1,
+  );
+}
 export const TOP_HOLDERS = 5;
 export function topSeries(series: HoldingSeries[], date: string, count = TOP_HOLDERS) {
   return series

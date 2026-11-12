@@ -492,7 +492,7 @@ html {
     min-width: 44px;
     min-height: 44px;
   }
-  .site.site.site summary {
+  .site.site.site summary:not(.holder-head) {
     display: inline-flex;
     align-items: center;
   }

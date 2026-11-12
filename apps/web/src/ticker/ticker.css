@@ -1166,20 +1166,31 @@
   border-bottom: 1px solid var(--line);
 }
 .ticker-page .holder-head {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
+  gap: 6px 12px;
   font-size: 13px;
   line-height: 1.4;
+  list-style: none;
+  cursor: pointer;
+}
+.ticker-page .holder-head::-webkit-details-marker {
+  display: none;
+}
+.ticker-page .holder-head .holder-track {
+  grid-column: 1 / -1;
+}
+.ticker-page .holder-detail {
+  display: flex;
+  gap: 14px;
+  margin: 8px 0 0;
+  font-size: 12px;
 }
 .ticker-page .holder-name {
   min-width: 0;
   font-weight: 600;
   overflow-wrap: anywhere;
-}
-.ticker-page .holder-name a {
-  text-decoration: underline;
 }
 .ticker-page .holder-name .role {
   display: inline;
