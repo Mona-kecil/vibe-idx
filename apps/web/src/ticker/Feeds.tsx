@@ -263,9 +263,7 @@ export function Timeline({
         {items.slice(0, all ? items.length : TIMELINE_SHOWN).map((item) => (
           <li key={item.url} data-date={itemDate(item.at)} data-kind={item.kind}>
             <div className="feed-meta">
-              <span className={`kind kind-${item.kind}`}>
-                {item.kind === 'filing' ? 'Filing' : 'News'}
-              </span>
+              {item.kind === 'filing' && <span className="kind kind-filing">Filing</span>}
               {item.source && <span>{item.source}</span>}
               <time dateTime={itemDate(item.at)}>{dateText(item.at)}</time>
             </div>

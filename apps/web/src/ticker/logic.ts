@@ -378,6 +378,13 @@ export type TimelineItem = {
   attachments: { url: string; label: string }[];
 };
 export const TIMELINE_SHOWN = 5;
+/** Daily "share price today" recaps repeat the chart and crowd out filings. */
+const priceRecap = /\bharga saham\b.*\bhari ini\b/i;
+const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+export function withoutSource(title: string, source: string) {
+  const tail = new RegExp(`\\s+[-–—|]\\s+${escape(source.trim())}$`, 'i');
+  return source.trim() ? title.replace(tail, '') : title;
+}
 export function timeline(filings: Filing[], news: NewsItem[]): TimelineItem[] {
   return [
     ...filings.map((f) => ({
@@ -387,14 +394,16 @@ export function timeline(filings: Filing[], news: NewsItem[]): TimelineItem[] {
       url: f.url,
       attachments: attachments(f).map(({ url, label }) => ({ url, label })),
     })),
-    ...news.map((n) => ({
-      at: n.published_at,
-      kind: 'news' as const,
-      title: n.title,
-      url: n.url,
-      source: n.source,
-      attachments: [],
-    })),
+    ...news
+      .filter((n) => !priceRecap.test(n.title))
+      .map((n) => ({
+        at: n.published_at,
+        kind: 'news' as const,
+        title: withoutSource(n.title, n.source),
+        url: n.url,
+        source: n.source,
+        attachments: [],
+      })),
   ].sort((a, b) => publishedMs(b.at) - publishedMs(a.at));
 }
 
@@ -490,4 +499,40 @@ export function nextAction(
       ...action.steps.map((s) => `${stepNames[s.step]} ${dateText(s.date)}`),
     ].join('\n'),
   };
+}
+
+export type ChartMark = { date: string; kind: 'filing' | 'ownership' | 'action'; label: string };
+/** Filings, ownership changes and past corporate-action dates, each snapped to the next trading day. */
+export function chartMarks(
+  data: Ticker,
+  events: HoldingEvent[],
+  actions: CorporateAction[],
+): ChartMark[] {
+  const days = data.prices.map((p) => p.date);
+  const trading = (date: string) => days.find((d) => d >= date.slice(0, 10));
+  const raw: ChartMark[] = [
+    ...data.disclosures.map((f) => ({
+      date: f.published_at,
+      kind: 'filing' as const,
+      label: f.title,
+    })),
+    ...events.map((e) => ({ date: e.date, kind: 'ownership' as const, label: e.name })),
+    ...actions
+      .filter((a) => a.ticker === data.ticker)
+      .flatMap((a) => {
+        const step = a.steps.find((s) => s.step === headline[a.kind].step);
+        return step
+          ? [{ date: step.date, kind: 'action' as const, label: headline[a.kind].label }]
+          : [];
+      }),
+  ];
+  const marks = new Map<string, ChartMark>();
+  for (const mark of raw) {
+    const date = trading(mark.date);
+    if (!date) continue;
+    const key = `${date} ${mark.kind}`;
+    const seen = marks.get(key);
+    marks.set(key, seen ? { ...seen, label: `${seen.label}\n${mark.label}` } : { ...mark, date });
+  }
+  return [...marks.values()].sort((a, b) => a.date.localeCompare(b.date));
 }

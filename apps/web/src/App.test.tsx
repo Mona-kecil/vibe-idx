@@ -953,7 +953,8 @@ describe('ticker research regressions', () => {
       ['filing', 'Filing 4'],
       ['filing', 'Filing 3'],
     ]);
-    expect(rows()[0]?.querySelector('.kind')?.textContent).toBe('News');
+    expect(rows()[0]?.querySelector('.kind')).toBeNull();
+    expect(rows()[3]?.querySelector('.kind')?.textContent).toBe('Filing');
     await click('#timeline-toggle');
     expect(rows()).toHaveLength(7);
     expect(element('#timeline-toggle', HTMLButtonElement).textContent).toBe('Show less');

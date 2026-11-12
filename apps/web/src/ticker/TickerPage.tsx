@@ -13,6 +13,7 @@ import {
   visiblePrices,
   type Period,
   type Selection,
+  chartMarks,
 } from './logic';
 import { calendarDate, dateText, direction, nf, short, signed } from './format';
 import { Freshness } from './Freshness';
@@ -119,6 +120,11 @@ function TickerDetail({
     null;
   const events = useMemo(() => ownershipEvents(data), [data]);
   const series = useMemo(() => holdingSeries(data, dailyDate, events), [data, dailyDate, events]);
+  const actionList = actions.kind === 'ready' ? actions.data.actions : null;
+  const marks = useMemo(
+    () => chartMarks(data, events, actionList ?? []),
+    [data, events, actionList],
+  );
   const prices = data.prices,
     last = prices.at(-1),
     previous = prices.at(-2),
@@ -259,6 +265,7 @@ function TickerDetail({
         setPeriod={setPeriod}
         selection={selection}
         select={select}
+        marks={marks}
       >
         <SelectionSummary
           data={data}

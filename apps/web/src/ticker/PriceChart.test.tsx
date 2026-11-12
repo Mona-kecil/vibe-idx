@@ -3,7 +3,7 @@ import { act, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { PriceChart } from './PriceChart';
-import type { Period, Price, Selection } from './logic';
+import type { ChartMark, Period, Price, Selection } from './logic';
 
 type Call = { path: string; args: unknown[] };
 // happy-dom has no canvas, so the chart is a recording stand-in. Every call is logged under its
@@ -38,6 +38,11 @@ const recorder = vi.hoisted(() => {
   }
   return { calls, chart: node('') };
 });
+vi.mock('lightweight-charts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('lightweight-charts')>()),
+  createSeriesMarkers: (...args: unknown[]) =>
+    (recorder.chart as { markers: (...a: unknown[]) => unknown }).markers(...args),
+}));
 vi.mock('../terminal/charts', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../terminal/charts')>()),
   publicChart: () => recorder.chart,
@@ -67,7 +72,7 @@ const prices = (count: number, patch: (i: number) => Partial<Price> = () => ({})
 
 let host: HTMLDivElement, root: Root;
 const selected = vi.fn<(selection: Selection) => void>();
-function Harness({ data }: { data: Price[] }) {
+function Harness({ data, marks }: { data: Price[]; marks?: ChartMark[] }) {
   const [period, setPeriod] = useState<Period>('3M');
   const [selection, select] = useState<Selection>(null);
   return (
@@ -77,6 +82,7 @@ function Harness({ data }: { data: Price[] }) {
       period={period}
       setPeriod={setPeriod}
       selection={selection}
+      marks={marks}
       select={(next) => {
         selected(next);
         select(next);
@@ -88,8 +94,8 @@ function Harness({ data }: { data: Price[] }) {
 }
 const settle = () =>
   act(async () => void (await new Promise((resolve) => setTimeout(resolve, 40))));
-async function mount(data = prices(300)) {
-  await act(async () => root.render(<Harness data={data} />));
+async function mount(data = prices(300), marks?: ChartMark[]) {
+  await act(async () => root.render(<Harness data={data} marks={marks} />));
   await settle();
 }
 const element = (selector: string) => {
@@ -227,6 +233,23 @@ describe('ticker price chart', () => {
     );
     expect(panned[0]?.time).toBe('2026-01-11');
     expect(element('.period-change').textContent).toBe('+9.09%');
+  });
+});
+
+describe('ticker chart event marks', () => {
+  it('draws filings, ownership changes and actions as markers and selects a tapped day', async () => {
+    await mount(prices(300), [
+      { date: day(250), kind: 'filing', label: 'Annual report' },
+      { date: day(260), kind: 'ownership', label: 'Holder' },
+      { date: day(270), kind: 'action', label: 'Ex-div' },
+    ]);
+    expect(calls('markers').at(-1)?.args[1]).toEqual([
+      expect.objectContaining({ time: day(250), shape: 'circle', position: 'belowBar' }),
+      expect.objectContaining({ time: day(260), shape: 'circle', position: 'aboveBar' }),
+      expect.objectContaining({ time: day(270), shape: 'arrowUp', position: 'belowBar' }),
+    ]);
+    await emit('subscribeClick', { hoveredObjectId: day(260) });
+    expect(selected).toHaveBeenLastCalledWith({ anchor: day(260), end: day(260) });
   });
 });
 

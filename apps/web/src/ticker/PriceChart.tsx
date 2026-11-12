@@ -4,6 +4,7 @@ import {
   AreaSeries,
   BaselineSeries,
   CandlestickSeries,
+  createSeriesMarkers,
   HistogramSeries,
   LineStyle,
   type IChartApi,
@@ -27,6 +28,7 @@ import {
   visibleWindow,
   type Period,
   type Price,
+  type ChartMark,
   type RowWindow,
   type Selection,
 } from './logic';
@@ -71,6 +73,12 @@ const areaColors = (tone: Tone) => ({
   topColor: `${toneColor[tone]}38`,
   bottomColor: `${toneColor[tone]}00`,
 });
+const noMarks: ChartMark[] = [];
+const markStyle = {
+  filing: { position: 'belowBar', shape: 'circle', color: theme.text },
+  ownership: { position: 'aboveBar', shape: 'circle', color: '#2858ae' },
+  action: { position: 'belowBar', shape: 'arrowUp', color: '#8a5a00' },
+} as const;
 const paneLabels = [
   ['Price', 'IDR'],
   ['Volume', 'shares'],
@@ -189,6 +197,7 @@ export function PriceChart({
   setPeriod,
   selection,
   select,
+  marks = noMarks,
   children,
 }: {
   ticker: string;
@@ -197,6 +206,7 @@ export function PriceChart({
   setPeriod: (p: Period) => void;
   selection: Selection;
   select: (s: Selection) => void;
+  marks?: ChartMark[];
   children: ReactNode;
 }) {
   const narrow = useNarrow();
@@ -215,8 +225,8 @@ export function PriceChart({
     host = useRef<HTMLDivElement>(null),
     chart = useRef<IChartApi | null>(null),
     priceSeries = useRef<ISeriesApi<'Candlestick'> | ISeriesApi<'Area'> | null>(null);
-  const latest = useRef({ selection, period });
-  latest.current = { selection, period };
+  const latest = useRef({ selection, period, select });
+  latest.current = { selection, period, select };
   const savedRange = useRef<IRange<number> | null>(null);
   const redraw = useRef(() => {});
   const drag = useRef<number | null>(null);
@@ -236,6 +246,19 @@ export function PriceChart({
     const dates = rows.map((row) => row.date);
     const { price, cumulative } = addPanes(api, rows, type, heights);
     priceSeries.current = price;
+    createSeriesMarkers(
+      price,
+      marks.map((mark) => ({
+        id: mark.date,
+        time: mark.date,
+        size: 0.6,
+        ...markStyle[mark.kind],
+      })),
+    );
+    api.subscribeClick((event) => {
+      const day = typeof event.hoveredObjectId === 'string' ? event.hoveredObjectId : null;
+      if (day) latest.current.select({ anchor: day, end: day });
+    });
 
     redraw.current = () => {
       const selected = selectedRows(dates, latest.current.selection);
@@ -281,7 +304,7 @@ export function PriceChart({
       priceSeries.current = null;
       api.remove();
     };
-  }, [rows, prices, type, heights]);
+  }, [rows, prices, type, heights, marks]);
 
   useEffect(() => {
     redraw.current();

@@ -26,6 +26,8 @@ import {
   visiblePrices,
   visibleWindow,
   holdingsMoved,
+  withoutSource,
+  chartMarks,
 } from './logic';
 
 const dates = ['2026-08-10', '2026-08-11', '2026-08-12', '2026-08-21', '2026-08-24'];
@@ -643,5 +645,81 @@ describe('holdingsMoved', () => {
   });
   it('is true once any holder reports a different count', () => {
     expect(holdingsMoved([series([100, 100]), series([5, 6])])).toBe(true);
+  });
+});
+
+describe('timeline cleanup and chart marks', () => {
+  it('drops daily price recaps and the trailing source name from news headlines', () => {
+    const news = [
+      {
+        published_at: '2026-11-12T10:00:00',
+        title: 'Harga Saham BBCA Hari Ini, 12 November',
+        url: 'a',
+        source: 'Pintu',
+      },
+      {
+        published_at: '2026-11-12T09:00:00',
+        title: 'BBCA buyback lanjut - Bisnis.com - Market',
+        url: 'b',
+        source: 'Bisnis.com - Market',
+      },
+    ];
+    expect(timeline([], news as never).map((i) => i.title)).toEqual(['BBCA buyback lanjut']);
+    expect(withoutSource('Title | CNBC Indonesia', 'CNBC Indonesia')).toBe('Title');
+    expect(withoutSource('Title', '')).toBe('Title');
+  });
+  it('snaps marks to the next trading day and merges same-day marks of one kind', () => {
+    const data = tickerSchema.parse({
+      ...tickerSchema.parse(tpiaFixture),
+      ticker: 'TEST',
+      prices: ['2026-11-06', '2026-11-09', '2026-11-10'].map((date) => ({
+        date,
+        open: 1,
+        high: 1,
+        low: 1,
+        close: 1,
+        volume: 1,
+        value: 1,
+        net_foreign: 0,
+      })),
+      disclosures: [
+        {
+          id: '1',
+          title: 'Weekend filing',
+          published_at: '2026-11-07T10:00:00',
+          url: 'https://x/1',
+          kind: 'other',
+          attachments: [],
+        },
+        {
+          id: '2',
+          title: 'Second',
+          published_at: '2026-11-09T08:00:00',
+          url: 'https://x/2',
+          kind: 'other',
+          attachments: [],
+        },
+      ],
+    });
+    const marks = chartMarks(data, [], [
+      {
+        ticker: 'TEST',
+        kind: 'DIV',
+        label: 'Dividend',
+        amount: null,
+        steps: [{ step: 'ex', date: '2026-11-10' }],
+      },
+      {
+        ticker: 'OTHER',
+        kind: 'DIV',
+        label: 'Dividend',
+        amount: null,
+        steps: [{ step: 'ex', date: '2026-11-10' }],
+      },
+    ] as never);
+    expect(marks).toEqual([
+      { date: '2026-11-09', kind: 'filing', label: 'Weekend filing\nSecond' },
+      { date: '2026-11-10', kind: 'action', label: 'Ex-div' },
+    ]);
   });
 });
