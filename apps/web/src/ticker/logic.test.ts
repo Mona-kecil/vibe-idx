@@ -6,15 +6,21 @@ import {
   attachments,
   bounds,
   composition,
+  cumulativeForeign,
   holdingSeries,
   moveEdge,
+  nextAction,
   ownershipEvents,
   pctAt,
   registryAt,
   selectionKey,
   sharesAt,
   summaryEvents,
+  timeline,
+  TIMELINE_SHOWN,
+  topSeries,
   totalAt,
+  pctAxis,
 } from './logic';
 
 const dates = ['2026-08-10', '2026-08-11', '2026-08-12', '2026-08-21', '2026-08-24'];
@@ -470,4 +476,106 @@ it('keeps the registry issued base when a newer monthly stake rounds to a differ
   const holder = holdingSeries(ticker, null)[0];
   if (!holder) throw new Error('Missing Alpha');
   expect(pctAt(ticker, holder, '2026-09-30')).toBe(30);
+});
+
+describe('ticker page summaries', () => {
+  it('sums net foreign flow into a running total that ends at the period sum', () => {
+    expect(cumulativeForeign(prices)).toEqual([-200, 100, -100, 200, 0]);
+    expect(cumulativeForeign(prices.slice(1, 3))).toEqual([300, 100]);
+    expect(cumulativeForeign([])).toEqual([]);
+  });
+  it('merges filings and news newest first, labels each kind and keeps attachments on filings', () => {
+    const withLamp = {
+      ...data.disclosures[0]!,
+      id: 'lamp',
+      title: 'Lamp filing',
+      published_at: '2026-08-12T09:00:00',
+      attachments: [{ name: 'x_lamp1.pdf', url: 'https://example.com/lamp1.pdf' }],
+    };
+    const rows = timeline(
+      [data.disclosures[0]!, withLamp],
+      [
+        {
+          title: 'Wire story',
+          url: 'https://example.com/news',
+          published_at: 'Wed, 12 Aug 2026 04:00:00 GMT',
+          source: 'Wire',
+        },
+      ],
+    );
+    expect(rows.map((r) => [r.kind, r.title])).toEqual([
+      ['news', 'Wire story'],
+      ['filing', 'Lamp filing'],
+      ['filing', 'Older filing'],
+    ]);
+    expect(rows[1]?.attachments).toEqual([
+      { url: 'https://example.com/lamp1.pdf', label: 'Lampiran 1' },
+    ]);
+    expect(rows[0]).toMatchObject({ source: 'Wire', attachments: [] });
+    expect(TIMELINE_SHOWN).toBe(5);
+  });
+  it('keeps only the largest holders at a date and ignores holders without shares', () => {
+    const mk = (key: string, shares: number | null) => ({
+      holder_key: key,
+      name: key,
+      events: [],
+      points: [{ date: '2026-08-01', shares, priority: 0 }],
+    });
+    const series = [
+      mk('A', 10),
+      mk('B', 70),
+      mk('C', 5),
+      mk('D', null),
+      mk('E', 0),
+      mk('F', 50),
+      mk('G', 30),
+    ];
+    expect(topSeries(series, '2026-08-02').map((s) => s.name)).toEqual(['B', 'F', 'G', 'A', 'C']);
+    expect(topSeries(series, '2026-08-02', 2)).toHaveLength(2);
+  });
+  it('puts a 1% holder and a 55% controller on one log axis', () => {
+    const axis = pctAxis([55, 1.2, 1.1]);
+    expect(axis.ticks).toEqual([1, 2, 5, 10, 20, 50]);
+    expect(axis.position(1)).toBe(0);
+    expect(axis.position(55)).toBeGreaterThan(0.8);
+    expect(axis.position(1.2)).toBeGreaterThan(0.03);
+  });
+  describe('next corporate action', () => {
+    const div = (ticker: string, ex: string) => ({
+      ticker,
+      kind: 'DIV' as const,
+      label: 'Final dividend',
+      amount: { value: 25, currency: 'IDR' },
+      steps: [
+        { step: 'cum' as const, date: ex.replace(/\d\d$/, '18') },
+        { step: 'ex' as const, date: ex },
+        { step: 'pay' as const, date: '2026-12-10' },
+      ],
+    });
+    it('shows the earliest ex date within 30 days with every step in the title', () => {
+      const chip = nextAction(
+        [div('TEST', '2026-11-26'), div('TEST', '2026-11-19'), div('OTHER', '2026-11-15')],
+        'TEST',
+        '2026-11-13',
+      );
+      expect(chip?.label).toBe('Ex-div 19 Nov');
+      expect(chip?.title).toBe(
+        'Final dividend IDR 25\nCum date 18 Nov 2026\nEx date 19 Nov 2026\nPayment 10 Dec 2026',
+      );
+    });
+    it('skips past dates, dates beyond 30 days and other tickers', () => {
+      const actions = [
+        div('TEST', '2026-11-12'),
+        div('TEST', '2026-12-14'),
+        div('OTHER', '2026-11-20'),
+      ];
+      expect(nextAction(actions, 'TEST', '2026-11-13')).toBeNull();
+      expect(nextAction([div('TEST', '2026-12-13')], 'TEST', '2026-11-13')?.label).toBe(
+        'Ex-div 13 Dec',
+      );
+      expect(nextAction([div('TEST', '2026-11-13')], 'TEST', '2026-11-13')?.label).toBe(
+        'Ex-div 13 Nov',
+      );
+    });
+  });
 });

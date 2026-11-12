@@ -1,4 +1,6 @@
-import type { Ticker } from '../data';
+import type { z } from 'zod';
+import type { corporateActionSchema, Ticker } from '../data';
+import { dateText, publishedMs } from './format';
 
 export type Price = Ticker['prices'][number];
 export type Filing = Ticker['disclosures'][number];
@@ -334,4 +336,122 @@ export function summaryEvents(events: HoldingEvent[], filings: Filing[], selecti
       Number(b.kind === 'ownership') - Number(a.kind === 'ownership') ||
       b.time.localeCompare(a.time),
   );
+}
+
+export type NewsItem = { title: string; url: string; published_at: string; source: string };
+export type TimelineItem = {
+  at: string;
+  kind: 'filing' | 'news';
+  title: string;
+  url: string;
+  source?: string;
+  attachments: { url: string; label: string }[];
+};
+export const TIMELINE_SHOWN = 5;
+export function timeline(filings: Filing[], news: NewsItem[]): TimelineItem[] {
+  return [
+    ...filings.map((f) => ({
+      at: f.published_at,
+      kind: 'filing' as const,
+      title: f.title,
+      url: f.url,
+      attachments: attachments(f).map(({ url, label }) => ({ url, label })),
+    })),
+    ...news.map((n) => ({
+      at: n.published_at,
+      kind: 'news' as const,
+      title: n.title,
+      url: n.url,
+      source: n.source,
+      attachments: [],
+    })),
+  ].sort((a, b) => publishedMs(b.at) - publishedMs(a.at));
+}
+
+export function cumulativeForeign(rows: Price[]) {
+  let sum = 0;
+  return rows.map((p) => (sum += p.net_foreign));
+}
+
+export const TOP_HOLDERS = 5;
+export function topSeries(series: HoldingSeries[], date: string, count = TOP_HOLDERS) {
+  return series
+    .map((s) => ({ s, shares: sharesAt(s, date) }))
+    .filter((h): h is { s: HoldingSeries; shares: number } => typeof h.shares === 'number')
+    .filter((h) => h.shares > 0)
+    .sort((a, b) => b.shares - a.shares)
+    .slice(0, count)
+    .map((h) => h.s);
+}
+
+// A log scale keeps a 1% holder readable next to a 55% controller.
+const pctTicks = [0.5, 1, 2, 5, 10, 20, 50, 100];
+export function pctAxis(values: number[]) {
+  const positive = values.filter((v) => v > 0);
+  const floor = positive.length
+    ? ([...pctTicks].reverse().find((t) => t <= Math.min(...positive)) ?? pctTicks[0] ?? 0.5)
+    : 1;
+  const ceiling = Math.max(floor * 2, ...positive) * 1.15;
+  return {
+    floor,
+    ceiling,
+    ticks: pctTicks.filter((t) => t >= floor && t <= ceiling),
+    position: (pct: number) => Math.log(Math.max(pct, floor) / floor) / Math.log(ceiling / floor),
+  };
+}
+
+export type ActionChip = { label: string; date: string; title: string };
+type CorporateAction = z.infer<typeof corporateActionSchema>;
+type ActionStep = CorporateAction['steps'][number]['step'];
+const stepNames: Record<ActionStep, string> = {
+  cum: 'Cum date',
+  ex: 'Ex date',
+  record: 'Record date',
+  pay: 'Payment',
+  distribution: 'Distribution',
+  listing: 'Listing',
+  trade_start: 'Trading starts',
+  trade_end: 'Trading ends',
+  meeting: 'RUPS',
+  delisting: 'Delisting',
+};
+const headline: Record<CorporateAction['kind'], { step: ActionStep; label: string }> = {
+  DIV: { step: 'ex', label: 'Ex-div' },
+  RIGHTS: { step: 'ex', label: 'Ex-rights' },
+  BONUS: { step: 'ex', label: 'Ex-bonus' },
+  SPLIT: { step: 'ex', label: 'Ex-split' },
+  RUPS: { step: 'meeting', label: 'RUPS' },
+  IPO: { step: 'listing', label: 'Listing' },
+  DELIST: { step: 'delisting', label: 'Delisting' },
+};
+export function nextAction(
+  actions: CorporateAction[],
+  ticker: string,
+  today: string,
+  days = 30,
+): ActionChip | null {
+  const limit = new Date(today + 'T00:00:00Z');
+  limit.setUTCDate(limit.getUTCDate() + days);
+  const last = limit.toISOString().slice(0, 10);
+  const upcoming = actions
+    .filter((a) => a.ticker === ticker)
+    .flatMap((action) => {
+      const key = headline[action.kind];
+      const step = action.steps.find((s) => s.step === key.step);
+      const date = step?.date.slice(0, 10);
+      return date && date >= today && date <= last ? [{ action, key, date }] : [];
+    })
+    .sort((a, b) => a.date.localeCompare(b.date));
+  const next = upcoming[0];
+  if (!next) return null;
+  const { action, key, date } = next;
+  const amount = action.amount ? ` ${action.amount.currency} ${action.amount.value}` : '';
+  return {
+    label: `${key.label} ${dateText(date, false)}`,
+    date,
+    title: [
+      `${action.label}${amount}`,
+      ...action.steps.map((s) => `${stepNames[s.step]} ${dateText(s.date)}`),
+    ].join('\n'),
+  };
 }

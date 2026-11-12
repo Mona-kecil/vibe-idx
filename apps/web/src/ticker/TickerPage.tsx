@@ -1,11 +1,15 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { load, type Health, type Stock, type Ticker } from '../data';
-import { SiteHeader } from '../SiteHeader';
+import { usePublished } from '../publicData';
+import { RiskBadge, useRiskFor } from '../RiskBadge';
+import { PinButton, SiteHeader } from '../SiteHeader';
 import { Stale } from '../Stale';
-import { holdingSeries, ownershipEvents, registryAt, type Selection } from './logic';
-import { dateText, direction, nf, short, signed } from './format';
+import { usePins } from '../watchlist';
+import { holdingSeries, nextAction, ownershipEvents, registryAt, type Selection } from './logic';
+import { calendarDate, dateText, direction, nf, short, signed } from './format';
+import { Freshness } from './Freshness';
 import { PriceChart, visiblePrices, type Period } from './PriceChart';
-import { SelectionSummary, FilingsNews } from './Feeds';
+import { SelectionSummary, Timeline } from './Feeds';
 import { Ownership } from './Ownership';
 import { BrokerFlow } from './BrokerFlow';
 import { ShareButton } from './ShareButton';
@@ -17,6 +21,8 @@ export function TickerPage({ ticker }: { ticker: string }) {
   >({ kind: 'loading' });
   const [health, setHealth] = useState<Health | null>(null),
     [stocks, setStocks] = useState<Stock[]>([]);
+  const [pins, toggle] = usePins(),
+    [announcement, announce] = useState('');
   useEffect(() => {
     let active = true;
     void load(`ticker/${ticker}.json`).then(
@@ -49,11 +55,18 @@ export function TickerPage({ ticker }: { ticker: string }) {
       document.title = 'Vibe IDX';
     };
   }, [ticker]);
+  const pin = (symbol: string) => (
+    <PinButton
+      ticker={symbol}
+      pinned={pins.includes(symbol)}
+      toggle={() => announce(`${symbol} ${toggle(symbol) ? 'added to' : 'removed from'} watchlist`)}
+    />
+  );
   return (
     <div className="site ticker-page">
-      <SiteHeader page="ticker" stocks={stocks} />
+      <SiteHeader page="ticker" stocks={stocks} pin={pin} />
       {state.kind === 'ready' ? (
-        <TickerDetail key={ticker} data={state.data} health={health} />
+        <TickerDetail key={ticker} data={state.data} health={health} pin={pin} />
       ) : (
         <main className="wrap ticker-state">
           {state.kind === 'loading' ? (
@@ -70,12 +83,25 @@ export function TickerPage({ ticker }: { ticker: string }) {
           )}
         </main>
       )}
+      <div className="sr-only" role="status" aria-live="polite">
+        {announcement}
+      </div>
     </div>
   );
 }
-function TickerDetail({ data, health }: { data: Ticker; health: Health | null }) {
+function TickerDetail({
+  data,
+  health,
+  pin,
+}: {
+  data: Ticker;
+  health: Health | null;
+  pin: (ticker: string) => ReactNode;
+}) {
   const [selection, select] = useState<Selection>(null),
     [period, setPeriod] = useState<Period>('3M');
+  const risk = useRiskFor(data.ticker),
+    actions = usePublished('actions');
   const dailyDate =
     health?.five_pct ??
     data.changes
@@ -94,9 +120,12 @@ function TickerDetail({ data, health }: { data: Ticker; health: Health | null })
     pct = change !== null && previous?.close ? (change / previous.close) * 100 : null,
     ytd = last && first?.close ? (last.close / first.close - 1) * 100 : null;
   const visible = visiblePrices(prices, period);
+  const chip =
+    actions.kind === 'ready'
+      ? nextAction(actions.data.actions, data.ticker, calendarDate(new Date().toISOString()))
+      : null;
   const stats = last
     ? [
-        { label: 'Volume', value: short(last.volume), title: nf(last.volume) + ' shares', cls: '' },
         {
           label: 'Value',
           unit: 'IDR',
@@ -105,16 +134,11 @@ function TickerDetail({ data, health }: { data: Ticker; health: Health | null })
           cls: '',
         },
         {
-          label: 'Net foreign (est.)',
+          label: 'Net foreign',
+          unit: 'IDR (est.)',
           value: signed(last.net_foreign),
           title: nf(last.net_foreign) + ' IDR',
           cls: direction(last.net_foreign),
-        },
-        {
-          label: 'YTD change',
-          value: ytd === null ? '—' : signed(ytd, (v) => nf(v, 2)) + '%',
-          title: first ? `From first available close: ${dateText(first.date)}` : '',
-          cls: direction(ytd),
         },
         {
           label: 'Free float',
@@ -123,6 +147,17 @@ function TickerDetail({ data, health }: { data: Ticker; health: Health | null })
             ? `${registry.free_float_shares === null ? '' : nf(registry.free_float_shares) + ' shares  '}${dateText(registry.date)}`
             : '',
           cls: '',
+        },
+      ]
+    : [];
+  const more = last
+    ? [
+        { label: 'Volume', value: short(last.volume), title: nf(last.volume) + ' shares', cls: '' },
+        {
+          label: 'YTD change',
+          value: ytd === null ? '—' : signed(ytd, (v) => nf(v, 2)) + '%',
+          title: first ? `From first available close: ${dateText(first.date)}` : '',
+          cls: direction(ytd),
         },
         {
           label: 'Shareholders',
@@ -140,19 +175,32 @@ function TickerDetail({ data, health }: { data: Ticker; health: Health | null })
         },
       ]
     : [];
+  const statList = (rows: typeof stats) =>
+    rows.map((s) => (
+      <div className="stat" key={s.label}>
+        <dt>
+          {s.label}
+          {'unit' in s && s.unit && <small className="unit-suffix">{s.unit}</small>}
+        </dt>
+        <dd className={s.cls} title={s.title || undefined}>
+          {s.value}
+        </dd>
+      </div>
+    ));
   return (
     <main className="wrap">
-      <div className="freshness">
-        {health && <Stale health={health} />}
-        {last && <span>Prices {dateText(health?.prices ?? last.date)}</span>}
-        {dailyDate && <span>5% ownership {dateText(dailyDate)}</span>}
-        {registry && <span>Registry {dateText(registry.date)}</span>}
-      </div>
       <div className="ticker-header">
         <div className="identity">
           <div className="identity-heading">
             <h1>{data.ticker}</h1>
+            {pin(data.ticker)}
             <ShareButton ticker={data.ticker} name={data.name} />
+            <RiskBadge risk={risk} />
+            {chip && (
+              <span className="action-chip" title={chip.title} tabIndex={0}>
+                {chip.label}
+              </span>
+            )}
           </div>
           <p>{data.name.replace(/\.$/, '')}</p>
         </div>
@@ -168,24 +216,27 @@ function TickerDetail({ data, health }: { data: Ticker; health: Health | null })
                   ? '—'
                   : `${signed(change, nf)} (${signed(pct ?? 0, (v) => nf(v, 2))}%)`}
               </span>
-              <span className="price-date">{dateText(last.date)}</span>
+              <Freshness label={dateText(last.date)}>
+                <dt>Prices</dt>
+                <dd>{dateText(health?.prices ?? last.date)}</dd>
+                {dailyDate && (
+                  <>
+                    <dt>5% ownership</dt>
+                    <dd>{dateText(dailyDate)}</dd>
+                  </>
+                )}
+                {registry && (
+                  <>
+                    <dt>Registry</dt>
+                    <dd>{dateText(registry.date)}</dd>
+                  </>
+                )}
+              </Freshness>
+              {health && <Stale health={health} />}
             </div>
           </div>
         )}
       </div>
-      <dl className="stats">
-        {stats.map((s) => (
-          <div className="stat" key={s.label}>
-            <dt>
-              {s.label}
-              {s.unit && <small className="unit-suffix">{s.unit}</small>}
-            </dt>
-            <dd className={s.cls} title={s.title || undefined}>
-              {s.value}
-            </dd>
-          </div>
-        ))}
-      </dl>
       <PriceChart
         ticker={data.ticker}
         prices={prices}
@@ -201,13 +252,14 @@ function TickerDetail({ data, health }: { data: Ticker; health: Health | null })
           clear={() => select(null)}
         />
       </PriceChart>
-      {last && (
-        <BrokerFlow
-          ticker={data.ticker}
-          selection={selection}
-          start={visible[0]?.date ?? last.date}
-          end={last.date}
-        />
+      {stats.length > 0 && (
+        <div className="stats-block">
+          <dl className="stats">{statList(stats)}</dl>
+          <details className="more-stats">
+            <summary>More</summary>
+            <dl className="stats">{statList(more)}</dl>
+          </details>
+        </div>
       )}
       <Ownership
         data={data}
@@ -216,7 +268,15 @@ function TickerDetail({ data, health }: { data: Ticker; health: Health | null })
         selection={selection}
         dailyDate={dailyDate}
       />
-      <FilingsNews data={data} events={events} selection={selection} />
+      <Timeline data={data} events={events} selection={selection} />
+      {last && (
+        <BrokerFlow
+          ticker={data.ticker}
+          selection={selection}
+          start={visible[0]?.date ?? last.date}
+          end={last.date}
+        />
+      )}
       <footer>
         <span className="footer-brand">Vibe IDX</span>
         <span>

@@ -8,7 +8,10 @@ import {
   inRange,
   registryAt,
   pctAt,
+  pctAxis,
   sharesAt,
+  topSeries,
+  TOP_HOLDERS,
   totalAt,
   type HoldingEvent,
   type HoldingSeries,
@@ -51,8 +54,11 @@ export function Ownership({
   selection: Selection;
   dailyDate: string | null;
 }) {
+  const [allHolders, setAllHolders] = useState(false),
+    [allChanges, setAllChanges] = useState(false);
   const b = bounds(selection),
-    end = b?.end ?? dailyDate ?? data.prices.at(-1)?.date ?? '';
+    latest = dailyDate ?? data.prices.at(-1)?.date ?? '',
+    end = b?.end ?? latest;
   const snapshot = registryAt(data, end);
   const parts = composition(data, series, end);
   const previous = b
@@ -75,6 +81,7 @@ export function Ownership({
       shares: types.slice(6).reduce((sum, t) => sum + t.shares, 0),
     });
   const activity = events.filter((e) => inRange(e.date, selection));
+  const chartSeries = topSeries(series, latest);
   return (
     <section className="section" id="ownership-section" aria-labelledby="ownership-heading">
       <div className="section-head">
@@ -91,9 +98,6 @@ export function Ownership({
           </a>
         )}
       </div>
-      {series.length > 0 && (
-        <HoldingsChart data={data} series={series} selection={selection} end={end} />
-      )}
       {parts.length > 0 && (
         <>
           <div
@@ -140,155 +144,149 @@ export function Ownership({
           </div>
         </>
       )}
-      <div className="ownership-grid">
-        <div>
-          <div className="subhead">
-            <h3>5% holders</h3>
-            <span className="date-label" id="holders-date">
-              {end && dateText(end)}
-            </span>
-          </div>
-          <div
-            className="table-scroll"
-            tabIndex={0}
-            role="region"
-            aria-label="Five percent shareholders"
-          >
-            <table className="holder-table">
-              <thead>
-                <tr>
-                  <th>Investor</th>
-                  <th className="num">Shares</th>
-                  <th className="num">Holding</th>
-                </tr>
-              </thead>
-              <tbody id="holders">
-                {holders.map(({ s, shares, pct }) => {
-                  const role = holderRole(snapshot, s.holder_key);
-                  const changed = !!selection && s.events.some((e) => inRange(e.date, selection));
-                  const before = sharesAt(s, previous),
-                    source =
-                      s.events
-                        .filter((e) => e.date <= end && e.sources.length)
-                        .sort((a, b) => b.date.localeCompare(a.date))[0]?.sources[0] ??
-                      snapshot?.url;
-                  return (
-                    <tr key={s.name} data-holder={s.name} data-shares={shares}>
-                      <td>
-                        {source ? (
-                          <a href={source} target="_blank" rel="noopener noreferrer">
-                            {s.name}
-                          </a>
-                        ) : (
-                          s.name
-                        )}
-                        {role && <span className="role">{role}</span>}
-                      </td>
-                      <td className="num" title={nf(shares) + ' shares'}>
-                        {changed ? (
-                          <span className="holder-transition">
-                            {typeof before === 'number' ? nf(before) : '—'} → {nf(shares)}
-                          </span>
-                        ) : (
-                          nf(shares)
-                        )}
-                      </td>
-                      <td className="num">{nf(pct, 2)}%</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-            {!holders.length && (
-              <p className="empty-state">No holdings reported as of {dateText(end)}</p>
-            )}
-          </div>
-          {typeParts.length > 0 && (
-            <div className="types">
-              <div className="subhead">
-                <h3>Investor types</h3>
-                <span className="date-label" id="types-date">
-                  {snapshot && dateText(snapshot.date)}
+      <div className="subhead">
+        <h3>5% holders</h3>
+      </div>
+      <ol className="holder-list" id="holders">
+        {holders.slice(0, allHolders ? holders.length : TOP_HOLDERS).map(({ s, shares, pct }) => {
+          const role = holderRole(snapshot, s.holder_key);
+          const changed = !!selection && s.events.some((e) => inRange(e.date, selection));
+          const before = sharesAt(s, previous),
+            source =
+              s.events
+                .filter((e) => e.date <= end && e.sources.length)
+                .sort((a, b) => b.date.localeCompare(a.date))[0]?.sources[0] ?? snapshot?.url;
+          return (
+            <li key={s.name} data-holder={s.name} data-shares={shares}>
+              <div className="holder-head">
+                <span className="holder-name">
+                  {source ? (
+                    <a href={source} target="_blank" rel="noopener noreferrer">
+                      {s.name}
+                    </a>
+                  ) : (
+                    s.name
+                  )}
+                  {role && <span className="role">{role}</span>}
                 </span>
+                <strong>{nf(pct, 2)}%</strong>
               </div>
-              <div id="investor-types">
-                {typeParts.map((t) => (
-                  <div key={t.label} className="type-row">
-                    <span className="type-label">{t.label.replace(/ \([A-Z]+\)$/, '')}</span>
-                    <svg className="type-track" width="100%" height="7" aria-hidden="true">
-                      <rect
-                        width={`${(t.shares / (types[0]?.shares || 1)) * 100}%`}
-                        height="7"
-                        fill="#77746e"
-                      />
-                    </svg>
-                    <span className="type-number" title={nf(t.shares) + ' shares'}>
-                      {short(t.shares)}
-                    </span>
-                  </div>
-                ))}
+              <svg className="holder-track" width="100%" height="6" aria-hidden="true">
+                <rect width="100%" height="6" fill="#e7e7de" />
+                <rect width={`${Math.min(100, pct)}%`} height="6" fill="#4d4b46" />
+              </svg>
+              <span className="holder-shares" title={nf(shares) + ' shares'}>
+                {changed ? (
+                  <span className="holder-transition">
+                    {typeof before === 'number' ? short(before) : '—'} → {short(shares)}
+                  </span>
+                ) : (
+                  short(shares)
+                )}{' '}
+                shares
+              </span>
+            </li>
+          );
+        })}
+      </ol>
+      {!holders.length && <p className="empty-state">No holdings reported as of {dateText(end)}</p>}
+      {holders.length > TOP_HOLDERS && (
+        <button
+          className="show-all"
+          aria-expanded={allHolders}
+          onClick={() => setAllHolders(!allHolders)}
+        >
+          {allHolders ? 'Show less' : `Show all ${holders.length}`}
+        </button>
+      )}
+      <div className="subhead">
+        <h3>Ownership changes</h3>
+      </div>
+      <div className="timeline" id="activity">
+        {activity.slice(0, allChanges ? activity.length : TOP_HOLDERS).map((e) => {
+          const net =
+              e.shares_before === null || e.shares_after === null
+                ? null
+                : e.shares_after - e.shares_before,
+            total = totalAt(data, e.date);
+          return (
+            <div className="event" key={e.name + e.date} data-date={e.date}>
+              <time className="event-date" dateTime={e.date}>
+                {dateText(e.date, false)}
+                <br />
+                {e.date.slice(0, 4)}
+              </time>
+              <div className="event-name">
+                <OwnershipName event={e} />
+              </div>
+              <div
+                className={`event-value ${direction(net)}`}
+                title={net === null ? 'Below 5%' : signed(net, nf) + ' shares'}
+              >
+                {net === null ? (
+                  'Below 5%'
+                ) : (
+                  <>
+                    {signed(net)}{' '}
+                    {total && (
+                      <span className="event-pct">
+                        ({signed((net / total) * 100, (v) => nf(v, 2))}%)
+                      </span>
+                    )}
+                  </>
+                )}
+                <small>
+                  After: <HoldingValue data={data} event={e} side="after" />
+                </small>
               </div>
             </div>
-          )}
-        </div>
-        <div>
-          <div className="subhead">
-            <h3>Ownership activity</h3>
-            <span className="date-label">Net shares</span>
-          </div>
-          <div className="timeline" id="activity">
-            {activity.map((e) => {
-              const net =
-                  e.shares_before === null || e.shares_after === null
-                    ? null
-                    : e.shares_after - e.shares_before,
-                total = totalAt(data, e.date);
-              return (
-                <div className="event" key={e.name + e.date} data-date={e.date}>
-                  <time className="event-date" dateTime={e.date}>
-                    {dateText(e.date, false)}
-                    <br />
-                    {e.date.slice(0, 4)}
-                  </time>
-                  <div className="event-name">
-                    <OwnershipName event={e} />
-                  </div>
-                  <div
-                    className={`event-value ${direction(net)}`}
-                    title={net === null ? 'Below 5%' : signed(net, nf) + ' shares'}
-                  >
-                    {net === null ? (
-                      'Below 5%'
-                    ) : (
-                      <>
-                        {signed(net)}{' '}
-                        {total && (
-                          <span className="event-pct">
-                            ({signed((net / total) * 100, (v) => nf(v, 2))}%)
-                          </span>
-                        )}
-                      </>
-                    )}
-                    <small>
-                      After: <HoldingValue data={data} event={e} side="after" />
-                    </small>
-                  </div>
-                </div>
-              );
-            })}
-            {!activity.length && (
-              <p className="empty-state">
-                No ownership changes
-                {b ? ` ${dateText(b.start, false)}–${dateText(b.end, false)}` : ''}
-              </p>
-            )}
-          </div>
-        </div>
+          );
+        })}
+        {!activity.length && (
+          <p className="empty-state">
+            No ownership changes
+            {b ? ` ${dateText(b.start, false)}–${dateText(b.end, false)}` : ''}
+          </p>
+        )}
       </div>
+      {activity.length > TOP_HOLDERS && (
+        <button
+          className="show-all"
+          aria-expanded={allChanges}
+          onClick={() => setAllChanges(!allChanges)}
+        >
+          {allChanges ? 'Show less' : `Show all ${activity.length}`}
+        </button>
+      )}
+      {chartSeries.length > 0 && (
+        <HoldingsChart data={data} series={chartSeries} selection={selection} end={end} />
+      )}
+      {typeParts.length > 0 && (
+        <details className="types">
+          <summary>Investor types</summary>
+          <div id="investor-types">
+            {typeParts.map((t) => (
+              <div key={t.label} className="type-row">
+                <span className="type-label">{t.label.replace(/ \([A-Z]+\)$/, '')}</span>
+                <svg className="type-track" width="100%" height="7" aria-hidden="true">
+                  <rect
+                    width={`${(t.shares / (types[0]?.shares || 1)) * 100}%`}
+                    height="7"
+                    fill="#77746e"
+                  />
+                </svg>
+                <span className="type-number" title={nf(t.shares) + ' shares'}>
+                  {short(t.shares)}
+                </span>
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
     </section>
   );
 }
-function HoldingsChart({
+export function HoldingsChart({
   data,
   series,
   selection,
@@ -299,7 +297,7 @@ function HoldingsChart({
   selection: Selection;
   end: string;
 }) {
-  const [unit, setUnit] = useState<'shares' | 'pct'>('shares');
+  const [unit, setUnit] = useState<'shares' | 'pct'>('pct');
   const [hidden, setHidden] = useState<string[]>([]),
     [focus, setFocus] = useState<string | null>(null);
   const [tooltip, setTooltip] = useState<{
@@ -343,7 +341,8 @@ function HoldingsChart({
     L = 42,
     R = 12,
     T = 46,
-    B = 316,
+    H = width < 650 ? 280 : 350,
+    B = H - 34,
     markerRadius = 4.5,
     markerStroke = 1.5,
     start = Date.parse(firstDate),
@@ -352,20 +351,27 @@ function HoldingsChart({
   const x = (date: string) => L + ((Date.parse(date) - start) / Math.max(1, finish - start)) * plot;
   const amount = (shares: number, date: string) =>
     unit === 'shares' ? shares : (shares / (totalAt(data, date) || Infinity)) * 100;
-  const peak = Math.max(
-    1,
-    ...series
-      .filter((s) => !hidden.includes(s.name))
-      .flatMap((s) => [
-        ...s.points.map((p) => amount(p.shares ?? 0, p.date)),
-        ...s.events.map((e) =>
-          amount(sharesAt(s, e.date) ?? e.shares_after ?? e.shares_before ?? 0, e.date),
-        ),
-      ]),
-  );
+  const amounts = series
+    .filter((s) => !hidden.includes(s.name))
+    .flatMap((s) => [
+      ...s.points.map((p) => amount(p.shares ?? 0, p.date)),
+      ...s.events.map((e) =>
+        amount(sharesAt(s, e.date) ?? e.shares_after ?? e.shares_before ?? 0, e.date),
+      ),
+    ]);
+  const peak = Math.max(1, ...amounts);
   const magnitude = 10 ** Math.floor(Math.log10(peak));
   const yMax = Math.ceil((peak * 1.03) / (magnitude / 2)) * (magnitude / 2),
-    y = (value: number) => B - (value / yMax) * (B - T);
+    axis = pctAxis(amounts),
+    y = (value: number) =>
+      unit === 'pct' ? B - axis.position(value) * (B - T) : B - (value / yMax) * (B - T);
+  const yTicks =
+    unit === 'pct'
+      ? axis.ticks.map((t) => ({ value: t, label: `${nf(t, t < 1 ? 1 : 0)}%` }))
+      : Array.from({ length: 6 }, (_, i) => {
+          const value = (yMax * i) / 5;
+          return { value, label: short(value) };
+        });
   const b = bounds(selection);
   const snapshots = [...data.registry_history].sort((a, b) => a.date.localeCompare(b.date));
   const issues = snapshots.flatMap((s, i) => {
@@ -375,12 +381,13 @@ function HoldingsChart({
       : [];
   });
   const monthTicks: string[] = [];
+  const spacing = plot / Math.max(1, (finish - start) / 2629800000) < 34 ? 2 : 1;
   const tick = new Date(firstDate + 'T00:00:00Z');
   tick.setUTCDate(1);
   if (tick.getTime() < start) tick.setUTCMonth(tick.getUTCMonth() + 1);
   while (tick.getTime() <= finish) {
     monthTicks.push(tick.toISOString().slice(0, 10));
-    tick.setUTCMonth(tick.getUTCMonth() + 1);
+    tick.setUTCMonth(tick.getUTCMonth() + spacing);
   }
   return (
     <>
@@ -415,7 +422,8 @@ function HoldingsChart({
           <svg
             id="holdings-chart"
             className="holdings-svg"
-            viewBox={`0 0 ${W} 350`}
+            viewBox={`0 0 ${W} ${H}`}
+            style={{ height: H }}
             role="img"
             aria-label={`Major shareholder holdings from ${dateText(firstDate)} to ${dateText(lastDate)}`}
           >
@@ -457,28 +465,25 @@ function HoldingsChart({
                 </text>
               </g>
             ))}
-            {Array.from({ length: 6 }, (_, i) => {
-              const v = (yMax * i) / 5;
-              return (
-                <g key={i}>
-                  <line
-                    x1={L}
-                    x2={W - R}
-                    y1={y(v)}
-                    y2={y(v)}
-                    stroke="#e3e3da"
-                    strokeDasharray="2 4"
-                  />
-                  <text x={L - 9} y={y(v) + 4} textAnchor="end">
-                    {unit === 'shares' ? v / 1e6 + 'M' : nf(v) + '%'}
-                  </text>
-                </g>
-              );
-            })}
+            {yTicks.map((t) => (
+              <g key={t.value}>
+                <line
+                  x1={L}
+                  x2={W - R}
+                  y1={y(t.value)}
+                  y2={y(t.value)}
+                  stroke="#e3e3da"
+                  strokeDasharray="2 4"
+                />
+                <text x={L - 9} y={y(t.value) + 4} textAnchor="end">
+                  {t.label}
+                </text>
+              </g>
+            ))}
             {monthTicks.map((d) => (
               <g key={d}>
                 <line x1={x(d)} x2={x(d)} y1={B} y2={B + 4} stroke="#c6c6ba" />
-                <text x={x(d)} y={340} textAnchor="middle">
+                <text x={x(d)} y={H - 10} textAnchor="middle">
                   {new Date(d).toLocaleDateString('en-GB', { month: 'short', timeZone: 'UTC' })}
                 </text>
               </g>
