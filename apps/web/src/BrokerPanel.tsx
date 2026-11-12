@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '@workos-inc/authkit-react';
 import { useLocale } from './locale';
 
@@ -37,6 +37,49 @@ export function AccountControls() {
     </>
   ) : (
     <SignInButton />
+  );
+}
+
+export function CompactAccountControls() {
+  const { user, signOut } = useAuth();
+  const { t } = useLocale();
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: Event) => {
+      if (e.target instanceof Node && !box.current?.contains(e.target)) setOpen(false);
+    };
+    const escape = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
+    document.addEventListener('click', away);
+    document.addEventListener('keydown', escape);
+    return () => {
+      document.removeEventListener('click', away);
+      document.removeEventListener('keydown', escape);
+    };
+  }, [open]);
+  if (!user) return <SignInButton />;
+  return (
+    <div className="account-menu" ref={box}>
+      <button
+        type="button"
+        className="avatar"
+        aria-label={t('Account')}
+        aria-expanded={open}
+        aria-controls="account-popover"
+        onClick={() => setOpen(!open)}
+      >
+        {user.email?.[0]?.toUpperCase() ?? '?'}
+      </button>
+      {open && (
+        <div className="account-popover" id="account-popover">
+          <span>{user.email}</span>
+          <button type="button" onClick={() => signOut({ returnTo: window.location.origin })}>
+            {t('Sign out')}
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 
