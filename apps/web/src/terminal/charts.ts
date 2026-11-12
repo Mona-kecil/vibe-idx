@@ -5,6 +5,7 @@ import { bars, type TickTrades } from '../ticks';
 import {
   ColorType,
   CrosshairMode,
+  TrackingModeExitMode,
   LineStyle,
   createChart,
   type Time,
@@ -57,6 +58,7 @@ export function publicChart(host: HTMLElement) {
       vertLine: { ...label, style: LineStyle.Dashed },
       horzLine: { ...label, style: LineStyle.Dashed },
     },
+    trackingMode: { exitMode: TrackingModeExitMode.OnTouchEnd },
     rightPriceScale: { borderVisible: false, entireTextOnly: true },
     timeScale: {
       borderColor: chartTheme.line,
