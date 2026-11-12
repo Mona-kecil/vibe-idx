@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { load, type Feed, type Health, type Market, type Stock, type Ticker } from './data';
 import {
   briefing,
@@ -7,19 +7,36 @@ import {
   EventText,
   eventTitle,
   lensOf,
-  lenses,
+  magnitude,
   pct,
+  signalTiles,
   signed,
+  tone,
+  weekAhead,
   type Event,
-  type Lens,
+  type SignalTile,
 } from './events';
+import { usePublished } from './publicData';
+import { RiskBadge, useRiskFor } from './RiskBadge';
 import { PinButton, SiteHeader } from './SiteHeader';
 import { Stale } from './Stale';
 import { fetchHeadlines, type Headline } from './terminal/sources';
 import { treemap } from './treemap';
 import { calendarDate, dateText, direction, nf, wib } from './ticker/format';
-import { readStorage, usePins, writeStorage } from './watchlist';
+import { usePins } from './watchlist';
 import './home.css';
+
+const phoneQuery = '(max-width: 900px)';
+const usePhone = () =>
+  useSyncExternalStore(
+    (change) => {
+      const query = window.matchMedia(phoneQuery);
+      query.addEventListener('change', change);
+      return () => query.removeEventListener('change', change);
+    },
+    () => window.matchMedia(phoneQuery).matches,
+    () => false,
+  );
 
 type Data = { stocks: Stock[]; feed: Feed; health: Health; market: Market };
 
@@ -101,10 +118,6 @@ function Briefing({
         data={data}
         excluded={data.feed.length - data.feed.filter((e) => stockMap.has(e.ticker)).length}
       />
-      <div className="today">
-        <Heatmap stocks={data.stocks} />
-        <Signals events={events} stockMap={stockMap} />
-      </div>
       {watched.length > 0 && (
         <section className="panel watchlist" aria-labelledby="watch-heading">
           <h2 id="watch-heading">Watchlist</h2>
@@ -113,6 +126,11 @@ function Briefing({
           ))}
         </section>
       )}
+      <div className="today">
+        <Heatmap stocks={data.stocks} />
+        <Signals tiles={signalTiles(events)} stockMap={stockMap} />
+      </div>
+      <Week pins={pins} />
       <News news={news} />
     </>
   );
@@ -138,10 +156,7 @@ function Pulse({ data, excluded }: { data: Data; excluded: number }) {
       ) : (
         <p role="status">Market history unavailable</p>
       )}
-      <div className="pulse-stat">
-        <span className="up num">{nf(data.market.up)}</span> up{' '}
-        <span className="down num">{nf(data.market.down)}</span> down
-      </div>
+      <Breadth up={data.market.up} down={data.market.down} />
       <div className="pulse-stat" title="Sum of estimated net foreign flow across listed stocks">
         Foreign est. <span className={`num ${direction(foreign)}`}>{signed(foreign)} IDR</span>
       </div>
@@ -172,6 +187,21 @@ function Pulse({ data, excluded }: { data: Data; excluded: number }) {
         </div>
       </details>
     </section>
+  );
+}
+
+function Breadth({ up, down }: { up: number; down: number }) {
+  return (
+    <div className="pulse-stat breadth" role="img" aria-label={`${nf(up)} up, ${nf(down)} down`}>
+      <span className="up num">{nf(up)}</span>
+      {up + down > 0 && (
+        <span className="split">
+          <span className="up" style={{ flexGrow: up }} />
+          <span className="down" style={{ flexGrow: down }} />
+        </span>
+      )}
+      <span className="down num">{nf(down)}</span>
+    </div>
   );
 }
 
@@ -213,7 +243,10 @@ const heatTone = (change: number | null) => {
   };
 };
 
+const heatLimit = { phone: 20, desktop: 50 };
+
 function Heatmap({ stocks }: { stocks: Stock[] }) {
+  const phone = usePhone();
   const ref = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
   useEffect(() => {
@@ -229,7 +262,8 @@ function Heatmap({ stocks }: { stocks: Stock[] }) {
   const top = stocks
     .filter((s) => s.value > 0)
     .sort((a, b) => b.value - a.value)
-    .slice(0, 50);
+    .slice(0, phone ? heatLimit.phone : heatLimit.desktop)
+    .map((stock) => ({ stock, value: phone ? Math.sqrt(stock.value) : stock.value }));
   return (
     <section className="panel heat-panel" aria-labelledby="heat-heading">
       <div className="panel-head">
@@ -243,7 +277,7 @@ function Heatmap({ stocks }: { stocks: Stock[] }) {
         </div>
       </div>
       <div ref={ref} className="heat">
-        {treemap(top, size.width, size.height).map(({ item: s, x, y, w, h }) => (
+        {treemap(top, size.width, size.height).map(({ item: { stock: s }, x, y, w, h }) => (
           <a
             key={s.ticker}
             href={`/t/${s.ticker}`}
@@ -257,8 +291,8 @@ function Heatmap({ stocks }: { stocks: Stock[] }) {
               ...heatTone(s.change_pct),
             }}
           >
-            {w > 40 && h > 22 && <b>{s.ticker}</b>}
-            {w > 52 && h > 40 && <span>{pct(s.change_pct)}</span>}
+            {(phone || (w > 40 && h > 22)) && <b>{s.ticker}</b>}
+            {(phone || (w > 52 && h > 40)) && <span>{pct(s.change_pct)}</span>}
           </a>
         ))}
       </div>
@@ -266,75 +300,107 @@ function Heatmap({ stocks }: { stocks: Stock[] }) {
   );
 }
 
-const listLimit = 14;
-function Signals({ events, stockMap }: { events: Event[]; stockMap: Map<string, Stock> }) {
-  const [lens, setLens] = useState<Lens | null>(() => {
-    const saved = readStorage('vibe-idx:home-signals');
-    return lenses.find((l) => l.kind === saved)?.kind ?? null;
-  });
-  const choose = (next: Lens | null) => {
-    setLens(next);
-    writeStorage('vibe-idx:home-signals', next ?? 'all');
-  };
-  const counts = new Map<Lens, number>();
-  for (const e of events) counts.set(e.kind, (counts.get(e.kind) ?? 0) + 1);
-  const rows = lens ? events.filter((e) => e.kind === lens) : events;
+function Signals({ tiles, stockMap }: { tiles: SignalTile[]; stockMap: Map<string, Stock> }) {
+  if (!tiles.length) return <p className="signals-empty">No signals on the latest day.</p>;
   return (
-    <section className="panel signals" aria-labelledby="signals-heading">
-      <div className="panel-head">
-        <h2 id="signals-heading">Signals</h2>
-      </div>
-      <div className="tabs" role="group" aria-label="Signal kind">
-        <button type="button" aria-pressed={!lens} onClick={() => choose(null)}>
-          All <small>{events.length}</small>
-        </button>
-        {lenses
-          .filter((l) => counts.has(l.kind))
-          .map((l) => (
-            <button
-              key={l.kind}
-              type="button"
-              title={l.label}
-              aria-pressed={lens === l.kind}
-              onClick={() => choose(l.kind)}
+    <section className="tiles" aria-label="Signals">
+      {tiles.map(({ kind, count, top }) => {
+        const lens = lensOf(kind);
+        return (
+          <div className="tile" key={kind}>
+            <a
+              className="tile-head"
+              href={`/market?show=${kind}`}
+              title={lens.label}
+              aria-label={`${lens.label}, ${count} ${count === 1 ? 'stock' : 'stocks'}, open in Market`}
             >
-              {l.tag} <small>{counts.get(l.kind)}</small>
-            </button>
-          ))}
-      </div>
-      {rows.length ? (
-        <ol className="signal-rows" id="signal-rows">
-          {rows.slice(0, listLimit).map((e, i) => (
-            <li key={`${e.ticker}:${e.kind}:${i}`}>
-              <a
-                href={`/t/${e.ticker}`}
-                title={`${stockMap.get(e.ticker)?.name ?? e.ticker}\n${eventTitle(e)}`}
-              >
-                <b className="sym">{e.ticker}</b>
-                <span className="tag">{lensOf(e.kind).tag}</span>
-                <span className="detail">
-                  {e.kind === 'five_pct_change' ? (
-                    <EventText event={e} />
-                  ) : (
-                    <EventMetric event={e} />
-                  )}
+              <b>{lens.tag}</b>
+              <span className="num">{count}</span>
+            </a>
+            <ul>
+              {top.map((e) => (
+                <li key={e.ticker}>
+                  <a
+                    className="tile-row"
+                    href={`/t/${e.ticker}`}
+                    title={`${stockMap.get(e.ticker)?.name ?? e.ticker}\n${eventTitle(e)}`}
+                  >
+                    <b className="sym">{e.ticker}</b>
+                    <span className="metric">
+                      <EventMetric event={e} />
+                    </span>
+                    <span className="mag">
+                      <i
+                        className={tone(e)}
+                        style={{ width: `${Math.max(6, magnitude(e, top[0]!) * 100)}%` }}
+                      />
+                    </span>
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </div>
+        );
+      })}
+    </section>
+  );
+}
+
+const weekLimit = 6;
+
+function Week({ pins }: { pins: string[] }) {
+  const phone = usePhone(),
+    calendar = usePublished('calendar'),
+    actions = usePublished('actions');
+  const items = weekAhead(
+    calendar.kind === 'ready' ? calendar.data.cal : [],
+    actions.kind === 'ready' ? actions.data.actions : [],
+    pins,
+    new Date(),
+  );
+  if (!items.length) return null;
+  return (
+    <section className="panel week" aria-labelledby="week-heading">
+      <h2 id="week-heading">This week</h2>
+      <ol>
+        {items.slice(0, weekLimit).map((item) => {
+          const chip = (
+            <time dateTime={item.date} title={dateText(item.date)}>
+              {dateText(item.date, false)}
+            </time>
+          );
+          return item.type === 'event' ? (
+            <li key={`${item.ts}:${item.country}:${item.title}`} title={item.source}>
+              {chip}
+              <span className="what">
+                <span className="tag">{item.country}</span>
+                {item.title}
+              </span>
+              {item.timed && (
+                <span className="when">
+                  {wib(item.ts, { day: undefined, month: undefined })} WIB
                 </span>
+              )}
+            </li>
+          ) : (
+            <li
+              key={`${item.ticker}:${item.kind}:${item.date}`}
+              className={item.pinned ? 'pinned' : undefined}
+              title={item.pinned ? 'On your watchlist' : undefined}
+            >
+              {chip}
+              <a className="what" href={`/t/${item.ticker}`}>
+                <b className="sym">{item.ticker}</b>
+                <span className="tag">{item.kind}</span>
+                <span className="label">{item.label}</span>
               </a>
             </li>
-          ))}
-        </ol>
-      ) : (
-        <p className="empty">No signals on the latest day.</p>
-      )}
-      {lens ? (
-        rows.length > listLimit && (
-          <a className="more" href={`/market?show=${lens}`}>
-            All {rows.length} in Market
-          </a>
-        )
-      ) : (
-        <a className="more" href="/market">
-          Open Market
+          );
+        })}
+      </ol>
+      {!phone && items.length > weekLimit && (
+        <a className="more" href="/terminal">
+          {items.length - weekLimit} more in Terminal
         </a>
       )}
     </section>
@@ -357,6 +423,7 @@ function WatchRow({ stock, events, pin }: { stock: Stock; events: Event[]; pin: 
       active = false;
     };
   }, [stock.ticker]);
+  const risk = useRiskFor(stock.ticker);
   const detail = history && history !== 'failed' ? history : null;
   const latest: { date: string; text: ReactNode }[] = [
     ...events
@@ -367,46 +434,52 @@ function WatchRow({ stock, events, pin }: { stock: Stock; events: Event[]; pin: 
   const event = latest[0];
   return (
     <div className="watch-row">
-      <a
-        className="watch-link"
-        href={`/t/${stock.ticker}`}
-        aria-label={`Open ${stock.ticker}, ${stock.name}, watchlist`}
-      >
-        <span className="watch-id">
-          <b className="sym">{stock.ticker}</b>
-          <small>{stock.name}</small>
+      <div className="watch-id">
+        <span className="watch-name">
+          <a
+            className="watch-link"
+            href={`/t/${stock.ticker}`}
+            aria-label={`Open ${stock.ticker}, ${stock.name}, watchlist`}
+          >
+            <b className="sym">{stock.ticker}</b>
+          </a>
+          <RiskBadge risk={risk} />
         </span>
-        {detail?.prices.length ? (
-          <Spark
-            rows={detail.prices.slice(-60)}
-            label={`${stock.ticker} closing price over 60 trading days`}
-          />
-        ) : (
-          <span className="spark spark-empty">
-            {history === 'failed' ? 'History unavailable' : ''}
-          </span>
+        <small>{stock.name}</small>
+      </div>
+      {detail?.prices.length ? (
+        <Spark
+          rows={detail.prices.slice(-60)}
+          label={`${stock.ticker} closing price over 60 trading days`}
+        />
+      ) : (
+        <span className="spark spark-empty">
+          {history === 'failed' ? 'History unavailable' : ''}
+        </span>
+      )}
+      <span className="num close">{nf(stock.close)}</span>
+      <span className={`num change ${direction(stock.change_pct)}`}>{pct(stock.change_pct)}</span>
+      <span className="latest-event">
+        {event && (
+          <>
+            {event.text} <time dateTime={event.date}>{dateText(event.date, false)}</time>
+          </>
         )}
-        <span className="num close">{nf(stock.close)}</span>
-        <span className={`num change ${direction(stock.change_pct)}`}>{pct(stock.change_pct)}</span>
-        <span className="latest-event">
-          {event && (
-            <>
-              {event.text} <time dateTime={event.date}>{dateText(event.date, false)}</time>
-            </>
-          )}
-        </span>
-      </a>
+      </span>
       {pin}
     </div>
   );
 }
 
+const newsLimit = { phone: 6, desktop: 12 };
+
 function News({ news }: { news: Headline[] | null }) {
+  const phone = usePhone();
   if (news === null) return null;
   const rows = news
     .filter((n) => n.region === 'ID')
     .sort((a, b) => b.ts.localeCompare(a.ts))
-    .slice(0, 12);
+    .slice(0, phone ? newsLimit.phone : newsLimit.desktop);
   if (!rows.length) return null;
   let day = '';
   return (

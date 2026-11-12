@@ -151,8 +151,52 @@ const marketAccumulation = {
     },
   })),
 };
+const weekEvent = (ts: string, ev: string, imp: number, extra: object = {}) => ({
+  ts,
+  c: 'US',
+  imp,
+  ev,
+  url: 'https://example.com/event',
+  by: 'Example Source',
+  ...extra,
+});
+const weekAction = (ticker: string, kind: string, step: string, date: string) => ({
+  ticker,
+  kind,
+  label: `${kind} ${ticker}`,
+  amount: null,
+  steps: [{ step, date }],
+});
+const weekCalendar = {
+  cal: [
+    weekEvent('2026-11-12T13:30:00Z', 'Yesterday release', 3),
+    weekEvent('2026-11-13T01:00:00Z', 'Already out', 3),
+    weekEvent('2026-11-13T13:30:00Z', 'Core PPI m/m', 3),
+    weekEvent('2026-11-14T01:00:00Z', 'Retail sales', 2),
+    weekEvent('2026-11-17T17:00:00Z', 'BI rate decision', 3, {
+      c: 'ID',
+      est: 'Date only; release time not published by source',
+    }),
+    weekEvent('2026-11-20T01:00:00Z', 'Next week release', 3),
+  ],
+};
+const weekActions = [
+  weekAction('AAAA', 'DIV', 'ex', '2026-11-16'),
+  weekAction('BBBB', 'RIGHTS', 'ex', '2026-11-14'),
+  weekAction('CCCC', 'RUPS', 'meeting', '2026-11-13T14:00'),
+  weekAction('DDDD', 'DIV', 'ex', '2026-11-12'),
+  weekAction('EEEE', 'DIV', 'ex', '2026-11-25'),
+  weekAction('FFFF', 'IPO', 'listing', '2026-11-14'),
+  weekAction('GGGG', 'DIV', 'cum', '2026-11-15'),
+  weekAction('HHHH', 'BONUS', 'ex', '2026-11-15'),
+  weekAction('IIII', 'SPLIT', 'ex', '2026-11-15'),
+];
+const risks = { AAAA: { notes: [{ code: 'X', text: 'Watchlist board' }], susp: null, uma: null } };
 const fetcher = vi.fn<(input: string) => Promise<Response>>(async (input) => {
   const url = String(input);
+  if (url.includes('calendar.json')) return Response.json(weekCalendar);
+  if (url.includes('corporate-actions.json')) return Response.json(weekActions);
+  if (url.includes('risk.json')) return Response.json(risks);
   if (url.includes('market-summary.json')) return Response.json(summary);
   if (url.includes('/api/brokers?view=market')) return Response.json(marketAccumulation);
   if (url.includes('/api/brokers'))
@@ -235,17 +279,54 @@ afterEach(async () => {
 });
 
 describe('daily briefing', () => {
-  const rows = () => stockOrder('#signal-rows .sym');
-  const tab = (label: string) =>
-    [...host.querySelectorAll<HTMLButtonElement>('.signals .tabs button')].find((b) =>
-      b.textContent?.startsWith(label),
-    )!;
-  it('lists the day by kind then strength, keeps one newest filing per holder alias, and drops unknown kinds and unlisted stocks', async () => {
+  const baseFetch = fetcher.getMockImplementation()!;
+  const tiles = () =>
+    [...host.querySelectorAll('.tile')].map((tile) => ({
+      tag: tile.querySelector('.tile-head b')?.textContent,
+      count: tile.querySelector('.tile-head .num')?.textContent,
+      href: tile.querySelector('.tile-head')?.getAttribute('href'),
+      rows: [...tile.querySelectorAll('.tile-row')].map((row) => ({
+        ticker: row.querySelector('.sym')?.textContent,
+        href: row.getAttribute('href'),
+        width: row.querySelector<HTMLElement>('.mag i')?.style.width,
+      })),
+    }));
+  const weekRows = () =>
+    [...host.querySelectorAll('.week li')].map((li) => li.textContent?.replace(/\s+/g, ' '));
+  const pin = (...tickers: string[]) =>
+    window.localStorage.setItem('vibe-idx:watchlist', JSON.stringify(tickers));
+  function viewport(width: number) {
+    const matchMedia = window.matchMedia.bind(window);
+    vi.spyOn(window, 'matchMedia').mockImplementation((query) => {
+      const media = matchMedia(query);
+      vi.spyOn(media, 'matches', 'get').mockReturnValue(
+        query === '(max-width: 900px)' && width <= 900,
+      );
+      return media;
+    });
+  }
+  const serve = (path: string, body: unknown) =>
+    fetcher.mockImplementation(async (input) =>
+      String(input).includes(path) ? Response.json(body) : baseFetch(input),
+    );
+  const today = (iso: string) => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(iso));
+  };
+  afterEach(() => {
+    vi.useRealTimers();
+    fetcher.mockImplementation(baseFetch);
+  });
+
+  it('shows one tile per kind with distinct stocks counted, the top three by strength, scaled bars and links', async () => {
     feed = [
       volume('HHHH', 7),
       ara('BBBB', 30),
       volume('IIII', 9),
+      volume('IIII', 3),
       ara('AAAA', 40),
+      ara('CCCC', 20),
+      ara('DDDD', 10),
       {
         ticker: 'JJJJ',
         date: dates[3],
@@ -261,33 +342,175 @@ describe('daily briefing', () => {
       { kind: 'future_signal', ticker: 'BBCA', numbers: {} },
     ];
     await render();
-    expect(rows()).toEqual(['AAAA', 'BBBB', 'IIII', 'HHHH', 'JJJJ', 'CCCC', 'DDDD']);
-    expect(tab('All').textContent).toBe('All 7');
-    expect(tab('5%').textContent).toBe('5% 2');
-    await act(async () => tab('5%').click());
-    expect(rows()).toEqual(['CCCC', 'DDDD']);
-    const exit = host.querySelector('#signal-rows li');
-    expect(exit?.textContent).toContain('Exit holder');
+    expect(tiles()).toEqual([
+      {
+        tag: 'ARA',
+        count: '4',
+        href: '/market?show=ara',
+        rows: [
+          { ticker: 'AAAA', href: '/t/AAAA', width: '100%' },
+          { ticker: 'BBBB', href: '/t/BBBB', width: '75%' },
+          { ticker: 'CCCC', href: '/t/CCCC', width: '50%' },
+        ],
+      },
+      {
+        tag: 'Volume',
+        count: '2',
+        href: '/market?show=volume_spike',
+        rows: [
+          { ticker: 'IIII', href: '/t/IIII', width: '100%' },
+          { ticker: 'HHHH', href: '/t/HHHH', width: expect.stringMatching(/^77\.7/) },
+        ],
+      },
+      {
+        tag: 'Foreign',
+        count: '1',
+        href: '/market?show=foreign_streak',
+        rows: [{ ticker: 'JJJJ', href: '/t/JJJJ', width: '100%' }],
+      },
+      {
+        tag: '5%',
+        count: '2',
+        href: '/market?show=five_pct_change',
+        rows: [
+          { ticker: 'CCCC', href: '/t/CCCC', width: '100%' },
+          { ticker: 'DDDD', href: '/t/DDDD', width: expect.any(String) },
+        ],
+      },
+    ]);
+    const exit = host.querySelectorAll('.tile')[3]!.querySelector('.tile-row');
     expect(exit?.textContent).toContain('15.00 → <5%');
-    expect(exit?.querySelector('.exit')?.textContent).toBe('Exit');
+    expect(host.querySelector('a a')).toBeNull();
+    expect(host.querySelector('.tabs')).toBeNull();
     expect(host.textContent).not.toContain('Old filing');
     expect(host.textContent).not.toContain('Missing stock');
-    expect(host.textContent).not.toContain('Unchanged');
     expect(host.querySelector('.sources')?.textContent).toContain('1 feed record excluded');
   });
-  it('remembers the chosen kind and sends the full list to the matching Market view', async () => {
-    feed = symbols.map((t, i) => volume(t, 2 + i));
+  it('says when the latest day has no signals', async () => {
     await render();
-    expect(host.querySelector('.signals .more')?.getAttribute('href')).toBe('/market');
-    await act(async () => tab('Volume').click());
-    expect(rows()).toHaveLength(14);
-    expect(rows()[0]).toBe('MMMM');
-    expect(host.querySelector('.signals .more')).toBeNull();
+    expect(host.querySelectorAll('.tile')).toHaveLength(0);
+    expect(host.querySelector('.signals-empty')?.textContent).toBe('No signals on the latest day.');
+  });
+  it('shows the watchlist right under the pulse line with each stock risk badge', async () => {
+    pin('AAAA', 'BBBB');
+    await render();
+    const watchlist = element('.watchlist', HTMLElement);
+    expect(watchlist.previousElementSibling?.classList.contains('pulse')).toBe(true);
+    expect(watchlist.nextElementSibling?.classList.contains('today')).toBe(true);
+    const [first, second] = [...watchlist.querySelectorAll('.watch-row')];
+    expect(first?.querySelector('.watch-name .sym')?.textContent).toBe('AAAA');
+    expect(first?.querySelector('.watch-name .risk-chip')?.textContent).toBe('FCA');
+    expect(second?.querySelector('.risk')).toBeNull();
+  });
+  it('lists high-impact events and ex-dates of the next seven days in date order', async () => {
+    today('2026-11-13T03:00:00Z');
+    await render();
+    expect(weekRows()).toEqual([
+      '13 NovUSCore PPI m/m20:30 WIB',
+      '14 NovBBBBRIGHTSRIGHTS BBBB',
+      '15 NovHHHHBONUSBONUS HHHH',
+      '15 NovIIIISPLITSPLIT IIII',
+      '16 NovAAAADIVDIV AAAA',
+      '18 NovIDBI rate decision',
+    ]);
+    expect(host.querySelector('.week .more')?.textContent).toBe('1 more in Terminal');
+    expect(host.querySelector('.week a[href="/t/BBBB"]')).not.toBeNull();
+    for (const hidden of [
+      'Yesterday',
+      'Already out',
+      'Retail',
+      'Next week',
+      'DDDD',
+      'EEEE',
+      'FFFF',
+      'GGGG',
+    ])
+      expect(host.querySelector('.week')?.textContent).not.toContain(hidden);
+  });
+  it('puts pinned tickers first and keeps unpinned shareholder meetings last', async () => {
+    today('2026-11-13T03:00:00Z');
+    pin('CCCC', 'AAAA');
+    await render();
+    expect(weekRows().map((r) => r?.slice(0, 11))).toEqual([
+      '13 NovCCCCR',
+      '16 NovAAAAD',
+      '13 NovUSCor',
+      '14 NovBBBBR',
+      '15 NovHHHHB',
+      '15 NovIIIIS',
+    ]);
+    expect(
+      [...host.querySelectorAll('.week .pinned')].map((li) => li.textContent?.slice(6, 10)),
+    ).toEqual(['CCCC', 'AAAA']);
+  });
+  it('keeps the terminal link off phones and renders nothing when the week is empty', async () => {
+    today('2026-11-13T03:00:00Z');
+    viewport(390);
+    await render();
+    expect(weekRows()).toHaveLength(6);
+    expect(host.querySelector('.week .more')).toBeNull();
     await act(async () => root.unmount());
     root = createRoot(host);
+    today('2027-03-01T03:00:00Z');
     await render();
-    expect(tab('Volume').getAttribute('aria-pressed')).toBe('true');
-    expect(host.querySelectorAll('.heat a')).toHaveLength(0);
+    expect(host.querySelector('.week')).toBeNull();
+  });
+  it('limits the heatmap to the 20 most traded stocks on phones and 50 on desktop, each labelled', async () => {
+    const many = Array.from({ length: 60 }, (_, i) => ({
+      ticker: `T${String(i).padStart(3, '0')}`,
+      name: `Company ${i}`,
+      close: 100,
+      change_pct: 1.5,
+      volume: 1,
+      value: (i + 1) * 1e9,
+      net_foreign: 0,
+    }));
+    serve('tickers.json', many);
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(600);
+    vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(600);
+    await render();
+    expect(host.querySelectorAll('.heat a')).toHaveLength(50);
+    await act(async () => root.unmount());
+    root = createRoot(host);
+    viewport(390);
+    await render();
+    const tilesOnPhone = [...host.querySelectorAll('.heat a')];
+    expect(tilesOnPhone).toHaveLength(20);
+    expect(tilesOnPhone[0]?.textContent).toBe('T059+1.50%');
+    expect(tilesOnPhone.every((a) => /^T\d{3}\+1\.50%$/.test(a.textContent ?? ''))).toBe(true);
+    expect(tilesOnPhone.at(-1)?.getAttribute('href')).toBe('/t/T040');
+  });
+  it('limits news to 6 items on phones and 12 on desktop', async () => {
+    const news = Array.from({ length: 14 }, (_, i) => ({
+      ts: `2026-11-12T${String(10 + (i % 10)).padStart(2, '0')}:00:00+07:00`,
+      src: 'Antara',
+      title: `Headline ${i}`,
+      link: `https://example.com/${i}`,
+      region: 'ID',
+      tags: [],
+    }));
+    serve('news.json', { news });
+    await render();
+    expect(host.querySelectorAll('.news li')).toHaveLength(12);
+    await act(async () => root.unmount());
+    root = createRoot(host);
+    viewport(390);
+    await render();
+    expect(host.querySelectorAll('.news li')).toHaveLength(6);
+  });
+  it('draws advancers against decliners as a split bar that carries both numbers', async () => {
+    serve('market.json', {
+      date: dates.at(-1),
+      up: 3,
+      down: 1,
+      history: dates.map((date) => ({ date, close: 5000, change: 10, change_pct: 1 })),
+    });
+    await render();
+    const breadth = element('.breadth', HTMLElement);
+    expect(breadth.getAttribute('aria-label')).toBe('3 up, 1 down');
+    expect(
+      [...breadth.querySelectorAll<HTMLElement>('.split span')].map((s) => s.style.flexGrow),
+    ).toEqual(['3', '1']);
   });
   it('searches company names and codes, supports the slash shortcut, and opens the selected research page', async () => {
     const navigate = vi.spyOn(window.location, 'assign').mockImplementation(() => {});
@@ -329,11 +552,11 @@ describe('daily briefing', () => {
     ];
     await render();
     expect(host.querySelectorAll('.watch-row')).toHaveLength(1);
-    expect(host.querySelector('.watch-link .close')?.textContent).toBe('100');
-    expect(host.querySelector('.watch-link .latest-event')?.textContent).toContain(
+    expect(host.querySelector('.watch-row .close')?.textContent).toBe('100');
+    expect(host.querySelector('.watch-row .latest-event')?.textContent).toContain(
       'Newer disclosure',
     );
-    expect(host.querySelector('.watch-link svg')).not.toBeNull();
+    expect(host.querySelector('.watch-row svg')).not.toBeNull();
     await click('.watch-row [aria-label="Unpin BBCA"]');
     expect(host.querySelectorAll('.watch-row')).toHaveLength(0);
     await act(async () => root.unmount());
@@ -347,7 +570,7 @@ describe('daily briefing', () => {
       'BBCA',
     ]);
   });
-  it('keeps the briefing, tabs and pins working when sandbox storage throws', async () => {
+  it('keeps the briefing, tiles and pins working when sandbox storage throws', async () => {
     vi.spyOn(window, 'localStorage', 'get').mockImplementation(() => {
       throw new DOMException('Blocked', 'SecurityError');
     });
@@ -357,8 +580,7 @@ describe('daily briefing', () => {
     await typeQuery('AAAA');
     await click('.search-results [aria-label="Pin AAAA"]');
     expect(host.querySelector('.watch-row')).not.toBeNull();
-    await act(async () => tab('5%').click());
-    expect(rows()).toEqual(['AAAA']);
+    expect(tiles().map((t) => t.tag)).toEqual(['5%']);
     expect(host.querySelector('[role="alert"]')).toBeNull();
   });
 });

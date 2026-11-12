@@ -1,5 +1,5 @@
 import type { Feed } from './data';
-import { dateText, direction, nf } from './ticker/format';
+import { calendarDate, dateText, direction, itemDate, nf } from './ticker/format';
 
 export type Event = Feed[number];
 export type Lens = Event['kind'];
@@ -93,6 +93,132 @@ export function briefing(feed: Feed, listed: (ticker: string) => boolean) {
         strength(b) - strength(a) ||
         a.ticker.localeCompare(b.ticker),
     );
+}
+
+export type SignalTile = { kind: Lens; count: number; top: Event[] };
+
+/** One tile per kind with events, from `briefing()` order: distinct stocks, strongest first. */
+export function signalTiles(events: Event[], size = 3): SignalTile[] {
+  return lenses.flatMap(({ kind }) => {
+    const seen = new Set<string>(),
+      stocks: Event[] = [];
+    for (const event of events) {
+      if (event.kind !== kind || seen.has(event.ticker)) continue;
+      seen.add(event.ticker);
+      stocks.push(event);
+    }
+    return stocks.length ? [{ kind, count: stocks.length, top: stocks.slice(0, size) }] : [];
+  });
+}
+
+export function magnitude(event: Event, leader: Event) {
+  const top = strength(leader);
+  return top > 0 ? Math.min(1, Math.max(0, strength(event)) / top) : 0;
+}
+
+export function tone(event: Event) {
+  switch (event.kind) {
+    case 'volume_spike':
+      return '';
+    case 'ara':
+    case 'green_on_red':
+      return direction(event.numbers.change_pct);
+    case 'foreign_streak':
+      return direction(event.numbers.net_foreign);
+    case 'five_pct_change': {
+      const n = event.numbers;
+      return isExit(event)
+        ? 'down'
+        : direction(n.pct_after === null ? null : n.pct_after - n.pct_before);
+    }
+  }
+}
+
+type CalendarRow = {
+  ts: string;
+  c: string;
+  imp: number;
+  ev: string;
+  by: string;
+  dateOnly: boolean;
+};
+type ActionRow = {
+  ticker: string;
+  kind: string;
+  label: string;
+  steps: { step: string; date: string }[];
+};
+export type WeekItem =
+  | {
+      type: 'event';
+      date: string;
+      ts: string;
+      country: string;
+      title: string;
+      source: string;
+      timed: boolean;
+    }
+  | { type: 'action'; date: string; ticker: string; kind: string; label: string; pinned: boolean };
+
+const weekDays = 7;
+const exDated = new Set(['DIV', 'RIGHTS', 'BONUS', 'SPLIT']);
+
+/**
+ * High-impact calendar events and ex-dates or meetings in the next seven Jakarta days.
+ * Pinned tickers come first, then date order, with unpinned shareholder meetings last.
+ */
+export function weekAhead(
+  calendar: CalendarRow[],
+  actions: ActionRow[],
+  pins: string[],
+  now: Date,
+): WeekItem[] {
+  const today = calendarDate(now.toISOString()),
+    last = calendarDate(new Date(now.getTime() + (weekDays - 1) * 864e5).toISOString()),
+    inWeek = (date: string) => date >= today && date <= last;
+  const items: WeekItem[] = [
+    ...calendar.flatMap((e): WeekItem[] => {
+      const date = calendarDate(e.ts);
+      if (e.imp !== 3 || !inWeek(date) || (!e.dateOnly && Date.parse(e.ts) < now.getTime()))
+        return [];
+      return [
+        {
+          type: 'event',
+          date,
+          ts: e.ts,
+          country: e.c,
+          title: e.ev,
+          source: e.by,
+          timed: !e.dateOnly,
+        },
+      ];
+    }),
+    ...actions.flatMap((a): WeekItem[] => {
+      const wanted = a.kind === 'RUPS' ? 'meeting' : exDated.has(a.kind) ? 'ex' : null,
+        step = a.steps.find((s) => s.step === wanted);
+      if (!step || !inWeek(itemDate(step.date))) return [];
+      return [
+        {
+          type: 'action',
+          date: itemDate(step.date),
+          ticker: a.ticker,
+          kind: a.kind,
+          label: a.label,
+          pinned: pins.includes(a.ticker),
+        },
+      ];
+    }),
+  ];
+  const rank = (i: WeekItem) =>
+    i.type === 'action' ? (i.pinned ? 0 : i.kind === 'RUPS' ? 2 : 1) : 1;
+  const within = (i: WeekItem) => (i.type === 'event' ? i.ts : i.ticker);
+  return items.sort(
+    (a, b) =>
+      rank(a) - rank(b) ||
+      a.date.localeCompare(b.date) ||
+      Number(a.type === 'action') - Number(b.type === 'action') ||
+      within(a).localeCompare(within(b)),
+  );
 }
 
 export function byTicker(events: Event[]) {
