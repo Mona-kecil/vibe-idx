@@ -14,9 +14,13 @@ import {
   type Event,
   type Lens,
 } from './events';
+import { compact, pct } from './marketFormat';
+import { MarketRows, openOnRowClick, useNarrow, type RankRow } from './MarketRows';
+import { usePublished } from './publicData';
+import { RiskBadge } from './RiskBadge';
 import { PinButton, SiteHeader } from './SiteHeader';
 import { Stale } from './Stale';
-import { dateText, direction, nf } from './ticker/format';
+import { dateText, direction, nf, signed } from './ticker/format';
 import { readStorage, usePins, writeStorage } from './watchlist';
 import './market.css';
 
@@ -28,8 +32,18 @@ type SortKey =
   | 'change_pct'
   | 'value'
   | 'rel_volume'
+  | 'net_foreign'
   | 'acc'
   | 'size';
+type Sort = { key: SortKey; ascending: boolean };
+const chips: { label: string; sort: Sort }[] = [
+  { label: 'Gainers', sort: { key: 'change_pct', ascending: false } },
+  { label: 'Losers', sort: { key: 'change_pct', ascending: true } },
+  { label: 'Value', sort: { key: 'value', ascending: false } },
+  { label: 'Foreign buy', sort: { key: 'net_foreign', ascending: false } },
+  { label: 'Foreign sell', sort: { key: 'net_foreign', ascending: true } },
+];
+const sameSort = (a: Sort, b: Sort) => a.key === b.key && a.ascending === b.ascending;
 const columns: { key: SortKey; label: string; unit?: string; title?: string }[] = [
   { key: 'ticker', label: 'Stock' },
   { key: 'event', label: 'Signal' },
@@ -44,6 +58,12 @@ const columns: { key: SortKey; label: string; unit?: string; title?: string }[] 
     label: 'Value traded',
     unit: 'IDR',
     title: 'Total traded value over the window.',
+  },
+  {
+    key: 'net_foreign',
+    label: 'Net foreign',
+    unit: 'IDR',
+    title: 'Foreign buy value minus foreign sell value in the latest session.',
   },
   {
     key: 'rel_volume',
@@ -63,21 +83,12 @@ const columns: { key: SortKey; label: string; unit?: string; title?: string }[] 
       'Top net-buying broker’s average buy trade ÷ the stock’s average trade, in shares, over the window.',
   },
 ];
-const compact = (n: number | null) => {
-  if (n === null) return '—';
-  for (const [unit, scale] of [
-    ['T', 1e12],
-    ['B', 1e9],
-    ['M', 1e6],
-    ['K', 1e3],
-  ] as const)
-    if (Math.abs(n) >= scale) return nf(n / scale, 1) + unit;
-  return nf(n);
-};
-const pct = (n: number | null) =>
-  n === null ? '—' : (n > 0 ? '+' : n < 0 ? '−' : '') + nf(Math.abs(n), 2) + '%';
-const defaultSort = (lens: Lens | null) =>
-  ({ key: lens ? 'event' : 'value', ascending: false }) as const;
+const defaultSort = (lens: Lens | null): Sort => ({
+  key: lens ? 'event' : 'value',
+  ascending: false,
+});
+const barMetric = (key: SortKey) =>
+  key === 'change_pct' || key === 'net_foreign' || key === 'value' ? key : null;
 const lensFromUrl = () =>
   typeof window === 'undefined'
     ? null
@@ -96,13 +107,15 @@ export function MarketPage() {
     return saved === '3d' || saved === '5d' ? saved : '1d';
   });
   const [lens, setLens] = useState<Lens | null>(lensFromUrl);
-  const [sort, setSort] = useState<{ key: SortKey; ascending: boolean }>(() =>
-    defaultSort(lensFromUrl()),
-  );
+  const [sort, setSort] = useState<Sort>(() => defaultSort(lensFromUrl()));
+  const [foreign, setForeign] = useState<ReadonlyMap<string, number> | null>(null);
   const [health, setHealth] = useState<Health | null>(null);
   const [feed, setFeed] = useState<Feed>([]);
   const [query, setQuery] = useState('');
   const [pins, toggle] = usePins();
+  const narrow = useNarrow();
+  const risk = usePublished('risk');
+  const riskOf = (ticker: string) => (risk.kind === 'ready' ? risk.data.risk[ticker] : undefined);
   const [announcement, announce] = useState('');
   useEffect(() => {
     let active = true;
@@ -118,6 +131,12 @@ export function MarketPage() {
     void load('health.json').then(
       (data) => {
         if (active) setHealth(data);
+      },
+      () => {},
+    );
+    void load('tickers.json').then(
+      (stocks) => {
+        if (active) setForeign(new Map(stocks.map((stock) => [stock.ticker, stock.net_foreign])));
       },
       () => {},
     );
@@ -183,9 +202,22 @@ export function MarketPage() {
     else url.searchParams.delete('show');
     window.history.replaceState(window.history.state, '', url);
   };
+  const foreignOff =
+    period !== '1d'
+      ? 'Foreign estimates are available for one session only'
+      : foreign === null
+        ? 'Net foreign data is unavailable'
+        : undefined;
+  const foreignReady = foreignOff === undefined;
+  const choosePeriod = (next: MarketPeriod) => {
+    setPeriod(next);
+    writeStorage('vibe-idx:market-period', next);
+    if (next !== '1d' && sort.key === 'net_foreign') setSort(defaultSort(lens));
+  };
   const shown = columns.filter(
     (column) =>
       (column.key !== 'event' || lens !== null) &&
+      (column.key !== 'net_foreign' || foreignReady) &&
       ((column.key !== 'acc' && column.key !== 'size') || privateData),
   );
   const field = (stock: Stock, key: SortKey) =>
@@ -193,11 +225,13 @@ export function MarketPage() {
       ? stock[key]
       : key === 'event'
         ? (lensEvents(stock.ticker).map(strength)[0] ?? null)
-        : key === 'acc'
-          ? (accumulation.get(stock.ticker)?.pct ?? null)
-          : key === 'size'
-            ? (accumulation.get(stock.ticker)?.size ?? null)
-            : stock.windows[period][key];
+        : key === 'net_foreign'
+          ? (foreign?.get(stock.ticker) ?? null)
+          : key === 'acc'
+            ? (accumulation.get(stock.ticker)?.pct ?? null)
+            : key === 'size'
+              ? (accumulation.get(stock.ticker)?.size ?? null)
+              : stock.windows[period][key];
   const rows = (data?.stocks ?? [])
     .filter(
       (stock) =>
@@ -222,6 +256,18 @@ export function MarketPage() {
       toggle={() => announce(`${ticker} ${toggle(ticker) ? 'pinned' : 'unpinned'}`)}
     />
   );
+  const emptyText = query ? 'No stocks match this filter.' : 'No stocks in this view.';
+  const rankRows: RankRow[] = narrow
+    ? rows.map((stock) => ({
+        ticker: stock.ticker,
+        name: stock.name,
+        change: stock.windows[period].change_pct,
+        value: stock.windows[period].value,
+        foreign: foreign?.get(stock.ticker) ?? null,
+        risk: riskOf(stock.ticker),
+        events: lensEvents(stock.ticker),
+      }))
+    : [];
   return (
     <div className="site market-page">
       <SiteHeader page="market" stocks={data?.stocks ?? []} pin={pin} />
@@ -252,6 +298,23 @@ export function MarketPage() {
                 </button>
               ))}
           </div>
+          <div className="chips" role="group" aria-label="Sort">
+            {chips.map(({ label, sort: preset }) => {
+              const off = preset.key === 'net_foreign' && !foreignReady;
+              return (
+                <button
+                  key={label}
+                  type="button"
+                  disabled={off}
+                  title={off ? foreignOff : undefined}
+                  aria-pressed={sameSort(sort, preset)}
+                  onClick={() => setSort(preset)}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
           <input
             className="filter"
             type="search"
@@ -268,10 +331,7 @@ export function MarketPage() {
                 key={value}
                 type="button"
                 aria-pressed={period === value}
-                onClick={() => {
-                  setPeriod(value);
-                  writeStorage('vibe-idx:market-period', value);
-                }}
+                onClick={() => choosePeriod(value)}
               >
                 {value.toUpperCase()}
               </button>
@@ -293,191 +353,218 @@ export function MarketPage() {
                 <button onClick={() => window.location.reload()}>Reload</button>
               </p>
             )}
-            <div className="table-scroll" role="region" aria-label="Market stocks" tabIndex={0}>
-              <table>
-                <caption>Every IDX stock traded on the latest price date</caption>
-                <colgroup>
-                  {shown.map((column) => (
-                    <col key={column.key} className={column.key} />
-                  ))}
-                  <col className="pin-col" />
-                </colgroup>
-                <thead>
-                  <tr>
+            {sort.key === 'net_foreign' && health?.prices && health.prices !== data?.date && (
+              <p className="note">Net foreign is for {dateText(health.prices)}</p>
+            )}
+            {narrow ? (
+              rows.length ? (
+                <MarketRows
+                  key={[lens, sort.key, sort.ascending, period, query].join()}
+                  rows={rankRows}
+                  metric={barMetric(sort.key)}
+                  pin={pin}
+                />
+              ) : (
+                <p className="empty-state">{emptyText}</p>
+              )
+            ) : (
+              <div className="table-scroll" role="region" aria-label="Market stocks" tabIndex={0}>
+                <table>
+                  <caption>Every IDX stock traded on the latest price date</caption>
+                  <colgroup>
                     {shown.map((column) => (
-                      <th
-                        key={column.key}
-                        scope="col"
-                        className={
-                          column.key === 'ticker' || column.key === 'event' ? 'left' : undefined
-                        }
-                        aria-sort={
-                          sort.key === column.key
-                            ? sort.ascending
-                              ? 'ascending'
-                              : 'descending'
-                            : 'none'
-                        }
-                      >
-                        <button
-                          type="button"
-                          title={column.title}
-                          onClick={() =>
-                            setSort({
-                              key: column.key,
-                              ascending:
-                                sort.key === column.key ? !sort.ascending : column.key === 'ticker',
-                            })
+                      <col key={column.key} className={column.key} />
+                    ))}
+                    <col className="pin-col" />
+                  </colgroup>
+                  <thead>
+                    <tr>
+                      {shown.map((column) => (
+                        <th
+                          key={column.key}
+                          scope="col"
+                          className={
+                            column.key === 'ticker' || column.key === 'event' ? 'left' : undefined
+                          }
+                          aria-sort={
+                            sort.key === column.key
+                              ? sort.ascending
+                                ? 'ascending'
+                                : 'descending'
+                              : 'none'
                           }
                         >
-                          {column.label}
-                          {column.unit && <small>{column.unit}</small>}
-                          <span className="sort-icon" aria-hidden="true">
-                            {sort.key === column.key ? (sort.ascending ? '↑' : '↓') : ''}
-                          </span>
-                        </button>
+                          <button
+                            type="button"
+                            title={column.title}
+                            onClick={() =>
+                              setSort({
+                                key: column.key,
+                                ascending:
+                                  sort.key === column.key
+                                    ? !sort.ascending
+                                    : column.key === 'ticker',
+                              })
+                            }
+                          >
+                            {column.label}
+                            {column.unit && <small>{column.unit}</small>}
+                            <span className="sort-icon" aria-hidden="true">
+                              {sort.key === column.key ? (sort.ascending ? '↑' : '↓') : ''}
+                            </span>
+                          </button>
+                        </th>
+                      ))}
+                      <th scope="col">
+                        <span className="sr-only">Pin</span>
                       </th>
-                    ))}
-                    <th scope="col">
-                      <span className="sr-only">Pin</span>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody id="market-rows">
-                  {rows.map((stock) => {
-                    const metrics = stock.windows[period],
-                      acc = accumulation.get(stock.ticker);
-                    const cell = (key: SortKey) => {
-                      switch (key) {
-                        case 'ticker':
-                          return (
-                            <td key={key}>
-                              <a className="stock-link" href={`/t/${stock.ticker}`}>
-                                <strong>{stock.ticker}</strong>
-                                <span className="company" title={stock.name}>
-                                  {stock.name}
-                                </span>
-                              </a>
-                            </td>
-                          );
-                        case 'event':
-                          return (
-                            <td key={key} className="event">
-                              {lensEvents(stock.ticker).map((event, i) => (
-                                <span key={i} title={eventTitle(event)}>
-                                  <EventText event={event} />
-                                </span>
-                              ))}
-                            </td>
-                          );
-                        case 'close':
-                          return <td key={key}>{stock.close === null ? '—' : nf(stock.close)}</td>;
-                        case 'change_pct':
-                          return (
-                            <td
-                              key={key}
-                              className={direction(metrics.change_pct ?? 0)}
-                              title={
-                                metrics.change_pct === null
-                                  ? 'Price data is missing'
-                                  : `${metrics.change_pct}%`
-                              }
-                            >
-                              {pct(metrics.change_pct)}
-                            </td>
-                          );
-                        case 'value':
-                          return (
-                            <td
-                              key={key}
-                              title={
-                                metrics.value === null
-                                  ? 'Traded value is missing'
-                                  : `${nf(metrics.value)} IDR`
-                              }
-                            >
-                              {compact(metrics.value)}
-                            </td>
-                          );
-                        case 'rel_volume':
-                          return (
-                            <td
-                              key={key}
-                              title={
-                                metrics.rel_volume === null
-                                  ? 'Volume data is missing'
-                                  : `${metrics.rel_volume}×`
-                              }
-                            >
-                              {metrics.rel_volume === null ? '—' : nf(metrics.rel_volume, 1) + '×'}
-                            </td>
-                          );
-                        case 'acc':
-                          return (
-                            <td
-                              key={key}
-                              title={
-                                acc
-                                  ? `${brokerName(acc.broker)}; ${acc.pct * 100}% of traded volume`
-                                  : 'Broker data is incomplete for this window.'
-                              }
-                            >
-                              {acc ? (
-                                <>
-                                  {nf(acc.pct * 100, 1)}%
-                                  <span className="broker">{acc.broker}</span>
-                                </>
-                              ) : (
-                                '—'
-                              )}
-                            </td>
-                          );
-                        case 'size':
-                          return (
-                            <td
-                              key={key}
-                              title={
-                                acc?.size != null &&
-                                acc.broker_avg !== null &&
-                                acc.stock_avg !== null &&
-                                acc.buy_trades !== null &&
-                                acc.trades !== null
-                                  ? `${acc.broker} avg ${nf(acc.broker_avg)} shares per buy trade over ${nf(acc.buy_trades)} trades; stock avg ${nf(acc.stock_avg)} over ${nf(acc.trades)} trades`
-                                  : undefined
-                              }
-                            >
-                              {acc?.size == null ? '' : nf(acc.size, 1) + '×'}
-                            </td>
-                          );
-                      }
-                    };
-                    return (
-                      <tr
-                        key={stock.ticker}
-                        onClick={(event) => {
-                          if (
-                            event.target instanceof Element &&
-                            !event.target.closest('a, button') &&
-                            !window.getSelection()?.toString()
-                          )
-                            window.location.assign(`/t/${stock.ticker}`);
-                        }}
-                      >
-                        {shown.map((column) => cell(column.key))}
-                        <td>{pin(stock.ticker)}</td>
-                      </tr>
-                    );
-                  })}
-                  {!rows.length && (
-                    <tr>
-                      <td colSpan={shown.length + 1} className="empty-state">
-                        {query ? 'No stocks match this filter.' : 'No stocks in this view.'}
-                      </td>
                     </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody id="market-rows">
+                    {rows.map((stock) => {
+                      const metrics = stock.windows[period],
+                        acc = accumulation.get(stock.ticker);
+                      const cell = (key: SortKey) => {
+                        switch (key) {
+                          case 'ticker':
+                            return (
+                              <td key={key}>
+                                <div className="stock-cell">
+                                  <a className="stock-link" href={`/t/${stock.ticker}`}>
+                                    <strong>{stock.ticker}</strong>
+                                    <span className="company" title={stock.name}>
+                                      {stock.name}
+                                    </span>
+                                  </a>
+                                  <RiskBadge risk={riskOf(stock.ticker)} />
+                                </div>
+                              </td>
+                            );
+                          case 'event':
+                            return (
+                              <td key={key} className="event">
+                                {lensEvents(stock.ticker).map((event, i) => (
+                                  <span key={i} title={eventTitle(event)}>
+                                    <EventText event={event} />
+                                  </span>
+                                ))}
+                              </td>
+                            );
+                          case 'close':
+                            return (
+                              <td key={key}>{stock.close === null ? '—' : nf(stock.close)}</td>
+                            );
+                          case 'change_pct':
+                            return (
+                              <td
+                                key={key}
+                                className={direction(metrics.change_pct ?? 0)}
+                                title={
+                                  metrics.change_pct === null
+                                    ? 'Price data is missing'
+                                    : `${metrics.change_pct}%`
+                                }
+                              >
+                                {pct(metrics.change_pct)}
+                              </td>
+                            );
+                          case 'value':
+                            return (
+                              <td
+                                key={key}
+                                title={
+                                  metrics.value === null
+                                    ? 'Traded value is missing'
+                                    : `${nf(metrics.value)} IDR`
+                                }
+                              >
+                                {compact(metrics.value)}
+                              </td>
+                            );
+                          case 'net_foreign': {
+                            const net = foreign?.get(stock.ticker) ?? null;
+                            return (
+                              <td
+                                key={key}
+                                className={direction(net)}
+                                title={net === null ? 'Foreign data is missing' : `${nf(net)} IDR`}
+                              >
+                                {net === null ? '—' : signed(net, compact)}
+                              </td>
+                            );
+                          }
+                          case 'rel_volume':
+                            return (
+                              <td
+                                key={key}
+                                title={
+                                  metrics.rel_volume === null
+                                    ? 'Volume data is missing'
+                                    : `${metrics.rel_volume}×`
+                                }
+                              >
+                                {metrics.rel_volume === null
+                                  ? '—'
+                                  : nf(metrics.rel_volume, 1) + '×'}
+                              </td>
+                            );
+                          case 'acc':
+                            return (
+                              <td
+                                key={key}
+                                title={
+                                  acc
+                                    ? `${brokerName(acc.broker)}; ${acc.pct * 100}% of traded volume`
+                                    : 'Broker data is incomplete for this window.'
+                                }
+                              >
+                                {acc ? (
+                                  <>
+                                    {nf(acc.pct * 100, 1)}%
+                                    <span className="broker">{acc.broker}</span>
+                                  </>
+                                ) : (
+                                  '—'
+                                )}
+                              </td>
+                            );
+                          case 'size':
+                            return (
+                              <td
+                                key={key}
+                                title={
+                                  acc?.size != null &&
+                                  acc.broker_avg !== null &&
+                                  acc.stock_avg !== null &&
+                                  acc.buy_trades !== null &&
+                                  acc.trades !== null
+                                    ? `${acc.broker} avg ${nf(acc.broker_avg)} shares per buy trade over ${nf(acc.buy_trades)} trades; stock avg ${nf(acc.stock_avg)} over ${nf(acc.trades)} trades`
+                                    : undefined
+                                }
+                              >
+                                {acc?.size == null ? '' : nf(acc.size, 1) + '×'}
+                              </td>
+                            );
+                        }
+                      };
+                      return (
+                        <tr key={stock.ticker} onClick={openOnRowClick(stock.ticker)}>
+                          {shown.map((column) => cell(column.key))}
+                          <td>{pin(stock.ticker)}</td>
+                        </tr>
+                      );
+                    })}
+                    {!rows.length && (
+                      <tr>
+                        <td colSpan={shown.length + 1} className="empty-state">
+                          {emptyText}
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </>
         )}
         <div className="sr-only" role="status">

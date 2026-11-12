@@ -151,8 +151,21 @@ const marketAccumulation = {
     },
   })),
 };
+const riskFlags = {
+  AAAA: {
+    notes: [{ code: 'X', text: 'Special monitoring' }],
+    susp: null,
+    uma: { date: '2026-10-22', url: 'https://example.com/uma' },
+  },
+  CCCC: {
+    notes: [],
+    susp: { since: '2026-10-20', reason: null, url: 'https://example.com/susp' },
+    uma: null,
+  },
+};
 const fetcher = vi.fn<(input: string) => Promise<Response>>(async (input) => {
   const url = String(input);
+  if (url.includes('risk.json')) return Response.json(riskFlags);
   if (url.includes('market-summary.json')) return Response.json(summary);
   if (url.includes('/api/brokers?view=market')) return Response.json(marketAccumulation);
   if (url.includes('/api/brokers'))
@@ -827,18 +840,18 @@ describe('market summary', () => {
           }),
     );
     await render();
-    expect(host.querySelector('th:nth-child(7)')?.textContent).toContain('Buy size');
-    const cells = () => [...host.querySelectorAll('#market-rows td:nth-child(7)')];
+    expect(host.querySelector('th:nth-child(8)')?.textContent).toContain('Buy size');
+    const cells = () => [...host.querySelectorAll('#market-rows td:nth-child(8)')];
     expect(cells().map((cell) => cell.textContent)).toEqual(['', '2.0×', '4.1×']);
     expect(cells()[2]?.getAttribute('title')).toBe(
       'XL avg 12,400 shares per buy trade over 214 trades; stock avg 3,020 over 18,512 trades',
     );
-    await click('th:nth-child(7) button');
+    await click('th:nth-child(8) button');
     expect(order()).toEqual(['AAAA', 'BBCA', 'CCCC']);
-    expect(host.querySelector('th:nth-child(7)')?.getAttribute('aria-sort')).toBe('descending');
-    await click('th:nth-child(7) button');
+    expect(host.querySelector('th:nth-child(8)')?.getAttribute('aria-sort')).toBe('descending');
+    await click('th:nth-child(8) button');
     expect(order()).toEqual(['BBCA', 'AAAA', 'CCCC']);
-    expect(host.querySelector('th:nth-child(7)')?.getAttribute('aria-sort')).toBe('ascending');
+    expect(host.querySelector('th:nth-child(8)')?.getAttribute('aria-sort')).toBe('ascending');
     await click('.ranges button:nth-child(2)');
     expect(host.textContent).toContain('30.0%AA');
     expect(cells().map((cell) => cell.textContent)).toEqual(['', '', '']);
@@ -855,6 +868,7 @@ describe('market summary', () => {
       'CloseIDR',
       'Change %',
       'Value tradedIDR↓',
+      'Net foreignIDR',
       'Volume × average',
       'Pin',
     ]);
@@ -890,5 +904,180 @@ describe('market summary', () => {
     expect(window.location.search).toBe('');
     expect(order()).toEqual(['CCCC', 'BBCA', 'AAAA']);
     expect(host.querySelector('td.event')).toBeNull();
+  });
+  let restoreFetch = () => {};
+  afterEach(() => restoreFetch());
+  function stubData(overrides: Record<string, unknown>) {
+    const base = fetcher.getMockImplementation()!;
+    fetcher.mockImplementation(async (input) => {
+      const hit = Object.entries(overrides).find(([part]) => String(input).includes(part));
+      return hit ? Response.json(hit[1]) : base(input);
+    });
+    restoreFetch = () => fetcher.mockImplementation(base);
+  }
+  const listeners = new Set<EventListener>();
+  let viewport = 1024;
+  function fakeViewport(width: number) {
+    viewport = width;
+    vi.spyOn(window, 'matchMedia').mockImplementation((query) => {
+      const bound = (kind: 'min' | 'max') =>
+        Number(new RegExp(`${kind}-width: (\\d+)px`).exec(query)?.[1]);
+      const matches = () =>
+        query.includes('max-width')
+          ? viewport <= bound('max')
+          : query.includes('min-width') && viewport >= bound('min');
+      return {
+        media: query,
+        get matches() {
+          return matches();
+        },
+        addEventListener: (_: string, listener: EventListener) => listeners.add(listener),
+        removeEventListener: (_: string, listener: EventListener) => listeners.delete(listener),
+      } as unknown as MediaQueryList;
+    });
+  }
+  const resize = (width: number) =>
+    act(async () => {
+      viewport = width;
+      listeners.forEach((listener) => listener(new Event('change')));
+    });
+  const chip = (label: string) =>
+    [...host.querySelectorAll<HTMLButtonElement>('.chips button')].find(
+      (button) => button.textContent === label,
+    )!;
+  const rankRows = () => [...host.querySelectorAll<HTMLElement>('#market-rows li')];
+  const barWidths = () =>
+    [...host.querySelectorAll<HTMLElement>('.rank-bar')].map((bar) => parseFloat(bar.style.width));
+  const foreignNet = { AAAA: 5e8, BBCA: -7e8, CCCC: 1e8 };
+  const withForeign = () =>
+    stubData({
+      'tickers.json': Object.entries(foreignNet).map(([ticker, net_foreign]) => ({
+        ticker,
+        name: `Company ${ticker}`,
+        close: 100,
+        change_pct: 1,
+        volume: 700,
+        value: 70000,
+        net_foreign,
+      })),
+    });
+  const manyStocks = Array.from({ length: 120 }, (_, i) =>
+    marketStock(`S${String(i).padStart(3, '0')}`, 1e9 * (i + 1), i % 2 ? -i / 4 : i / 4),
+  );
+
+  it('ranks with sort chips that mirror the headers and turns the foreign chips off after 1D', async () => {
+    withForeign();
+    window.history.replaceState(null, '', '/market');
+    await render();
+    const pressed = () =>
+      [...host.querySelectorAll('.chips button[aria-pressed="true"]')].map((b) => b.textContent);
+    const sortOf = (n: number) =>
+      host.querySelector(`th:nth-child(${n})`)?.getAttribute('aria-sort');
+    expect(stockOrder('.chips button')).toEqual([
+      'Gainers',
+      'Losers',
+      'Value',
+      'Foreign buy',
+      'Foreign sell',
+    ]);
+    expect(pressed()).toEqual(['Value']);
+    await act(async () => chip('Gainers').click());
+    expect(order()).toEqual(['AAAA', 'BBCA', 'CCCC']);
+    expect(sortOf(3)).toBe('descending');
+    await act(async () => chip('Losers').click());
+    expect(order()).toEqual(['BBCA', 'AAAA', 'CCCC']);
+    expect(sortOf(3)).toBe('ascending');
+    await act(async () => chip('Foreign buy').click());
+    expect(order()).toEqual(['AAAA', 'CCCC', 'BBCA']);
+    expect(sortOf(5)).toBe('descending');
+    expect(stockOrder('#market-rows td:nth-child(5)')).toEqual(['+500.0M', '+100.0M', '−700.0M']);
+    await act(async () => chip('Foreign sell').click());
+    expect(order()).toEqual(['BBCA', 'CCCC', 'AAAA']);
+    expect(sortOf(5)).toBe('ascending');
+    await click('th:nth-child(4) button');
+    expect(order()).toEqual(['CCCC', 'BBCA', 'AAAA']);
+    expect(pressed()).toEqual(['Value']);
+    await act(async () => chip('Foreign sell').click());
+    await click('.ranges button:nth-child(2)');
+    expect(order()).toEqual(['CCCC', 'BBCA', 'AAAA']);
+    expect(pressed()).toEqual(['Value']);
+    for (const label of ['Foreign buy', 'Foreign sell']) {
+      expect(chip(label).disabled).toBe(true);
+      expect(chip(label).title).toBe('Foreign estimates are available for one session only');
+    }
+    expect(chip('Gainers').disabled).toBe(false);
+    expect(stockOrder('th')).not.toContain('Net foreignIDR');
+  });
+
+  it('swaps the table for ranked rows on a phone, caps them at 50 and scales bars to the largest visible value', async () => {
+    fakeViewport(390);
+    withForeign();
+    stubData({ 'market-summary.json': { date: summary.date, stocks: manyStocks } });
+    window.history.replaceState(null, '', '/market');
+    await render();
+    expect(host.querySelector('table')).toBeNull();
+    expect(rankRows()).toHaveLength(50);
+    expect(order()[0]).toBe('S119');
+    const widths = barWidths();
+    expect(widths[0]).toBe(100);
+    expect(widths).toEqual([...widths].sort((a, b) => b - a));
+    expect(widths[49]).toBeLessThan(widths[0]!);
+    expect(host.querySelector('.rank-bar')?.className.trim()).toBe('rank-bar');
+    const more = () =>
+      [...host.querySelectorAll('button')].find((b) => /^Show \d+ more$/.test(b.textContent ?? ''));
+    expect(more()?.textContent).toBe('Show 50 more');
+    await act(async () => more()!.click());
+    expect(rankRows()).toHaveLength(100);
+    await act(async () => more()!.click());
+    expect(rankRows()).toHaveLength(120);
+    expect(more()).toBeUndefined();
+    await act(async () => chip('Gainers').click());
+    expect(rankRows()).toHaveLength(50);
+    expect(order()[0]).toBe('S118');
+    expect(host.querySelector('.rank-bar')?.classList.contains('up')).toBe(true);
+    await act(async () => chip('Losers').click());
+    expect(order()[0]).toBe('S119');
+    expect(host.querySelector('.rank-bar')?.classList.contains('down')).toBe(true);
+    const losing = barWidths();
+    expect(losing[0]).toBe(100);
+    expect(losing).toEqual([...losing].sort((a, b) => b - a));
+    await resize(1200);
+    expect(rankRows()).toHaveLength(0);
+    expect(host.querySelector('table')).not.toBeNull();
+    await resize(390);
+    expect(host.querySelector('table')).toBeNull();
+  });
+
+  it('keeps the full signal text in phone rows', async () => {
+    fakeViewport(390);
+    feed = [
+      {
+        ticker: 'AAAA',
+        date: dates[3],
+        kind: 'foreign_streak',
+        numbers: { streak_days: 20, net_foreign: 156.6e6 },
+      },
+    ];
+    window.history.replaceState(null, '', '/market?show=foreign_streak');
+    await render();
+    expect(rankRows()).toHaveLength(1);
+    expect(rankRows()[0]?.querySelector('.rank-event')?.textContent).toBe(
+      '20-day foreign streak +156.60M IDR',
+    );
+    expect(host.querySelector('.rank-bar')).toBeNull();
+  });
+
+  it('flags risky stocks in both the table and the phone rows', async () => {
+    fakeViewport(1024);
+    window.history.replaceState(null, '', '/market');
+    await render();
+    const flags = (selector: string) => stockOrder(`${selector} .risk-chip`);
+    expect(flags('#market-rows tr:nth-child(1)')).toEqual(['SUSP']);
+    expect(flags('#market-rows tr:nth-child(2)')).toEqual([]);
+    expect(flags('#market-rows tr:nth-child(3)')).toEqual(['UMA', 'FCA']);
+    await resize(390);
+    expect(flags('#market-rows li:nth-child(1)')).toEqual(['SUSP']);
+    expect(flags('#market-rows li:nth-child(2)')).toEqual([]);
+    expect(flags('#market-rows li:nth-child(3)')).toEqual(['UMA', 'FCA']);
   });
 });
