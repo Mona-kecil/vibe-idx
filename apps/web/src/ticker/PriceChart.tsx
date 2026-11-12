@@ -8,9 +8,11 @@ import {
   LineStyle,
   type IChartApi,
   type IRange,
+  type ISeriesApi,
   type Logical,
 } from 'lightweight-charts';
 import { chartDate, dailyBars, publicChart, type PriceBar } from '../terminal/charts';
+import { toneOf, type Tone } from '../area';
 import { useNarrow } from '../useNarrow';
 import { readStorage, writeStorage } from '../watchlist';
 import { chartTheme as theme, paneLabel } from './chartTheme';
@@ -61,8 +63,14 @@ const flowTone = (value: number) => (value >= 0 ? theme.up : theme.down);
 
 const paneHeights = {
   wide: [420, 90, 90, 110],
-  narrow: [360, 64, 64, 84],
+  narrow: [230, 44, 44, 60],
 };
+const toneColor: Record<Tone, string> = { up: theme.up, down: theme.down, flat: theme.flat };
+const areaColors = (tone: Tone) => ({
+  lineColor: toneColor[tone],
+  topColor: `${toneColor[tone]}38`,
+  bottomColor: `${toneColor[tone]}00`,
+});
 const paneLabels = [
   ['Price', 'IDR'],
   ['Volume', 'shares'],
@@ -70,7 +78,6 @@ const paneLabels = [
   ['Cumulative foreign', 'IDR (est.)'],
 ] as const;
 const AXIS_HEIGHT = 29;
-const SEPARATORS = 3;
 
 function cumulativeData(prices: Price[], { first, last }: RowWindow) {
   const window = prices.slice(first, last + 1);
@@ -79,48 +86,39 @@ function cumulativeData(prices: Price[], { first, last }: RowWindow) {
 }
 
 function addPanes(api: IChartApi, rows: ChartRow[], type: ChartType, heights: readonly number[]) {
+  let price: ISeriesApi<'Candlestick'> | ISeriesApi<'Area'>;
   const priceFormat = { type: 'custom', minMove: 1, formatter: (v: number) => nf(v) } as const;
   const flow = { type: 'custom', minMove: 1, formatter: (v: number) => signed(v) } as const;
-  if (type === 'candles')
-    api
-      .addSeries(
-        CandlestickSeries,
-        {
-          upColor: theme.up,
-          downColor: theme.down,
-          wickUpColor: theme.up,
-          wickDownColor: theme.down,
-          borderVisible: false,
-          priceFormat,
-        },
-        0,
-      )
-      .setData(
-        rows.map((row) => ({
-          time: row.time,
-          open: row.open,
-          high: row.high,
-          low: row.low,
-          close: row.close,
-          color: tone(row),
-          wickColor: tone(row),
-          borderColor: tone(row),
-        })),
-      );
-  else
-    api
-      .addSeries(
-        AreaSeries,
-        {
-          lineColor: theme.ink,
-          topColor: `${theme.ink}24`,
-          bottomColor: `${theme.ink}00`,
-          lineWidth: 2,
-          priceFormat,
-        },
-        0,
-      )
-      .setData(rows.map((row) => ({ time: row.time, value: row.close })));
+  if (type === 'candles') {
+    price = api.addSeries(
+      CandlestickSeries,
+      {
+        upColor: theme.up,
+        downColor: theme.down,
+        wickUpColor: theme.up,
+        wickDownColor: theme.down,
+        borderVisible: false,
+        priceFormat,
+      },
+      0,
+    );
+    price.setData(
+      rows.map((row) => ({
+        time: row.time,
+        open: row.open,
+        high: row.high,
+        low: row.low,
+        close: row.close,
+        color: tone(row),
+        wickColor: tone(row),
+        borderColor: tone(row),
+      })),
+    );
+  } else {
+    const area = api.addSeries(AreaSeries, { ...areaColors('flat'), lineWidth: 2, priceFormat }, 0);
+    area.setData(rows.map((row) => ({ time: row.time, value: row.close })));
+    price = area;
+  }
   api
     .addSeries(
       HistogramSeries,
@@ -144,23 +142,26 @@ function addPanes(api: IChartApi, rows: ChartRow[], type: ChartType, heights: re
       color: `${flowTone(row.netForeign)}cc`,
     })),
   );
-  const cumulative = api.addSeries(
-    BaselineSeries,
-    {
-      baseValue: { type: 'price', price: 0 },
-      topLineColor: theme.up,
-      topFillColor1: `${theme.up}40`,
-      topFillColor2: `${theme.up}08`,
-      bottomLineColor: theme.down,
-      bottomFillColor1: `${theme.down}08`,
-      bottomFillColor2: `${theme.down}40`,
-      lineWidth: 2,
-      priceFormat: flow,
-      priceLineVisible: false,
-    },
-    3,
-  );
-  for (const series of [netForeign, cumulative])
+  const cumulative =
+    heights.length > 3
+      ? api.addSeries(
+          BaselineSeries,
+          {
+            baseValue: { type: 'price', price: 0 },
+            topLineColor: theme.up,
+            topFillColor1: `${theme.up}40`,
+            topFillColor2: `${theme.up}08`,
+            bottomLineColor: theme.down,
+            bottomFillColor1: `${theme.down}08`,
+            bottomFillColor2: `${theme.down}40`,
+            lineWidth: 2,
+            priceFormat: flow,
+            priceLineVisible: false,
+          },
+          3,
+        )
+      : null;
+  for (const series of cumulative ? [netForeign, cumulative] : [netForeign])
     series.createPriceLine({
       price: 0,
       color: theme.line,
@@ -171,13 +172,14 @@ function addPanes(api: IChartApi, rows: ChartRow[], type: ChartType, heights: re
   api.priceScale('right', 0).applyOptions({ scaleMargins: { top: 0.1, bottom: 0.06 } });
   api.priceScale('right', 1).applyOptions({ scaleMargins: { top: 0.3, bottom: 0 } });
   api.priceScale('right', 2).applyOptions({ scaleMargins: { top: 0.3, bottom: 0.08 } });
-  api.priceScale('right', 3).applyOptions({ scaleMargins: { top: 0.3, bottom: 0.08 } });
+  if (cumulative)
+    api.priceScale('right', 3).applyOptions({ scaleMargins: { top: 0.3, bottom: 0.08 } });
   api.panes().forEach((pane, i) => {
     pane.setStretchFactor(heights[i] ?? 1);
     const [name, unit] = paneLabels[i] ?? ['', ''];
     pane.attachPrimitive(paneLabel(name, unit));
   });
-  return cumulative;
+  return { price, cumulative };
 }
 
 export function PriceChart({
@@ -199,23 +201,30 @@ export function PriceChart({
 }) {
   const narrow = useNarrow();
   const rows = useMemo(() => chartRows(prices), [prices]);
-  const [type, setType] = useState<ChartType>(() =>
-    readStorage(typeKey) === 'line' ? 'line' : 'candles',
-  );
+  const [type, setType] = useState<ChartType>(() => {
+    const saved = readStorage(typeKey);
+    return saved === 'line' || saved === 'candles' ? saved : narrow ? 'line' : 'candles';
+  });
+  const [totalOpen, setTotalOpen] = useState(false);
+  const withTotal = !narrow || totalOpen;
   const [hover, setHover] = useState<number | null>(null);
   const [view, setView] = useState(() => visibleWindow(rows.length, periodRange(prices, period)));
   const [band, setBand] = useState<{ left: number; width: number } | null>(null);
   const [docked, setDocked] = useState(false);
   const wrap = useRef<HTMLDivElement>(null),
     host = useRef<HTMLDivElement>(null),
-    chart = useRef<IChartApi | null>(null);
+    chart = useRef<IChartApi | null>(null),
+    priceSeries = useRef<ISeriesApi<'Candlestick'> | ISeriesApi<'Area'> | null>(null);
   const latest = useRef({ selection, period });
   latest.current = { selection, period };
   const savedRange = useRef<IRange<number> | null>(null);
   const redraw = useRef(() => {});
   const drag = useRef<number | null>(null);
-  const heights = paneHeights[narrow ? 'narrow' : 'wide'];
-  const height = heights.reduce((sum, h) => sum + h, AXIS_HEIGHT + SEPARATORS);
+  const heights = useMemo(
+    () => paneHeights[narrow ? 'narrow' : 'wide'].slice(0, withTotal ? 4 : 3),
+    [narrow, withTotal],
+  );
+  const height = heights.reduce((sum, h) => sum + h, AXIS_HEIGHT + heights.length - 1);
 
   useEffect(() => {
     const element = host.current;
@@ -225,7 +234,8 @@ export function PriceChart({
     const time = api.timeScale();
     const index = new Map(rows.map((row, i) => [row.date, i]));
     const dates = rows.map((row) => row.date);
-    const cumulative = addPanes(api, rows, type, heights);
+    const { price, cumulative } = addPanes(api, rows, type, heights);
+    priceSeries.current = price;
 
     redraw.current = () => {
       const selected = selectedRows(dates, latest.current.selection);
@@ -245,7 +255,7 @@ export function PriceChart({
       const key = next ? `${next.first}:${next.last}` : '';
       if (key !== shown) {
         shown = key;
-        cumulative.setData(next ? cumulativeData(prices, next) : []);
+        cumulative?.setData(next ? cumulativeData(prices, next) : []);
         setView(next);
       }
       redraw.current();
@@ -268,6 +278,7 @@ export function PriceChart({
       if (fitted) savedRange.current = time.getVisibleLogicalRange();
       redraw.current = () => {};
       chart.current = null;
+      priceSeries.current = null;
       api.remove();
     };
   }, [rows, prices, type, heights]);
@@ -275,6 +286,14 @@ export function PriceChart({
   useEffect(() => {
     redraw.current();
   }, [selection]);
+
+  const first = view && prices[view.first],
+    last = view && prices[view.last];
+  const periodChange = first?.close && last ? (last.close / first.close - 1) * 100 : 0;
+  const windowTone = toneOf(periodChange);
+  useEffect(() => {
+    if (type === 'line') priceSeries.current?.applyOptions(areaColors(windowTone));
+  }, [type, windowTone, rows, heights]);
 
   useEffect(() => {
     const scroll = () => setDocked((wrap.current?.getBoundingClientRect().bottom ?? 1) <= 0);
@@ -350,16 +369,12 @@ export function PriceChart({
     drag.current = null;
   }
 
-  const first = view && prices[view.first],
-    last = view && prices[view.last];
-  const periodChange = first?.close && last ? (last.close / first.close - 1) * 100 : 0;
-  const shown = rows[hover ?? rows.length - 1];
-  const previous = rows[(hover ?? rows.length - 1) - 1];
+  const shown = hover === null ? undefined : rows[hover];
+  const previous = hover === null ? undefined : rows[hover - 1];
   const change = shown && previous ? shown.close - previous.close : null;
   if (!rows.length)
     return (
-      <section className="section">
-        <h2>Price & volume</h2>
+      <section className="section" aria-label="Price and volume">
         <p className="empty-state">No price data</p>
       </section>
     );
@@ -375,23 +390,39 @@ export function PriceChart({
           </button>
         </div>
       </div>
-      <section className="section" id="price-section" aria-labelledby="price-heading">
-        <div className="section-head">
-          <h2 id="price-heading">Price & volume</h2>
-          <div className="chart-controls">
-            <div className="ranges" aria-label="Chart period">
-              {periods.map((p) => (
-                <button
-                  key={p}
-                  data-range={p}
-                  aria-pressed={p === period}
-                  onClick={() => choosePeriod(p)}
-                >
-                  {p}
-                </button>
-              ))}
-            </div>
-            <div className="ranges" aria-label="Chart type">
+      <section className="section" id="price-section" aria-label="Price and volume">
+        <div className="chart-controls">
+          <div className="ranges" aria-label="Chart period">
+            {periods.map((p) => (
+              <button
+                key={p}
+                data-range={p}
+                aria-pressed={p === period}
+                onClick={() => choosePeriod(p)}
+              >
+                {p}
+              </button>
+            ))}
+          </div>
+          {first && last && (
+            <strong
+              className={`period-change ${direction(periodChange)}`}
+              title={`${dateText(first.date)} – ${dateText(last.date)}`}
+            >
+              {signed(periodChange, (v) => nf(v, 2))}%
+            </strong>
+          )}
+          {narrow ? (
+            <button
+              type="button"
+              className="chart-type-switch"
+              data-type={type === 'line' ? 'candles' : 'line'}
+              onClick={() => chooseType(type === 'line' ? 'candles' : 'line')}
+            >
+              {chartTypes[type === 'line' ? 'candles' : 'line']}
+            </button>
+          ) : (
+            <div className="ranges chart-type" aria-label="Chart type">
               {(Object.keys(chartTypes) as ChartType[]).map((t) => (
                 <button
                   key={t}
@@ -403,75 +434,8 @@ export function PriceChart({
                 </button>
               ))}
             </div>
-          </div>
+          )}
         </div>
-        {first && last && (
-          <div className="chart-summary">
-            <strong className={direction(periodChange)}>
-              {signed(periodChange, (v) => nf(v, 2))}%
-            </strong>
-            <span className="date-label">
-              {dateText(first.date, false)} – {dateText(last.date)}
-            </span>
-          </div>
-        )}
-        {shown && (
-          <div className="readout">
-            <time className="readout-date" dateTime={shown.date}>
-              {dateText(shown.date)}
-            </time>
-            <span className={`readout-change ${direction(change)}`}>
-              {change === null || !previous?.close
-                ? '—'
-                : `${signed(change, nf)} (${signed((change / previous.close) * 100, (v) => nf(v, 2))}%)`}
-            </span>
-            {type === 'candles' && (
-              <>
-                <span>
-                  <i>O</i>
-                  {nf(shown.open)}
-                </span>
-                <span>
-                  <i>H</i>
-                  {nf(shown.high)}
-                </span>
-                <span>
-                  <i>L</i>
-                  {nf(shown.low)}
-                </span>
-              </>
-            )}
-            <span>
-              <i>C</i>
-              {nf(shown.close)}
-            </span>
-            {shown.volume === 0 ? (
-              <span className="readout-status">Suspended</span>
-            ) : (
-              <>
-                <span className="readout-volume" title={`${nf(shown.volume)} shares`}>
-                  <i>Volume</i>
-                  {short(shown.volume)}
-                </span>
-                <span
-                  className={`readout-foreign ${direction(shown.netForeign)}`}
-                  title={`${signed(shown.netForeign, nf)} IDR`}
-                >
-                  <i>Net foreign</i>
-                  {signed(shown.netForeign)}
-                </span>
-              </>
-            )}
-            {shown.estimated && (
-              <span
-                className="readout-status"
-                title="Missing open, high or low values use the close. The traded range is unavailable."
-              >
-                Est.
-              </span>
-            )}
-          </div>
-        )}
         <div
           className="price-chart"
           ref={wrap}
@@ -493,10 +457,77 @@ export function PriceChart({
             data-series={type}
             data-bars={rows.length}
           />
+          {shown && (
+            <div className="readout" role="status">
+              <time className="readout-date" dateTime={shown.date}>
+                {dateText(shown.date)}
+              </time>
+              <span className={`readout-change ${direction(change)}`}>
+                {change === null || !previous?.close
+                  ? '—'
+                  : `${signed(change, nf)} (${signed((change / previous.close) * 100, (v) => nf(v, 2))}%)`}
+              </span>
+              {type === 'candles' && (
+                <>
+                  <span>
+                    <i>O</i>
+                    {nf(shown.open)}
+                  </span>
+                  <span>
+                    <i>H</i>
+                    {nf(shown.high)}
+                  </span>
+                  <span>
+                    <i>L</i>
+                    {nf(shown.low)}
+                  </span>
+                </>
+              )}
+              <span>
+                <i>C</i>
+                {nf(shown.close)}
+              </span>
+              {shown.volume === 0 ? (
+                <span className="readout-status">Suspended</span>
+              ) : (
+                <>
+                  <span className="readout-volume" title={`${nf(shown.volume)} shares`}>
+                    <i>Volume</i>
+                    {short(shown.volume)}
+                  </span>
+                  <span
+                    className={`readout-foreign ${direction(shown.netForeign)}`}
+                    title={`${signed(shown.netForeign, nf)} IDR`}
+                  >
+                    <i>Net foreign</i>
+                    {signed(shown.netForeign)}
+                  </span>
+                </>
+              )}
+              {shown.estimated && (
+                <span
+                  className="readout-status"
+                  title="Missing open, high or low values use the close. The traded range is unavailable."
+                >
+                  Est.
+                </span>
+              )}
+            </div>
+          )}
           {band && <div className="selection-band" style={band} />}
           <div className="chart-axis" />
         </div>
         <div className="chart-foot">
+          {narrow && (
+            <button
+              type="button"
+              className="pane-toggle"
+              aria-pressed={totalOpen}
+              onClick={() => setTotalOpen(!totalOpen)}
+            >
+              Cumulative foreign
+            </button>
+          )}
           <span className="chart-selection">
             <SelectionLabel prices={prices} selection={selection} />
           </span>

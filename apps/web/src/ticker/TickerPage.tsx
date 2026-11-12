@@ -197,54 +197,61 @@ function TickerDetail({
     ));
   return (
     <main className="wrap">
-      <div className="ticker-header">
-        <div className="identity">
-          <div className="identity-heading">
-            <h1>{data.ticker}</h1>
+      <header className="ticker-header">
+        <div className="identity-heading">
+          <h1>{data.ticker}</h1>
+          {last && (
+            <div className="quote">
+              <span className="price-main">
+                <span className="currency">IDR</span>
+                {nf(last.close)}
+              </span>
+              <span className={`price-change ${direction(change)}`}>
+                {change === null ? (
+                  '—'
+                ) : (
+                  <>
+                    <span className="change-abs">{signed(change, nf)} (</span>
+                    {signed(pct ?? 0, (v) => nf(v, 2))}%<span className="change-abs">)</span>
+                  </>
+                )}
+              </span>
+            </div>
+          )}
+          <span className="identity-actions">
             {pin(data.ticker)}
             <ShareButton ticker={data.ticker} name={data.name} />
-            <RiskBadge risk={risk} />
-            {chip && (
-              <span className="action-chip" title={chip.title} tabIndex={0}>
-                {chip.label}
-              </span>
-            )}
-          </div>
-          <p>{data.name.replace(/\.$/, '')}</p>
+          </span>
         </div>
-        {last && (
-          <div className="price">
-            <div className="price-main">
-              <span className="currency">IDR</span>
-              {nf(last.close)}
-            </div>
-            <div className="price-change">
-              <span className={direction(change)}>
-                {change === null
-                  ? '—'
-                  : `${signed(change, nf)} (${signed(pct ?? 0, (v) => nf(v, 2))}%)`}
-              </span>
-              <Freshness label={dateText(last.date)}>
-                <dt>Prices</dt>
-                <dd>{dateText(health?.prices ?? last.date)}</dd>
-                {dailyDate && (
-                  <>
-                    <dt>5% ownership</dt>
-                    <dd>{dateText(dailyDate)}</dd>
-                  </>
-                )}
-                {registry && (
-                  <>
-                    <dt>Registry</dt>
-                    <dd>{dateText(registry.date)}</dd>
-                  </>
-                )}
-              </Freshness>
-              {health && <Stale health={health} />}
-            </div>
-          </div>
-        )}
-      </div>
+        <div className="identity-sub">
+          <p>{data.name.replace(/\.$/, '')}</p>
+          <RiskBadge risk={risk} />
+          {chip && (
+            <span className="action-chip" title={chip.title} tabIndex={0}>
+              {chip.label}
+            </span>
+          )}
+          {last && (
+            <Freshness label={dateText(last.date)}>
+              <dt>Prices</dt>
+              <dd>{dateText(health?.prices ?? last.date)}</dd>
+              {dailyDate && (
+                <>
+                  <dt>5% ownership</dt>
+                  <dd>{dateText(dailyDate)}</dd>
+                </>
+              )}
+              {registry && (
+                <>
+                  <dt>Registry</dt>
+                  <dd>{dateText(registry.date)}</dd>
+                </>
+              )}
+            </Freshness>
+          )}
+          {health && <Stale health={health} />}
+        </div>
+      </header>
       <PriceChart
         ticker={data.ticker}
         prices={prices}

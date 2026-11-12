@@ -166,21 +166,37 @@ describe('ticker price chart', () => {
     expect(element('[data-type="line"]').getAttribute('aria-pressed')).toBe('true');
   });
 
-  it('shows the last bar until the crosshair moves over another', async () => {
+  it('shows the readout only while the crosshair tracks a bar', async () => {
     await mount();
-    const readout = () => element('.readout').textContent;
-    expect(element('.readout-date').textContent).toBe('27 Oct 2026');
-    expect(element('.readout-change').textContent).toBe('+1 (+0.25%)');
-    expect(readout()).toContain('C399');
-    expect(readout()).toContain('Volume1.3K');
-    expect(readout()).toContain('Net foreign+300.0M');
+    expect(host.querySelector('.readout')).toBeNull();
     await emit('subscribeCrosshairMove', { time: '2026-01-03' });
+    const readout = element('.readout').textContent;
     expect(element('.readout-date').textContent).toBe('3 Jan 2026');
     expect(element('.readout-change').textContent).toBe('+1 (+0.99%)');
     for (const part of ['O101', 'H103', 'L100', 'C102', 'Net foreign−3.0M'])
-      expect(readout()).toContain(part);
+      expect(readout).toContain(part);
     await emit('subscribeCrosshairMove', {});
-    expect(element('.readout-date').textContent).toBe('27 Oct 2026');
+    expect(host.querySelector('.readout')).toBeNull();
+  });
+
+  it('colours the line by the visible window and keeps candles behind the toggle on phones', async () => {
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: query.includes('max-width: 900px'),
+      addEventListener() {},
+      removeEventListener() {},
+    }));
+    await mount();
+    expect(calls('addSeries').map((c) => (c.args[0] as { type: string }).type)).toEqual([
+      'Area',
+      'Histogram',
+      'Histogram',
+    ]);
+    expect(lastArg('series:Area@0.applyOptions')).toMatchObject({ lineColor: '#167049' });
+    await emit('timeScale().subscribeVisibleLogicalRangeChange', { from: 10, to: 20.4 });
+    expect(element('.period-change').textContent).toBe('+9.09%');
+    await click('.pane-toggle');
+    expect(element('.pane-toggle').getAttribute('aria-pressed')).toBe('true');
+    expect(seriesData('Baseline@3')?.length).toBeGreaterThan(0);
   });
 
   it('flags bars with missing OHLC as estimated and draws them flat', async () => {
@@ -210,7 +226,7 @@ describe('ticker price chart', () => {
       [-11, 1, -12, 2, -13, 3, -14, 4, -15, 5, -16].map((million) => million * 1e6),
     );
     expect(panned[0]?.time).toBe('2026-01-11');
-    expect(element('.chart-summary strong').textContent).toBe('+9.09%');
+    expect(element('.period-change').textContent).toBe('+9.09%');
   });
 });
 

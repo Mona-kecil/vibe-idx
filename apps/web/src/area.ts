@@ -16,7 +16,7 @@ export const FLAT_CHANGE_PCT = 0.1;
 const defaultPad: Pad = { top: 2, bottom: 2 };
 const coordinate = (n: number) => Math.round(n * 100) / 100;
 
-function toneOf(changePct: number): Tone {
+export function toneOf(changePct: number): Tone {
   if (Math.abs(changePct) < FLAT_CHANGE_PCT) return 'flat';
   return changePct > 0 ? 'up' : 'down';
 }
