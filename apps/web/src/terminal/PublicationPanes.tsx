@@ -2,27 +2,12 @@ import { Fragment, useEffect, useRef, useState } from 'react';
 import { useTerminal } from './state';
 import type { Headline, Risk, Resource } from './sources';
 import { Availability, Empty, Publication, Scroll, Segments, TickerLink } from './ui';
-import { dateText } from '../ticker/format';
+import { calendarDate, dateText, wib } from '../ticker/format';
 import './publication-panes.css';
 
 const perShare = ({ value, currency }: { value: number; currency: string }) =>
   `${new Intl.NumberFormat('en-US', { maximumFractionDigits: 4 }).format(value)} ${currency} per share`;
 
-const publicationDate = (value: string) =>
-  new Date(/T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?$/.test(value) ? `${value}+07:00` : value);
-const wib = (value: string, options: Intl.DateTimeFormatOptions = {}) =>
-  new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'Asia/Jakarta',
-    day: '2-digit',
-    month: 'short',
-    hour: '2-digit',
-    minute: '2-digit',
-    ...options,
-  })
-    .format(publicationDate(value))
-    .replace('Sept', 'Sep');
-const calendarDate = (value: string) =>
-  new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(publicationDate(value));
 function usePublicationTimeline(data: unknown, filter: string) {
   const scroll = useRef<HTMLDivElement>(null);
   const now = Date.now();

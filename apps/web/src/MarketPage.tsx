@@ -1,19 +1,38 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '@workos-inc/authkit-react';
-import { AccountControls, SignInButton } from './BrokerPanel';
 import { brokerName } from './broker-data';
 import { accumulationSchema, type Accumulation } from './brokers';
-import { load, type Health, type MarketPeriod, type MarketSummary } from './data';
+import { load, type Feed, type Health, type MarketPeriod, type MarketSummary } from './data';
+import {
+  briefing,
+  byTicker,
+  EventText,
+  eventTitle,
+  lenses,
+  parseLens,
+  strength,
+  type Event,
+  type Lens,
+} from './events';
+import { PinButton, SiteHeader } from './SiteHeader';
 import { Stale } from './Stale';
 import { dateText, direction, nf } from './ticker/format';
-import { initialPins, readStorage, writeStorage } from './watchlist';
+import { readStorage, usePins, writeStorage } from './watchlist';
 import './market.css';
-import { TerminalLink } from './TerminalLink';
 
 type Stock = MarketSummary['stocks'][number];
-type SortKey = 'ticker' | 'close' | 'change_pct' | 'value' | 'rel_volume' | 'acc' | 'size';
+type SortKey =
+  | 'ticker'
+  | 'event'
+  | 'close'
+  | 'change_pct'
+  | 'value'
+  | 'rel_volume'
+  | 'acc'
+  | 'size';
 const columns: { key: SortKey; label: string; unit?: string; title?: string }[] = [
   { key: 'ticker', label: 'Stock' },
+  { key: 'event', label: 'Signal' },
   { key: 'close', label: 'Close', unit: 'IDR' },
   {
     key: 'change_pct',
@@ -57,9 +76,15 @@ const compact = (n: number | null) => {
 };
 const pct = (n: number | null) =>
   n === null ? '—' : (n > 0 ? '+' : n < 0 ? '−' : '') + nf(Math.abs(n), 2) + '%';
+const defaultSort = (lens: Lens | null) =>
+  ({ key: lens ? 'event' : 'value', ascending: false }) as const;
+const lensFromUrl = () =>
+  typeof window === 'undefined'
+    ? null
+    : parseLens(new URLSearchParams(window.location.search).get('show'));
 
 export function MarketPage() {
-  const { user, isLoading, getAccessToken } = useAuth();
+  const { user, getAccessToken } = useAuth();
   const [state, setState] = useState<
     { kind: 'loading' | 'error' } | { kind: 'ready'; data: MarketSummary }
   >({ kind: 'loading' });
@@ -70,18 +95,18 @@ export function MarketPage() {
     const saved = readStorage('vibe-idx:market-period');
     return saved === '3d' || saved === '5d' ? saved : '1d';
   });
-  const [sort, setSort] = useState<{ key: SortKey; ascending: boolean }>({
-    key: 'value',
-    ascending: false,
-  });
+  const [lens, setLens] = useState<Lens | null>(lensFromUrl);
+  const [sort, setSort] = useState<{ key: SortKey; ascending: boolean }>(() =>
+    defaultSort(lensFromUrl()),
+  );
   const [health, setHealth] = useState<Health | null>(null);
+  const [feed, setFeed] = useState<Feed>([]);
   const [query, setQuery] = useState('');
-  const [pins, setPins] = useState(initialPins);
+  const [pins, toggle] = usePins();
   const [announcement, announce] = useState('');
-  const search = useRef<HTMLInputElement>(null);
   useEffect(() => {
     let active = true;
-    document.title = 'Market summary  Vibe IDX';
+    document.title = 'Market  Vibe IDX';
     void load('market-summary.json').then(
       (data) => {
         if (active) setState({ kind: 'ready', data });
@@ -96,20 +121,15 @@ export function MarketPage() {
       },
       () => {},
     );
-    const key = (event: KeyboardEvent) => {
-      if (
-        event.key === '/' &&
-        !(event.target instanceof HTMLElement && /INPUT|TEXTAREA|SELECT/.test(event.target.tagName))
-      ) {
-        event.preventDefault();
-        search.current?.focus();
-      }
-    };
-    document.addEventListener('keydown', key);
+    void load('feed.json').then(
+      (data) => {
+        if (active) setFeed(data);
+      },
+      () => {},
+    );
     return () => {
       active = false;
       document.title = 'Vibe IDX';
-      document.removeEventListener('keydown', key);
     };
   }, []);
   const userId = user?.id;
@@ -147,17 +167,42 @@ export function MarketPage() {
   const accumulation = new Map(
     privateData?.stocks.map((stock) => [stock.ticker, stock.windows[period]]),
   );
+  const listed = new Set(data?.stocks.map((stock) => stock.ticker));
+  const events = byTicker(briefing(feed, (ticker) => listed.has(ticker)));
+  const lensEvents = (ticker: string): Event[] =>
+    lens ? (events.get(ticker) ?? []).filter((event) => event.kind === lens) : [];
+  const counts = new Map<Lens, number>();
+  for (const rows of events.values())
+    for (const kind of new Set(rows.map((event) => event.kind)))
+      counts.set(kind, (counts.get(kind) ?? 0) + 1);
+  const chooseLens = (next: Lens | null) => {
+    setLens(next);
+    setSort(defaultSort(next));
+    const url = new URL(window.location.href);
+    if (next) url.searchParams.set('show', next);
+    else url.searchParams.delete('show');
+    window.history.replaceState(window.history.state, '', url);
+  };
+  const shown = columns.filter(
+    (column) =>
+      (column.key !== 'event' || lens !== null) &&
+      ((column.key !== 'acc' && column.key !== 'size') || privateData),
+  );
   const field = (stock: Stock, key: SortKey) =>
     key === 'ticker' || key === 'close'
       ? stock[key]
-      : key === 'acc'
-        ? (accumulation.get(stock.ticker)?.pct ?? null)
-        : key === 'size'
-          ? (accumulation.get(stock.ticker)?.size ?? null)
-          : stock.windows[period][key];
+      : key === 'event'
+        ? (lensEvents(stock.ticker).map(strength)[0] ?? null)
+        : key === 'acc'
+          ? (accumulation.get(stock.ticker)?.pct ?? null)
+          : key === 'size'
+            ? (accumulation.get(stock.ticker)?.size ?? null)
+            : stock.windows[period][key];
   const rows = (data?.stocks ?? [])
-    .filter((stock) =>
-      (stock.ticker + ' ' + stock.name).toLowerCase().includes(query.trim().toLowerCase()),
+    .filter(
+      (stock) =>
+        (!lens || lensEvents(stock.ticker).length > 0) &&
+        (stock.ticker + ' ' + stock.name).toLowerCase().includes(query.trim().toLowerCase()),
     )
     .sort((a, b) => {
       const av = field(a, sort.key),
@@ -170,67 +215,53 @@ export function MarketPage() {
           : Number(av) - Number(bv);
       return result * (sort.ascending ? 1 : -1) || a.ticker.localeCompare(b.ticker);
     });
-  const togglePin = (ticker: string) => {
-    const next = pins.includes(ticker) ? pins.filter((pin) => pin !== ticker) : [...pins, ticker];
-    setPins(next);
-    writeStorage('vibe-idx:watchlist', JSON.stringify(next));
-    announce(`${ticker} ${next.includes(ticker) ? 'pinned' : 'unpinned'}`);
-  };
+  const pin = (ticker: string) => (
+    <PinButton
+      ticker={ticker}
+      pinned={pins.includes(ticker)}
+      toggle={() => announce(`${ticker} ${toggle(ticker) ? 'pinned' : 'unpinned'}`)}
+    />
+  );
   return (
-    <div className="market-page">
-      <header className="topbar">
-        <div className="wrap topbar-inner">
-          <a className="wordmark" href="/" aria-label="Vibe IDX home">
-            Vibe <span>IDX</span>
-          </a>
-          <nav className="main-nav" aria-label="Main">
-            <a href="/">Home</a>
-            <a href="/market" aria-current="page">
-              Market
-            </a>
-            <TerminalLink />
-          </nav>
-          <div className="search">
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              aria-hidden="true"
-            >
-              <circle cx="10.5" cy="10.5" r="6.5" />
-              <path d="m16 16 4.5 4.5" />
-            </svg>
-            <input
-              ref={search}
-              type="search"
-              placeholder="Search tickers"
-              aria-label="Search tickers or companies"
-              autoComplete="off"
-              aria-controls="market-rows"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-            />
-            <span className="keyhint">/</span>
-          </div>
-          {user && (
-            <div className="signin">
-              <AccountControls />
-            </div>
-          )}
-        </div>
-      </header>
+    <div className="site market-page">
+      <SiteHeader page="market" stocks={data?.stocks ?? []} pin={pin} />
       <main className="wrap">
-        <div className="freshness">
-          {health && <Stale health={health} />}
-          {data?.date && (
-            <>
-              Prices <time dateTime={data.date}>{dateText(data.date)}</time>
-            </>
-          )}
+        <div className="market-head">
+          <h1>Market</h1>
+          <div className="freshness">
+            {health && <Stale health={health} />}
+            {data?.date && <time dateTime={data.date}>{dateText(data.date)}</time>}
+          </div>
         </div>
-        <div className="section-head">
-          <h1>Market summary</h1>
+        <div className="toolbar">
+          <div className="tabs" role="group" aria-label="Show">
+            <button type="button" aria-pressed={!lens} onClick={() => chooseLens(null)}>
+              All
+            </button>
+            {lenses
+              .filter((l) => counts.has(l.kind) || lens === l.kind)
+              .map((l) => (
+                <button
+                  key={l.kind}
+                  type="button"
+                  title={l.label}
+                  aria-pressed={lens === l.kind}
+                  onClick={() => chooseLens(l.kind)}
+                >
+                  {l.tag} <small>{counts.get(l.kind) ?? 0}</small>
+                </button>
+              ))}
+          </div>
+          <input
+            className="filter"
+            type="search"
+            placeholder="Filter"
+            aria-label="Filter stocks"
+            aria-controls="market-rows"
+            autoComplete="off"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
           <div className="ranges" role="group" aria-label="Period">
             {(['1d', '3d', '5d'] as const).map((value) => (
               <button
@@ -255,39 +286,31 @@ export function MarketPage() {
             <button onClick={() => window.location.reload()}>Reload</button>
           </p>
         ) : (
-          <div className="table-scroll" role="region" aria-label="Market stocks" tabIndex={0}>
-            <table>
-              <caption>Every IDX stock traded on the latest price date</caption>
-              <colgroup>
-                {['stock', 'close', 'change', 'value', 'volume', 'acc', 'size', 'pin-col'].map(
-                  (name) => (
-                    <col key={name} className={name} />
-                  ),
-                )}
-              </colgroup>
-              <thead>
-                <tr>
-                  {columns.map((column) =>
-                    column.key === 'acc' && !privateData ? (
-                      <th key={column.key} scope="col" className="accumulation-gate">
-                        {column.label}{' '}
-                        {isLoading || (user && privateState.kind === 'loading') ? (
-                          <span role="status">Loading…</span>
-                        ) : !user ? (
-                          <SignInButton />
-                        ) : (
-                          <span role="alert">
-                            Unavailable{' '}
-                            <button onClick={() => window.location.reload()}>Reload</button>
-                          </span>
-                        )}
-                      </th>
-                    ) : column.key === 'size' && !privateData ? (
-                      <th key={column.key} scope="col" />
-                    ) : (
+          <>
+            {user && privateState.kind === 'error' && (
+              <p className="notice" role="alert">
+                Broker accumulation is unavailable.{' '}
+                <button onClick={() => window.location.reload()}>Reload</button>
+              </p>
+            )}
+            <div className="table-scroll" role="region" aria-label="Market stocks" tabIndex={0}>
+              <table>
+                <caption>Every IDX stock traded on the latest price date</caption>
+                <colgroup>
+                  {shown.map((column) => (
+                    <col key={column.key} className={column.key} />
+                  ))}
+                  <col className="pin-col" />
+                </colgroup>
+                <thead>
+                  <tr>
+                    {shown.map((column) => (
                       <th
                         key={column.key}
                         scope="col"
+                        className={
+                          column.key === 'ticker' || column.key === 'event' ? 'left' : undefined
+                        }
                         aria-sort={
                           sort.key === column.key
                             ? sort.ascending
@@ -314,127 +337,148 @@ export function MarketPage() {
                           </span>
                         </button>
                       </th>
-                    ),
-                  )}
-                  <th scope="col">
-                    <span className="sr-only">Pin</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody id="market-rows">
-                {rows.map((stock) => {
-                  const metrics = stock.windows[period],
-                    acc = accumulation.get(stock.ticker),
-                    pinned = pins.includes(stock.ticker);
-                  return (
-                    <tr
-                      key={stock.ticker}
-                      onClick={(event) => {
-                        if (
-                          event.target instanceof Element &&
-                          !event.target.closest('a, button') &&
-                          !window.getSelection()?.toString()
-                        )
-                          window.location.assign(`/t/${stock.ticker}`);
-                      }}
-                    >
-                      <td>
-                        <a className="stock-link" href={`/t/${stock.ticker}`}>
-                          <strong>{stock.ticker}</strong>
-                          <span className="company" title={stock.name}>
-                            {stock.name}
-                          </span>
-                        </a>
-                      </td>
-                      <td>{stock.close === null ? '—' : nf(stock.close)}</td>
-                      <td
-                        className={direction(metrics.change_pct ?? 0)}
-                        title={
-                          metrics.change_pct === null
-                            ? 'Price data is missing'
-                            : `${metrics.change_pct}%`
-                        }
+                    ))}
+                    <th scope="col">
+                      <span className="sr-only">Pin</span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody id="market-rows">
+                  {rows.map((stock) => {
+                    const metrics = stock.windows[period],
+                      acc = accumulation.get(stock.ticker);
+                    const cell = (key: SortKey) => {
+                      switch (key) {
+                        case 'ticker':
+                          return (
+                            <td key={key}>
+                              <a className="stock-link" href={`/t/${stock.ticker}`}>
+                                <strong>{stock.ticker}</strong>
+                                <span className="company" title={stock.name}>
+                                  {stock.name}
+                                </span>
+                              </a>
+                            </td>
+                          );
+                        case 'event':
+                          return (
+                            <td key={key} className="event">
+                              {lensEvents(stock.ticker).map((event, i) => (
+                                <span key={i} title={eventTitle(event)}>
+                                  <EventText event={event} />
+                                </span>
+                              ))}
+                            </td>
+                          );
+                        case 'close':
+                          return <td key={key}>{stock.close === null ? '—' : nf(stock.close)}</td>;
+                        case 'change_pct':
+                          return (
+                            <td
+                              key={key}
+                              className={direction(metrics.change_pct ?? 0)}
+                              title={
+                                metrics.change_pct === null
+                                  ? 'Price data is missing'
+                                  : `${metrics.change_pct}%`
+                              }
+                            >
+                              {pct(metrics.change_pct)}
+                            </td>
+                          );
+                        case 'value':
+                          return (
+                            <td
+                              key={key}
+                              title={
+                                metrics.value === null
+                                  ? 'Traded value is missing'
+                                  : `${nf(metrics.value)} IDR`
+                              }
+                            >
+                              {compact(metrics.value)}
+                            </td>
+                          );
+                        case 'rel_volume':
+                          return (
+                            <td
+                              key={key}
+                              title={
+                                metrics.rel_volume === null
+                                  ? 'Volume data is missing'
+                                  : `${metrics.rel_volume}×`
+                              }
+                            >
+                              {metrics.rel_volume === null ? '—' : nf(metrics.rel_volume, 1) + '×'}
+                            </td>
+                          );
+                        case 'acc':
+                          return (
+                            <td
+                              key={key}
+                              title={
+                                acc
+                                  ? `${brokerName(acc.broker)}; ${acc.pct * 100}% of traded volume`
+                                  : 'Broker data is incomplete for this window.'
+                              }
+                            >
+                              {acc ? (
+                                <>
+                                  {nf(acc.pct * 100, 1)}%
+                                  <span className="broker">{acc.broker}</span>
+                                </>
+                              ) : (
+                                '—'
+                              )}
+                            </td>
+                          );
+                        case 'size':
+                          return (
+                            <td
+                              key={key}
+                              title={
+                                acc?.size != null &&
+                                acc.broker_avg !== null &&
+                                acc.stock_avg !== null &&
+                                acc.buy_trades !== null &&
+                                acc.trades !== null
+                                  ? `${acc.broker} avg ${nf(acc.broker_avg)} shares per buy trade over ${nf(acc.buy_trades)} trades; stock avg ${nf(acc.stock_avg)} over ${nf(acc.trades)} trades`
+                                  : undefined
+                              }
+                            >
+                              {acc?.size == null ? '' : nf(acc.size, 1) + '×'}
+                            </td>
+                          );
+                      }
+                    };
+                    return (
+                      <tr
+                        key={stock.ticker}
+                        onClick={(event) => {
+                          if (
+                            event.target instanceof Element &&
+                            !event.target.closest('a, button') &&
+                            !window.getSelection()?.toString()
+                          )
+                            window.location.assign(`/t/${stock.ticker}`);
+                        }}
                       >
-                        {pct(metrics.change_pct)}
-                      </td>
-                      <td
-                        title={
-                          metrics.value === null
-                            ? 'Traded value is missing'
-                            : `${nf(metrics.value)} IDR`
-                        }
-                      >
-                        {compact(metrics.value)}
-                      </td>
-                      <td
-                        title={
-                          metrics.rel_volume === null
-                            ? 'Volume data is missing'
-                            : `${metrics.rel_volume}×`
-                        }
-                      >
-                        {metrics.rel_volume === null ? '—' : nf(metrics.rel_volume, 1) + '×'}
-                      </td>
-                      {privateData ? (
-                        <td
-                          title={
-                            acc
-                              ? `${brokerName(acc.broker)}; ${acc.pct * 100}% of traded volume`
-                              : 'Broker data is incomplete for this window.'
-                          }
-                        >
-                          {acc ? (
-                            <>
-                              {nf(acc.pct * 100, 1)}%<span className="broker">{acc.broker}</span>
-                            </>
-                          ) : (
-                            '—'
-                          )}
-                        </td>
-                      ) : (
-                        <td />
-                      )}
-                      <td
-                        title={
-                          acc?.size != null &&
-                          acc.broker_avg !== null &&
-                          acc.stock_avg !== null &&
-                          acc.buy_trades !== null &&
-                          acc.trades !== null
-                            ? `${acc.broker} avg ${nf(acc.broker_avg)} shares per buy trade over ${nf(acc.buy_trades)} trades; stock avg ${nf(acc.stock_avg)} over ${nf(acc.trades)} trades`
-                            : undefined
-                        }
-                      >
-                        {acc?.size == null ? '' : nf(acc.size, 1) + '×'}
-                      </td>
-                      <td>
-                        <button
-                          className="pin"
-                          type="button"
-                          aria-label={`${pinned ? 'Unpin' : 'Pin'} ${stock.ticker}`}
-                          aria-pressed={pinned}
-                          onClick={() => togglePin(stock.ticker)}
-                        >
-                          <svg viewBox="0 0 24 24" aria-hidden="true">
-                            <path d="M7 3h10v18l-5-3-5 3z" />
-                          </svg>
-                        </button>
+                        {shown.map((column) => cell(column.key))}
+                        <td>{pin(stock.ticker)}</td>
+                      </tr>
+                    );
+                  })}
+                  {!rows.length && (
+                    <tr>
+                      <td colSpan={shown.length + 1} className="empty-state">
+                        {query ? 'No stocks match this filter.' : 'No stocks in this view.'}
                       </td>
                     </tr>
-                  );
-                })}
-                {!rows.length && (
-                  <tr>
-                    <td colSpan={8} className="empty-state">
-                      {query
-                        ? 'No stocks match this search.'
-                        : 'No stocks traded on the latest date.'}
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
         <div className="sr-only" role="status">
           {rows.length} stocks; {period.toUpperCase()}

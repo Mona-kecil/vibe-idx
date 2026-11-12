@@ -1,4 +1,5 @@
 import './styles.css';
+import './site.css';
 import './terminal/terminal.css';
 import { lazy, Suspense, useEffect, useState, useSyncExternalStore } from 'react';
 import { LocaleProvider, useLocale, type Locale } from './locale';
@@ -53,7 +54,7 @@ function TerminalAvailability() {
   return wide ? (
     <TerminalRoute />
   ) : (
-    <main className="home-page terminal-unavailable">
+    <main className="site terminal-unavailable">
       <p>{t('The terminal is not available on mobile yet.')}</p>
       <a href="/">{t('Back to home')}</a>
     </main>

@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { AccountControls } from '../BrokerPanel';
-import { load, type Health, type Market, type Stock, type Ticker } from '../data';
+import { useEffect, useMemo, useState } from 'react';
+import { load, type Health, type Stock, type Ticker } from '../data';
+import { SiteHeader } from '../SiteHeader';
 import { Stale } from '../Stale';
 import { holdingSeries, ownershipEvents, registryAt, type Selection } from './logic';
 import { dateText, direction, nf, short, signed } from './format';
@@ -10,14 +10,12 @@ import { Ownership } from './Ownership';
 import { BrokerFlow } from './BrokerFlow';
 import { ShareButton } from './ShareButton';
 import './ticker.css';
-import { TerminalLink } from '../TerminalLink';
 
 export function TickerPage({ ticker }: { ticker: string }) {
   const [state, setState] = useState<
     { kind: 'loading' | 'error' | 'missing' } | { kind: 'ready'; data: Ticker }
   >({ kind: 'loading' });
   const [health, setHealth] = useState<Health | null>(null),
-    [market, setMarket] = useState<Market | null>(null),
     [stocks, setStocks] = useState<Stock[]>([]);
   useEffect(() => {
     let active = true;
@@ -32,12 +30,6 @@ export function TickerPage({ ticker }: { ticker: string }) {
     void load('health.json').then(
       (data) => {
         if (active) setHealth(data);
-      },
-      () => {},
-    );
-    void load('market.json').then(
-      (data) => {
-        if (active) setMarket(data);
       },
       () => {},
     );
@@ -58,8 +50,8 @@ export function TickerPage({ ticker }: { ticker: string }) {
     };
   }, [ticker]);
   return (
-    <div className="ticker-page">
-      <TickerNav market={market} stocks={stocks} />
+    <div className="site ticker-page">
+      <SiteHeader page="ticker" stocks={stocks} />
       {state.kind === 'ready' ? (
         <TickerDetail key={ticker} data={state.data} health={health} />
       ) : (
@@ -68,7 +60,7 @@ export function TickerPage({ ticker }: { ticker: string }) {
             <p role="status">Loading data…</p>
           ) : state.kind === 'missing' ? (
             <p>
-              Ticker {ticker} not found. <a href="/">Open home</a>
+              Ticker {ticker} not found. <a href="/market">Open Market</a>
             </p>
           ) : (
             <p role="alert">
@@ -79,110 +71,6 @@ export function TickerPage({ ticker }: { ticker: string }) {
         </main>
       )}
     </div>
-  );
-}
-function TickerNav({ market, stocks }: { market: Market | null; stocks: Stock[] }) {
-  const [query, setQuery] = useState(''),
-    [open, setOpen] = useState(false),
-    search = useRef<HTMLInputElement>(null),
-    container = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const key = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
-      if (
-        e.key === '/' &&
-        !(e.target instanceof HTMLElement && /INPUT|TEXTAREA|SELECT/.test(e.target.tagName))
-      ) {
-        e.preventDefault();
-        search.current?.focus();
-      }
-    };
-    const outside = (e: MouseEvent) => {
-      if (e.target instanceof Node && !container.current?.contains(e.target)) setOpen(false);
-    };
-    document.addEventListener('keydown', key);
-    document.addEventListener('click', outside);
-    return () => {
-      document.removeEventListener('keydown', key);
-      document.removeEventListener('click', outside);
-    };
-  }, []);
-  const matches = stocks
-      .filter((s) => (s.ticker + ' ' + s.name).toLowerCase().includes(query.toLowerCase()))
-      .slice(0, 12),
-    latest = market?.history.at(-1);
-  return (
-    <header className="topbar">
-      <div className="wrap topbar-inner">
-        <a className="wordmark" href="/" aria-label="Vibe IDX home">
-          Vibe <span>IDX</span>
-        </a>
-        <nav className="main-nav" aria-label="Main">
-          <a href="/">Home</a>
-          <a href="/market">Market</a>
-          <TerminalLink />
-        </nav>
-        <div className="search" ref={container}>
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            aria-hidden="true"
-          >
-            <circle cx="10.5" cy="10.5" r="6.5" />
-            <path d="m16 16 4.5 4.5" />
-          </svg>
-          <input
-            ref={search}
-            type="search"
-            placeholder="Search tickers"
-            aria-label="Search tickers"
-            autoComplete="off"
-            aria-controls="ticker-results"
-            aria-expanded={open && !!query}
-            value={query}
-            onChange={(e) => {
-              setQuery(e.target.value);
-              setOpen(true);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && matches[0])
-                window.location.assign(`/t/${matches[0].ticker}`);
-            }}
-          />
-          <span className="keyhint">/</span>
-          {open && query && (
-            <div className="search-results" id="ticker-results">
-              {matches.length ? (
-                matches.map((s) => (
-                  <a className="search-option" key={s.ticker} href={`/t/${s.ticker}`}>
-                    <b>{s.ticker}</b>
-                    <small>{s.name}</small>
-                  </a>
-                ))
-              ) : (
-                <div className="search-option">No tickers found</div>
-              )}
-            </div>
-          )}
-        </div>
-        {latest && (
-          <div className="ihsg">
-            <span className="market-label">IHSG</span>
-            <strong>{nf(latest.close, 3)}</strong>
-            {latest.change_pct !== null && (
-              <span className={`change ${direction(latest.change_pct)}`}>
-                {signed(latest.change_pct, (v) => nf(v, 2))}%
-              </span>
-            )}
-          </div>
-        )}
-        <div className="signin">
-          <AccountControls />
-        </div>
-      </div>
-    </header>
   );
 }
 function TickerDetail({ data, health }: { data: Ticker; health: Health | null }) {
