@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type PointerEvent } from 'react';
 import {
   aggregateRange,
   bounds,
+  cumulativeForeign,
   moveEdge,
   selectionKey,
   type Edge,
@@ -118,7 +119,7 @@ export function PriceChart({
     );
   const mobile = width < 650,
     W = width,
-    H = mobile ? 400 : 455,
+    H = mobile ? 486 : 541,
     L = mobile ? 5 : 8,
     R = mobile ? 49 : 64;
   const plot = W - L - R,
@@ -127,12 +128,21 @@ export function PriceChart({
     volTop = mobile ? 261 : 296,
     volBottom = mobile ? 311 : 351,
     foreignTop = mobile ? 337 : 376,
-    foreignBottom = mobile ? 369 : 416;
+    foreignBottom = mobile ? 369 : 416,
+    cumTop = mobile ? 407 : 454,
+    cumBottom = mobile ? 455 : 506;
   const min = Math.min(...visible.map((p) => p.close)),
     max = Math.max(...visible.map((p) => p.close)),
     pad = (max - min) * 0.12 || 100,
     lo = Math.max(0, min - pad),
     hi = max + pad;
+  const cumulative = cumulativeForeign(visible),
+    cumLow = Math.min(0, ...cumulative),
+    cumHigh = Math.max(0, ...cumulative),
+    cumLast = cumulative.at(-1) ?? 0;
+  const cumY = (v: number) =>
+    cumBottom - ((v - cumLow) / Math.max(1, cumHigh - cumLow)) * (cumBottom - cumTop);
+  const tickStep = hi - lo >= 800 ? 100 : hi - lo >= 80 ? 10 : 1;
   const x = (i: number) => L + (i / Math.max(1, visible.length - 1)) * plot;
   const y = (v: number) => T + ((hi - v) / (hi - lo)) * (priceBottom - T);
   const maxVolume = Math.max(1, ...visible.map((p) => p.volume)),
@@ -221,8 +231,9 @@ export function PriceChart({
             id="price-chart"
             className="chart-svg"
             viewBox={`0 0 ${W} ${H}`}
+            style={{ height: H }}
             role="group"
-            aria-label={`${ticker} close price, trading volume and net foreign flow`}
+            aria-label={`${ticker} close price, trading volume, net foreign flow and cumulative foreign flow`}
             onPointerDown={(e) => {
               if (e.button !== 0) return;
               e.preventDefault();
@@ -281,7 +292,7 @@ export function PriceChart({
                     x={l}
                     y={0}
                     width={r - l}
-                    height={foreignBottom}
+                    height={cumBottom}
                     fill="#999587"
                     opacity=".13"
                   />
@@ -304,7 +315,7 @@ export function PriceChart({
                     strokeDasharray="2 4"
                   />
                   <text x={W - R + 10} y={y(v) + 4}>
-                    {nf(Math.round(v / 100) * 100)}
+                    {nf(Math.round(v / tickStep) * tickStep)}
                   </text>
                 </g>
               );
@@ -362,6 +373,29 @@ export function PriceChart({
               {short(maxForeign)}
             </text>
             <line x1={L} x2={W - R} y1={midForeign} y2={midForeign} stroke="#d0d2c6" />
+            <text className="axis-label" x={L} y={cumTop - 10}>
+              Cumulative foreign{' '}
+              <tspan dx={6} className="axis-unit">
+                IDR (est.)
+              </tspan>
+            </text>
+            <line x1={L} x2={W - R} y1={cumY(0)} y2={cumY(0)} stroke="#d0d2c6" />
+            <path
+              className="cumulative-foreign"
+              d={cumulative.map((v, i) => `${i ? 'L' : 'M'}${x(i)},${cumY(v)}`).join(' ')}
+              fill="none"
+              stroke={cumLast >= 0 ? '#167049' : '#b43c36'}
+              strokeWidth="1.8"
+              strokeLinejoin="round"
+              strokeLinecap="round"
+            />
+            <text
+              x={W - R + 9}
+              y={cumY(cumLast) + 4}
+              style={{ fill: cumLast >= 0 ? '#167049' : '#b43c36', fontWeight: 700 }}
+            >
+              {signed(cumLast)}
+            </text>
             {visible.map((p, i) => {
               const vh = (p.volume / maxVolume) * (volBottom - volTop),
                 fh = ((Math.abs(p.net_foreign) / maxForeign) * (foreignBottom - foreignTop)) / 2;
@@ -407,9 +441,17 @@ export function PriceChart({
                   x1={x(marker)}
                   x2={x(marker)}
                   y1={T}
-                  y2={foreignBottom}
+                  y2={cumBottom}
                   stroke="#84887b"
                   strokeDasharray="3 3"
+                />
+                <circle
+                  cx={x(marker)}
+                  cy={cumY(cumulative[marker] ?? 0)}
+                  r={3}
+                  fill="#fdfcf9"
+                  stroke={(cumulative[marker] ?? 0) >= 0 ? '#167049' : '#b43c36'}
+                  strokeWidth={2}
                 />
                 <circle
                   cx={x(marker)}
@@ -421,14 +463,7 @@ export function PriceChart({
                 />
               </g>
             )}
-            <rect
-              id="chart-hit"
-              x={L}
-              y={0}
-              width={plot}
-              height={foreignBottom}
-              fill="transparent"
-            />
+            <rect id="chart-hit" x={L} y={0} width={plot} height={cumBottom} fill="transparent" />
             {selectionVisible && (
               <g>
                 <rect
@@ -436,7 +471,7 @@ export function PriceChart({
                   x={left}
                   y={0}
                   width={Math.max(1, right - left)}
-                  height={foreignBottom}
+                  height={cumBottom}
                 />
                 {(['start', 'end'] satisfies Edge[]).map((edge) => {
                   const day = b[edge];
@@ -449,7 +484,7 @@ export function PriceChart({
                         x1={position}
                         x2={position}
                         y1={0}
-                        y2={foreignBottom}
+                        y2={cumBottom}
                       />
                       <g
                         className="selection-handle"
@@ -530,6 +565,10 @@ export function PriceChart({
                     </dd>
                   </>
                 )}
+                <dt>Cumulative foreign (est.)</dt>
+                <dd className={direction(cumulative[hover ?? 0] ?? 0)}>
+                  {signed(cumulative[hover ?? 0] ?? 0, nf)}
+                </dd>
               </dl>
             </div>
           )}

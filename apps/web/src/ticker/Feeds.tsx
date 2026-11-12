@@ -8,6 +8,8 @@ import {
   inRange,
   isOwnershipFiling,
   summaryEvents,
+  timeline,
+  TIMELINE_SHOWN,
   totalAt,
   type Filing,
   type HoldingEvent,
@@ -207,7 +209,7 @@ export function SelectionSummary({
     </div>
   );
 }
-export function FilingsNews({
+export function Timeline({
   data,
   events,
   selection,
@@ -220,8 +222,7 @@ export function FilingsNews({
     key: '',
     rows: [],
   });
-  const [allFilings, setAllFilings] = useState(false),
-    [allNews, setAllNews] = useState(false);
+  const [all, setAll] = useState(false);
   const b = bounds(selection),
     start = b?.start,
     end = b?.end,
@@ -243,87 +244,60 @@ export function FilingsNews({
       clearTimeout(timer);
     };
   }, [data.ticker, start, end, newsKey]);
-  const filings = data.disclosures
-    .filter(
+  const items = timeline(
+    data.disclosures.filter(
       (f) =>
         inRange(f.published_at.slice(0, 10), selection) &&
         (!selection || !isOwnershipFiling(f, events)),
-    )
-    .sort((a, b) => b.published_at.localeCompare(a.published_at));
-  const articles = news.rows
-    .filter((n) => inRange(itemDate(n.published_at), selection))
-    .sort((a, b) => Date.parse(b.published_at) - Date.parse(a.published_at));
+    ),
+    news.rows.filter((n) => inRange(itemDate(n.published_at), selection)),
+  );
   const range = b ? rangeText(b.start, b.end) : '';
   return (
-    <section className="section" id="filings-section" aria-labelledby="filings-heading">
+    <section className="section" id="timeline-section" aria-labelledby="timeline-heading">
       <div className="section-head">
-        <h2 id="filings-heading">Filings & news</h2>
+        <h2 id="timeline-heading">Timeline</h2>
+        {b && <span className="date-label">{range}</span>}
       </div>
-      <div className="filing-grid">
-        <div>
-          <div className="subhead">
-            <h3>IDX disclosures</h3>
-            <span className="date-label">{filings.length} filings</span>
-          </div>
-          <ul className="feed" id="filings">
-            {filings.slice(0, allFilings ? filings.length : 8).map((f) => (
-              <li key={f.id} data-date={f.published_at.slice(0, 10)}>
-                <div className="feed-meta">
-                  <time dateTime={f.published_at.slice(0, 10)}>{dateText(f.published_at)}</time>
-                </div>
-                <a className="feed-title" href={f.url} target="_blank" rel="noopener noreferrer">
-                  {f.title}
-                  <External />
-                </a>
-                <FilingAttachments filing={f} />
-              </li>
-            ))}
-            {!filings.length && <li className="empty-state">No filings {range}</li>}
-          </ul>
-          {filings.length > 8 && (
-            <button
-              className="show-all"
-              id="filing-toggle"
-              aria-expanded={allFilings}
-              onClick={() => setAllFilings(!allFilings)}
-            >
-              {allFilings ? 'Show less' : 'Show all disclosures'}
-            </button>
-          )}
-        </div>
-        <div>
-          <div className="subhead">
-            <h3>News</h3>
-            <span className="date-label">{articles.length} articles</span>
-          </div>
-          <ul className="feed" id="news">
-            {articles.slice(0, allNews ? articles.length : 8).map((n) => (
-              <li key={n.url} data-date={itemDate(n.published_at)}>
-                <div className="feed-meta">
-                  <span>{n.source}</span>
-                  <time dateTime={itemDate(n.published_at)}>{dateText(n.published_at)}</time>
-                </div>
-                <a className="feed-title" href={n.url} target="_blank" rel="noopener noreferrer">
-                  {n.title}
-                  <External />
-                </a>
-              </li>
-            ))}
-            {!articles.length && news.key === newsKey && (
-              <li className="empty-state">No news {range}</li>
+      <ul className="feed" id="timeline">
+        {items.slice(0, all ? items.length : TIMELINE_SHOWN).map((item) => (
+          <li key={item.url} data-date={itemDate(item.at)} data-kind={item.kind}>
+            <div className="feed-meta">
+              <span className={`kind kind-${item.kind}`}>
+                {item.kind === 'filing' ? 'Filing' : 'News'}
+              </span>
+              {item.source && <span>{item.source}</span>}
+              <time dateTime={itemDate(item.at)}>{dateText(item.at)}</time>
+            </div>
+            <a className="feed-title" href={item.url} target="_blank" rel="noopener noreferrer">
+              {item.title}
+              <External />
+            </a>
+            {item.attachments.length > 0 && (
+              <div className="filing-attachments">
+                {item.attachments.map((a) => (
+                  <a key={a.url} href={a.url} target="_blank" rel="noopener noreferrer">
+                    {a.label}
+                  </a>
+                ))}
+              </div>
             )}
-          </ul>
-          {articles.length > 8 && (
-            <button
-              className="show-all"
-              aria-expanded={allNews}
-              onClick={() => setAllNews(!allNews)}
-            >
-              {allNews ? 'Show less' : 'Show all news'}
-            </button>
-          )}
-        </div>
-      </div>
+          </li>
+        ))}
+        {!items.length && news.key === newsKey && (
+          <li className="empty-state">No filings or news {range}</li>
+        )}
+      </ul>
+      {items.length > TIMELINE_SHOWN && (
+        <button
+          className="show-all"
+          id="timeline-toggle"
+          aria-expanded={all}
+          onClick={() => setAll(!all)}
+        >
+          {all ? 'Show less' : `Show all ${items.length}`}
+        </button>
+      )}
     </section>
   );
 }

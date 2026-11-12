@@ -49,3 +49,4 @@ export const wib = (value: string, options: Intl.DateTimeFormatOptions = {}) =>
     .replace('Sept', 'Sep');
 export const calendarDate = (value: string) =>
   new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(publicationDate(value));
+export const publishedMs = (value: string) => publicationDate(value).getTime();
