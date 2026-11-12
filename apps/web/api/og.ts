@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { Resvg } from '@resvg/resvg-js';
 import { createElement as h, type CSSProperties } from 'react';
 import satori, { type Font } from 'satori';
+import { areaChart, type Pad, type Tone } from '../src/area.js';
 import { brokerTickerSchema } from '../src/brokers.js';
 import { dateText, nf, signed } from '../src/ticker/format.js';
 import { markSvg } from './_mark.js';
@@ -35,8 +36,9 @@ const bg = '#0a0c0b',
   line = '#222826',
   ink = '#d9ded8',
   muted = '#8d9790';
+const tones = { up: '#22a6a0', down: '#e4573f', flat: muted } satisfies Record<Tone, string>;
 const color = (change: number | null) =>
-  change !== null && change > 0 ? '#22a6a0' : change !== null && change < 0 ? '#e4573f' : muted;
+  tones[change !== null && change > 0 ? 'up' : change !== null && change < 0 ? 'down' : 'flat'];
 
 const mark = (size: number) =>
   h('img', {
@@ -45,46 +47,120 @@ const mark = (size: number) =>
     height: size,
   });
 
-function sparkline(closes: number[], width: number, height: number) {
-  const first = closes[0],
-    last = closes.at(-1);
-  if (first === undefined || last === undefined) return null;
-  const low = Math.min(...closes),
-    high = Math.max(...closes),
-    pad = 10;
-  const points = closes.map((close, i) => [
-    closes.length === 1 ? width / 2 : (i / (closes.length - 1)) * width,
-    high === low ? height / 2 : pad + (1 - (close - low) / (high - low)) * (height - 2 * pad),
-  ]);
-  const path = points.map(([x, y], i) => `${i === 0 ? 'M' : 'L'}${x},${y}`).join(' ');
-  const stroke = color(last - first);
+const chartSize = { width: 1104, height: 230, inset: 8 };
+const chartPad: Pad = { top: 36, bottom: 36 };
+const markerRadius = 5,
+  markerGap = 11,
+  markerBox = { width: 200, height: 24 };
+
+export function windowLabel(start: string, end: string) {
+  if (start === end) return dateText(end);
+  return `${dateText(start, start.slice(0, 4) !== end.slice(0, 4))} – ${dateText(end)}`;
+}
+
+export function markerLayout(x: number, y: number, side: 'above' | 'below', width: number) {
+  const { width: boxWidth, height: boxHeight } = markerBox,
+    top = side === 'above' ? y - markerGap - boxHeight : y + markerGap;
+  if (x - boxWidth / 2 < 0)
+    return { left: Math.max(0, x - markerRadius), top, align: 'flex-start' };
+  if (x + boxWidth / 2 > width)
+    return {
+      left: Math.min(width - boxWidth, x + markerRadius - boxWidth),
+      top,
+      align: 'flex-end',
+    };
+  return { left: x - boxWidth / 2, top, align: 'center' };
+}
+
+function areaBlock(card: TickerCard) {
+  const { width, height, inset } = chartSize,
+    area = areaChart(card.closes, width - 2 * inset, height, chartPad);
+  if (!area) return null;
+  const stroke = tones[area.tone],
+    marks =
+      area.high.value === area.low.value
+        ? []
+        : ([
+            [area.high, 'above'],
+            [area.low, 'below'],
+          ] as const),
+    gradient = { stopColor: stroke };
   return h(
-    'svg',
-    { width, height, viewBox: `0 0 ${width} ${height}` },
+    'div',
+    { style: { display: 'flex', flexDirection: 'column', gap: 12 } },
     h(
-      'defs',
-      null,
+      'div',
+      { style: { display: 'flex', alignItems: 'baseline', gap: 28, fontSize: 24 } },
+      h('span', { style: { color: muted } }, windowLabel(card.start, card.date)),
       h(
-        'linearGradient',
-        { id: 'area', x1: '0', y1: '0', x2: '0', y2: '1' },
-        h('stop', { offset: '0%', stopColor: stroke, stopOpacity: 0.22 }),
-        h('stop', { offset: '100%', stopColor: stroke, stopOpacity: 0 }),
+        'span',
+        { style: { fontWeight: 700, color: stroke } },
+        `${signed(area.changePct, (v) => nf(v, 2))}%`,
       ),
     ),
-    ...[0.25, 0.5, 0.75].map((f) =>
-      h('path', { d: `M0,${height * f} H${width}`, stroke: line, strokeWidth: 1 }),
+    h(
+      'div',
+      { style: { display: 'flex', position: 'relative', width, height } },
+      h(
+        'svg',
+        { width, height, viewBox: `${-inset} 0 ${width} ${height}` },
+        h(
+          'defs',
+          null,
+          h(
+            'linearGradient',
+            { id: 'area', x1: '0', y1: '0', x2: '0', y2: '1' },
+            h('stop', { offset: '0%', ...gradient, stopOpacity: 0.35 }),
+            h('stop', { offset: '100%', ...gradient, stopOpacity: 0 }),
+          ),
+        ),
+        ...[0.25, 0.5, 0.75].map((f) =>
+          h('path', {
+            d: `M${-inset},${height * f} H${width - inset}`,
+            stroke: line,
+            strokeWidth: 1,
+          }),
+        ),
+        h('path', { d: area.fill, fill: 'url(#area)' }),
+        h('path', {
+          d: area.line,
+          fill: 'none',
+          stroke,
+          strokeWidth: 3,
+          strokeLinejoin: 'round',
+        }),
+        ...marks.map(([point]) =>
+          h('circle', {
+            cx: point.x,
+            cy: point.y,
+            r: markerRadius,
+            fill: ink,
+            stroke: bg,
+            strokeWidth: 2,
+          }),
+        ),
+      ),
+      ...marks.map(([point, side]) => {
+        const { left, top, align } = markerLayout(point.x + inset, point.y, side, width);
+        return h(
+          'div',
+          {
+            style: {
+              position: 'absolute',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: align,
+              left,
+              top,
+              ...markerBox,
+              fontSize: 20,
+              color: muted,
+            },
+          },
+          nf(point.value),
+        );
+      }),
     ),
-    h('path', {
-      d: `${path} L${points.at(-1)?.[0]},${height} L${points[0]?.[0]},${height} Z`,
-      fill: 'url(#area)',
-    }),
-    h('path', {
-      d: path,
-      fill: 'none',
-      stroke,
-      strokeWidth: 3,
-      strokeLinejoin: 'round',
-    }),
   );
 }
 
@@ -113,7 +189,7 @@ function brandCard() {
   );
 }
 
-function tickerCard(card: TickerCard) {
+export function tickerCard(card: TickerCard) {
   const tickerSize = Math.min(112, 560 / (card.ticker.length * 0.6));
   return h(
     'div',
@@ -195,8 +271,8 @@ function tickerCard(card: TickerCard) {
     ),
     h(
       'div',
-      { style: { display: 'flex', marginTop: 'auto', padding: '0 48px 40px' } },
-      sparkline(card.closes, 1104, 190),
+      { style: { display: 'flex', marginTop: 'auto', padding: '0 48px 36px' } },
+      areaBlock(card),
     ),
   );
 }
