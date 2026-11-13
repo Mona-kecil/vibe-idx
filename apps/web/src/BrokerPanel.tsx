@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '@workos-inc/authkit-react';
-import { useLocale } from './locale';
+import { useLocale } from './locale.js';
 
 function SignInButton() {
   const { signIn, isLoading } = useAuth();

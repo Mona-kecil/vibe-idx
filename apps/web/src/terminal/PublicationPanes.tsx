@@ -1,8 +1,8 @@
 import { Fragment, useEffect, useRef, useState } from 'react';
-import { useTerminal } from './state';
+import { useTerminal } from './state.js';
 import type { NewsArticle, Risk, Resource } from './sources';
-import { Availability, Empty, Publication, Scroll, Segments, TickerLink } from './ui';
-import { calendarDate, dateText, wib } from '../ticker/format';
+import { Availability, Empty, Publication, Scroll, Segments, TickerLink } from './ui.js';
+import { calendarDate, dateText, wib } from '../ticker/format.js';
 import './publication-panes.css';
 
 const perShare = ({ value, currency }: { value: number; currency: string }) =>

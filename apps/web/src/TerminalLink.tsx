@@ -1,7 +1,7 @@
 import { useState, type MouseEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { Void, aimVoid, arrivalMs } from './Void';
-import { startGlitch } from './glitch';
+import { Void, aimVoid, arrivalMs } from './Void.js';
+import { startGlitch } from './glitch.js';
 
 const glitchLeadMs = 300;
 

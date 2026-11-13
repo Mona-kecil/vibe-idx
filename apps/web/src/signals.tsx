@@ -1,5 +1,5 @@
 import type { SignalFeed } from './data';
-import { calendarDate, dateText, direction, itemDate, nf } from './ticker/format';
+import { calendarDate, dateText, direction, itemDate, nf } from './ticker/format.js';
 
 export type Signal = SignalFeed[number];
 export type Lens = Signal['kind'];

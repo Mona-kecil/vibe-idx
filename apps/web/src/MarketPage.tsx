@@ -1,8 +1,14 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '@workos-inc/authkit-react';
-import { brokerName } from './broker-data';
-import { accumulationSchema, type Accumulation } from './brokers';
-import { load, type SignalFeed, type Health, type MarketPeriod, type MarketSummary } from './data';
+import { brokerName } from './broker-data.js';
+import { accumulationSchema, type Accumulation } from './brokers.js';
+import {
+  load,
+  type SignalFeed,
+  type Health,
+  type MarketPeriod,
+  type MarketSummary,
+} from './data.js';
 import {
   briefing,
   byTicker,
@@ -13,16 +19,16 @@ import {
   strength,
   type Signal,
   type Lens,
-} from './signals';
-import { compact, pct } from './marketFormat';
-import { MarketRows, openOnRowClick, type RankRow } from './MarketRows';
-import { useNarrow } from './useNarrow';
-import { usePublished } from './publicData';
-import { RiskFlagChips } from './RiskFlagChips';
-import { PinButton, SiteHeader } from './SiteHeader';
-import { Stale } from './Stale';
-import { dateText, direction, nf, signed } from './ticker/format';
-import { readStorage, usePins, writeStorage } from './watchlist';
+} from './signals.js';
+import { compact, pct } from './marketFormat.js';
+import { MarketRows, openOnRowClick, type RankRow } from './MarketRows.js';
+import { useNarrow } from './useNarrow.js';
+import { usePublished } from './publicData.js';
+import { RiskFlagChips } from './RiskFlagChips.js';
+import { PinButton, SiteHeader } from './SiteHeader.js';
+import { Stale } from './Stale.js';
+import { dateText, direction, nf, signed } from './ticker/format.js';
+import { readStorage, usePins, writeStorage } from './watchlist.js';
 import './market.css';
 
 type Stock = MarketSummary['stocks'][number];

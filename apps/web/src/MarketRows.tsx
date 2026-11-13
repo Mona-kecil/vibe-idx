@@ -1,9 +1,9 @@
 import { useState, type MouseEvent, type ReactNode } from 'react';
-import { signalTitle, isExit, type Signal } from './signals';
-import { compact, pct } from './marketFormat';
-import { RiskFlagChips } from './RiskFlagChips';
+import { signalTitle, isExit, type Signal } from './signals.js';
+import { compact, pct } from './marketFormat.js';
+import { RiskFlagChips } from './RiskFlagChips.js';
 import type { Risk } from './terminal/sources';
-import { direction, nf, signed } from './ticker/format';
+import { direction, nf, signed } from './ticker/format.js';
 
 export const openOnRowClick = (ticker: string) => (event: MouseEvent) => {
   if (

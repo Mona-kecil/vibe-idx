@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { dateText, nf, short } from '../ticker/format';
+import { dateText, nf, short } from '../ticker/format.js';
 import {
   blockId,
   sessionOpen,
@@ -13,10 +13,10 @@ import {
   type TickTrades,
   type SessionOpen,
   type Party,
-} from '../ticks';
-import { useSession, useTicks, type Loaded } from './tick-data';
-import { useTerminal } from './state';
-import { Empty, Scroll, Segments, SignInPrompt } from './ui';
+} from '../ticks.js';
+import { useSession, useTicks, type Loaded } from './tick-data.js';
+import { useTerminal } from './state.js';
+import { Empty, Scroll, Segments, SignInPrompt } from './ui.js';
 import './tick-panes.css';
 
 function SessionPicker() {

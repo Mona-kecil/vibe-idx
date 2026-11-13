@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { AccountControls, CompactAccountControls } from './BrokerPanel';
-import { TerminalLink } from './TerminalLink';
-import { useNarrow } from './useNarrow';
+import { AccountControls, CompactAccountControls } from './BrokerPanel.js';
+import { TerminalLink } from './TerminalLink.js';
+import { useNarrow } from './useNarrow.js';
 import './site.css';
 
 type Page = 'today' | 'market' | 'ticker';

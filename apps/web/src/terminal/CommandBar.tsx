@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { functions, isFunction, isMode, type FunctionId, type Mode, useTerminal } from './state';
+import { functions, isFunction, isMode, type FunctionId, type Mode, useTerminal } from './state.js';
 import type { Stock } from '../data';
 import './command.css';
 

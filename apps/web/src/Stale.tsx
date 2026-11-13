@@ -1,6 +1,6 @@
-import { staleSources } from './data';
+import { staleSources } from './data.js';
 import type { Health } from './data';
-import { dateText } from './ticker/format';
+import { dateText } from './ticker/format.js';
 
 export function Stale({ health }: { health: Health }) {
   return staleSources(health).map(({ label, since }) => (

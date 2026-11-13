@@ -1,6 +1,6 @@
 import type { z } from 'zod';
 import type { corporateActionSchema, Ticker } from '../data';
-import { dateText, monthsBefore, publishedMs } from './format';
+import { dateText, monthsBefore, publishedMs } from './format.js';
 
 export type Price = Ticker['prices'][number];
 export type Filing = Ticker['disclosures'][number];

@@ -1,7 +1,7 @@
-import { createBrokerHandler } from './api/_brokers';
-import { defaultMeta, parseTickerCard, tickerMeta, withShareMeta } from './api/_share';
-import { brokerTickerSchema } from './src/brokers';
-import { report } from './worker-sentry';
+import { createBrokerHandler } from './api/_brokers.js';
+import { defaultMeta, parseTickerCard, tickerMeta, withShareMeta } from './api/_share.js';
+import { brokerTickerSchema } from './src/brokers.js';
+import { report } from './worker-sentry.js';
 
 type R2Object = { body: ReadableStream; httpEtag: string; writeHttpMetadata(h: Headers): void };
 type Env = {

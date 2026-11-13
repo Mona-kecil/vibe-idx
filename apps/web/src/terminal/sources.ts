@@ -4,12 +4,12 @@ import {
   type TickBook,
   type TickKind,
   type TickTrades,
-} from '../ticks';
+} from '../ticks.js';
 import { z } from 'zod';
-import { load, loadNews, corporateActionsSchema, risksSchema, riskSchema } from '../data';
-import { brokerHistorySchema, brokerTickerSchema } from '../brokers';
-import { newsArticleSchema, calendarEventSchema } from './contracts';
-import { dateText } from '../ticker/format';
+import { load, loadNews, corporateActionsSchema, risksSchema, riskSchema } from '../data.js';
+import { brokerHistorySchema, brokerTickerSchema } from '../brokers.js';
+import { newsArticleSchema, calendarEventSchema } from './contracts.js';
+import { dateText } from '../ticker/format.js';
 
 export type Resource<T> =
   | { kind: 'loading' }

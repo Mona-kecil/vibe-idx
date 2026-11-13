@@ -11,7 +11,7 @@ import {
   type TerminalData,
   type Resource,
   type NewsArticle,
-} from './sources';
+} from './sources.js';
 
 export const functions = {
   WL: 'Watchlist',

@@ -4,7 +4,7 @@ import type { Ticker } from '../data';
 import type { BrokerDay } from '../brokers';
 import type { Selection } from '../ticker/logic';
 import type { BlockSelection } from '../ticks';
-import { initialPins, writeStorage } from '../watchlist';
+import { initialPins, writeStorage } from '../watchlist.js';
 import {
   fetchBrokers,
   fetchDetail,
@@ -13,7 +13,7 @@ import {
   terminalData,
   type Resource,
   type TerminalData,
-} from './sources';
+} from './sources.js';
 import {
   TerminalContext,
   functions,
@@ -27,17 +27,17 @@ import {
   type FunctionId,
   type Mode,
   type Timeframe,
-} from './state';
-import { CommandBar } from './CommandBar';
-import { SplitLayout, modes } from './Layout';
-import { Empty, RiskFlags, StatusBar } from './ui';
-import { PricePane } from './PricePane';
-import { BrokerSummaryPane, BrokerFlowPane, ForeignFlowPane } from './BrokerPanes';
-import { DoneDetailPane, OrderBookPane, RunningTradePane, TradeBookPane } from './TickPanes';
-import { WatchlistPane, MoversPane, SignalsPane, HeatmapPane } from './MarketPanes';
-import { KeyFiguresPane, HoldersAndChangesPane, DisclosuresPane } from './TickerPanes';
-import { CompanyFeedPane } from './CompanyFeedPane';
-import { NewsPane, CalendarPane, ActionsPane, RiskPane } from './PublicationPanes';
+} from './state.js';
+import { CommandBar } from './CommandBar.js';
+import { SplitLayout, modes } from './Layout.js';
+import { Empty, RiskFlags, StatusBar } from './ui.js';
+import { PricePane } from './PricePane.js';
+import { BrokerSummaryPane, BrokerFlowPane, ForeignFlowPane } from './BrokerPanes.js';
+import { DoneDetailPane, OrderBookPane, RunningTradePane, TradeBookPane } from './TickPanes.js';
+import { WatchlistPane, MoversPane, SignalsPane, HeatmapPane } from './MarketPanes.js';
+import { KeyFiguresPane, HoldersAndChangesPane, DisclosuresPane } from './TickerPanes.js';
+import { CompanyFeedPane } from './CompanyFeedPane.js';
+import { NewsPane, CalendarPane, ActionsPane, RiskPane } from './PublicationPanes.js';
 import './terminal.css';
 
 export function Terminal({

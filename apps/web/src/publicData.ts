@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { fetchActions, fetchCalendar, fetchRisk, type Resource } from './terminal/sources';
+import { fetchActions, fetchCalendar, fetchRisk, type Resource } from './terminal/sources.js';
 
 function once<T>(load: () => Promise<Resource<T>>) {
   let promise: Promise<Resource<T>> | undefined;

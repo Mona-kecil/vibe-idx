@@ -1,6 +1,13 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
-import { areaChart } from './area';
-import { load, type SignalFeed, type Health, type Market, type Stock, type Ticker } from './data';
+import { areaChart } from './area.js';
+import {
+  load,
+  type SignalFeed,
+  type Health,
+  type Market,
+  type Stock,
+  type Ticker,
+} from './data.js';
 import {
   briefing,
   date,
@@ -18,16 +25,16 @@ import {
   type WeekItem,
   type Signal,
   type SignalTile,
-} from './signals';
-import { usePublished } from './publicData';
-import { RiskFlagChips, useRiskFor } from './RiskFlagChips';
-import { PinButton, SiteHeader } from './SiteHeader';
-import { Stale } from './Stale';
-import { fetchNews, type NewsArticle } from './terminal/sources';
-import { treemap } from './treemap';
-import { calendarDate, dateText, direction, moveWord, nf, wib } from './ticker/format';
-import { usePins } from './watchlist';
-import { useNarrow } from './useNarrow';
+} from './signals.js';
+import { usePublished } from './publicData.js';
+import { RiskFlagChips, useRiskFor } from './RiskFlagChips.js';
+import { PinButton, SiteHeader } from './SiteHeader.js';
+import { Stale } from './Stale.js';
+import { fetchNews, type NewsArticle } from './terminal/sources.js';
+import { treemap } from './treemap.js';
+import { calendarDate, dateText, direction, moveWord, nf, wib } from './ticker/format.js';
+import { usePins } from './watchlist.js';
+import { useNarrow } from './useNarrow.js';
 import './today.css';
 
 type Data = { stocks: Stock[]; feed: SignalFeed; health: Health; market: Market };

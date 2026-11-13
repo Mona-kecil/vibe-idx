@@ -1,9 +1,9 @@
 import type { Ticker } from '../data';
-import { attachments } from '../ticker/logic';
-import { dateText } from '../ticker/format';
+import { attachments } from '../ticker/logic.js';
+import { dateText } from '../ticker/format.js';
 import type { NewsArticle, TerminalData } from './sources';
-import { useTerminal, type usePublications } from './state';
-import { Availability, Empty, Scroll } from './ui';
+import { useTerminal, type usePublications } from './state.js';
+import { Availability, Empty, Scroll } from './ui.js';
 import './company-feed.css';
 
 type Action = Extract<

@@ -1,4 +1,4 @@
-import { ChartAttribution } from '../ChartAttribution';
+import { ChartAttribution } from '../ChartAttribution.js';
 import { useEffect, useMemo, useRef, useState, type PointerEvent, type ReactNode } from 'react';
 import {
   AreaSeries,
@@ -11,12 +11,12 @@ import {
   type ISeriesApi,
   type Logical,
 } from 'lightweight-charts';
-import { chartDate, dailyBars, publicChart, type PriceBar } from '../terminal/charts';
-import { toneOf, type Tone } from '../area';
-import { useNarrow } from '../useNarrow';
-import { readStorage, writeStorage } from '../watchlist';
-import { chartTheme as theme, paneLabel } from './chartTheme';
-import { dateText, direction, nf, rangeText, short, signed } from './format';
+import { chartDate, dailyBars, publicChart, type PriceBar } from '../terminal/charts.js';
+import { toneOf, type Tone } from '../area.js';
+import { useNarrow } from '../useNarrow.js';
+import { readStorage, writeStorage } from '../watchlist.js';
+import { chartTheme as theme, paneLabel } from './chartTheme.js';
+import { dateText, direction, nf, rangeText, short, signed } from './format.js';
 import {
   aggregateSelection,
   bounds,
@@ -30,7 +30,7 @@ import {
   type ChartMark,
   type RowWindow,
   type Selection,
-} from './logic';
+} from './logic.js';
 
 function SelectionLabel({ prices, selection }: { prices: Price[]; selection: Selection }) {
   const b = bounds(selection),

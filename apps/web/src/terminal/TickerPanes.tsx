@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { useTerminal } from './state';
-import { Availability, Empty, Scroll, direction } from './ui';
+import { useTerminal } from './state.js';
+import { Availability, Empty, Scroll, direction } from './ui.js';
 import type { Ticker } from '../data';
-import { PinButton } from './MarketPanes';
-import { dateText, nf, short, signed } from '../ticker/format';
-import { bounds, holderRole, inSelection, registryAt } from '../ticker/logic';
-import { FilingAttachments } from '../ticker/Timeline';
+import { PinButton } from './MarketPanes.js';
+import { dateText, nf, short, signed } from '../ticker/format.js';
+import { bounds, holderRole, inSelection, registryAt } from '../ticker/logic.js';
+import { FilingAttachments } from '../ticker/Timeline.js';
 
 export function KeyFiguresPane() {
   const { detail, ticker } = useTerminal();
