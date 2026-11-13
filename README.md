@@ -34,14 +34,18 @@ Open `http://localhost:5173`. Public pages read the published R2 JSON. The broke
 
 ## Run checks
 
+`pnpm install` sets up a pre-commit hook. Before each commit it formats and lints the staged files, then runs the tests related to them in every app. A change to shared pipeline code can take about a minute.
+
 ```sh
-pnpm exec vp check apps/pipeline apps/web .github/workflows vite.config.ts
-pnpm --filter @vibe-idx/pipeline test
-pnpm --filter @vibe-idx/web test
+pnpm test
+pnpm knip
+pnpm exec vp check apps/pipeline apps/web apps/feeds .github/workflows
 pnpm --filter @vibe-idx/web build
 ```
 
-CI runs package checks, tests, and the client build on pull requests and pushes to `master`. It uses fixture data and needs no source credentials.
+`pnpm test` runs the full suite for every app. An app whose files have not changed replays its last result from the cache. `pnpm knip` reports unused files, exports, and dependencies.
+
+CI runs the checks, Knip, the full test suite without the cache, and the client build on pull requests and pushes to `master`. It uses fixture data and needs no source credentials.
 
 ## Run the batch
 
