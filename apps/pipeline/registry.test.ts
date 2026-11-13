@@ -10,7 +10,7 @@ import { parseReport } from './reports';
 import { parseRegistryLayout } from './registry';
 import { tickerSchema } from '../web/src/data';
 
-const research = new URL('../../docs/prototypes/workspace/research/', import.meta.url);
+const answerKeys = new URL('fixtures/registry-keys/', import.meta.url);
 const keys = z.record(z.string(), z.unknown());
 const snapshots = z.object({
   snapshots: z.array(
@@ -168,13 +168,13 @@ it('repairs AIMS holder rows checkpointed before a duplicate-key failure', async
 
 it('keeps corrected monthly snapshots, KSEI cells and blank relationships through archive replay and Parquet reload', async () => {
   const registry = keys.parse(
-    JSON.parse(await readFile(new URL('registry-source.json', research), 'utf8')),
+    JSON.parse(await readFile(new URL('registry-source.json', answerKeys), 'utf8')),
   );
   const investorTypes = types.parse(
-    JSON.parse(await readFile(new URL('investor-types-source.json', research), 'utf8')),
+    JSON.parse(await readFile(new URL('investor-types-source.json', answerKeys), 'utf8')),
   );
   const affiliations = flags.parse(
-    JSON.parse(await readFile(new URL('affiliation-source.json', research), 'utf8')),
+    JSON.parse(await readFile(new URL('affiliation-source.json', answerKeys), 'utf8')),
   );
   const root = await mkdtemp(join(tmpdir(), 'registry-monthly-'));
   const data = join(root, 'data'),
