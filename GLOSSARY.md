@@ -123,7 +123,7 @@ The Ticker page list of IDX filings and ticker news, newest first. It has no cor
 _Avoid_: feed, disclosures
 
 **Broker summary**:
-The Ticker page section with buyers and sellers by broker over the selection. Its heading reads "Broker flow" until it is renamed. The Terminal's twin is BRK.
+The Ticker page section with buyers and sellers by broker over the selection. The Terminal's twin is BRK.
 _Avoid_: broker table
 
 **Action chip**:
@@ -234,7 +234,7 @@ _Avoid_: chart, price pane
 The latest price, trading and registry figures for one ticker. The Site's twin is stats.
 _Avoid_: description, fundamentals
 
-**HDS** (5% holders and changes):
+**HDS** (Holders and changes):
 One ticker's holders at 1% and above over time, with each 5% holder's changes. The Site's twin is ownership.
 _Avoid_: holders, ownership pane
 

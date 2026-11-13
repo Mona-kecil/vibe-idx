@@ -30,7 +30,7 @@ export function BrokerFlow({
   if (!user)
     return (
       <section className="broker-compact" id="broker-section" aria-labelledby="broker-heading">
-        <h2 id="broker-heading">Broker flow</h2>
+        <h2 id="broker-heading">Broker summary</h2>
         <AccountControls />
       </section>
     );
@@ -38,7 +38,7 @@ export function BrokerFlow({
     <section className="section" id="broker-section" aria-labelledby="broker-heading">
       <div className="section-head">
         <h2 id="broker-heading">
-          Broker flow
+          Broker summary
           {b && <span className="broker-heading-date">{rangeText(b.start, b.end, true)}</span>}
         </h2>
         {!b && (
@@ -135,7 +135,7 @@ function BrokerData({
   );
   const rows = aggregateBrokers(days);
   const boardPicker = (
-    <div className="ranges broker-board" aria-label="Market board">
+    <div className="ranges broker-board" aria-label="Board">
       {[...brokerBoards, 'all' as const].map((b) => (
         <button
           key={b}
@@ -244,7 +244,7 @@ function BrokerData({
     <div className="broker-flow">
       <div className="broker-controls">
         {boardPicker}
-        <div className="ranges broker-unit" aria-label="Broker flow mode">
+        <div className="ranges broker-unit" aria-label="Broker summary mode">
           {(['net', 'gross'] as const).map((m) => (
             <button
               key={m}

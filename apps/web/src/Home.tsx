@@ -183,7 +183,7 @@ function Pulse({ data, excluded }: { data: Data; excluded: number }) {
           </dl>
           {excluded > 0 && (
             <p>
-              {excluded} feed {excluded === 1 ? 'record' : 'records'} excluded: ticker absent from
+              {excluded} signal {excluded === 1 ? 'record' : 'records'} excluded: ticker absent from
               the stock directory.
             </p>
           )}

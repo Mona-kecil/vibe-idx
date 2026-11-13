@@ -39,7 +39,7 @@ function BrokerControls({ flow = false, foreign = false }: { flow?: boolean; for
   return (
     <div className="broker-controls">
       <Segments
-        label="Market board"
+        label="Board"
         values={['regular', 'negotiation', 'cash', 'all']}
         value={broker.board}
         onChange={(value) => setBroker('board', value)}

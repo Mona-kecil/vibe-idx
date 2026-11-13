@@ -398,7 +398,7 @@ describe('daily briefing', () => {
     expect(host.querySelector('.tabs')).toBeNull();
     expect(host.textContent).not.toContain('Old filing');
     expect(host.textContent).not.toContain('Missing stock');
-    expect(host.querySelector('.sources')?.textContent).toContain('1 feed record excluded');
+    expect(host.querySelector('.sources')?.textContent).toContain('1 signal record excluded');
   });
   it('says when the latest day has no signals', async () => {
     await render();
@@ -878,7 +878,7 @@ describe('ticker research regressions', () => {
     ).toEqual(['ValueIDR', 'Net foreignIDR (est.)', 'Free float']);
     expect(host.querySelector('.more-stats')?.hasAttribute('open')).toBe(false);
     expect(element('#broker-section', HTMLElement).className).toBe('broker-compact');
-    expect(element('#broker-section', HTMLElement).textContent).toBe('Broker flowSign in');
+    expect(element('#broker-section', HTMLElement).textContent).toBe('Broker summarySign in');
     await click('.ticker-header .pin');
     expect(JSON.parse(window.localStorage.getItem('vibe-idx:watchlist') ?? '[]')).toEqual(['BBCA']);
   });

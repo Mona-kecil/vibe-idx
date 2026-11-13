@@ -75,8 +75,8 @@ export function SiteHeader({
   return (
     <header className="site-header" data-search={search}>
       <div className="wrap site-bar">
-        <a className="wordmark" href="/" aria-label="Vibe IDX home">
-          Vibe <span>IDX</span>
+        <a className="logo" href="/">
+          <img src="/favicon.svg" alt="Vibe IDX Today" width="28" height="28" />
         </a>
         <nav className="site-nav" aria-label="Main">
           {link('home', '/', 'Today')}

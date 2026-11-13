@@ -396,9 +396,9 @@ export function HoldersPane() {
       {range && (
         <div className="holder-range" role="status">
           <span>
-            Chart range {dateText(range.start)} to {dateText(range.end)}
+            Selection {dateText(range.start)} to {dateText(range.end)}
           </span>
-          <button onClick={() => select(null)}>Clear chart range</button>
+          <button onClick={() => select(null)}>Clear selection</button>
         </div>
       )}
       <Scroll reset={`${ticker}:${selection?.anchor}:${selection?.end}`}>
@@ -446,7 +446,7 @@ export function HoldersPane() {
                   />
                 ) : (
                   <Empty>
-                    {range ? 'No holder reports in this chart range' : 'No holders reported'}
+                    {range ? 'No holder reports in this selection' : 'No holders reported'}
                   </Empty>
                 )}
               </>

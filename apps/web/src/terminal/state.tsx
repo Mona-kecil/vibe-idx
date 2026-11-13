@@ -24,7 +24,7 @@ export const functions = {
   RT: 'Running trade',
   DD: 'Done detail',
   TB: 'Trade book',
-  HDS: '5% holders and changes',
+  HDS: 'Holders and changes',
   DISC: 'IDX disclosures',
   FEED: 'Company feed',
   SIG: 'Signals feed',

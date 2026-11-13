@@ -423,7 +423,7 @@ export function HoldingsChart({
             viewBox={`0 0 ${W} ${H}`}
             style={{ height: H }}
             role="img"
-            aria-label={`Major shareholder holdings from ${dateText(firstDate)} to ${dateText(lastDate)}`}
+            aria-label={`Reported holdings from ${dateText(firstDate)} to ${dateText(lastDate)}`}
           >
             {b && (
               <g className="holdings-selection">

@@ -434,7 +434,7 @@ function PriceHistory({
           {b && (
             <>
               {dateText(b.start)} to {dateText(b.end)}{' '}
-              <button aria-label="Clear chart range" onClick={() => select(null)}>
+              <button aria-label="Clear selection" onClick={() => select(null)}>
                 ×
               </button>
             </>

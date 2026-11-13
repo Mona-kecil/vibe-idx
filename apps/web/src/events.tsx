@@ -8,7 +8,7 @@ type Ownership = Extract<Event, { kind: 'five_pct_change' }>;
 export const lenses: { kind: Lens; tag: string; label: string }[] = [
   { kind: 'ara', tag: 'ARA', label: 'Auto-rejection upper limit' },
   { kind: 'volume_spike', tag: 'Volume', label: 'Volume spike' },
-  { kind: 'foreign_streak', tag: 'Foreign', label: 'Foreign buying streak' },
+  { kind: 'foreign_streak', tag: 'Foreign', label: 'Foreign streak' },
   { kind: 'green_on_red', tag: 'Green on red', label: 'Up while IHSG fell' },
   { kind: 'five_pct_change', tag: '5%', label: '5% ownership change' },
 ];

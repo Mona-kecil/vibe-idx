@@ -270,7 +270,7 @@ const sourceLabels = {
   one_pct: 'Registry',
   issuers: 'Issuers',
   disclosures: 'Disclosures',
-  brokers: 'Broker flow',
+  brokers: 'Broker data',
   corporate_actions: 'Corporate actions',
   risk: 'Risk flags',
 } as const satisfies Partial<Record<keyof Health, string>>;

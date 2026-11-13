@@ -129,9 +129,9 @@ it('shows an active chart range even with no holder reports and clears it from H
   selection = { anchor: '2026-11-01', end: '2026-11-02' };
   await act(async () => root.render(<HoldersPane />));
   expect(host.querySelector('.holder-range')?.textContent).toContain(
-    'Chart range 1 Nov 2026 to 2 Nov 2026',
+    'Selection 1 Nov 2026 to 2 Nov 2026',
   );
-  expect(host.textContent).toContain('No holder reports in this chart range');
+  expect(host.textContent).toContain('No holder reports in this selection');
   await act(async () => {
     host.querySelector<HTMLButtonElement>('.holder-range button')?.click();
     root.render(<HoldersPane />);
@@ -197,7 +197,7 @@ it('merges monthly accounts and daily reports once per holder, preferring exact 
   expect(host.querySelector('[aria-label="Holder C"] b')?.textContent).toBe('1.25%');
   expect(host.querySelector('.holder-role')).toBeNull();
   expect(host.querySelector('.holder-range')?.textContent).toContain(
-    'Chart range 1 Oct 2026 to 30 Oct 2026',
+    'Selection 1 Oct 2026 to 30 Oct 2026',
   );
   await act(async () => {
     host.querySelector<HTMLButtonElement>('.holder-range button')?.click();

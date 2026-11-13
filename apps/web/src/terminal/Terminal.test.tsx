@@ -384,7 +384,7 @@ describe('React terminal', () => {
     await click('[aria-label="Client domicile"] button:nth-child(3)');
     expect(host.querySelector('.broker-ledger.buy')?.textContent).toContain('AA');
     expect(host.querySelector('.broker-ledger.buy')?.textContent).not.toContain('BB');
-    await click('[aria-label="Market board"] button:nth-child(3)');
+    await click('[aria-label="Board"] button:nth-child(3)');
     expect(host.textContent).toContain('No trades');
   });
   it('renders NET broker codes as text and keeps GROSS pairing interactive', async () => {
@@ -463,7 +463,7 @@ describe('React terminal', () => {
         await click('[aria-label="Broker period"] button:nth-child(3)');
         expect(host.querySelector('.broker-ledger.buy')?.textContent).toContain('50.0K');
         expect(host.querySelector('.broker-ledger.buy')?.textContent).not.toContain('200.0K');
-        await click('[aria-label="Market board"] button:nth-child(3)');
+        await click('[aria-label="Board"] button:nth-child(3)');
         expect(host.textContent).toContain('No trades');
         expect(host.querySelector('.broker-ledger')).toBeNull();
       },
@@ -831,7 +831,7 @@ it('identifies failed broker sources even when the publication run is fresh', as
   sourceFailed = true;
   await render();
   expect(host.querySelector('.status .stale')?.textContent).toBe(
-    'Broker flow not updated since 6 Nov 2026',
+    'Broker data not updated since 6 Nov 2026',
   );
 });
 

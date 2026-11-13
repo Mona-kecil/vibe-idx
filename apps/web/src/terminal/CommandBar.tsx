@@ -252,7 +252,7 @@ export function CommandBar({
             </div>
           ))}
         </div>
-        <nav className="lay" aria-label="Layout">
+        <nav className="lay" aria-label="Mode">
           {(['grid', 'focus', 'flow'] as const).map((value, index) => (
             <button key={value} aria-pressed={layout === value} onClick={() => setLayout(value)}>
               <kbd>{index + 1}</kbd>

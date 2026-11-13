@@ -101,15 +101,12 @@ html {
   align-items: center;
   gap: 28px;
 }
-.site-header .wordmark {
-  font-size: 20px;
-  font-weight: 800;
-  letter-spacing: -1px;
-  text-decoration: none;
-  white-space: nowrap;
+.site-header .logo {
+  display: flex;
+  flex: none;
 }
-.site-header .wordmark span {
-  font-weight: 500;
+.site-header .logo img {
+  display: block;
 }
 .site-nav {
   display: flex;
@@ -395,9 +392,8 @@ html {
     height: 52px;
     gap: 6px;
   }
-  .site-header .wordmark {
+  .site-header .logo {
     margin-right: 6px;
-    font-size: 18px;
   }
   .site-nav a {
     padding: 8px 9px;
@@ -427,7 +423,7 @@ html {
   .search-field kbd {
     display: none;
   }
-  .site-header[data-search='open'] :is(.wordmark, .site-nav, .site-account, .search-toggle) {
+  .site-header[data-search='open'] :is(.logo, .site-nav, .site-account, .search-toggle) {
     display: none;
   }
   .site-header[data-search='open'] .site-search {
