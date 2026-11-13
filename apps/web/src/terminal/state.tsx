@@ -43,7 +43,7 @@ export const isMode = (value: string | null): value is Mode =>
 export const parseMode = (value: string | null): Mode | null =>
   value === 'live' ? 'flow' : isMode(value) ? value : null;
 export type Timeframe = 'W' | 'D' | '4H' | '1H' | '15M';
-export type AuthState = 'checking' | 'signed-in' | 'signed-out';
+type AuthState = 'checking' | 'signed-in' | 'signed-out';
 export type BrokerFilters = {
   board: BrokerBoard | 'all';
   type: InvestorFilter;
@@ -80,7 +80,7 @@ export const initialBrokerFilters: BrokerFilters = {
   period: '1D',
   flow: '1M',
 };
-export function useResource<T>(read: (signal: AbortSignal) => Promise<Resource<T>>) {
+function useResource<T>(read: (signal: AbortSignal) => Promise<Resource<T>>) {
   const [state, setState] = useState<Resource<T>>({ kind: 'loading' });
   useEffect(() => {
     const controller = new AbortController();

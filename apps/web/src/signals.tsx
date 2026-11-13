@@ -17,7 +17,7 @@ export const lensOf = (kind: Lens) => lenses[order[kind]]!;
 export const parseLens = (value: string | null) =>
   lenses.find((lens) => lens.kind === value)?.kind ?? null;
 
-export const short = (n: number) => {
+const short = (n: number) => {
   const a = Math.abs(n);
   return a >= 1e12
     ? nf(a / 1e12, 2) + 'T'

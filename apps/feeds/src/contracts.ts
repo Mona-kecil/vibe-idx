@@ -14,7 +14,6 @@ export const newsArticleSchema = z.object({
   tags: z.array(z.string()),
   source_id: z.string(),
 });
-export type NewsArticle = z.infer<typeof newsArticleSchema>;
 export const calendarEventSchema = z.object({
   ts: z.iso.datetime(),
   c: z.string(),

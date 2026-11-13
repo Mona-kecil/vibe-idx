@@ -7,9 +7,11 @@
   "type": "module",
   "scripts": {
     "prepare": "vp config --no-agent",
-    "test": "vp run --filter \"./apps/*\" --cache test"
+    "test": "vp run --filter \"./apps/*\" --cache test",
+    "knip": "knip"
   },
   "devDependencies": {
+    "knip": "6.44.0",
     "vite-plus": "^0.2.1"
   },
   "packageManager": "pnpm@11.9.0"

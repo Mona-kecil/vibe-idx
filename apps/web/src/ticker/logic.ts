@@ -192,7 +192,7 @@ export function holderRole(
 export function totalAt(data: Ticker, date: string) {
   return registryAt(data, date)?.issued_shares ?? null;
 }
-export type HoldingPoint = {
+type HoldingPoint = {
   date: string;
   shares: number | null;
   rounded?: boolean;

@@ -13,7 +13,7 @@ const brokerAmounts = z.object({
   freq: z.number(),
 });
 const brokerTypeSchema = z.enum(['local', 'foreign', 'government', 'unknown']);
-export const brokerRowSchema = brokerAmounts.extend({
+const brokerRowSchema = brokerAmounts.extend({
   investor: z.enum(['domestic', 'foreign', 'unknown']),
   broker_type: brokerTypeSchema,
 });
@@ -40,7 +40,6 @@ export const brokerHistorySchema = z.object({
 
 export type BrokerRow = z.infer<typeof brokerRowSchema>;
 export type BrokerDay = z.infer<typeof brokerDaySchema>;
-export type BrokerHistory = z.infer<typeof brokerHistorySchema>;
 
 const accumulationWindowSchema = z
   .object({

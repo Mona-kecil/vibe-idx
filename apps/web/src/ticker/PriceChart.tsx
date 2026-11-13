@@ -32,7 +32,7 @@ import {
   type Selection,
 } from './logic';
 
-export function SelectionLabel({ prices, selection }: { prices: Price[]; selection: Selection }) {
+function SelectionLabel({ prices, selection }: { prices: Price[]; selection: Selection }) {
   const b = bounds(selection),
     totals = aggregateSelection(prices, selection);
   if (!b || !totals) return null;

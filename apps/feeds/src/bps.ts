@@ -6,7 +6,7 @@ export const BPS_HOLIDAYS_URL =
 const monthly = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
 const quarterly = [2, 5, 8, 11];
 type Rule = { kind: 'first-workday' | 'fifth-or-next'; months: number[] };
-export const BPS_SERIES: { ev: string; rule: Rule; match: RegExp }[] = [
+const BPS_SERIES: { ev: string; rule: Rule; match: RegExp }[] = [
   {
     ev: 'Perkembangan Indeks Harga Konsumen',
     rule: { kind: 'first-workday', months: monthly },
@@ -122,7 +122,7 @@ export function parsePublicHolidays(ics: string): Set<string> {
 
 const day = 86400e3;
 const wib = 7 * 3600e3;
-export function bpsDate(year: number, month: number, rule: Rule, holidays: Set<string>): string {
+function bpsDate(year: number, month: number, rule: Rule, holidays: Set<string>): string {
   const date = new Date(Date.UTC(year, month - 1, rule.kind === 'first-workday' ? 1 : 5));
   while ([0, 6].includes(date.getUTCDay()) || holidays.has(date.toISOString().slice(0, 10)))
     date.setUTCDate(date.getUTCDate() + 1);

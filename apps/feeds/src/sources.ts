@@ -3,7 +3,7 @@ import { tickerSchema, type CalendarEvent, type Ticker } from './contracts';
 import { BI_URL, FF_URL, parseBI, parseBPSReleases, parseForexFactory, parseRSS } from './parsers';
 import { tickerTagger } from './tagging';
 
-export const FEEDS = [
+const FEEDS = [
   {
     id: 'cnbc-id',
     url: 'https://www.cnbcindonesia.com/market/rss',

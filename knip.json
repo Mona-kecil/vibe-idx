@@ -1,0 +1,13 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "workspaces": {
+    ".": {
+      "entry": ["workers/dispatch/src/index.js"]
+    },
+    "apps/pipeline": {},
+    "apps/feeds": {},
+    "apps/web": {
+      "entry": ["api/*.ts"]
+    }
+  }
+}

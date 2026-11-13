@@ -15,7 +15,7 @@ import {
 } from './ticks-data';
 import type { BookRow, Trade } from './ticks-data';
 
-export const datasetSchema = z.enum(['running_trade', 'closing_book']);
+const datasetSchema = z.enum(['running_trade', 'closing_book']);
 export type Dataset = z.infer<typeof datasetSchema>;
 const base = z.object({
   date: sessionDate,
@@ -69,7 +69,6 @@ export const progressSchema = z.union([
   base.extend({ dataset: z.literal('closing_book'), nextTicker: z.number().int().nonnegative() }),
 ]);
 export type Progress = z.infer<typeof progressSchema>;
-export type TradeProgress = Extract<Progress, { dataset: 'running_trade' }>;
 
 export class TickStore {
   private constructor(
