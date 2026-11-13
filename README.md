@@ -77,4 +77,4 @@ Each run holds `broker-run.json` until it ends, so a second collector refuses to
 
 GitHub Actions uses `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY` secrets with read and write access to both buckets, plus the `R2_ACCOUNT_ID` repository variable. Vercel needs its own server environment variables. GitHub secrets do not sync to Vercel. Broker activity since January 2026 remains in private Parquet storage and the private ticker exports. Archived per-stock broker objects remain stored but are unused.
 
-See [the architecture and source contracts](docs/v2.md) for storage paths, source dates, and parsing limits.
+See [the architecture](docs/architecture.md) for storage paths, source dates, and parsing limits.
