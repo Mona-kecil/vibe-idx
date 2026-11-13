@@ -6,6 +6,7 @@
   ],
   "type": "module",
   "scripts": {
+    "prepare": "vp config --no-agent",
     "test": "vp run --filter \"./apps/*\" --cache test"
   },
   "devDependencies": {
