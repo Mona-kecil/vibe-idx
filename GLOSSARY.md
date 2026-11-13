@@ -1,88 +1,126 @@
 # vibe-idx
 
-A daily radar for the Indonesia Stock Exchange (IDX). It finds stocks with unusual price, volume, foreign or ownership activity, then shows who holds and who trades each one.
+A daily radar for the Indonesia Stock Exchange (IDX). It finds tickers with unusual price, volume, foreign or ownership activity, then shows who holds and who trades each one.
+
+Site sections take their heading as their name. Terminal functions take their code. When a Site section and a Terminal function show the same thing, each entry names its twin.
 
 ## Language
 
 ### Views
 
 **Site**:
-The pages for reading at a glance, on any screen: Today, Market, Ticker and Login. Not the Terminal.
+The pages for reading at a glance, on any screen: Today, Market, Ticker page and Login. Not the Terminal.
 _Avoid_: non-terminal, web, website, main app
 
 **Terminal**:
-The desktop workspace of panes for studying one ticker in depth. It is not available on phones.
-_Avoid_: pro mode, dashboard, app
+The desktop view of panes for studying one ticker in depth. It is not available on phones.
+_Avoid_: workspace, pro mode, dashboard, app
+
+**Ticker**:
+A listed company, named by its four-letter IDX code.
+_Avoid_: symbol, emiten, issuer code
 
 **Watchlist**:
-The one list of tickers the user has pinned, shared by the Site and the Terminal. Not a section or a pane.
+The one list of tickers the user has pinned, shared by the Site and the Terminal. Not a section or a function.
 _Avoid_: favorites, portfolio, saved stocks
 
 **Pin**:
 To add a ticker to the watchlist.
 _Avoid_: star, favorite, bookmark, follow
 
+**Selection**:
+A day or date range picked on a price chart. On the Ticker page it narrows the sections below the chart, and in the Terminal it narrows the broker functions.
+_Avoid_: range, brush, highlight
+
+**Session**:
+One trading date.
+_Avoid_: day, trading day, SESSION 1 and SESSION 2 (the halves of a session)
+
+**Risk flag**:
+An IDX suspension, UMA notice or notation on a ticker. RISK lists them for all tickers.
+_Avoid_: risk badge, warning
+
+**Stale**:
+The state of the Site or Terminal when the daily run is late, or of one source that failed its update.
+_Avoid_: outdated, old data, delayed
+
 ### Site
 
 **Today**:
-The Site's front page: market pulse, Today watchlist, Most traded, signal tiles, This week and news.
+The Site's front page: Pulse, Today watchlist, Most traded, signal tiles, This week and News.
 _Avoid_: Home, homepage, dashboard
 
 **Market**:
-The Site page that lists every stock in one sortable table, narrowed by a lens.
-_Avoid_: screener, stock list, market page
+The Site page that lists every ticker in one table, ranked by a sort chip and narrowed by a lens. It is the screener.
+_Avoid_: stock list, market page
 
-**Ticker**:
-The Site page for one company: price chart, ownership, timeline and broker summary.
+**Ticker page**:
+The Site page for one ticker: price chart, stats, ownership, timeline and broker summary.
 _Avoid_: stock page, company page, detail page
 
+**Search**:
+The Site header box that finds a ticker by code or company name. Not the command bar.
+_Avoid_: lookup, finder
+
 **Pulse**:
-The Today strip with IHSG, breadth, estimated foreign flow and source dates.
+The Today strip with IHSG, breadth, estimated foreign flow and source dates. The Terminal's twin is the status bar.
 _Avoid_: market summary, header stats
 
 **Today watchlist**:
-The Today section with one row per pinned ticker. Not the watchlist itself.
-_Avoid_: Watchlist (for the section), favorites
+The Today section with one row per pinned ticker, shown only when something is pinned. Its heading reads "Watchlist". The Terminal's twin is WL.
+_Avoid_: favorites
 
 **Most traded**:
-The Today heatmap of the stocks with the highest value traded, colored by daily change.
-_Avoid_: heatmap (ambiguous with HEAT), treemap
+The Today heatmap of the tickers with the highest value traded, colored by daily change. The Terminal's twin is HEAT.
+_Avoid_: treemap
 
 **Signal tile**:
-A Today card for one signal kind with its stock count and strongest stocks.
+A Today card for one signal kind with its ticker count and three strongest tickers. Not a heatmap tile. The Terminal's twin is SIG.
 _Avoid_: signal card, alert tile
 
 **This week**:
-The Today section with high-impact economic events and corporate action dates in the next seven days.
+The Today strip of the next five weekdays with high-impact economic events and corporate action dates.
 _Avoid_: calendar, upcoming
 
+**News**:
+The Today section of market headlines, grouped by day. The Terminal's twin is NEWS.
+_Avoid_: headlines, feed
+
+**Sort chip**:
+A Market button that ranks the table: Gainers, Losers, Value, Foreign buy or Foreign sell.
+_Avoid_: filter, lens
+
 **Lens**:
-A Market tab that keeps only the stocks with one signal kind.
+A Market tab that keeps only the tickers with one signal kind. All shows every ticker, and a kind with no tickers is hidden.
 _Avoid_: filter tab, signal filter
 
-**Selection**:
-A day or date range picked on the Ticker price chart, which narrows the sections below it.
-_Avoid_: range, brush, highlight
+**Price chart**:
+The Ticker page chart of price and volume, with chart marks. The Terminal's twin is GP.
+_Avoid_: graph, candles
+
+**Chart mark**:
+A lettered badge on a price chart for a filing, a 5% change or a corporate action date.
+_Avoid_: event badge, pin, marker
+
+**Stats**:
+The Ticker page figures under the price chart, with the rest behind More. The Terminal's twin is KEY.
+_Avoid_: key figures, fundamentals
+
+**Ownership**:
+The Ticker page section with 5% holders, ownership changes and holdings over time. The Terminal's twin is HDS.
+_Avoid_: holders section, shareholders
 
 **Timeline**:
-The Ticker list of IDX filings and ticker news, newest first. It has no corporate action dates.
-_Avoid_: feed, news, disclosures
+The Ticker page list of IDX filings and ticker news, newest first. It has no corporate action dates. The Terminal's twin is FEED.
+_Avoid_: feed, disclosures
 
 **Broker summary**:
-Net or gross buyers and sellers by broker over a period. It is the BRK pane in the Terminal and a section on Ticker.
-_Avoid_: broker flow (for this view), broker table
+The Ticker page section with buyers and sellers by broker over the selection. Its heading reads "Broker flow" until it is renamed. The Terminal's twin is BRK.
+_Avoid_: broker table
 
 **Action chip**:
-The Ticker header badge for the next corporate action within 30 days.
+The Ticker page header badge for the next corporate action within 30 days.
 _Avoid_: event badge, action tag
-
-**Risk badge**:
-The SUSP, UMA and notation chips for one ticker, from IDX notices.
-_Avoid_: warning, risk tag, flags
-
-**Stale**:
-The state of a source that missed its expected update.
-_Avoid_: outdated, old data, delayed
 
 **Void**:
 The glitch that swallows the Site when you open the Terminal.
@@ -96,7 +134,7 @@ _Avoid_: loading screen, splash
 
 **Mode**:
 One of GRID, FOCUS or FLOW, each a fixed arrangement of panes for one job.
-_Avoid_: layout, view, tab, screen
+_Avoid_: layout, view, screen
 
 **GRID**:
 The mode for finding a ticker.
@@ -111,132 +149,144 @@ The mode for seeing who trades one ticker: foreign flow, brokers, orders and fil
 _Avoid_: live, trading mode
 
 **Pane**:
-One box in a mode that shows one function at a time.
+One box in a mode, showing one function at a time. "The FF pane" means the pane showing FF.
 _Avoid_: panel, widget, window, card
 
 **Slot**:
-A fixed position in a mode that holds one pane and its stacked function codes.
+A fixed position in a mode that holds one pane and its tabs.
 _Avoid_: cell, area, region
 
-**Function code**:
-The two- to four-letter name of a Terminal view, typed in the command bar.
-_Avoid_: function, command, shortcut
+**Tab**:
+One function's button in a pane that holds several functions.
+_Avoid_: tab for a mode or a lens
+
+**Function**:
+A Terminal view with a two- to four-letter code, opened from a tab or the command bar.
+_Avoid_: widget, view, shortcut
 
 **Command bar**:
-The Terminal input that takes a ticker or a function code.
+The Terminal input that takes a ticker, a function, a mode, HELP or PIN.
 _Avoid_: search, omnibox, prompt
+
+**Status bar**:
+The Terminal's bottom line with session state, IHSG, breadth, estimated foreign flow and the next high-impact event. The Site's twin is Pulse.
+_Avoid_: footer
 
 **Hillclimb**:
 The measured count of steps a person needs to answer the Terminal's daily questions.
 _Avoid_: benchmark, usability score
 
-### Function codes
+### Functions
 
-**WL**:
-The pinned tickers as quote rows in the Terminal.
-_Avoid_: Watchlist (for the pane)
+**WL** (Watchlist):
+The pinned tickers as quote rows. The Site's twin is Today watchlist.
+_Avoid_: watchlist pane
 
-**SIG**:
-Every signal, grouped by date.
-_Avoid_: signals feed, alerts
+**SIG** (Signals feed):
+Every signal, grouped by date. The Site's twin is the signal tiles.
+_Avoid_: alerts
 
-**HEAT**:
-The Terminal heatmap of the stocks with the highest value traded.
-_Avoid_: Most traded (for the pane), treemap
+**HEAT** (Heatmap by value):
+The heatmap of the 60 tickers with the highest value traded. The Site's twin is Most traded.
+_Avoid_: treemap
 
-**MOV**:
+**MOV** (Market movers):
 The top movers by change and by value traded, side by side.
-_Avoid_: movers, gainers
+_Avoid_: gainers
 
 **NEWS**:
-Headlines for Indonesia, the world or the current ticker.
+Headlines for Indonesia, the world or the current ticker. The Site's twin is News.
 _Avoid_: feed
 
-**CA**:
+**CA** (Corporate actions):
 Corporate actions such as dividends, rights issues and shareholder meetings.
 _Avoid_: actions, events
 
-**CAL**:
-The economic calendar.
-_Avoid_: calendar events, macro
+**CAL** (Economic calendar):
+Economic events by date and impact.
+_Avoid_: macro, events
 
-**RISK**:
-Suspensions, UMA notices and notations across all tickers.
-_Avoid_: risk flags (for the pane)
+**RISK** (Risk flags):
+Risk flags across all tickers.
+_Avoid_: risk badge
 
-**GP**:
-The Terminal price and volume chart.
+**GP** (Price history):
+The Terminal price and volume chart. Shift-drag sets the selection. The Site's twin is the price chart.
 _Avoid_: chart, price pane
 
-**KEY**:
-The latest price, trading and registry figures for one ticker.
-_Avoid_: description, fundamentals, stats
+**KEY** (Key figures):
+The latest price, trading and registry figures for one ticker. The Site's twin is stats.
+_Avoid_: description, fundamentals
 
-**HDS**:
-The 5% holders of one ticker and how their holdings changed.
-_Avoid_: holders, ownership
+**HDS** (5% holders and changes):
+One ticker's holders at 1% and above over time, with each 5% holder's changes. The Site's twin is ownership.
+_Avoid_: holders, ownership pane
 
-**DISC**:
+**DISC** (IDX disclosures):
 IDX filings for one ticker.
-_Avoid_: disclosures, filings pane
+_Avoid_: filings pane
 
-**FEED**:
-One dated list of a company's filings, ticker news and corporate action dates.
-_Avoid_: company feed, timeline
+**FEED** (Company feed):
+One dated list of a ticker's filings, news and corporate action dates, upcoming actions first. The Site's twin is Timeline, which has no actions.
+_Avoid_: timeline
 
-**BRK**:
-See broker summary.
-_Avoid_: broker flow (for this view)
+**BRK** (Broker summary):
+Net or gross buyers and sellers by broker over a period. The Site's twin is Broker summary on the Ticker page.
+_Avoid_: broker flow, broker table
 
-**BFL**:
-Each chosen broker's running net position over time.
+**BFL** (Broker flow):
+Each chosen broker's running net position over time. It has no Site twin.
 _Avoid_: broker summary, accumulation chart
 
-**FF**:
+**FF** (Foreign flow):
 Daily net buying by foreign clients and its running total, from broker data.
-_Avoid_: foreign estimate (that is the IDX figure in Pulse)
+_Avoid_: foreign estimate (that is the IDX figure in Pulse and the status bar)
 
-**DD**:
-One session's largest orders, each of which drills into its fills.
-_Avoid_: done detail, big orders
+**DD** (Done detail):
+One session's blocks, largest first, each of which drills into its fills in RT.
+_Avoid_: big orders
 
-**RT**:
+**RT** (Running trade):
 One session's individual fills.
-_Avoid_: running trade, tape, trades
+_Avoid_: tape, trades
 
-**TB**:
+**TB** (Trade book):
 Volume traded at each price over one session.
-_Avoid_: trade book, volume profile
+_Avoid_: volume profile
 
-**OB**:
+**OB** (Closing order book):
 The orders resting on the book at one session's close.
-_Avoid_: order book, depth, closing book
+_Avoid_: depth, closing book
+
+**Block**:
+One DD row: an order with its fills.
+_Avoid_: big order, trade
 
 ### Signals
 
 **Signal**:
-A stock that crossed one of five unusual-activity rules on the latest session or report date.
+A ticker that crossed one of five unusual-activity rules on the latest session or report date.
 _Avoid_: alert, event, trigger
 
 **ARA**:
-A signal for a close at or above the stock's auto-rejection upper band.
+A signal for a close at or above the ticker's auto-rejection upper band.
 _Avoid_: limit up
 
 **Volume spike**:
-A signal for volume at least five times the stock's average, with at least IDR 5B traded.
+A signal for volume at least five times the ticker's average, with at least IDR 5B traded.
 _Avoid_: VOL (except in SIG), unusual volume
 
 **Foreign streak**:
-A signal for at least seven days of net foreign buying, totaling at least 3% of value traded.
+A signal for at least seven sessions of net foreign buying, totaling at least 3% of value traded.
 _Avoid_: FGN (except in SIG), foreign buying
 
 **Green on red**:
-A signal for a stock that closed up on a day IHSG fell 2% or more, with at least IDR 1B traded.
-_Avoid_: RS, relative strength
+A signal for a ticker that closed up in a session when IHSG fell 2% or more, with at least IDR 1B traded.
+_Avoid_: RS (except in SIG), relative strength
 
 **5% change**:
-A signal for a 5% holder that changed their percentage or exited.
-_Avoid_: ownership change, insider move
+A signal for a 5% holder that changed their percentage or exited. The Ticker page lists them as ownership changes.
+_Avoid_: insider move
 
 ### Market
 
@@ -253,11 +303,11 @@ Where the client behind a broker's trade is based. Not where the broker is owned
 _Avoid_: local broker, foreign broker
 
 **UMA**:
-An IDX notice of unusual market activity in a stock. Not a signal.
+An IDX notice of unusual market activity in a ticker. A risk flag, not a signal.
 _Avoid_: unusual activity alert
 
 **FCA**:
-The IDX notation for a stock on the full call auction board.
+The IDX notation for a ticker on the full call auction board.
 _Avoid_: X notation
 
 **5% holder**:
@@ -266,20 +316,24 @@ _Avoid_: major holder, insider, whale
 
 **1% holder**:
 A shareholder at or above 1%, from IDX monthly files.
-_Avoid_: Registry (UI label), minor holder
+_Avoid_: minor holder
+
+**Registry**:
+A month-end report from the share registrar with free float, shareholder count and investor types. Not the 1% holder files.
+_Avoid_: registrar report
 
 **Broker data**:
 Stockbit's per-broker trading activity, shown only after sign-in.
-_Avoid_: broker summary (for the data), bandarmology
+_Avoid_: broker activity, broker flow, bandarmology
 
 ### Data
 
 **Ingest**:
 The daily batch that fetches IDX prices, indices, issuers, holders and filings.
-_Avoid_: pipeline, scrape, sync
+_Avoid_: daily batch, pipeline, scrape, sync
 
 **Collector**:
-The run that fetches broker data and ticks from Stockbit. Only one may run at a time.
+The run that fetches broker data, running trades and closing order books from Stockbit. Only one may run at a time.
 _Avoid_: scraper, broker job, crawler
 
 **Collector host**:
@@ -291,21 +345,21 @@ The record that a collector run holds until it ends or expires, which keeps a se
 _Avoid_: lock, mutex
 
 **Day-board**:
-One trading date on one board. It is complete once every listed broker's domestic and foreign activity is fetched.
-_Avoid_: session, day
+One session on one board. It is complete once every listed broker's domestic and foreign activity is fetched.
+_Avoid_: day
 
 **Coverage**:
 The record of which day-boards the collector has completed.
 _Avoid_: progress, checkpoint
 
 **Dispatch**:
-The scheduler that starts ingest daily and a collector run whenever none is active.
+The Cloudflare Worker that starts ingest daily and a collector run whenever none is active.
 _Avoid_: cron, scheduler
 
 **Feeds**:
 The job that publishes market news and the economic calendar every 15 minutes.
-_Avoid_: news job, RSS
+_Avoid_: feed (alone), news job, RSS
 
-**Share card**:
-The price image shown when a Ticker link is shared.
-_Avoid_: OG image, preview, thumbnail
+**Ticker card**:
+The price image shown when a Ticker page link is shared.
+_Avoid_: share card, OG image, preview, thumbnail
