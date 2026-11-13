@@ -26,6 +26,9 @@ export default defineConfig({
     ],
   },
   staged: {
-    '*.{js,jsx,ts,tsx}': ['vp check --fix', 'pnpm -r exec vp test related --run --passWithNoTests'],
+    '*.{js,jsx,ts,tsx}': [
+      'vp check --fix',
+      'pnpm -r --workspace-concurrency=1 exec vp test related --run --passWithNoTests',
+    ],
   },
 });

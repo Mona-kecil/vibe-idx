@@ -7,7 +7,7 @@
     "apps/pipeline": {},
     "apps/feeds": {},
     "apps/web": {
-      "entry": ["api/*.ts"]
+      "entry": ["api/*.ts", "scripts/icons.ts"]
     }
   }
 }

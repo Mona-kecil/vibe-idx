@@ -7,7 +7,7 @@
   "type": "module",
   "scripts": {
     "prepare": "vp config --no-agent",
-    "test": "vp run --filter \"./apps/*\" --cache test",
+    "test": "vp run --filter \"./apps/*\" --cache --concurrency-limit 1 test",
     "knip": "knip"
   },
   "devDependencies": {
