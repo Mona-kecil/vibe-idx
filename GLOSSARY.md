@@ -2,7 +2,7 @@
 
 A daily radar for the Indonesia Stock Exchange (IDX). It finds tickers with unusual price, volume, foreign or ownership activity, then shows who holds and who trades each one.
 
-Site sections take their heading as their name. Terminal functions take their code. When a Site section and a Terminal function show the same thing, each entry names its twin.
+Site sections take their heading as their name. Terminal functions take their code. When a Site section and a Terminal function cover the same thing, each entry names its twin. The Site twin usually shows less.
 
 ## Language
 
@@ -34,7 +34,7 @@ _Avoid_: range, brush, highlight
 
 **Session**:
 One trading date.
-_Avoid_: day, trading day, SESSION 1 and SESSION 2 (the halves of a session)
+_Avoid_: day, trading day, SESSION 1 and SESSION 2 (those are trading phases)
 
 **Risk flag**:
 An IDX suspension, UMA notice or notation on a ticker. RISK lists them for all tickers.
@@ -48,10 +48,10 @@ _Avoid_: outdated, old data, delayed
 
 **Today**:
 The Site's front page: Pulse, Today watchlist, Most traded, signal tiles, This week and News.
-_Avoid_: Home, homepage, dashboard
+_Avoid_: Home (except the Terminal's HOME link, which returns to the Site), homepage, dashboard
 
 **Market**:
-The Site page that lists every ticker in one table, ranked by a sort chip and narrowed by a lens. It is the screener.
+The Site page that lists every ticker that traded in the latest session, ranked by a sort chip and narrowed by a lens. It is the screener.
 _Avoid_: stock list, market page
 
 **Ticker page**:
@@ -71,7 +71,7 @@ The Today section with one row per pinned ticker, shown only when something is p
 _Avoid_: favorites
 
 **Most traded**:
-The Today heatmap of the tickers with the highest value traded, colored by daily change. The Terminal's twin is HEAT.
+The Today heatmap of the 50 tickers with the highest value traded, 20 on phones, colored by daily change. The Terminal's twin is HEAT.
 _Avoid_: treemap
 
 **Signal tile**:
@@ -83,19 +83,27 @@ The Today strip of the next five weekdays with high-impact economic events and c
 _Avoid_: calendar, upcoming
 
 **News**:
-The Today section of market headlines, grouped by day. The Terminal's twin is NEWS.
+The Today section of the latest Indonesian market headlines, grouped by day. The Terminal's twin is NEWS, which also covers world and ticker news.
 _Avoid_: headlines, feed
 
 **Sort chip**:
 A Market button that ranks the table: Gainers, Losers, Value, Foreign buy or Foreign sell.
 _Avoid_: filter, lens
 
+**Period**:
+The 1d, 3d or 5d window that Market and MOV rank over. Not a selection.
+_Avoid_: range, window, timeframe
+
+**Accumulation**:
+The signed-in Market column: the top net-buying broker's net shares as a share of volume over the period. It does not identify the investor behind the broker.
+_Avoid_: bandar score, smart money
+
 **Lens**:
-A Market tab that keeps only the tickers with one signal kind. All shows every ticker, and a kind with no tickers is hidden.
+A Market tab that keeps only the tickers with one signal kind. All shows every ticker. A kind with no tickers is hidden unless its lens is selected.
 _Avoid_: filter tab, signal filter
 
 **Price chart**:
-The Ticker page chart of price and volume, with chart marks. The Terminal's twin is GP.
+The Ticker page chart of price and volume, with net foreign overlays and chart marks. The Terminal's twin is GP.
 _Avoid_: graph, candles
 
 **Chart mark**:
@@ -103,7 +111,7 @@ A lettered badge on a price chart for a filing, a 5% change or a corporate actio
 _Avoid_: event badge, pin, marker
 
 **Stats**:
-The Ticker page figures under the price chart, with the rest behind More. The Terminal's twin is KEY.
+The Ticker page figures under the price chart, with the rest behind More. Price and change sit in the page header instead. The Terminal's twin is KEY.
 _Avoid_: key figures, fundamentals
 
 **Ownership**:
@@ -169,8 +177,16 @@ The Terminal input that takes a ticker, a function, a mode, HELP or PIN.
 _Avoid_: search, omnibox, prompt
 
 **Status bar**:
-The Terminal's bottom line with session state, IHSG, breadth, estimated foreign flow and the next high-impact event. The Site's twin is Pulse.
+The Terminal's bottom line with the trading phase, IHSG, breadth, estimated foreign flow and the next high-impact event. The Site's twin is Pulse.
 _Avoid_: footer
+
+**Trading phase**:
+Where the exchange is in its day, in Jakarta time: PRE-OPEN, SESSION 1, BREAK, SESSION 2, PRE-CLOSE or CLOSED.
+_Avoid_: session (for a phase), market hours
+
+**Timeframe**:
+The bar size on GP: W, D, 4H, 1H or 15M. Not a selection or a period.
+_Avoid_: interval, resolution, range
 
 **Hillclimb**:
 The measured count of steps a person needs to answer the Terminal's daily questions.
@@ -211,7 +227,7 @@ Risk flags across all tickers.
 _Avoid_: risk badge
 
 **GP** (Price history):
-The Terminal price and volume chart. Shift-drag sets the selection. The Site's twin is the price chart.
+The Terminal price and volume chart, in any timeframe down to 15 minutes. Shift-drag sets the selection. The Site's twin is the price chart.
 _Avoid_: chart, price pane
 
 **KEY** (Key figures):
@@ -235,7 +251,7 @@ Net or gross buyers and sellers by broker over a period. The Site's twin is Brok
 _Avoid_: broker flow, broker table
 
 **BFL** (Broker flow):
-Each chosen broker's running net position over time. It has no Site twin.
+Each chosen broker's net buying, summed from zero across the selection or flow period. Not the broker's total holding. It has no Site twin.
 _Avoid_: broker summary, accumulation chart
 
 **FF** (Foreign flow):
@@ -243,7 +259,7 @@ Daily net buying by foreign clients and its running total, from broker data.
 _Avoid_: foreign estimate (that is the IDX figure in Pulse and the status bar)
 
 **DD** (Done detail):
-One session's blocks, largest first, each of which drills into its fills in RT.
+One session's blocks, plus each off-board trade as its own row. A block drills into its fills in RT.
 _Avoid_: big orders
 
 **RT** (Running trade):
@@ -251,7 +267,7 @@ One session's individual fills.
 _Avoid_: tape, trades
 
 **TB** (Trade book):
-Volume traded at each price over one session.
+Regular-board volume traded at each price over one session.
 _Avoid_: volume profile
 
 **OB** (Closing order book):
@@ -259,7 +275,7 @@ The orders resting on the book at one session's close.
 _Avoid_: depth, closing book
 
 **Block**:
-One DD row: an order with its fills.
+One DD row for a regular-board order, with its fills. Not an off-board trade, which has a row of its own.
 _Avoid_: big order, trade
 
 ### Signals
@@ -273,7 +289,7 @@ A signal for a close at or above the ticker's auto-rejection upper band.
 _Avoid_: limit up
 
 **Volume spike**:
-A signal for volume at least five times the ticker's average, with at least IDR 5B traded.
+A signal for volume at least five times the ticker's average over the previous 20 sessions, with at least IDR 5B traded.
 _Avoid_: VOL (except in SIG), unusual volume
 
 **Foreign streak**:
@@ -318,6 +334,10 @@ _Avoid_: major holder, insider, whale
 A shareholder at or above 1%, from IDX monthly files.
 _Avoid_: minor holder
 
+**Insider report**:
+A KSEI filing that names a reporter and their shares before and after a change. Its net change feeds ownership changes on the Ticker page. Not a 5% holder report.
+_Avoid_: insider trade, insider buying
+
 **Registry**:
 A month-end report from the share registrar with free float, shareholder count and investor types. Not the 1% holder files.
 _Avoid_: registrar report
@@ -329,7 +349,7 @@ _Avoid_: broker activity, broker flow, bandarmology
 ### Data
 
 **Ingest**:
-The daily batch that fetches IDX prices, indices, issuers, holders and filings.
+The daily job that fetches IDX prices, indices, issuers, holders and filings.
 _Avoid_: daily batch, pipeline, scrape, sync
 
 **Collector**:
