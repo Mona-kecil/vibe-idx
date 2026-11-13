@@ -4,9 +4,9 @@ The [README](../README.md) covers running, checking and operating the system. Th
 
 ## Runtime
 
-GitHub Actions runs Ingest and the Collector as separate workflows with separate queues. DuckDB reads private Parquet history and writes the public JSON that the Site and the Terminal read. Vercel serves the React app and its functions. Dispatch starts Ingest daily at 17:17 Jakarta and starts a Collector run every ten minutes when none is active. A manual Ingest refuses to start before 17:17. Feeds publishes market news and the economic calendar on its own schedule; see [its README](../apps/feeds/README.md).
+GitHub Actions runs Ingest and the Collector as separate workflows with separate queues. DuckDB reads private Parquet history and writes the public JSON that the Site and the Terminal read. Vercel serves the React app and its functions. Dispatch starts Ingest daily at 17:17 Jakarta and starts a Collector run every ten minutes when none is active. A manual Ingest refuses to start before 17:17 unless it only backfills Registry reports. Feeds publishes market news and the economic calendar on its own schedule; see [its README](../apps/feeds/README.md).
 
-Ticker links get server-rendered metadata with the company name, latest close, daily change and reporting date. `/api/og` renders the Ticker card from public ticker data, and its dated URL refreshes chat previews each session. The preview Worker injects the same metadata from the public bucket and proxies the image to Vercel. Missing ticker data falls back to the default preview.
+Ticker links get server-rendered metadata with the company name, latest close, daily change and reporting date. `/api/og` renders the Ticker card from public ticker data, and its dated URL makes chat apps fetch a fresh card each session. The preview Worker injects the same metadata from the public bucket and proxies the image to Vercel. Missing ticker data falls back to the default preview.
 
 ## Ingest
 
@@ -52,7 +52,7 @@ The private bucket, `vibe-idx-private`:
 - `site/market-accumulation.json`: Accumulation windows.
 - `parquet/brokers/` and `parquet/broker-coverage.parquet`: unused.
 
-The Collector restores only prices, broker data years and Coverage. Ingest restores only Coverage, for its freshness check, and never uploads broker data. Nothing deletes stored objects.
+The Collector restores only prices, corporate actions, broker data years and Coverage. Ingest restores the IDX tables and raw responses without broker data, plus Coverage for its freshness check, and never uploads broker data. Nothing deletes stored objects.
 
 The public bucket, `vibe-idx-public`, holds `health.json`, `market.json`, `feed.json`, `tickers.json`, `ticker/<TICKER>.json`, and Feeds' `news.json` and `calendar.json`. Vercel maps `/data/*` to it. Broker data never enters it.
 

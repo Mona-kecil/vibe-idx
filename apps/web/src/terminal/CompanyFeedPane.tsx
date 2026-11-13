@@ -1,7 +1,7 @@
 import type { Ticker } from '../data';
 import { attachments } from '../ticker/logic';
 import { dateText } from '../ticker/format';
-import type { Headline, TerminalData } from './sources';
+import type { NewsArticle, TerminalData } from './sources';
 import { useTerminal, type usePublications } from './state';
 import { Availability, Empty, Scroll } from './ui';
 import './company-feed.css';
@@ -12,7 +12,7 @@ type Action = Extract<
 >['data']['actions'][number];
 type FeedItem =
   | { kind: 'disclosure'; date: string; key: string; filing: Ticker['disclosures'][number] }
-  | { kind: 'news'; date: string; key: string; article: Headline }
+  | { kind: 'news'; date: string; key: string; article: NewsArticle }
   | {
       kind: 'action';
       date: string;

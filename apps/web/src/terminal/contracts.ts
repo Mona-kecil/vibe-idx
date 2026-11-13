@@ -1,7 +1,7 @@
 import { z } from 'zod';
 const timestamp = z.string().refine((value) => Number.isFinite(Date.parse(value)));
 const sourceUrl = z.url().refine((value) => /^https?:/.test(value));
-export const headlineSchema = z.object({
+export const newsArticleSchema = z.object({
   ts: timestamp,
   src: z.string(),
   title: z.string(),

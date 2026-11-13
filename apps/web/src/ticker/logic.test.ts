@@ -650,7 +650,7 @@ describe('holdingsMoved', () => {
 });
 
 describe('timeline cleanup and chart marks', () => {
-  it('drops daily price recaps and the trailing source name from news headlines', () => {
+  it('drops daily price recaps and the trailing source name from news titles', () => {
     const news = [
       {
         published_at: '2026-11-12T10:00:00',

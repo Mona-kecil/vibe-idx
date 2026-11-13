@@ -4,10 +4,10 @@ import {
   fetchActions,
   fetchBrokers,
   fetchCalendar,
-  fetchHeadlines,
+  fetchNews,
   fetchRisk,
   fetchTickerNews,
-  type Headline,
+  type NewsArticle,
   type Resource,
 } from './sources';
 import { act, createElement } from 'react';
@@ -66,7 +66,7 @@ describe('terminal publications', () => {
       return Response.json(payload);
     });
     vi.stubGlobal('fetch', fetcher);
-    const news = await fetchHeadlines(),
+    const news = await fetchNews(),
       calendar = await fetchCalendar(),
       actions = await fetchActions(),
       risk = await fetchRisk();
@@ -112,7 +112,7 @@ describe('terminal publications', () => {
       new Response('not json'),
     ]) {
       fetcher.mockResolvedValueOnce(response);
-      expect(await fetchHeadlines()).toEqual({ kind: 'unavailable' });
+      expect(await fetchNews()).toEqual({ kind: 'unavailable' });
     }
     fetcher.mockRejectedValueOnce(new Error('offline'));
     expect(await fetchRisk()).toEqual({ kind: 'unavailable' });
@@ -130,7 +130,7 @@ describe('terminal publications', () => {
           news: [{ ...item, src: 'Publisher', title: 'Headline', region: 'ID', tags: [] }],
         }),
       );
-      expect((await fetchHeadlines()).kind).toBe('unavailable');
+      expect((await fetchNews()).kind).toBe('unavailable');
     }
   });
   it('authenticates broker reads, handles missing histories and validates ticker identity', async () => {
@@ -157,7 +157,7 @@ function requestUrl(input: RequestInfo | URL) {
 }
 
 describe('publication source presentation', () => {
-  it('strips only a matching trailing publisher from ticker headlines', async () => {
+  it('strips only a matching trailing publisher from ticker news titles', async () => {
     const titles = [
       'Profit rises - CNBC Indonesia',
       'Profit - outlook improves - CNBC Indonesia',
@@ -252,12 +252,12 @@ describe('publication source presentation', () => {
 
 const context: {
   publications: {
-    news: Awaited<ReturnType<typeof fetchHeadlines>>;
+    news: Awaited<ReturnType<typeof fetchNews>>;
     calendar: Awaited<ReturnType<typeof fetchCalendar>>;
     actions: Awaited<ReturnType<typeof fetchActions>>;
     risks: Awaited<ReturnType<typeof fetchRisk>>;
   };
-  tickerNews: Resource<Headline[]>;
+  tickerNews: Resource<NewsArticle[]>;
   ticker: string;
   filters: { news: string; cal: string; ca: string; risk: string };
   filter: ReturnType<typeof vi.fn>;
@@ -302,7 +302,7 @@ describe('publication pane interactions', () => {
     if (!(button instanceof HTMLButtonElement)) throw new Error(`Missing ${selector}`);
     await act(async () => button.click());
   }
-  it('links every headline to its source in a new tab and keeps the list in place', async () => {
+  it('links every news item to its source in a new tab and keeps the list in place', async () => {
     context.filters.news = 'TICKER';
     context.tickerNews = {
       kind: 'ready',

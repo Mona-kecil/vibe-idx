@@ -9,7 +9,7 @@ import {
   fetchBrokers,
   fetchDetail,
   fetchTickerNews,
-  type Headline,
+  type NewsArticle,
   terminalData,
   type Resource,
   type TerminalData,
@@ -137,7 +137,7 @@ function LoadedTerminal({ data }: { data: TerminalData }) {
   const getToken = useCallback(() => authRef.current.getAccessToken(), []);
   const [flowPins, setFlowPins] = useState<string[]>([]),
     [flowHidden, setFlowHidden] = useState<string[]>([]);
-  const [tickerNews, setTickerNews] = useState<Resource<Headline[]>>({ kind: 'loading' });
+  const [tickerNews, setTickerNews] = useState<Resource<NewsArticle[]>>({ kind: 'loading' });
   useEffect(() => {
     let current = true;
     setTickerNews({ kind: 'loading' });

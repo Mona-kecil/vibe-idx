@@ -2,7 +2,7 @@
 
 `pnpm --filter @vibe-idx/feeds collect` publishes `news.json` and `calendar.json` to the `vibe-idx-public` R2 bucket. The News and calendar feeds workflow runs every 15 minutes, at minutes 7, 22, 37, and 52, and accepts manual dispatches. GitHub may delay scheduled runs. ForexFactory and BPS refresh hourly. BI refreshes daily. Failed sources retry on the next run.
 
-The news items match the terminal `headlineSchema`. `sum` contains the feed's own summary with HTML removed. The collector never requests article pages or stores article bodies. The Google News and Vercel ticker-news paths remain separate.
+The news items match the terminal `newsArticleSchema`. `sum` contains the feed's own summary with HTML removed. The collector never requests article pages or stores article bodies. The Google News and Vercel ticker-news paths remain separate.
 
 Tagging uses the company names in `tickers.json` in the public bucket, with `PT`, `Persero`, and `Tbk` normalized. Longer names match first. A single-word company name requires `PT` or `Tbk`. A four-letter ticker requires a stock marker such as `saham` or `emiten` immediately before it, or `Tbk` immediately after it. Bare codes, bank abbreviations, and group nicknames do not qualify by themselves.
 

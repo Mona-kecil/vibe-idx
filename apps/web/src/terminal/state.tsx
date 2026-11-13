@@ -4,13 +4,13 @@ import type { BrokerDay, BrokerBoard, InvestorFilter } from '../brokers';
 import type { Selection } from '../ticker/logic';
 import type { BlockSelection } from '../ticks';
 import {
-  fetchHeadlines,
+  fetchNews,
   fetchCalendar,
   fetchActions,
   fetchRisk,
   type TerminalData,
   type Resource,
-  type Headline,
+  type NewsArticle,
 } from './sources';
 
 export const functions = {
@@ -93,7 +93,7 @@ export function useResource<T>(read: (signal: AbortSignal) => Promise<Resource<T
 }
 export function usePublications() {
   return {
-    news: useResource(fetchHeadlines),
+    news: useResource(fetchNews),
     calendar: useResource(fetchCalendar),
     actions: useResource(fetchActions),
     risks: useResource(fetchRisk),
@@ -125,7 +125,7 @@ type TerminalContextValue = {
   selectTickBlock: (block: BlockSelection | null) => void;
   retryBrokers: () => void;
   publications: ReturnType<typeof usePublications>;
-  tickerNews: Resource<Headline[]>;
+  tickerNews: Resource<NewsArticle[]>;
   flowPins: string[];
   setFlowPins: (pins: string[]) => void;
   flowHidden: string[];

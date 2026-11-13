@@ -1,7 +1,7 @@
 import { XMLParser, XMLValidator } from 'fast-xml-parser';
 import { Parser } from 'htmlparser2';
 import { z } from 'zod';
-import { calendarEventSchema, headlineSchema, type CalendarEvent } from './contracts';
+import { calendarEventSchema, newsArticleSchema, type CalendarEvent } from './contracts';
 
 export function cleanHTML(html: string): string {
   let text = '',
@@ -57,7 +57,7 @@ export function parseRSS(
       title = cleanHTML(n.title),
       sum = cleanHTML(n.description ?? '');
     if (/^Video:/i.test(title)) return [];
-    const result = headlineSchema.safeParse({
+    const result = newsArticleSchema.safeParse({
       ts: new Date(n.pubDate).toISOString(),
       src: feed.src,
       title,

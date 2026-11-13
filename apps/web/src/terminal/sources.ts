@@ -8,14 +8,14 @@ import {
 import { z } from 'zod';
 import { load, loadNews, corporateActionsSchema, risksSchema, riskSchema } from '../data';
 import { brokerHistorySchema, brokerTickerSchema } from '../brokers';
-import { headlineSchema, calendarEventSchema } from './contracts';
+import { newsArticleSchema, calendarEventSchema } from './contracts';
 import { dateText } from '../ticker/format';
 
 export type Resource<T> =
   | { kind: 'loading' }
   | { kind: 'unavailable' }
   | { kind: 'ready'; data: T };
-export type Headline = z.infer<typeof headlineSchema>;
+export type NewsArticle = z.infer<typeof newsArticleSchema>;
 export type Risk = z.infer<typeof riskSchema>;
 const sourceStatus = z.object({
   as_of: z.string().nullable(),
@@ -59,7 +59,7 @@ function publicationWarnings(data: {
       });
 }
 const newsSchema = z
-  .object({ ...publication, news: z.array(headlineSchema) })
+  .object({ ...publication, news: z.array(newsArticleSchema) })
   .transform((data) => ({ ...data, errors: publicationWarnings(data) }));
 const calendarSchema = z
   .object({ ...publication, cal: z.array(calendarEventSchema) })
@@ -81,7 +81,7 @@ async function published<T>(
     return { kind: 'unavailable' };
   }
 }
-export const fetchHeadlines = (signal?: AbortSignal) => published('news.json', newsSchema, signal);
+export const fetchNews = (signal?: AbortSignal) => published('news.json', newsSchema, signal);
 export const fetchCalendar = (signal?: AbortSignal) =>
   published('calendar.json', calendarSchema, signal);
 export const fetchActions = (signal?: AbortSignal) =>
@@ -115,7 +115,7 @@ export async function fetchBrokers(ticker: string, token: string, signal?: Abort
   return history.days;
 }
 
-export async function fetchTickerNews(ticker: string): Promise<Resource<Headline[]>> {
+export async function fetchTickerNews(ticker: string): Promise<Resource<NewsArticle[]>> {
   try {
     const rows = await loadNews(ticker);
     return {

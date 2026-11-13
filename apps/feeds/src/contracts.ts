@@ -4,7 +4,7 @@ export const tickerSchema = z
   .array(z.object({ ticker: z.string().regex(/^[A-Z]{4,5}$/), name: z.string().min(1) }))
   .min(1);
 export type Ticker = z.infer<typeof tickerSchema>[number];
-export const headlineSchema = z.object({
+export const newsArticleSchema = z.object({
   ts: z.iso.datetime(),
   src: z.string(),
   title: z.string().min(1),
@@ -14,7 +14,7 @@ export const headlineSchema = z.object({
   tags: z.array(z.string()),
   source_id: z.string(),
 });
-export type Headline = z.infer<typeof headlineSchema>;
+export type NewsArticle = z.infer<typeof newsArticleSchema>;
 export const calendarEventSchema = z.object({
   ts: z.iso.datetime(),
   c: z.string(),
@@ -39,5 +39,5 @@ const sourceSchema = z.object({
 });
 export type SourceStatus = z.infer<typeof sourceSchema>;
 const metadata = { as_of: z.iso.datetime(), sources: z.record(z.string(), sourceSchema) };
-export const newsSchema = z.object({ ...metadata, news: z.array(headlineSchema) });
+export const newsSchema = z.object({ ...metadata, news: z.array(newsArticleSchema) });
 export const calendarSchema = z.object({ ...metadata, cal: z.array(calendarEventSchema) });

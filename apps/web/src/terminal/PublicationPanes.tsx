@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useRef, useState } from 'react';
 import { useTerminal } from './state';
-import type { Headline, Risk, Resource } from './sources';
+import type { NewsArticle, Risk, Resource } from './sources';
 import { Availability, Empty, Publication, Scroll, Segments, TickerLink } from './ui';
 import { calendarDate, dateText, wib } from '../ticker/format';
 import './publication-panes.css';
@@ -33,7 +33,7 @@ function usePublicationTimeline(data: unknown, filter: string) {
 export function NewsPane() {
   const { publications, filters, filter, ticker, tickerNews } = useTerminal();
   const published = publications.news.kind === 'ready' ? publications.news.data.news : [];
-  const source: Resource<Headline[]> =
+  const source: Resource<NewsArticle[]> =
     filters.news === 'TICKER'
       ? tickerNews
       : publications.news.kind === 'ready'
@@ -47,7 +47,7 @@ export function NewsPane() {
   const list = [
     ...new Map([...candidates].reverse().map((item) => [item.link, item])).values(),
   ].sort((a, b) => b.ts.localeCompare(a.ts));
-  const resource: Resource<Headline[]> = list.length ? { kind: 'ready', data: list } : source;
+  const resource: Resource<NewsArticle[]> = list.length ? { kind: 'ready', data: list } : source;
   return (
     <>
       <div className="sub">

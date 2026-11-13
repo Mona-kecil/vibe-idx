@@ -21,7 +21,7 @@ The desktop view of panes for studying one ticker in depth. It is not available 
 _Avoid_: workspace, pro mode, dashboard, app
 
 **Ticker**:
-A listed company, named by its four-letter IDX code.
+A listed company, named by its IDX code, such as BBCA.
 _Avoid_: symbol, emiten, issuer code
 
 **Watchlist**:
@@ -71,7 +71,7 @@ The Today strip with IHSG, breadth, estimated foreign flow and source dates. The
 _Avoid_: market summary, header stats
 
 **Today watchlist**:
-The Today section with one row per pinned ticker, shown only when something is pinned. Its heading reads "Watchlist". The Terminal's twin is WL.
+The Today section headed "Watchlist", with one row per pinned ticker and shown only when something is pinned. The Terminal's twin is WL.
 _Avoid_: favorites
 
 **Most traded**:
@@ -79,15 +79,15 @@ The Today heatmap of the 50 tickers with the highest value traded, 20 on phones,
 _Avoid_: treemap
 
 **Signal tile**:
-A Today card for one signal kind with its ticker count and three strongest tickers. Not a heatmap tile. The Terminal's twin is SIG.
+A Today card for one signal kind with its ticker count and three strongest tickers, not a heatmap tile. The Terminal's twin is SIG.
 _Avoid_: signal card, alert tile
 
 **This week**:
-The Today strip of the next five weekdays with high-impact economic events and corporate action dates.
+The Today strip of the next five weekdays with high-impact economic releases and corporate action dates.
 _Avoid_: calendar, upcoming
 
 **News**:
-The Today section of the latest Indonesian market headlines, grouped by day. The Terminal's twin is NEWS, which also covers world and ticker news.
+The Today section of the latest Indonesian market news, grouped by day. The Terminal's twin is NEWS, which also covers world and ticker news.
 _Avoid_: headlines, feed
 
 **Sort chip**:
@@ -103,7 +103,7 @@ The signed-in Market column: the top net-buying broker's net shares as a share o
 _Avoid_: bandar score, smart money
 
 **Lens**:
-A Market tab that keeps only the tickers with one signal kind. All shows every ticker. A kind with no tickers is hidden unless its lens is selected.
+A Market tab that keeps only the tickers with one signal kind, or every ticker for All. A kind with no tickers is hidden unless its lens is selected.
 _Avoid_: filter tab, signal filter
 
 **Price chart**:
@@ -115,7 +115,7 @@ A lettered badge on a price chart for a filing, a 5% change or a corporate actio
 _Avoid_: event badge, pin, marker
 
 **Stats**:
-The Ticker page figures under the price chart, with the rest behind More. Price and change sit in the page header instead. The Terminal's twin is KEY.
+The Ticker page figures under the price chart, except price and change, which sit in the page header. Less-used figures sit behind More, and the Terminal's twin is KEY.
 _Avoid_: key figures, fundamentals
 
 **Ownership**:
@@ -123,7 +123,7 @@ The Ticker page section with 5% holders, ownership changes and holdings over tim
 _Avoid_: holders section, shareholders
 
 **Timeline**:
-The Ticker page list of IDX filings and ticker news, newest first. It has no corporate action dates. The Terminal's twin is FEED.
+The Ticker page list of IDX filings and ticker news, newest first, without corporate action dates. The Terminal's twin is FEED.
 _Avoid_: feed, disclosures
 
 **Broker summary**:
@@ -181,7 +181,7 @@ The Terminal input that takes a ticker, a function, a mode, HELP or PIN.
 _Avoid_: search, omnibox, prompt
 
 **Status bar**:
-The Terminal's bottom line with the trading phase, IHSG, breadth, estimated foreign flow and the next high-impact event. The Site's twin is Pulse.
+The Terminal's bottom line with the trading phase, IHSG, breadth, estimated foreign flow and the next high-impact economic release. The Site's twin is Pulse.
 _Avoid_: footer
 
 **Trading phase**:
@@ -215,7 +215,7 @@ The top movers by change and by value traded, side by side.
 _Avoid_: gainers
 
 **NEWS**:
-Headlines for Indonesia, the world or the current ticker. The Site's twin is News.
+News for Indonesia, the world or the current ticker. The Site's twin is News.
 _Avoid_: feed
 
 **CA** (Corporate actions):
@@ -223,7 +223,7 @@ Corporate actions such as dividends, rights issues and shareholder meetings.
 _Avoid_: actions, events
 
 **CAL** (Economic calendar):
-Economic events by date and impact.
+Scheduled economic releases by date and impact.
 _Avoid_: macro, events
 
 **RISK** (Risk flags):
@@ -231,7 +231,7 @@ Risk flags across all tickers.
 _Avoid_: risk badge
 
 **GP** (Price history):
-The Terminal price and volume chart, in any timeframe down to 15 minutes. Shift-drag sets the selection. The Site's twin is the price chart.
+The Terminal price and volume chart, in any timeframe down to 15 minutes, where shift-drag sets the selection. The Site's twin is the price chart.
 _Avoid_: chart, price pane
 
 **KEY** (Key figures):
@@ -252,10 +252,10 @@ _Avoid_: timeline
 
 **BRK** (Broker summary):
 Net or gross buyers and sellers by broker over a period. The Site's twin is Broker summary on the Ticker page.
-_Avoid_: broker flow, broker table
+_Avoid_: broker flow (that is BFL), broker table
 
 **BFL** (Broker flow):
-Each chosen broker's net buying, summed from zero across the selection or flow period. Not the broker's total holding. It has no Site twin.
+Each chosen broker's net buying, summed from zero across the selection or flow period, not the broker's total holding. It has no Site twin.
 _Avoid_: broker summary, accumulation chart
 
 **FF** (Foreign flow):
@@ -339,7 +339,7 @@ A shareholder at or above 1%, from IDX monthly files.
 _Avoid_: minor holder
 
 **Insider report**:
-A KSEI filing that names a reporter and their shares before and after a change. Its net change feeds ownership changes on the Ticker page. Not a 5% holder report.
+A KSEI filing, not a 5% holder report, that names a reporter and their shares before and after a change. Its net change feeds ownership changes on the Ticker page.
 _Avoid_: insider trade, insider buying
 
 **Registry**:
@@ -348,7 +348,7 @@ _Avoid_: registrar report
 
 **Broker data**:
 Stockbit's per-broker trading activity, shown only after sign-in.
-_Avoid_: broker flow, bandarmology
+_Avoid_: broker flow (that is BFL), bandarmology
 
 ### Data
 
@@ -381,7 +381,7 @@ The Cloudflare Worker that starts ingest daily and a collector run whenever none
 _Avoid_: cron, scheduler
 
 **Feeds**:
-The job that publishes market news and the economic calendar every 15 minutes.
+The job that publishes market news and the economic calendar on a 15-minute schedule.
 _Avoid_: feed (alone), news job, RSS
 
 **Ticker card**:

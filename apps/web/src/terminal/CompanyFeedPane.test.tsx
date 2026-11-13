@@ -3,14 +3,14 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { tickerSchema, type Health, type Ticker } from '../data';
-import type { Headline, Resource } from './sources';
+import type { NewsArticle, Resource } from './sources';
 import type { usePublications } from './state';
 import { CompanyFeedPane } from './CompanyFeedPane';
 
 const context: {
   ticker: string;
   detail: Resource<Ticker>;
-  tickerNews: Resource<Headline[]>;
+  tickerNews: Resource<NewsArticle[]>;
   publications: ReturnType<typeof usePublications>;
   data: { health: Health };
 } = {
@@ -40,7 +40,7 @@ const context: {
   },
 };
 vi.mock('./state', () => ({ useTerminal: () => context }));
-const article = (title: string, ts: string): Headline => ({
+const article = (title: string, ts: string): NewsArticle => ({
   title,
   ts,
   link: `https://example.com/${title}`,

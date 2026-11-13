@@ -23,7 +23,7 @@ import { usePublished } from './publicData';
 import { RiskFlagChips, useRiskFor } from './RiskFlagChips';
 import { PinButton, SiteHeader } from './SiteHeader';
 import { Stale } from './Stale';
-import { fetchHeadlines, type Headline } from './terminal/sources';
+import { fetchNews, type NewsArticle } from './terminal/sources';
 import { treemap } from './treemap';
 import { calendarDate, dateText, direction, moveWord, nf, wib } from './ticker/format';
 import { usePins } from './watchlist';
@@ -36,7 +36,7 @@ export function Today() {
   const [state, setState] = useState<
     { kind: 'loading' } | { kind: 'error' } | ({ kind: 'ready' } & Data)
   >({ kind: 'loading' });
-  const [news, setNews] = useState<Headline[] | null>(null);
+  const [news, setNews] = useState<NewsArticle[] | null>(null);
   const [pins, toggle] = usePins(),
     [announcement, announce] = useState('');
   useEffect(() => {
@@ -54,7 +54,7 @@ export function Today() {
         if (active) setState({ kind: 'error' });
       },
     );
-    void fetchHeadlines().then((r) => {
+    void fetchNews().then((r) => {
       if (active) setNews(r.kind === 'ready' ? r.data.news : []);
     });
     return () => {
@@ -97,7 +97,7 @@ function Briefing({
   pin,
 }: {
   data: Data;
-  news: Headline[] | null;
+  news: NewsArticle[] | null;
   pins: string[];
   pin: (ticker: string) => ReactNode;
 }) {
@@ -531,7 +531,7 @@ function WatchRow({
 
 const newsLimit = { phone: 3, desktop: 12 };
 
-function News({ news }: { news: Headline[] | null }) {
+function News({ news }: { news: NewsArticle[] | null }) {
   const phone = useNarrow();
   if (news === null) return null;
   const rows = news
