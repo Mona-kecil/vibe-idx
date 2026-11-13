@@ -74,7 +74,7 @@ jobs:
         run: mkdir -p "$DATA/raw" && aws s3 sync s3://vibe-idx-private/parquet "$DATA/parquet" --exclude "brokers/*" --exclude "broker-coverage.parquet" --exclude "broker_activity/*" --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
       - name: Restore IDX raw responses
         run: aws s3 sync s3://vibe-idx-private/raw "$DATA/raw" --exclude "broker/*" --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
-      - name: Ingest IDX and emit website JSON
+      - name: Ingest IDX and emit public JSON
         run: |
           if [ "$REGISTRY_ONLY" = true ]; then
             args=(--registry-only --since "$REGISTRY_SINCE" --limit "$REGISTRY_LIMIT")
@@ -97,11 +97,11 @@ jobs:
             aws s3 sync "$DATA/parquet" s3://vibe-idx-private/parquet --exclude "*.tmp" --exclude "brokers/*" --exclude "broker-coverage.parquet" --exclude "broker_activity/*" --exclude "broker-activity-coverage.parquet" --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
           fi
       # A failed source still publishes the others. health.json is written last, so its absence means the output is incomplete.
-      - name: Publish website JSON
+      - name: Publish public JSON
         if: ${{ !cancelled() }}
         run: |
           if [ ! -f "$OUT/health.json" ]; then
-            echo '::error::The batch stopped before it finished the website JSON; nothing was published'
+            echo '::error::The batch stopped before it finished the public JSON; nothing was published'
             exit 1
           fi
           aws s3 sync "$OUT" s3://vibe-idx-public --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"

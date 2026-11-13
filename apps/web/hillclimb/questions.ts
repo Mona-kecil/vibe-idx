@@ -7,7 +7,7 @@ const body = (table: Locator) => table.locator('tbody > tr');
 const top = (rows: Locator, first = 10) => ({ rows, first });
 
 /**
- * The frozen question list from docs/terminal-hillclimb.md, asked in order in one session.
+ * The frozen question list from hillclimb/README.md, asked in order in one session.
  * The paths are rescripted when the UI changes; the answers they must reach are not.
  */
 export const questions: Question[] = [

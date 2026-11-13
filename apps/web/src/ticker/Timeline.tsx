@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
 import { loadNews, type Ticker } from '../data';
 import {
-  aggregateRange,
+  aggregateSelection,
   attachments,
   bounds,
   holderLabel,
-  inRange,
+  inSelection,
   isOwnershipFiling,
   summaryEvents,
   timeline,
@@ -84,7 +84,7 @@ export function SelectionSummary({
   clear: () => void;
 }) {
   const b = bounds(selection),
-    totals = aggregateRange(data.prices, selection);
+    totals = aggregateSelection(data.prices, selection);
   if (!b || !totals) return null;
   const isRange = b.start !== b.end;
   const fields = [
@@ -247,10 +247,10 @@ export function Timeline({
   const items = timeline(
     data.disclosures.filter(
       (f) =>
-        inRange(f.published_at.slice(0, 10), selection) &&
+        inSelection(f.published_at.slice(0, 10), selection) &&
         (!selection || !isOwnershipFiling(f, events)),
     ),
-    news.rows.filter((n) => inRange(itemDate(n.published_at), selection)),
+    news.rows.filter((n) => inSelection(itemDate(n.published_at), selection)),
   );
   const range = b ? rangeText(b.start, b.end) : '';
   return (

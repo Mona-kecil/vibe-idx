@@ -1,12 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import {
-  functions,
-  isFunction,
-  isLayout,
-  type FunctionId,
-  type Layout,
-  useTerminal,
-} from './state';
+import { functions, isFunction, isMode, type FunctionId, type Mode, useTerminal } from './state';
 import type { Stock } from '../data';
 import './command.css';
 
@@ -41,14 +34,14 @@ export function commandSuggestions(
 }
 
 export function CommandBar({
-  layout,
-  setLayout,
+  mode,
+  setMode,
   openFunction,
   maximize,
 }: {
-  layout: Layout;
-  setLayout: (layout: Layout) => void;
-  openFunction: (id: FunctionId, layout: Layout) => void;
+  mode: Mode;
+  setMode: (mode: Mode) => void;
+  openFunction: (id: FunctionId, mode: Mode) => void;
   maximize: () => void;
 }) {
   const { data, setTicker, pins, togglePin, ticker, select, selection, filter } = useTerminal();
@@ -72,22 +65,22 @@ export function CommandBar({
       filter('news', 'TICKER');
     const named = tokens.filter((token) => data.stocks.some((stock) => stock.ticker === token));
     if (tokens.includes('PIN')) for (const code of named.length ? named : [ticker]) togglePin(code);
-    let targetLayout = layout;
+    let targetMode = mode;
     let targetFunction: FunctionId | null = null;
     for (const token of tokens) {
       if (named.includes(token)) setTicker(token);
       else if (isFunction(token)) targetFunction = token;
-      else if (isLayout(token.toLowerCase())) {
+      else if (isMode(token.toLowerCase())) {
         const next = token.toLowerCase();
-        if (isLayout(next)) {
-          targetLayout = next;
-          setLayout(next);
+        if (isMode(next)) {
+          targetMode = next;
+          setMode(next);
         }
       } else if (token === 'HELP' || token === '?') setHelp(true);
       else if (token === 'PIN') continue;
       else if (token) setError(`Unknown command: ${token}`);
     }
-    if (targetFunction) openFunction(targetFunction, targetLayout);
+    if (targetFunction) openFunction(targetFunction, targetMode);
     setText('');
     setActive(0);
   }
@@ -132,8 +125,8 @@ export function CommandBar({
             : event.key === '3'
               ? 'flow'
               : null;
-      if (isLayout(next)) {
-        setLayout(next);
+      if (isMode(next)) {
+        setMode(next);
         return;
       }
       if (event.key === '?') {
@@ -208,9 +201,9 @@ export function CommandBar({
               dismiss();
             } else if (!text && ['1', '2', '3'].includes(event.key)) {
               const next = ['grid', 'focus', 'flow'][Number(event.key) - 1];
-              if (next && isLayout(next)) {
+              if (next && isMode(next)) {
                 event.preventDefault();
-                setLayout(next);
+                setMode(next);
               }
             }
           }}
@@ -252,9 +245,9 @@ export function CommandBar({
             </div>
           ))}
         </div>
-        <nav className="lay" aria-label="Layout">
+        <nav className="lay" aria-label="Mode">
           {(['grid', 'focus', 'flow'] as const).map((value, index) => (
-            <button key={value} aria-pressed={layout === value} onClick={() => setLayout(value)}>
+            <button key={value} aria-pressed={mode === value} onClick={() => setMode(value)}>
               <kbd>{index + 1}</kbd>
               {value.toUpperCase()}
             </button>

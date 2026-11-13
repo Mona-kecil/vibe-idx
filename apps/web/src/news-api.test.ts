@@ -7,7 +7,7 @@ function feed(items: { title: string; link: string; pubDate: string; source?: st
 }
 
 describe('public ticker news', () => {
-  it('drops unrelated SINI headlines before either cap and uses only the ticker when company lookup fails', async () => {
+  it('drops unrelated SINI news before either cap and uses only the ticker when company lookup fails', async () => {
     const tickerTitles = [
       'Saham SINI Ditekan Aksi Jual Investor Asing Pekan Ini',
       'Rencana Akuisisi SINI?',
@@ -109,7 +109,7 @@ describe('public ticker news', () => {
     ).toBe(405);
   });
 
-  it('merges parallel month windows without leaking Jakarta boundary dates or duplicate headlines', async () => {
+  it('merges parallel month windows without leaking Jakarta boundary dates or duplicate news items', async () => {
     const queries: string[] = [];
     const pending: (() => void)[] = [];
     const fetcher: typeof fetch = async (input) => {

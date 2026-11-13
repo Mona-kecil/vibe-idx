@@ -3,7 +3,7 @@ import { useAuth } from '@workos-inc/authkit-react';
 import { AccountControls } from '../BrokerPanel';
 import { aggregateBrokers, brokerName, edgeFills } from '../broker-data';
 import { brokerBoards, brokerHistorySchema, type BrokerBoard, type BrokerDay } from '../brokers';
-import { bounds, inRange, type Selection } from './logic';
+import { bounds, inSelection, type Selection } from './logic';
 import { dateText, nf, rangeText, short } from './format';
 
 const boardLabels = {
@@ -14,7 +14,7 @@ const boardLabels = {
 };
 const sharesPerLot = 100;
 
-export function BrokerFlow({
+export function BrokerSummary({
   ticker,
   selection,
   start,
@@ -30,7 +30,7 @@ export function BrokerFlow({
   if (!user)
     return (
       <section className="broker-compact" id="broker-section" aria-labelledby="broker-heading">
-        <h2 id="broker-heading">Broker flow</h2>
+        <h2 id="broker-heading">Broker summary</h2>
         <AccountControls />
       </section>
     );
@@ -38,7 +38,7 @@ export function BrokerFlow({
     <section className="section" id="broker-section" aria-labelledby="broker-heading">
       <div className="section-head">
         <h2 id="broker-heading">
-          Broker flow
+          Broker summary
           {b && <span className="broker-heading-date">{rangeText(b.start, b.end, true)}</span>}
         </h2>
         {!b && (
@@ -131,11 +131,11 @@ function BrokerData({
   const days = state.days.filter(
     (d) =>
       (board === 'all' || d.board === board) &&
-      (selection ? inRange(d.date, selection) : d.date >= start && d.date <= end),
+      (selection ? inSelection(d.date, selection) : d.date >= start && d.date <= end),
   );
   const rows = aggregateBrokers(days);
   const boardPicker = (
-    <div className="ranges broker-board" aria-label="Market board">
+    <div className="ranges broker-board" aria-label="Board">
       {[...brokerBoards, 'all' as const].map((b) => (
         <button
           key={b}
@@ -244,7 +244,7 @@ function BrokerData({
     <div className="broker-flow">
       <div className="broker-controls">
         {boardPicker}
-        <div className="ranges broker-unit" aria-label="Broker flow mode">
+        <div className="ranges broker-unit" aria-label="Broker summary mode">
           {(['net', 'gross'] as const).map((m) => (
             <button
               key={m}

@@ -8,14 +8,14 @@ import {
 import { z } from 'zod';
 import { load, loadNews, corporateActionsSchema, risksSchema, riskSchema } from '../data';
 import { brokerHistorySchema, brokerTickerSchema } from '../brokers';
-import { headlineSchema, calendarEventSchema } from './contracts';
+import { newsArticleSchema, calendarEventSchema } from './contracts';
 import { dateText } from '../ticker/format';
 
 export type Resource<T> =
   | { kind: 'loading' }
   | { kind: 'unavailable' }
   | { kind: 'ready'; data: T };
-export type Headline = z.infer<typeof headlineSchema>;
+export type NewsArticle = z.infer<typeof newsArticleSchema>;
 export type Risk = z.infer<typeof riskSchema>;
 const sourceStatus = z.object({
   as_of: z.string().nullable(),
@@ -59,7 +59,7 @@ function publicationWarnings(data: {
       });
 }
 const newsSchema = z
-  .object({ ...publication, news: z.array(headlineSchema) })
+  .object({ ...publication, news: z.array(newsArticleSchema) })
   .transform((data) => ({ ...data, errors: publicationWarnings(data) }));
 const calendarSchema = z
   .object({ ...publication, cal: z.array(calendarEventSchema) })
@@ -81,7 +81,7 @@ async function published<T>(
     return { kind: 'unavailable' };
   }
 }
-export const fetchHeadlines = (signal?: AbortSignal) => published('news.json', newsSchema, signal);
+export const fetchNews = (signal?: AbortSignal) => published('news.json', newsSchema, signal);
 export const fetchCalendar = (signal?: AbortSignal) =>
   published('calendar.json', calendarSchema, signal);
 export const fetchActions = (signal?: AbortSignal) =>
@@ -107,7 +107,7 @@ export async function fetchBrokers(ticker: string, token: string, signal?: Abort
     cache: 'no-store',
     signal,
   });
-  if (response.status === 401) throw new Error('Your session expired. Sign in again.');
+  if (response.status === 401) throw new Error('Your sign-in expired. Sign in again.');
   if (response.status === 404) return [];
   if (!response.ok) throw new Error('Broker data is unavailable. Retry to load summaries.');
   const history = brokerHistorySchema.parse(await response.json());
@@ -115,7 +115,7 @@ export async function fetchBrokers(ticker: string, token: string, signal?: Abort
   return history.days;
 }
 
-export async function fetchTickerNews(ticker: string): Promise<Resource<Headline[]>> {
+export async function fetchTickerNews(ticker: string): Promise<Resource<NewsArticle[]>> {
   try {
     const rows = await loadNews(ticker);
     return {
@@ -154,7 +154,7 @@ export async function fetchTicks<K extends TickKind>(
     cache: 'no-store',
     signal,
   });
-  if (response.status === 401) throw new Error('Your session expired. Sign in again.');
+  if (response.status === 401) throw new Error('Your sign-in expired. Sign in again.');
   if (response.status === 404) return null;
   if (!response.ok) throw new Error('Tick data is unavailable. Retry.');
   const parsed = (kind === 'book' ? tickBookSchema : tickTradesSchema).parse(await response.json());

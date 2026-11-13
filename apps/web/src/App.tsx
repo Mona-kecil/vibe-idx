@@ -4,7 +4,7 @@ import './terminal/terminal.css';
 import { lazy, Suspense, useEffect, useState, useSyncExternalStore } from 'react';
 import { LocaleProvider, useLocale, type Locale } from './locale';
 import { LoginPage } from './BrokerPanel';
-import { Home } from './Home';
+import { Today } from './Today';
 import { MarketPage } from './MarketPage';
 import { TerminalBoot, useTerminalBoot } from './terminal/TerminalBoot';
 
@@ -43,7 +43,7 @@ function AppRoute({ initialUrl }: { initialUrl?: string }) {
       <TickerPage key={ticker} ticker={ticker} />
     </Suspense>
   ) : (
-    <Home />
+    <Today />
   );
 }
 

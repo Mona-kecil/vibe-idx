@@ -23,7 +23,7 @@ export function loadTicks<K extends TickKind>(
   let request = cache.get(key);
   if (!request) {
     request = getToken().then((token) => {
-      if (!token) throw new Error('Your session expired. Sign in again.');
+      if (!token) throw new Error('Your sign-in expired. Sign in again.');
       return fetchTicks(ticker, date, kind, token);
     });
     cache.set(key, request);
@@ -48,8 +48,8 @@ export function useSession() {
 }
 
 export function useTicks<K extends TickKind>(kind: K, date: string | undefined): TickState<K> {
-  const { ticker, session, getToken } = useTerminal();
-  const signedIn = session === 'signed-in';
+  const { ticker, authState, getToken } = useTerminal();
+  const signedIn = authState === 'signed-in';
   const [state, setState] = useState<TickState<K>>({ kind: 'loading' });
   useEffect(() => {
     if (!signedIn || !date) return;
@@ -76,7 +76,7 @@ export function useTicks<K extends TickKind>(kind: K, date: string | undefined):
 }
 
 export function useTradeSessions(batchSize: number) {
-  const { ticker, session, getToken } = useTerminal();
+  const { ticker, authState, getToken } = useTerminal();
   const { dates } = useSession();
   const [state, setState] = useState<
     { kind: 'loading' } | { kind: 'error'; message: string } | { kind: 'ready'; data: TickTrades[] }
@@ -84,7 +84,7 @@ export function useTradeSessions(batchSize: number) {
   const requestMore = useRef<() => void>(() => {});
   const loadMore = useCallback(() => requestMore.current(), []);
   useEffect(() => {
-    if (session !== 'signed-in') return;
+    if (authState !== 'signed-in') return;
     let current = true;
     let loading = false;
     let exhausted = false;
@@ -125,6 +125,6 @@ export function useTradeSessions(batchSize: number) {
       current = false;
       requestMore.current = () => {};
     };
-  }, [ticker, session, getToken, dates, batchSize]);
+  }, [ticker, authState, getToken, dates, batchSize]);
   return { state, loadMore };
 }

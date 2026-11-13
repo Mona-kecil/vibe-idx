@@ -38,7 +38,7 @@ describe('staleSources', () => {
     expect(
       staleSources(health('2026-11-06 10:28:00+00', ['brokers', 'one_pct', 'later']), evening),
     ).toEqual([
-      { label: 'Broker flow', since: '2026-11-03' },
+      { label: 'Broker data', since: '2026-11-03' },
       { label: 'Registry', since: '2026-10-30' },
     ]);
   });

@@ -48,9 +48,9 @@ export const clock = (seconds: number) =>
 
 export type Party = { broker: string; foreign: boolean; shares: number };
 type BlockIdentity =
-  | { session: 'continuous' | 'auction'; side: 'buy' | 'sell'; order: number; board: 'RG' }
+  | { matching: 'continuous' | 'auction'; side: 'buy' | 'sell'; order: number; board: 'RG' }
   | {
-      session: 'off-board';
+      matching: 'off-board';
       side: 'none';
       board: string;
       buyOrder: number;
@@ -73,13 +73,13 @@ export type Block = BlockIdentity & {
 export type BlockSelection = BlockIdentity & Pick<TickTrades, 'ticker' | 'date'>;
 
 export const blockId = (block: BlockIdentity) =>
-  block.session === 'off-board'
+  block.matching === 'off-board'
     ? `${block.board}:${block.buyOrder}:${block.sellOrder}:${block.tradeIndex}`
-    : `${block.session}:${block.side}:${block.order}`;
+    : `${block.matching}:${block.side}:${block.order}`;
 
 export function isBlockTrade(trades: TickTrades, i: number, block: BlockSelection): boolean {
   if (trades.ticker !== block.ticker || trades.date !== block.date) return false;
-  if (block.session === 'off-board')
+  if (block.matching === 'off-board')
     return (
       trades.board[i] === block.board &&
       trades.buy_order[i] === block.buyOrder &&
@@ -88,7 +88,7 @@ export function isBlockTrade(trades: TickTrades, i: number, block: BlockSelectio
     );
   return (
     trades.board[i] === 'RG' &&
-    trades.auction[i] === (block.session === 'auction') &&
+    trades.auction[i] === (block.matching === 'auction') &&
     (block.side === 'buy' ? trades.buy_order[i] : trades.sell_order[i]) === block.order
   );
 }
@@ -118,15 +118,15 @@ export function sessionOpen(prices: Ticker['prices'], trades: TickTrades): Sessi
  */
 export function doneDetail(trades: TickTrades): Block[] {
   const blocks = new Map<string, Block & { parties: Map<string, Party> }>();
-  const add = (i: number, side: 'buy' | 'sell', session: 'continuous' | 'auction') => {
+  const add = (i: number, side: 'buy' | 'sell', matching: 'continuous' | 'auction') => {
     const buy = side === 'buy';
     const order = buy ? trades.buy_order[i]! : trades.sell_order[i]!;
-    const key = `${session}:${side}:${order}`;
+    const key = `${matching}:${side}:${order}`;
     const price = trades.price[i]!,
       shares = trades.shares[i]!,
       time = trades.time[i]!;
     const block: Block & { parties: Map<string, Party> } = blocks.get(key) ?? {
-      session,
+      matching,
       board: 'RG',
       side,
       order,
@@ -160,7 +160,7 @@ export function doneDetail(trades: TickTrades): Block[] {
       const shares = trades.shares[i]!,
         price = trades.price[i]!;
       blocks.set(`trade:${i}`, {
-        session: 'off-board',
+        matching: 'off-board',
         side: 'none',
         board: trades.board[i]!,
         buyOrder: trades.buy_order[i]!,

@@ -2,10 +2,10 @@
 import { act, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { beforeEach, expect, it, vi } from 'vite-plus/test';
-import type { Feed, Stock, MarketSummary } from '../data';
+import type { SignalFeed, Stock, MarketSummary } from '../data';
 import { MoversPane, SignalsPane } from './MarketPanes';
 
-const ownershipFeed: Feed = [76.78, 76.781, 76.8, null].map((pct_after, i) => ({
+const ownershipFeed: SignalFeed = [76.78, 76.781, 76.8, null].map((pct_after, i) => ({
   kind: 'five_pct_change',
   ticker: `ROW${i}`,
   date: '2026-11-09',
@@ -19,7 +19,7 @@ const ownershipFeed: Feed = [76.78, 76.781, 76.8, null].map((pct_after, i) => ({
     pct_after,
   },
 }));
-let feed: Feed;
+let feed: SignalFeed;
 let priceDate: string;
 beforeEach(() => {
   feed = ownershipFeed;
@@ -132,7 +132,7 @@ it('shows today before older signals, groups kinds stably, and keeps every filte
       date: today,
       numbers: { volume: 10000, avg_volume: 1000, multiple: 10, value: 1e9, prior_days: 20 },
     },
-    ...['ZARA', 'AARA'].map((ticker): Feed[number] => ({
+    ...['ZARA', 'AARA'].map((ticker): SignalFeed[number] => ({
       kind: 'ara',
       ticker,
       date: today,

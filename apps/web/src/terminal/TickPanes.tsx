@@ -52,10 +52,10 @@ function TickPane<K extends TickKind>({
   controls?: ReactNode;
   children: (data: Loaded<K>) => ReactNode;
 }) {
-  const { session } = useTerminal();
+  const { authState } = useTerminal();
   const { date } = useSession();
   const state = useTicks(kind, date);
-  if (session !== 'signed-in') return <SignInPrompt />;
+  if (authState !== 'signed-in') return <SignInPrompt />;
   let body: ReactNode;
   if (!date) body = <Empty>No 2026 sessions for this ticker</Empty>;
   else if (state.kind === 'loading') body = <Empty>Loading {dateText(date)}…</Empty>;
@@ -330,9 +330,9 @@ function BlockSummary({
       <div className="tick-summary-main">
         <Broker code={block.broker} foreign={block.foreign} />
         <span
-          className={block.session !== 'continuous' ? 'mut' : block.side === 'buy' ? 'up' : 'dn'}
+          className={block.matching !== 'continuous' ? 'mut' : block.side === 'buy' ? 'up' : 'dn'}
         >
-          {action(block.side, block.session === 'auction', block.board)}
+          {action(block.side, block.matching === 'auction', block.board)}
         </span>
         <span title={fillCount(block.fills)}>{lots(block.shares)} lot</span>
         <span>
@@ -411,7 +411,7 @@ function TradeTape({
       });
     }
     return [...levels].sort(([a], [b]) =>
-      block?.session === 'continuous' && block.side === 'sell' ? b - a : a - b,
+      block?.matching === 'continuous' && block.side === 'sell' ? b - a : a - b,
     );
   }, [trades, tickBlock, block]);
   const firstFill = useRef<HTMLTableRowElement>(null);
@@ -427,7 +427,7 @@ function TradeTape({
     rows.push(i);
     if (tickBlock && isBlockTrade(trades, i, tickBlock)) lastFill = rows.length - 1;
   }
-  // Keep every fill in the tape, including orders older than the initial page.
+  // Keep every fill in RT, including orders older than the initial page.
   const loaded = Math.max(limit, lastFill + 51);
   const firstMatch = tickBlock ? rows.find((i) => isBlockTrade(trades, i, tickBlock)) : undefined;
   useEffect(() => {
@@ -607,7 +607,7 @@ function Blocks({
                   <button
                     className="tick-block-select"
                     aria-pressed={selected}
-                    aria-label={`${clock(block.start)} ${action(block.side, block.session === 'auction', block.board)} ${lots(block.shares)} lot ${block.broker} ${block.foreign ? 'F' : 'D'}, show fills`}
+                    aria-label={`${clock(block.start)} ${action(block.side, block.matching === 'auction', block.board)} ${lots(block.shares)} lot ${block.broker} ${block.foreign ? 'F' : 'D'}, show fills`}
                     title={fillCount(block.fills)}
                   >
                     {clock(block.start)}
@@ -618,10 +618,10 @@ function Blocks({
                 </td>
                 <td
                   className={
-                    block.session !== 'continuous' ? 'mut' : block.side === 'buy' ? 'up' : 'dn'
+                    block.matching !== 'continuous' ? 'mut' : block.side === 'buy' ? 'up' : 'dn'
                   }
                 >
-                  {action(block.side, block.session === 'auction', block.board)}
+                  {action(block.side, block.matching === 'auction', block.board)}
                 </td>
                 <td title={fillCount(block.fills)}>{lots(block.shares)}</td>
                 <td title={`${nf(block.value)} IDR`}>{short(block.value)}</td>

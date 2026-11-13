@@ -241,7 +241,7 @@ describe('React terminal', () => {
     expect(host.querySelector('[data-slot="d"] [aria-label="Change ranking"]')).not.toBeNull();
     expect(host.querySelector('[data-slot="d"] [aria-label="Value ranking"]')).not.toBeNull();
   });
-  it('opens ticker links, switches layouts and restores maximized panes', async () => {
+  it('opens ticker links, switches modes and restores maximized panes', async () => {
     window.localStorage.setItem('vibe-idx:watchlist', JSON.stringify(['BBCA']));
     await render();
     const link = host.querySelector<HTMLAnchorElement>('a.ticker');
@@ -331,7 +331,7 @@ describe('React terminal', () => {
       );
     },
   );
-  it('runs layout and ticker commands together and reads ticker news through the existing API', async () => {
+  it('runs mode and ticker commands together and reads ticker news through the existing API', async () => {
     await render();
     await command('FOCUS BBCA NEWS');
     expect(window.location.search).toBe('?t=BBCA&l=focus');
@@ -342,7 +342,7 @@ describe('React terminal', () => {
     expect(host.textContent).toContain('Ticker news from existing API');
     expect(host.querySelector('a.news-item')?.getAttribute('target')).toBe('_blank');
   });
-  it('opens the ticker feed without filters and keeps every publication function command available', async () => {
+  it('opens the company feed without filters and keeps every publication function command available', async () => {
     await render();
     await command('FOCUS BBCA FEED');
     expect(host.querySelectorAll('.pane')).toHaveLength(3);
@@ -384,7 +384,7 @@ describe('React terminal', () => {
     await click('[aria-label="Client domicile"] button:nth-child(3)');
     expect(host.querySelector('.broker-ledger.buy')?.textContent).toContain('AA');
     expect(host.querySelector('.broker-ledger.buy')?.textContent).not.toContain('BB');
-    await click('[aria-label="Market board"] button:nth-child(3)');
+    await click('[aria-label="Board"] button:nth-child(3)');
     expect(host.textContent).toContain('No trades');
   });
   it('renders NET broker codes as text and keeps GROSS pairing interactive', async () => {
@@ -463,7 +463,7 @@ describe('React terminal', () => {
         await click('[aria-label="Broker period"] button:nth-child(3)');
         expect(host.querySelector('.broker-ledger.buy')?.textContent).toContain('50.0K');
         expect(host.querySelector('.broker-ledger.buy')?.textContent).not.toContain('200.0K');
-        await click('[aria-label="Market board"] button:nth-child(3)');
+        await click('[aria-label="Board"] button:nth-child(3)');
         expect(host.textContent).toContain('No trades');
         expect(host.querySelector('.broker-ledger')).toBeNull();
       },
@@ -722,7 +722,7 @@ function requestUrl(input: RequestInfo | URL) {
   return input instanceof Request ? input.url : input.toString();
 }
 
-it('pushes ticker navigation, replaces layout navigation and restores on popstate', async () => {
+it('pushes ticker navigation, replaces mode navigation and restores on popstate', async () => {
   const push = vi.spyOn(window.history, 'pushState');
   const replace = vi.spyOn(window.history, 'replaceState');
   await render();
@@ -743,7 +743,7 @@ it('pushes ticker navigation, replaces layout navigation and restores on popstat
   replace.mockRestore();
 });
 
-it('restores the layout when a command targets a different maximized pane', async () => {
+it('restores the mode when a command targets a different maximized pane', async () => {
   await render();
   await click('[data-slot="b"] .maxb');
   await command('SIG');
@@ -831,7 +831,7 @@ it('identifies failed broker sources even when the publication run is fresh', as
   sourceFailed = true;
   await render();
   expect(host.querySelector('.status .stale')?.textContent).toBe(
-    'Broker flow not updated since 6 Nov 2026',
+    'Broker data not updated since 6 Nov 2026',
   );
 });
 

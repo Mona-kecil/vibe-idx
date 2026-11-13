@@ -1,12 +1,12 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { areaChart } from './area';
-import { load, type Feed, type Health, type Market, type Stock, type Ticker } from './data';
+import { load, type SignalFeed, type Health, type Market, type Stock, type Ticker } from './data';
 import {
   briefing,
   date,
-  EventMetric,
-  EventText,
-  eventTitle,
+  SignalMetric,
+  SignalText,
+  signalTitle,
   lensOf,
   magnitude,
   pct,
@@ -16,27 +16,27 @@ import {
   weekAhead,
   weekStrip,
   type WeekItem,
-  type Event,
+  type Signal,
   type SignalTile,
-} from './events';
+} from './signals';
 import { usePublished } from './publicData';
-import { RiskBadge, useRiskFor } from './RiskBadge';
+import { RiskFlagChips, useRiskFor } from './RiskFlagChips';
 import { PinButton, SiteHeader } from './SiteHeader';
 import { Stale } from './Stale';
-import { fetchHeadlines, type Headline } from './terminal/sources';
+import { fetchNews, type NewsArticle } from './terminal/sources';
 import { treemap } from './treemap';
 import { calendarDate, dateText, direction, moveWord, nf, wib } from './ticker/format';
 import { usePins } from './watchlist';
 import { useNarrow } from './useNarrow';
-import './home.css';
+import './today.css';
 
-type Data = { stocks: Stock[]; feed: Feed; health: Health; market: Market };
+type Data = { stocks: Stock[]; feed: SignalFeed; health: Health; market: Market };
 
-export function Home() {
+export function Today() {
   const [state, setState] = useState<
     { kind: 'loading' } | { kind: 'error' } | ({ kind: 'ready' } & Data)
   >({ kind: 'loading' });
-  const [news, setNews] = useState<Headline[] | null>(null);
+  const [news, setNews] = useState<NewsArticle[] | null>(null);
   const [pins, toggle] = usePins(),
     [announcement, announce] = useState('');
   useEffect(() => {
@@ -54,7 +54,7 @@ export function Home() {
         if (active) setState({ kind: 'error' });
       },
     );
-    void fetchHeadlines().then((r) => {
+    void fetchNews().then((r) => {
       if (active) setNews(r.kind === 'ready' ? r.data.news : []);
     });
     return () => {
@@ -70,8 +70,8 @@ export function Home() {
   );
   const stocks = state.kind === 'ready' ? state.stocks : [];
   return (
-    <div className="site home-page">
-      <SiteHeader page="home" stocks={stocks} pin={pin} />
+    <div className="site today-page">
+      <SiteHeader page="today" stocks={stocks} pin={pin} />
       <main className="wrap">
         {state.kind === 'loading' ? (
           <p role="status">Loading data…</p>
@@ -97,7 +97,7 @@ function Briefing({
   pin,
 }: {
   data: Data;
-  news: Headline[] | null;
+  news: NewsArticle[] | null;
   pins: string[];
   pin: (ticker: string) => ReactNode;
 }) {
@@ -183,7 +183,7 @@ function Pulse({ data, excluded }: { data: Data; excluded: number }) {
           </dl>
           {excluded > 0 && (
             <p>
-              {excluded} feed {excluded === 1 ? 'record' : 'records'} excluded: ticker absent from
+              {excluded} signal {excluded === 1 ? 'record' : 'records'} excluded: ticker absent from
               the stock directory.
             </p>
           )}
@@ -334,11 +334,11 @@ function Signals({ tiles, stockMap }: { tiles: SignalTile[]; stockMap: Map<strin
                   <a
                     className="tile-row"
                     href={`/t/${e.ticker}`}
-                    title={`${stockMap.get(e.ticker)?.name ?? e.ticker}\n${eventTitle(e)}`}
+                    title={`${stockMap.get(e.ticker)?.name ?? e.ticker}\n${signalTitle(e)}`}
                   >
                     <b className="sym">{e.ticker}</b>
                     <span className="metric">
-                      <EventMetric event={e} />
+                      <SignalMetric event={e} />
                     </span>
                     <span className="mag">
                       <i
@@ -464,7 +464,7 @@ function WatchRow({
   pin,
 }: {
   stock: Stock;
-  events: Event[];
+  events: Signal[];
   asOf: string | null;
   pin: ReactNode;
 }) {
@@ -488,7 +488,7 @@ function WatchRow({
   const latest: { date: string; text: ReactNode }[] = [
     ...events
       .filter((e) => e.ticker === stock.ticker)
-      .map((e) => ({ date: e.date, text: <EventText event={e} /> })),
+      .map((e) => ({ date: e.date, text: <SignalText event={e} /> })),
     ...(detail?.disclosures ?? []).map((d) => ({ date: d.published_at, text: d.title })),
   ].sort((a, b) => b.date.localeCompare(a.date));
   const event = latest.find((item) => asOf !== null && item.date.slice(0, 10) >= asOf);
@@ -503,7 +503,7 @@ function WatchRow({
           >
             <b className="sym">{stock.ticker}</b>
           </a>
-          <RiskBadge risk={risk} />
+          <RiskFlagChips risk={risk} />
         </span>
         <small>{stock.name}</small>
       </div>
@@ -531,7 +531,7 @@ function WatchRow({
 
 const newsLimit = { phone: 3, desktop: 12 };
 
-function News({ news }: { news: Headline[] | null }) {
+function News({ news }: { news: NewsArticle[] | null }) {
   const phone = useNarrow();
   if (news === null) return null;
   const rows = news

@@ -64,8 +64,8 @@ it('keeps every shortcut and function in help and restores focus on close', asyn
     await act(async () => {
       root.render(
         <CommandBar
-          layout="grid"
-          setLayout={vi.fn<() => void>()}
+          mode="grid"
+          setMode={vi.fn<() => void>()}
           openFunction={vi.fn<() => void>()}
           maximize={vi.fn<() => void>()}
         />,
@@ -124,8 +124,8 @@ it('pins the named or current ticker from the command line and from a suggestion
     await act(async () => {
       root.render(
         <CommandBar
-          layout="grid"
-          setLayout={vi.fn<() => void>()}
+          mode="grid"
+          setMode={vi.fn<() => void>()}
           openFunction={vi.fn<() => void>()}
           maximize={vi.fn<() => void>()}
         />,

@@ -57,10 +57,10 @@ const day = session([
 describe('done detail', () => {
   it('groups continuous fills by the aggressive order and lists who took the other side', () => {
     const sweep = doneDetail(day).find(
-      (block) => block.session === 'continuous' && block.order === 99,
+      (block) => block.matching === 'continuous' && block.order === 99,
     );
     expect(sweep).toMatchObject({
-      session: 'continuous',
+      matching: 'continuous',
       side: 'sell',
       order: 99,
       broker: 'XL',
@@ -78,19 +78,19 @@ describe('done detail', () => {
 
   it('splits auction orders and includes negotiated trades separately', () => {
     const blocks = doneDetail(day);
-    expect(blocks.filter((b) => b.session === 'auction').map((b) => [b.side, b.broker])).toEqual([
+    expect(blocks.filter((b) => b.matching === 'auction').map((b) => [b.side, b.broker])).toEqual([
       ['buy', 'PG'],
       ['sell', 'XL'],
     ]);
     expect(blocks.find((b) => b.broker === 'AO')).toMatchObject({
-      session: 'off-board',
+      matching: 'off-board',
       side: 'none',
       board: 'NG',
       buyOrder: 200,
       sellOrder: 201,
       fills: 1,
     });
-    expect(blocks.filter((b) => b.side === 'buy' && b.session === 'continuous')).toHaveLength(2);
+    expect(blocks.filter((b) => b.side === 'buy' && b.matching === 'continuous')).toHaveLength(2);
   });
 });
 

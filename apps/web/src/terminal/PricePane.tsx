@@ -68,7 +68,7 @@ const intraday = {
 };
 
 export function PricePane() {
-  const { detail, timeframe, setTimeframe, ticker, session } = useTerminal();
+  const { detail, timeframe, setTimeframe, ticker, authState } = useTerminal();
   const [chartType, setChartType] = useChartSetting('terminal:chart:type', chartTypes, 'CANDLE');
   return (
     <>
@@ -88,7 +88,7 @@ export function PricePane() {
           optionLabel={(type) => (type === 'CANDLE' ? 'Candlestick' : 'Line')}
         />
       </div>
-      {timeframe !== 'D' && timeframe !== 'W' && session !== 'signed-in' ? (
+      {timeframe !== 'D' && timeframe !== 'W' && authState !== 'signed-in' ? (
         <SignInPrompt />
       ) : (
         <Availability resource={detail} name="Price history">
@@ -434,7 +434,7 @@ function PriceHistory({
           {b && (
             <>
               {dateText(b.start)} to {dateText(b.end)}{' '}
-              <button aria-label="Clear chart range" onClick={() => select(null)}>
+              <button aria-label="Clear selection" onClick={() => select(null)}>
                 ×
               </button>
             </>

@@ -1,6 +1,6 @@
 import { useState, type MouseEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { Corruption, aimCorruption, arrivalMs } from './Corruption';
+import { Void, aimVoid, arrivalMs } from './Void';
 import { startGlitch } from './glitch';
 
 const glitchLeadMs = 300;
@@ -21,7 +21,7 @@ export function TerminalLink() {
     if (stage !== 'idle') return;
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return openTerminal();
     const button = event.currentTarget.getBoundingClientRect();
-    aimCorruption(
+    aimVoid(
       (button.left + button.width / 2) / window.innerWidth,
       (button.top + button.height / 2) / window.innerHeight,
     );
@@ -40,7 +40,7 @@ export function TerminalLink() {
       {stage === 'swallowing' &&
         createPortal(
           <div className="terminal-veil">
-            <Corruption mode="spread" />
+            <Void mode="spread" />
           </div>,
           document.body,
         )}

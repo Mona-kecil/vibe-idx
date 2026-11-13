@@ -10,7 +10,7 @@ export function useRiskFor(ticker: string): Risk | undefined {
   return risk.kind === 'ready' ? risk.data.risk[ticker] : undefined;
 }
 
-export function RiskBadge({ risk }: { risk: Risk | undefined }) {
+export function RiskFlagChips({ risk }: { risk: Risk | undefined }) {
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDetailsElement>(null);
   useLayoutEffect(() => {

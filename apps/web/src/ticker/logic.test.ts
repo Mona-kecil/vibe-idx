@@ -3,7 +3,7 @@ import { dayMove } from './format';
 import { tickerSchema } from '../data';
 import tpiaFixture from './fixtures/TPIA-history.json';
 import {
-  aggregateRange,
+  aggregateSelection,
   attachments,
   bounds,
   composition,
@@ -22,7 +22,7 @@ import {
   topSeries,
   totalAt,
   pctAxis,
-  periodRange,
+  periodBounds,
   selectedRows,
   visiblePrices,
   visibleWindow,
@@ -192,7 +192,7 @@ describe('ticker selection and historical data', () => {
     expect(selectionKey(null, dates, 'ArrowRight')).toBeNull();
   });
   it('measures range change from the preceding close and sums suspended and traded rows once', () => {
-    const totals = aggregateRange(prices, { anchor: '2026-08-21', end: '2026-08-11' });
+    const totals = aggregateSelection(prices, { anchor: '2026-08-21', end: '2026-08-11' });
     expect(totals).toMatchObject({
       close: 120,
       change: 20,
@@ -205,14 +205,14 @@ describe('ticker selection and historical data', () => {
       prior: { date: '2026-08-10', close: 100 },
     });
     expect(totals?.changePct).toBeCloseTo(20);
-    expect(aggregateRange(prices, { anchor: '2026-08-10', end: '2026-08-10' })).toMatchObject({
+    expect(aggregateSelection(prices, { anchor: '2026-08-10', end: '2026-08-10' })).toMatchObject({
       change: null,
       changePct: null,
       volume: 10,
       value: 1000,
       netForeign: -200,
     });
-    expect(aggregateRange([], { anchor: '2026-08-11', end: '2026-08-21' })).toBeNull();
+    expect(aggregateSelection([], { anchor: '2026-08-11', end: '2026-08-21' })).toBeNull();
   });
   it('uses filed daily holdings for composition and only the registry known at the range end for free float', () => {
     const series = holdingSeries(data, '2026-09-01');
@@ -608,11 +608,11 @@ describe('chart windows', () => {
     expect(visiblePrices([], '3M')).toEqual([]);
   });
   it('frames a period from its first bar to a little past the last one', () => {
-    const range = periodRange(monthly, '3M');
+    const range = periodBounds(monthly, '3M');
     expect(range.from).toBe(2.5);
     expect(range.to).toBeGreaterThan(6);
     expect(range.to).toBeLessThan(10);
-    expect(periodRange(monthly, 'YTD').from).toBe(-0.5);
+    expect(periodBounds(monthly, 'YTD').from).toBe(-0.5);
   });
   it('maps a logical range to the bars whose centers are visible', () => {
     expect(visibleWindow(10, { from: -0.5, to: 13 })).toEqual({ first: 0, last: 9 });
@@ -650,7 +650,7 @@ describe('holdingsMoved', () => {
 });
 
 describe('timeline cleanup and chart marks', () => {
-  it('drops daily price recaps and the trailing source name from news headlines', () => {
+  it('drops daily price recaps and the trailing source name from news titles', () => {
     const news = [
       {
         published_at: '2026-11-12T10:00:00',

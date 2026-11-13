@@ -1,14 +1,14 @@
-import type { Feed } from './data';
+import type { SignalFeed } from './data';
 import { calendarDate, dateText, direction, itemDate, nf } from './ticker/format';
 
-export type Event = Feed[number];
-export type Lens = Event['kind'];
-type Ownership = Extract<Event, { kind: 'five_pct_change' }>;
+export type Signal = SignalFeed[number];
+export type Lens = Signal['kind'];
+type Ownership = Extract<Signal, { kind: 'five_pct_change' }>;
 
 export const lenses: { kind: Lens; tag: string; label: string }[] = [
   { kind: 'ara', tag: 'ARA', label: 'Auto-rejection upper limit' },
   { kind: 'volume_spike', tag: 'Volume', label: 'Volume spike' },
-  { kind: 'foreign_streak', tag: 'Foreign', label: 'Foreign buying streak' },
+  { kind: 'foreign_streak', tag: 'Foreign', label: 'Foreign streak' },
   { kind: 'green_on_red', tag: 'Green on red', label: 'Up while IHSG fell' },
   { kind: 'five_pct_change', tag: '5%', label: '5% ownership change' },
 ];
@@ -44,7 +44,7 @@ const move = (row: Ownership) =>
       ? -1
       : Math.abs(row.numbers.pct_after - row.numbers.pct_before);
 
-export function strength(event: Event) {
+export function strength(event: Signal) {
   switch (event.kind) {
     case 'volume_spike':
       return event.numbers.multiple;
@@ -70,7 +70,7 @@ const holderKey = (investor: string) =>
  * The day's events, grouped by kind then strongest first. Ownership keeps the newest filing date,
  * one row per holder alias, and drops filings whose rounded holding did not move.
  */
-export function briefing(feed: Feed, listed: (ticker: string) => boolean) {
+export function briefing(feed: SignalFeed, listed: (ticker: string) => boolean) {
   const ownershipDate = feed
     .filter((e) => e.kind === 'five_pct_change')
     .map((e) => e.date)
@@ -95,13 +95,13 @@ export function briefing(feed: Feed, listed: (ticker: string) => boolean) {
     );
 }
 
-export type SignalTile = { kind: Lens; count: number; top: Event[] };
+export type SignalTile = { kind: Lens; count: number; top: Signal[] };
 
 /** One tile per kind with events, from `briefing()` order: distinct stocks, strongest first. */
-export function signalTiles(events: Event[], size = 3): SignalTile[] {
+export function signalTiles(events: Signal[], size = 3): SignalTile[] {
   return lenses.flatMap(({ kind }) => {
     const seen = new Set<string>(),
-      stocks: Event[] = [];
+      stocks: Signal[] = [];
     for (const event of events) {
       if (event.kind !== kind || seen.has(event.ticker)) continue;
       seen.add(event.ticker);
@@ -111,12 +111,12 @@ export function signalTiles(events: Event[], size = 3): SignalTile[] {
   });
 }
 
-export function magnitude(event: Event, leader: Event) {
+export function magnitude(event: Signal, leader: Signal) {
   const top = strength(leader);
   return top > 0 ? Math.min(1, Math.max(0, strength(event)) / top) : 0;
 }
 
-export function tone(event: Event) {
+export function tone(event: Signal) {
   switch (event.kind) {
     case 'volume_spike':
       return '';
@@ -240,13 +240,13 @@ export function weekStrip(items: WeekItem[], now: Date, days = 5): WeekDay[] {
   return out;
 }
 
-export function byTicker(events: Event[]) {
-  const map = new Map<string, Event[]>();
+export function byTicker(events: Signal[]) {
+  const map = new Map<string, Signal[]>();
   for (const event of events) map.set(event.ticker, [...(map.get(event.ticker) ?? []), event]);
   return map;
 }
 
-export function EventText({ event }: { event: Event }) {
+export function SignalText({ event }: { event: Signal }) {
   switch (event.kind) {
     case 'ara':
       return (
@@ -306,7 +306,7 @@ export function EventText({ event }: { event: Event }) {
 }
 
 /** The single number a briefing row shows for an event. */
-export function EventMetric({ event }: { event: Event }) {
+export function SignalMetric({ event }: { event: Signal }) {
   switch (event.kind) {
     case 'ara':
     case 'green_on_red':
@@ -335,7 +335,7 @@ export function EventMetric({ event }: { event: Event }) {
   }
 }
 
-export function eventTitle(event: Event) {
+export function signalTitle(event: Signal) {
   const when = date(event.date);
   switch (event.kind) {
     case 'ara':

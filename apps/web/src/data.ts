@@ -104,7 +104,7 @@ const knownFeedSchema = z.array(
 const feedKinds: ReadonlySet<string> = new Set(
   knownFeedSchema.element.options.map((option) => option.shape.kind.value),
 );
-const feedSchema = z
+const signalFeedSchema = z
   .array(z.object({ kind: z.string() }).passthrough())
   .transform((rows) => rows.filter((row) => feedKinds.has(row.kind)))
   .pipe(knownFeedSchema);
@@ -270,7 +270,7 @@ const sourceLabels = {
   one_pct: 'Registry',
   issuers: 'Issuers',
   disclosures: 'Disclosures',
-  brokers: 'Broker flow',
+  brokers: 'Broker data',
   corporate_actions: 'Corporate actions',
   risk: 'Risk flags',
 } as const satisfies Partial<Record<keyof Health, string>>;
@@ -286,7 +286,7 @@ export function staleSources(health: Health, now = Date.now()) {
     .map((source) => ({ label: sourceLabels[source], since: health[source] }));
 }
 export type Market = z.infer<typeof marketSchema>;
-export type Feed = z.infer<typeof feedSchema>;
+export type SignalFeed = z.infer<typeof signalFeedSchema>;
 export type Stock = z.infer<typeof stocksSchema>[number];
 export type Ticker = z.infer<typeof tickerSchema>;
 
@@ -294,7 +294,7 @@ type TickerPath = `ticker/${string}.json`;
 export function load(path: 'health.json'): Promise<Health>;
 export function load(path: 'market-summary.json'): Promise<MarketSummary>;
 export function load(path: 'market.json'): Promise<Market>;
-export function load(path: 'feed.json'): Promise<Feed>;
+export function load(path: 'feed.json'): Promise<SignalFeed>;
 export function load(path: 'tickers.json'): Promise<Stock[]>;
 export function load(path: TickerPath): Promise<Ticker | null>;
 export async function load(
@@ -318,7 +318,7 @@ export async function load(
     case 'market.json':
       return marketSchema.parse(json);
     case 'feed.json':
-      return feedSchema.parse(json);
+      return signalFeedSchema.parse(json);
     case 'tickers.json':
       return stocksSchema.parse(json);
     default:

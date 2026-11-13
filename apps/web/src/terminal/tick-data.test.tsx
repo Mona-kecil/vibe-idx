@@ -8,7 +8,7 @@ import { loadTicks, useTradeSessions } from './tick-data';
 
 const context = vi.hoisted(() => ({
   ticker: '',
-  session: 'signed-in',
+  authState: 'signed-in',
   getToken: async () => 'test',
   detail: { kind: 'ready', data: { prices: [] as { date: string }[] } },
   tickDate: null,
@@ -78,7 +78,7 @@ beforeEach(() => {
       })),
     }),
   };
-  context.session = 'signed-in';
+  context.authState = 'signed-in';
   fetchTicks.mockReset();
   host = document.createElement('div');
   document.body.append(host);

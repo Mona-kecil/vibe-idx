@@ -24,7 +24,7 @@ The R2 credential needs object read access to `vibe-idx-private`. Keep secret va
 
 Register `http://localhost:5173/callback` as a WorkOS redirect URI, `http://localhost:5173` as an allowed origin and sign-out URI, and `http://localhost:5173/login` as the initiate-login URI. Enable Magic Auth for email-code sign-in.
 
-Start the website and its Vercel functions together.
+Start the Site, the Terminal and their Vercel functions together.
 
 ```sh
 pnpm dlx vercel dev --listen 5173 --cwd apps/web
@@ -77,4 +77,4 @@ Each run holds `broker-run.json` until it ends, so a second collector refuses to
 
 GitHub Actions uses `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY` secrets with read and write access to both buckets, plus the `R2_ACCOUNT_ID` repository variable. Vercel needs its own server environment variables. GitHub secrets do not sync to Vercel. Broker activity since January 2026 remains in private Parquet storage and the private ticker exports. Archived per-stock broker objects remain stored but are unused.
 
-See [the architecture and source contracts](docs/v2.md) for storage paths, source dates, and parsing limits.
+See [the architecture](docs/architecture.md) for storage paths, source dates, and parsing limits.

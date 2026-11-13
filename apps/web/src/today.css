@@ -1,16 +1,16 @@
-.home-page main {
+.today-page main {
   padding-bottom: 48px;
 }
-.home-page h2 {
+.today-page h2 {
   margin: 0;
   font-size: 15px;
   font-weight: 750;
   letter-spacing: -0.2px;
 }
-.home-page .num {
+.today-page .num {
   font-variant-numeric: tabular-nums;
 }
-.home-page .sym {
+.today-page .sym {
   font-family: var(--mono);
   font-weight: 700;
   font-size: 13px;

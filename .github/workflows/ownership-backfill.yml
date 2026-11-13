@@ -82,5 +82,5 @@ jobs:
           if [ -d "$DATA/parquet" ]; then
             aws s3 sync "$DATA/parquet" s3://vibe-idx-private/parquet --exclude "*" --include "five_pct/*.parquet" --include "one_pct/*.parquet" --include "ownership_files/*.parquet" --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
           fi
-      - name: Publish website JSON
+      - name: Publish public JSON
         run: aws s3 sync "$OUT" s3://vibe-idx-public --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"

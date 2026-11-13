@@ -4,13 +4,13 @@ import type { BrokerDay, BrokerBoard, InvestorFilter } from '../brokers';
 import type { Selection } from '../ticker/logic';
 import type { BlockSelection } from '../ticks';
 import {
-  fetchHeadlines,
+  fetchNews,
   fetchCalendar,
   fetchActions,
   fetchRisk,
   type TerminalData,
   type Resource,
-  type Headline,
+  type NewsArticle,
 } from './sources';
 
 export const functions = {
@@ -24,7 +24,7 @@ export const functions = {
   RT: 'Running trade',
   DD: 'Done detail',
   TB: 'Trade book',
-  HDS: '5% holders and changes',
+  HDS: 'Holders and changes',
   DISC: 'IDX disclosures',
   FEED: 'Company feed',
   SIG: 'Signals feed',
@@ -37,13 +37,13 @@ export const functions = {
 };
 export type FunctionId = keyof typeof functions;
 export const isFunction = (value: string): value is FunctionId => Object.hasOwn(functions, value);
-export type Layout = 'grid' | 'focus' | 'flow';
-export const isLayout = (value: string | null): value is Layout =>
+export type Mode = 'grid' | 'focus' | 'flow';
+export const isMode = (value: string | null): value is Mode =>
   value === 'grid' || value === 'focus' || value === 'flow';
-export const parseLayout = (value: string | null): Layout | null =>
-  value === 'live' ? 'flow' : isLayout(value) ? value : null;
+export const parseMode = (value: string | null): Mode | null =>
+  value === 'live' ? 'flow' : isMode(value) ? value : null;
 export type Timeframe = 'W' | 'D' | '4H' | '1H' | '15M';
-export type Session = 'checking' | 'signed-in' | 'signed-out';
+export type AuthState = 'checking' | 'signed-in' | 'signed-out';
 export type BrokerFilters = {
   board: BrokerBoard | 'all';
   type: InvestorFilter;
@@ -93,7 +93,7 @@ export function useResource<T>(read: (signal: AbortSignal) => Promise<Resource<T
 }
 export function usePublications() {
   return {
-    news: useResource(fetchHeadlines),
+    news: useResource(fetchNews),
     calendar: useResource(fetchCalendar),
     actions: useResource(fetchActions),
     risks: useResource(fetchRisk),
@@ -116,7 +116,7 @@ type TerminalContextValue = {
   setBroker: <K extends keyof BrokerFilters>(key: K, value: BrokerFilters[K]) => void;
   brokers: Resource<BrokerDay[]>;
   brokerError: string;
-  session: Session;
+  authState: AuthState;
   signIn: () => void;
   getToken: () => Promise<string | undefined>;
   tickDate: string | null;
@@ -125,7 +125,7 @@ type TerminalContextValue = {
   selectTickBlock: (block: BlockSelection | null) => void;
   retryBrokers: () => void;
   publications: ReturnType<typeof usePublications>;
-  tickerNews: Resource<Headline[]>;
+  tickerNews: Resource<NewsArticle[]>;
   flowPins: string[];
   setFlowPins: (pins: string[]) => void;
   flowHidden: string[];

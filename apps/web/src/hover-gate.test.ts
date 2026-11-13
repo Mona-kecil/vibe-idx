@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vite-plus/test';
 
-const sheets = ['site.css', 'home.css', 'market.css', 'ticker/ticker.css'];
+const sheets = ['site.css', 'today.css', 'market.css', 'ticker/ticker.css'];
 const gate = /@media[^{]*\(hover:\s*hover\)/;
 
 function ungatedHover(css: string) {
