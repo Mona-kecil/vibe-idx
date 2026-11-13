@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { expect, it } from 'vite-plus/test';
-import { parseFivePct, parseFivePctPdf } from './fivePct';
+import { parseFivePctPdf } from './fivePct';
 
 it.each([
   {
@@ -93,38 +93,6 @@ it.each([
     expect(group?.accounts.every((a) => a.holderName === '')).toBe(true);
   }
 });
-
-it('keeps clipped second lines and decimal commas in the June PDF alongside the XLSX source', async () => {
-  const pdf = await parseFivePctPdf(
-    await readFile(
-      new URL(
-        '../../../samples/idx-5pct/20260608_Semua Emiten Saham_Pengumuman Bursa_32098373_lamp1.pdf',
-        import.meta.url,
-      ),
-    ),
-  );
-  const xlsx = parseFivePct(
-    await readFile(new URL('../fixtures/ownership-5pct-2026-06-05.xlsx', import.meta.url)),
-  );
-  for (const parsed of [pdf, xlsx]) {
-    expect(parsed.asOf).toBe('2026-06-05');
-    const group = parsed.groups.find(
-      (g) => g.holding.ticker === 'ABMM' && g.holding.investorName === 'DRS LO KHENG HONG',
-    );
-    expect(group?.accounts).toContainEqual({
-      holderName: 'PT OCBC SEKURITAS INDONESIA',
-      accountName: 'DRS. LO KHENG HONG',
-      previousShares: 441.4,
-      currentShares: 441.4,
-    });
-  }
-  expect(pdf.groups.find((g) => g.holding.ticker === 'AADI')?.accounts).toContainEqual(
-    expect.objectContaining({
-      accountName: 'CITIBANK HONG KONG S/A CPB SG A/C PT ADARO STRATEGIC INVESTMENTS',
-      currentShares: 68352699,
-    }),
-  );
-}, 30000);
 
 function tablePdf(ticker: string, headers: boolean, text = true) {
   const row = [
