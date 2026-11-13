@@ -8,6 +8,10 @@ Site sections take their heading as their name. Terminal functions take their co
 
 ### Views
 
+**View**:
+The Site or the Terminal.
+_Avoid_: app, frontend, side
+
 **Site**:
 The pages for reading at a glance, on any screen: Today, Market, Ticker page and Login. Not the Terminal.
 _Avoid_: non-terminal, web, website, main app
@@ -169,7 +173,7 @@ One function's button in a pane that holds several functions.
 _Avoid_: tab for a mode or a lens
 
 **Function**:
-A Terminal view with a two- to four-letter code, opened from a tab or the command bar.
+What a pane shows, named by a two- to four-letter code and opened from a tab or the command bar.
 _Avoid_: widget, view, shortcut
 
 **Command bar**:
@@ -344,13 +348,13 @@ _Avoid_: registrar report
 
 **Broker data**:
 Stockbit's per-broker trading activity, shown only after sign-in.
-_Avoid_: broker activity, broker flow, bandarmology
+_Avoid_: broker flow, bandarmology
 
 ### Data
 
 **Ingest**:
 The daily job that fetches IDX prices, indices, issuers, holders and filings.
-_Avoid_: daily batch, pipeline, scrape, sync
+_Avoid_: pipeline, scrape, sync
 
 **Collector**:
 The run that fetches broker data, running trades and closing order books from Stockbit. Only one may run at a time.
