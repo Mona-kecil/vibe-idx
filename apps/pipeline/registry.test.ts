@@ -435,3 +435,54 @@ it('exports BBCA listed plus unlisted shares without inferring the base from rou
     await rm(root, { recursive: true, force: true });
   }
 });
+
+it('reads the current SID count when shareholders fell since last month', async () => {
+  const header =
+    'Perihal X Laporan TEST 1 Laporan Bulanan Registrasi Pemegang Efek akhir bulan September - 2026 ' +
+    '% Saham Free Float 42,00 41,00 Pernyataan ' +
+    'Jumlah Pemegang Saham Nasabah Pemilik SID Bulan Sebelumnya Bulan Sekarang Perubahan 1.000 900 -100';
+  const stream = `BT /F1 10 Tf 1 0 0 1 10 800 Tm (${header}) Tj ET
+BT /F1 10 Tf 1 0 0 1 34 600 Tm (Jumlah Pemegang Saham Nasabah Pemilik SID) Tj ET
+BT /F1 10 Tf 1 0 0 1 81 560 Tm (Bulan Sebelumnya) Tj ET
+BT /F1 10 Tf 1 0 0 1 259 560 Tm (Bulan Sekarang) Tj ET
+BT /F1 10 Tf 1 0 0 1 445 560 Tm (Perubahan) Tj ET
+BT /F1 10 Tf 1 0 0 1 172 530 Tm (1.000) Tj ET
+BT /F1 10 Tf 1 0 0 1 335 530 Tm (900) Tj ET
+BT /F1 10 Tf 1 0 0 1 529 530 Tm (-100) Tj ET`;
+  const objects = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 2000 1000] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>',
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+    `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`,
+  ];
+  let pdf = '%PDF-1.4\n';
+  const offsets: number[] = [];
+  for (const [i, object] of objects.entries()) {
+    offsets.push(pdf.length);
+    pdf += `${i + 1} 0 obj\n${object}\nendobj\n`;
+  }
+  const xref = pdf.length;
+  pdf += `xref\n0 6\n0000000000 65535 f \n${offsets
+    .map((offset) => `${String(offset).padStart(10, '0')} 00000 n \n`)
+    .join('')}trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  const result = await parseReport({
+    bytes: new TextEncoder().encode(pdf),
+    ticker: 'TEST',
+    kind: 'registry',
+  });
+  if (result.kind !== 'parsed' || result.report.kind !== 'registry')
+    throw new Error(`Expected a parsed registry report, got ${result.kind}`);
+  expect(result.report).toMatchObject({ date: '2026-09-30', sid_count: 900 });
+  expect(result.gaps).toEqual(
+    expect.arrayContaining(
+      [
+        'total shares',
+        'free float percentage',
+        'free float shares',
+        'investor types',
+        'holder flags',
+      ].map((field) => `Registry ${field}: unsupported or missing labeled cells`),
+    ),
+  );
+});

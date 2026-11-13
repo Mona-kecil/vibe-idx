@@ -724,61 +724,16 @@ describe('batch pipeline', () => {
     }
   }, 30_000);
 
-  it('preserves source dates, duplicate holders, paginated disclosures, and SID counts with negative deltas', async () => {
+  it('preserves source dates, duplicate holders, and paginated disclosures', async () => {
     const root = await mkdtemp(join(tmpdir(), 'idx-fixture-'));
     try {
       const net = network({ monthly: true, reports: true });
-      const text =
-        'Perihal X Laporan TEST 1 Laporan Bulanan Registrasi Pemegang Efek akhir bulan September - 2026 ' +
-        '% Saham Free Float 42,00 41,00 Pernyataan ' +
-        'Jumlah Pemegang Saham Nasabah Pemilik SID Bulan Sebelumnya Bulan Sekarang Perubahan 1.000 900 -100';
-      const stream = `BT /F1 10 Tf 1 0 0 1 10 800 Tm (${text}) Tj ET
-BT /F1 10 Tf 1 0 0 1 34 600 Tm (Jumlah Pemegang Saham Nasabah Pemilik SID) Tj ET
-BT /F1 10 Tf 1 0 0 1 81 560 Tm (Bulan Sebelumnya) Tj ET
-BT /F1 10 Tf 1 0 0 1 259 560 Tm (Bulan Sekarang) Tj ET
-BT /F1 10 Tf 1 0 0 1 445 560 Tm (Perubahan) Tj ET
-BT /F1 10 Tf 1 0 0 1 172 530 Tm (1.000) Tj ET
-BT /F1 10 Tf 1 0 0 1 335 530 Tm (900) Tj ET
-BT /F1 10 Tf 1 0 0 1 529 530 Tm (-100) Tj ET`;
-      const objects = [
-        '<< /Type /Catalog /Pages 2 0 R >>',
-        '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
-        '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 2000 1000] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>',
-        '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
-        `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`,
-      ];
-      let pdf = '%PDF-1.4\n';
-      const offsets: number[] = [];
-      for (const [i, object] of objects.entries()) {
-        offsets.push(pdf.length);
-        pdf += `${i + 1} 0 obj\n${object}\nendobj\n`;
-      }
-      const xref = pdf.length;
-      pdf += `xref\n0 6\n0000000000 65535 f \n${offsets
-        .map((offset) => `${String(offset).padStart(10, '0')} 00000 n \n`)
-        .join('')}trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
-      net.disclosures.push(
-        announcement({
-          ticker: 'TEST',
-          id: 'registry/negative-sid',
-          title: 'Laporan Bulanan Registrasi Pemegang Efek',
-          path: '/StaticData/From_EREP/negative-sid.pdf',
-        }),
-      );
-      const registryFetcher: typeof fetch = async (input, init) => {
-        const url = new URL(input instanceof Request ? input.url : input);
-        if (url.pathname === '/StaticData/From_EREP/negative-sid.pdf') {
-          net.urls.push(url.href);
-          return new Response(new TextEncoder().encode(pdf));
-        }
-        return net.fetcher(input, init);
-      };
       await ingest({
         data: join(root, 'data'),
         out: join(root, 'out'),
         since: '2026-02-01',
         today: '2026-03-02',
-        fetcher: registryFetcher,
+        fetcher: net.fetcher,
       });
       const icon = JSON.parse(await readFile(join(root, 'out/ticker/ICON.json'), 'utf8'));
       expect(icon.one_pct).toMatchObject({ date: '2026-02-27' });
@@ -802,38 +757,17 @@ BT /F1 10 Tf 1 0 0 1 529 530 Tm (-100) Tj ET`;
         out: join(root, 'out'),
         since: '2026-02-01',
         today: '2026-10-22',
-        fetcher: registryFetcher,
+        fetcher: net.fetcher,
       });
       expect(result.counts).toMatchObject({
         prices: 963,
         indices: 45,
         issuers: 962,
         one_pct: 14411,
-        disclosures: 11,
+        disclosures: 10,
         insiders: 4,
-        registry: 5,
+        registry: 4,
       });
-      const negativeSid = JSON.parse(await readFile(join(root, 'out/ticker/TEST.json'), 'utf8'));
-      expect(negativeSid.registry_history.at(-1)).toMatchObject({
-        date: '2026-09-30',
-        free_float_pct: null,
-        issued_shares: null,
-        sid_count: 900,
-        url: 'https://www.idx.id/StaticData/From_EREP/negative-sid.pdf',
-      });
-      for (const field of [
-        'total shares',
-        'free float percentage',
-        'free float shares',
-        'investor types',
-        'holder flags',
-      ]) {
-        expect(result.report_gaps).toContainEqual({
-          id: 'registry/negative-sid',
-          url: negativeSid.registry_history.at(-1).url,
-          reason: `Registry ${field}: unsupported or missing labeled cells`,
-        });
-      }
       const feed = JSON.parse(await readFile(join(root, 'out/feed.json'), 'utf8'));
       expect(feed).toContainEqual(
         expect.objectContaining({
@@ -950,7 +884,7 @@ BT /F1 10 Tf 1 0 0 1 529 530 Tm (-100) Tj ET`;
         net.urls
           .filter((u) => u.includes('GetAnnouncement'))
           .map((u) => new URL(u).searchParams.get('indexFrom')),
-      ).toEqual(['0', '1', '2', '3', '4', '5']);
+      ).toEqual(['0', '1', '2', '3', '4']);
       expect(JSON.parse(await readFile(join(root, 'out/health.json'), 'utf8'))).toMatchObject({
         prices: '2026-10-21',
         five_pct: '2026-10-21',
