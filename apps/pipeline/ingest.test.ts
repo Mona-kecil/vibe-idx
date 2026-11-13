@@ -5,6 +5,7 @@ import { DuckDBInstance } from '@duckdb/node-api';
 import { strToU8, strFromU8, unzipSync, zipSync } from 'fflate';
 import { describe, expect, it } from 'vite-plus/test';
 import { ingest } from './ingest';
+import { readSheet } from './lib/xlsx';
 import { resolveHolderKeys } from './ownership';
 import { analytics, schema, tickers } from './sql';
 import { tickerSchema } from '../web/src/data';
@@ -178,8 +179,63 @@ function announcement({
   };
 }
 
-function network({ monthly = false, reports = false } = {}) {
+const focusTickers = [
+  'AADI',
+  ...insiderExamples.map((r) => r.ticker),
+  ...registryExamples.map((r) => r.ticker),
+];
+
+// Keeps the header rows and every row that belongs to one of the tickers. A 5% account row without
+// a ticker belongs to the nearest ticker above it.
+function onlyTickers(workbook: Uint8Array, codes: string[]) {
+  const files = unzipSync(workbook);
+  const sheet = strFromU8(files['xl/worksheets/sheet1.xml']!);
+  const rows = [...sheet.matchAll(/<row\b[^>]*>[\s\S]*?<\/row>/g)];
+  const cells = readSheet(workbook);
+  const header = cells.findIndex((r) => r.includes('Kode Efek') || r.includes('SHARE_CODE'));
+  const column = cells[header]!.findIndex((c) => c === 'Kode Efek' || c === 'SHARE_CODE');
+  let owner = '';
+  const kept = rows.filter((_, i) => {
+    if (i <= header) return true;
+    owner = cells[i]?.[column]?.trim() || owner;
+    return !owner || codes.includes(owner);
+  });
+  const end = rows.at(-1)!;
+  files['xl/worksheets/sheet1.xml'] = strToU8(
+    sheet.slice(0, rows[0]!.index) +
+      kept.map((m) => m[0]).join('') +
+      sheet.slice(end.index + end[0].length),
+  );
+  return zipSync(files);
+}
+const trimmed = new Map<string, Promise<Uint8Array>>();
+const ownershipWorkbook = (name: string, codes: string[]) => {
+  const key = `${name} ${codes.join()}`;
+  const cached = trimmed.get(key) ?? fixture(name).then((bytes) => onlyTickers(bytes, codes));
+  trimmed.set(key, cached);
+  return cached;
+};
+
+// `issuers` keeps only those tickers in the issuer, price and ownership fixtures, so a run
+// publishes a few ticker files instead of ~960.
+function network({
+  monthly = false,
+  reports = false,
+  suspensions = true,
+  issuers,
+}: { monthly?: boolean; reports?: boolean; suspensions?: boolean; issuers?: string[] } = {}) {
   const urls: string[] = [];
+  const only = (text: string, code: 'StockCode' | 'KodeEmiten') => {
+    if (!issuers) return text;
+    const { data, ...table } = JSON.parse(text);
+    const kept = data.filter((row: Record<string, string>) => issuers.includes(row[code] ?? ''));
+    return JSON.stringify({
+      ...table,
+      recordsTotal: kept.length,
+      recordsFiltered: kept.length,
+      data: kept,
+    });
+  };
   const pdfs = new Map([
     ...insiderExamples.map((r): [string, string] => [
       `/StaticData/From_KSEI/${r.file}`,
@@ -234,9 +290,15 @@ function network({ monthly = false, reports = false } = {}) {
       const marketFixtureForOwnershipDay = (await fixture(name))
         .toString()
         .replaceAll('2026-10-20', '2026-10-21');
-      return new Response(marketFixtureForOwnershipDay);
+      return new Response(
+        name === 'stock-summary-idxid.json'
+          ? only(marketFixtureForOwnershipDay, 'StockCode')
+          : marketFixtureForOwnershipDay,
+      );
     }
     if (/GetCalendar|GetSpecialNotation|GetUma/.test(url.pathname))
+      return Response.json({ ResultCount: 0, Results: [] });
+    if (url.pathname.includes('GetSuspension') && !suspensions)
       return Response.json({ ResultCount: 0, Results: [] });
     if (url.pathname.includes('GetSuspension'))
       return Response.json({
@@ -260,7 +322,8 @@ function network({ monthly = false, reports = false } = {}) {
       });
     if (url.pathname === '/StaticData/suspension-notice.pdf')
       return new Response(new Uint8Array(await fixture('suspension-notice-2026-annual.pdf')));
-    if (url.pathname.includes('GetCompanyProfiles')) name = 'company-profiles.json';
+    if (url.pathname.includes('GetCompanyProfiles'))
+      return new Response(only((await fixture('company-profiles.json')).toString(), 'KodeEmiten'));
     else if (url.pathname.includes('GetAnnouncement')) {
       const start = Number(url.searchParams.get('indexFrom')) * 2;
       const from = url.searchParams.get('dateFrom') ?? '';
@@ -303,7 +366,9 @@ function network({ monthly = false, reports = false } = {}) {
     } else if (url.pathname.endsWith('-satu-persen.xlsx')) {
       name = `ownership-1pct-${url.pathname.slice('/Media/'.length, -'-satu-persen.xlsx'.length)}.xlsx`;
     } else throw new Error(`Unexpected network call: ${url.href}`);
-    return new Response(new Uint8Array(await fixture(name)));
+    return new Response(
+      new Uint8Array(issuers ? await ownershipWorkbook(name, issuers) : await fixture(name)),
+    );
   };
   return { urls, fetcher, disclosures };
 }
@@ -899,7 +964,12 @@ BT /F1 10 Tf 1 0 0 1 529 530 Tm (-100) Tj ET`;
 
   it('does not duplicate rows, rewrite Parquet, or miss a same-day disclosure on replay', async () => {
     const root = await mkdtemp(join(tmpdir(), 'idx-replay-'));
-    const net = network({ monthly: true, reports: true });
+    const net = network({
+      monthly: true,
+      reports: true,
+      suspensions: false,
+      issuers: focusTickers,
+    });
     const options = {
       data: join(root, 'data'),
       out: join(root, 'out'),
@@ -987,7 +1057,7 @@ BT /F1 10 Tf 1 0 0 1 529 530 Tm (-100) Tj ET`;
 
   it('isolates truncated pages and failed fetches, recovers interrupted report saves, and retains unreadable PDFs as linked disclosures', async () => {
     const root = await mkdtemp(join(tmpdir(), 'idx-source-failure-'));
-    const net = network({ reports: true });
+    const net = network({ reports: true, suspensions: false, issuers: focusTickers });
     const options = {
       data: join(root, 'data'),
       out: join(root, 'out'),
@@ -1165,7 +1235,7 @@ BT /F1 10 Tf 1 0 0 1 529 530 Tm (-100) Tj ET`;
 
   it('applies and reports a replaced 1% file and new files for stored ownership dates', async () => {
     const root = await mkdtemp(join(tmpdir(), 'idx-corrections-'));
-    const net = network({ monthly: true });
+    const net = network({ monthly: true, suspensions: false, issuers: focusTickers });
     const column = (i: number) => String.fromCharCode(65 + i);
     const cell = (value: string | number, ref: string) =>
       typeof value === 'number'
@@ -1284,7 +1354,7 @@ BT /F1 10 Tf 1 0 0 1 529 530 Tm (-100) Tj ET`;
       expect((await holders('AADI')).one_pct.holders).toEqual([
         expect.objectContaining({ shares: 1500, pct: 3.1 }),
       ]);
-      const five = await fixture('ownership-5pct-2026-10-21.xlsx');
+      const five = await ownershipWorkbook('ownership-5pct-2026-10-21.xlsx', focusTickers);
       files.set('/Media/2026-10-21-repost-lima-persen.xlsx', new Uint8Array(five));
       extra.push({
         Description: '',
@@ -1294,7 +1364,10 @@ BT /F1 10 Tf 1 0 0 1 529 530 Tm (-100) Tj ET`;
       expect(await messages()).toEqual([]);
       const zip = unzipSync(new Uint8Array(five));
       const strings = strFromU8(zip['xl/sharedStrings.xml']!);
-      const percent = /<t>(\d{1,2}\.\d{2})<\/t>/.exec(strings)![1]!;
+      const published = new Set(readSheet(five).flat());
+      const percent = [...strings.matchAll(/<t>(\d{1,2}\.\d{2})<\/t>/g)]
+        .map((m) => m[1]!)
+        .find((p) => published.has(p))!;
       zip['xl/sharedStrings.xml'] = strToU8(
         strings.replace(`<t>${percent}</t>`, `<t>${(Number(percent) + 0.01).toFixed(2)}</t>`),
       );
