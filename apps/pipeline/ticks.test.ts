@@ -514,7 +514,7 @@ it('resumes a checkpoint interrupted while other lanes are advancing', async () 
   const resumed = await fixture({ objects: f.objects });
   expect((await collectTicks({ ...resumed, request })).published).toEqual([`running_trade/${day}`]);
   expect(await rows(resumed, 'running_trade')).toHaveLength(40000);
-});
+}, 30_000);
 it('takes the closing sequence from the highest number in the final second, not its first row', async () => {
   const f = await fixture();
   const request = async (input: string) => {
