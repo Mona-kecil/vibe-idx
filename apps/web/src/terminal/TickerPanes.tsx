@@ -4,10 +4,10 @@ import { Availability, Empty, Scroll, direction } from './ui';
 import type { Ticker } from '../data';
 import { PinButton } from './MarketPanes';
 import { dateText, nf, short, signed } from '../ticker/format';
-import { bounds, holderRole, inRange, registryAt } from '../ticker/logic';
-import { FilingAttachments } from '../ticker/Feeds';
+import { bounds, holderRole, inSelection, registryAt } from '../ticker/logic';
+import { FilingAttachments } from '../ticker/Timeline';
 
-export function DescriptionPane() {
+export function KeyFiguresPane() {
   const { detail, ticker } = useTerminal();
   return (
     <Scroll reset={ticker}>
@@ -388,7 +388,7 @@ function HoldersChart({
     </div>
   );
 }
-export function HoldersPane() {
+export function HoldersAndChangesPane() {
   const { data: market, detail, ticker, selection, select } = useTerminal();
   const range = bounds(selection);
   return (
@@ -411,7 +411,7 @@ export function HoldersPane() {
             const histories = holderHistories(data, market.health.five_pct)
               .map((history) => ({
                 ...history,
-                points: history.points.filter((point) => inRange(point.date, selection)),
+                points: history.points.filter((point) => inSelection(point.date, selection)),
               }))
               .filter((history) => history.points.length > 0)
               .sort((a, b) => (b.points.at(-1)?.pct ?? 0) - (a.points.at(-1)?.pct ?? 0));

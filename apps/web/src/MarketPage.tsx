@@ -2,23 +2,23 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '@workos-inc/authkit-react';
 import { brokerName } from './broker-data';
 import { accumulationSchema, type Accumulation } from './brokers';
-import { load, type Feed, type Health, type MarketPeriod, type MarketSummary } from './data';
+import { load, type SignalFeed, type Health, type MarketPeriod, type MarketSummary } from './data';
 import {
   briefing,
   byTicker,
-  EventText,
-  eventTitle,
+  SignalText,
+  signalTitle,
   lenses,
   parseLens,
   strength,
-  type Event,
+  type Signal,
   type Lens,
-} from './events';
+} from './signals';
 import { compact, pct } from './marketFormat';
 import { MarketRows, openOnRowClick, type RankRow } from './MarketRows';
 import { useNarrow } from './useNarrow';
 import { usePublished } from './publicData';
-import { RiskBadge } from './RiskBadge';
+import { RiskFlagChips } from './RiskFlagChips';
 import { PinButton, SiteHeader } from './SiteHeader';
 import { Stale } from './Stale';
 import { dateText, direction, nf, signed } from './ticker/format';
@@ -122,7 +122,7 @@ export function MarketPage() {
   }, [lens, sort]);
   const [foreign, setForeign] = useState<ReadonlyMap<string, number> | null>(null);
   const [health, setHealth] = useState<Health | null>(null);
-  const [feed, setFeed] = useState<Feed>([]);
+  const [feed, setFeed] = useState<SignalFeed>([]);
   const [query, setQuery] = useState('');
   const [pins, toggle] = usePins();
   const narrow = useNarrow();
@@ -200,7 +200,7 @@ export function MarketPage() {
   );
   const listed = new Set(data?.stocks.map((stock) => stock.ticker));
   const events = byTicker(briefing(feed, (ticker) => listed.has(ticker)));
-  const lensEvents = (ticker: string): Event[] =>
+  const lensEvents = (ticker: string): Signal[] =>
     lens ? (events.get(ticker) ?? []).filter((event) => event.kind === lens) : [];
   const counts = new Map<Lens, number>();
   for (const rows of events.values())
@@ -444,7 +444,7 @@ export function MarketPage() {
                                       {stock.name}
                                     </span>
                                   </a>
-                                  <RiskBadge risk={riskOf(stock.ticker)} />
+                                  <RiskFlagChips risk={riskOf(stock.ticker)} />
                                 </div>
                               </td>
                             );
@@ -452,8 +452,8 @@ export function MarketPage() {
                             return (
                               <td key={key} className="event">
                                 {lensEvents(stock.ticker).map((event, i) => (
-                                  <span key={i} title={eventTitle(event)}>
-                                    <EventText event={event} />
+                                  <span key={i} title={signalTitle(event)}>
+                                    <SignalText event={event} />
                                   </span>
                                 ))}
                               </td>

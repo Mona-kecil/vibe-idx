@@ -18,8 +18,8 @@ The default grid runs two jobs on one screen: finding a ticker and studying one.
 ## What makes a pane good
 
 1. A pane answers its question in one viewport. Scrolling is for history.
-2. Two views merge when one drills into the other, as RT rows are the fills of a DD order. Turning sibling tabs into modes of one pane saves no clicks.
-3. Context carries across panes. Ticker, chart range and trade session already carry. The broker filter and a clicked date do not.
+2. Two functions merge when one drills into the other, as RT rows are the fills of a DD order. Turning sibling tabs into modes of one pane saves no clicks.
+3. Context carries across panes. Ticker, selection and trade session already carry. The broker filter and a clicked date do not.
 
 ## Pane verdicts
 
@@ -30,7 +30,7 @@ The app has no usage tracking, so these are judgments against the question list 
 | GP, BRK, BFL, FF, DISC | Keep                   | Each answers a different ticker question.                                      |
 | HDS                    | Keep, as rows          | One row per holder with a sparkline and the change over the range.             |
 | RT, DD                 | Merge                  | Same trades. An order expands into its fills.                                  |
-| TB, OB                 | Keep, test one ladder  | Both are per-price views of one session.                                       |
+| TB, OB                 | Keep, test one ladder  | Both show one session by price.                                                |
 | KEY                    | Fold into GP           | It spends a pane on ten figures, and GP's legend row is empty until hover.     |
 | WL, SIG, MOV, NEWS, CA | Keep in GRID           | They pick the ticker. NEWS and CA use their ticker filter in FOCUS.            |
 | HEAT                   | GRID, ahead of MOV     | Same value ranking as MOV, but the tiles show the whole market at a glance.   |
@@ -47,7 +47,7 @@ A pane off the default slots still opens when its code is typed in the command b
 | FOCUS | Study the company     | 4, 5, 11, 12 | GP over HDS, then one feed of disclosures, ticker news and action dates          |
 | FLOW  | See who is trading it | 6 to 10      | GP above FF, BRK, BFL and TB, then DD in a full-height column, then OB with RT   |
 
-GP stays in FLOW because shift-dragging it sets the date range for the broker panes. Views read together never share a pane: GP and FF, DD and RT, TB and OB. GP keeps enough height to read candles, and RT and DD get tall columns, because a tape needs height more than width.
+GP stays in FLOW because shift-dragging it sets the selection for the broker panes. Functions read together never share a pane: GP and FF, DD and RT, TB and OB. GP keeps enough height to read candles, and RT and DD get tall columns, because a list of fills needs height more than width.
 
 Open behavior to test: whether picking a ticker in GRID should jump to FOCUS. It saves a keypress, but it stops arrowing through the watchlist with the chart in view.
 
@@ -55,7 +55,7 @@ Open behavior to test: whether picking a ticker in GRID should jump to FOCUS. It
 
 Total steps to answer the question list, summed over three tickers and three window sizes. Lower is better. A step is one tab switch, mode switch, command, click, or screen of scrolling. An answer visible when its question starts costs zero.
 
-The questions run in order in one session per ticker and window, starting from GRID, and the screen carries from one question to the next. To bring a pane on screen, the harness takes the cheapest route: nothing if it is showing, otherwise one step for a tab in this mode, a mode where it already shows, or the command bar. Scrolling is counted per scroll container as the screens needed to bring every target into view, measured on the text and drawings of each target rather than its box, so a short table row in a wide table does not count as clipped. A target that no scrolling can reveal is an error.
+The questions run in order in one run per ticker and window, starting from GRID, and the screen carries from one question to the next. To bring a pane on screen, the harness takes the cheapest route: nothing if it is showing, otherwise one step for a tab in this mode, a mode where it already shows, or the command bar. Scrolling is counted per scroll container as the screens needed to bring every target into view, measured on the text and drawings of each target rather than its box, so a short table row in a wide table does not count as clipped. A target that no scrolling can reveal is an error.
 
 ## Question list
 
@@ -103,7 +103,7 @@ Visible controls on the default screens: GRID 109 to 125, FOCUS 51 to 56, FLOW 6
 
 ## Guards
 
-- `vp test` and `vp check` stay green. Run the tests on Node 24, because Node 26's built-in `localStorage` breaks 55 tests under happy-dom even on a clean master.
+- `vp test` and `vp check` stay green. Run the tests with `NODE_OPTIONS=--no-experimental-webstorage`, because Node's built-in `localStorage` breaks tests under happy-dom on Node 24.22 and 26, even on a clean master.
 - Font size and row height stay fixed, so shrinking text cannot count as a win.
 - Visible controls per item never rise, and no new kind of control appears. A count that rises only because more items now fit on screen is allowed.
 - Each kept change gets a before and after screenshot. Steps cannot see legibility, so the owner can veto any change.

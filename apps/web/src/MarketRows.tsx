@@ -1,7 +1,7 @@
 import { useState, type MouseEvent, type ReactNode } from 'react';
-import { eventTitle, isExit, type Event } from './events';
+import { signalTitle, isExit, type Signal } from './signals';
 import { compact, pct } from './marketFormat';
-import { RiskBadge } from './RiskBadge';
+import { RiskFlagChips } from './RiskFlagChips';
 import type { Risk } from './terminal/sources';
 import { direction, nf, signed } from './ticker/format';
 
@@ -22,12 +22,12 @@ export type RankRow = {
   value: number | null;
   foreign: number | null;
   risk: Risk | undefined;
-  events: Event[];
+  events: Signal[];
 };
 
 const pageSize = 50;
-type Ownership = Extract<Event, { kind: 'five_pct_change' }>;
-const signalSize = (event: Event) =>
+type Ownership = Extract<Signal, { kind: 'five_pct_change' }>;
+const signalSize = (event: Signal) =>
   event.kind === 'volume_spike'
     ? event.numbers.multiple
     : event.kind === 'foreign_streak'
@@ -61,7 +61,7 @@ function Dumbbell({ event }: { event: Ownership }) {
   );
 }
 
-function SignalNumber({ event, row }: { event: Event; row: RankRow }) {
+function SignalNumber({ event, row }: { event: Signal; row: RankRow }) {
   switch (event.kind) {
     case 'volume_spike':
       return <span>{nf(event.numbers.multiple, 1)}×</span>;
@@ -127,12 +127,12 @@ export function MarketRows({
                       {row.name}
                     </span>
                   </a>
-                  <RiskBadge risk={row.risk} />
+                  <RiskFlagChips risk={row.risk} />
                 </div>
                 {row.events.map((event, i) => {
                   const size = signalSize(event);
                   return (
-                    <span key={i} className="rank-signal" title={eventTitle(event)}>
+                    <span key={i} className="rank-signal" title={signalTitle(event)}>
                       {event.kind === 'five_pct_change' ? (
                         <Dumbbell event={event} />
                       ) : (

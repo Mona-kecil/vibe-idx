@@ -107,7 +107,7 @@ export async function fetchBrokers(ticker: string, token: string, signal?: Abort
     cache: 'no-store',
     signal,
   });
-  if (response.status === 401) throw new Error('Your session expired. Sign in again.');
+  if (response.status === 401) throw new Error('Your sign-in expired. Sign in again.');
   if (response.status === 404) return [];
   if (!response.ok) throw new Error('Broker data is unavailable. Retry to load summaries.');
   const history = brokerHistorySchema.parse(await response.json());
@@ -154,7 +154,7 @@ export async function fetchTicks<K extends TickKind>(
     cache: 'no-store',
     signal,
   });
-  if (response.status === 401) throw new Error('Your session expired. Sign in again.');
+  if (response.status === 401) throw new Error('Your sign-in expired. Sign in again.');
   if (response.status === 404) return null;
   if (!response.ok) throw new Error('Tick data is unavailable. Retry.');
   const parsed = (kind === 'book' ? tickBookSchema : tickTradesSchema).parse(await response.json());

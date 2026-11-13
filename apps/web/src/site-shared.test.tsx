@@ -72,7 +72,7 @@ describe('phone header', () => {
   ];
   async function header() {
     const { SiteHeader } = await import('./SiteHeader');
-    await render(<SiteHeader page="home" stocks={stocks} />);
+    await render(<SiteHeader page="today" stocks={stocks} />);
   }
   const state = () => find('.site-header', HTMLElement).dataset.search;
   const toggle = () => find('.search-toggle', HTMLButtonElement);
@@ -147,7 +147,7 @@ describe('phone header', () => {
   });
 });
 
-describe('RiskBadge', () => {
+describe('RiskFlagChips', () => {
   const flagged: Risk = {
     susp: { since: '2026-03-12', reason: 'Late financial report', url: 'https://idx.co.id/susp' },
     uma: { date: '2026-10-20', url: 'https://idx.co.id/uma' },
@@ -160,8 +160,8 @@ describe('RiskBadge', () => {
     [...host.querySelectorAll('.risk summary .risk-chip')].map((c) => c.textContent);
 
   it('shows a chip per flag and explains each in the panel', async () => {
-    const { RiskBadge } = await import('./RiskBadge');
-    await render(<RiskBadge risk={flagged} />);
+    const { RiskFlagChips } = await import('./RiskFlagChips');
+    await render(<RiskFlagChips risk={flagged} />);
     expect(chips()).toEqual(['SUSP', 'UMA', 'FCA', 'E']);
     const details = find('details.risk', HTMLDetailsElement);
     expect(details.open).toBe(false);
@@ -180,15 +180,15 @@ describe('RiskBadge', () => {
   });
 
   it('closes on Escape', async () => {
-    const { RiskBadge } = await import('./RiskBadge');
-    await render(<RiskBadge risk={flagged} />);
+    const { RiskFlagChips } = await import('./RiskFlagChips');
+    await render(<RiskFlagChips risk={flagged} />);
     await click('.risk summary');
     await press('Escape');
     expect(find('details.risk', HTMLDetailsElement).open).toBe(false);
   });
 
   it('slides the open panel back inside the screen edge', async () => {
-    const { RiskBadge } = await import('./RiskBadge');
+    const { RiskFlagChips } = await import('./RiskFlagChips');
     vi.stubGlobal('innerWidth', 390);
     vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(
       function (this: HTMLElement) {
@@ -197,16 +197,16 @@ describe('RiskBadge', () => {
           : DOMRect.fromRect();
       },
     );
-    await render(<RiskBadge risk={flagged} />);
+    await render(<RiskFlagChips risk={flagged} />);
     await click('.risk summary');
     expect(find('.risk-panel', HTMLElement).style.transform).toBe('translateX(-150px)');
   });
 
   it('renders nothing without flags', async () => {
-    const { RiskBadge } = await import('./RiskBadge');
-    await render(<RiskBadge risk={{ susp: null, uma: null, notes: [] }} />);
+    const { RiskFlagChips } = await import('./RiskFlagChips');
+    await render(<RiskFlagChips risk={{ susp: null, uma: null, notes: [] }} />);
     expect(host.innerHTML).toBe('');
-    await render(<RiskBadge risk={undefined} />);
+    await render(<RiskFlagChips risk={undefined} />);
     expect(host.innerHTML).toBe('');
   });
 });
@@ -220,12 +220,12 @@ describe('published data', () => {
     );
     vi.stubGlobal('fetch', fetcher);
     const { usePublished } = await import('./publicData');
-    const { RiskBadge, useRiskFor } = await import('./RiskBadge');
+    const { RiskFlagChips, useRiskFor } = await import('./RiskFlagChips');
     function Row({ ticker }: { ticker: string }) {
       const risk = useRiskFor(ticker);
       return (
         <p data-row={ticker}>
-          <RiskBadge risk={risk} />
+          <RiskFlagChips risk={risk} />
         </p>
       );
     }

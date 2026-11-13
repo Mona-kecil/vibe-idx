@@ -3,7 +3,7 @@ import { useAuth } from '@workos-inc/authkit-react';
 import { AccountControls } from '../BrokerPanel';
 import { aggregateBrokers, brokerName, edgeFills } from '../broker-data';
 import { brokerBoards, brokerHistorySchema, type BrokerBoard, type BrokerDay } from '../brokers';
-import { bounds, inRange, type Selection } from './logic';
+import { bounds, inSelection, type Selection } from './logic';
 import { dateText, nf, rangeText, short } from './format';
 
 const boardLabels = {
@@ -14,7 +14,7 @@ const boardLabels = {
 };
 const sharesPerLot = 100;
 
-export function BrokerFlow({
+export function BrokerSummary({
   ticker,
   selection,
   start,
@@ -131,7 +131,7 @@ function BrokerData({
   const days = state.days.filter(
     (d) =>
       (board === 'all' || d.board === board) &&
-      (selection ? inRange(d.date, selection) : d.date >= start && d.date <= end),
+      (selection ? inSelection(d.date, selection) : d.date >= start && d.date <= end),
   );
   const rows = aggregateBrokers(days);
   const boardPicker = (

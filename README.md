@@ -24,7 +24,7 @@ The R2 credential needs object read access to `vibe-idx-private`. Keep secret va
 
 Register `http://localhost:5173/callback` as a WorkOS redirect URI, `http://localhost:5173` as an allowed origin and sign-out URI, and `http://localhost:5173/login` as the initiate-login URI. Enable Magic Auth for email-code sign-in.
 
-Start the website and its Vercel functions together.
+Start the Site, the Terminal and their Vercel functions together.
 
 ```sh
 pnpm dlx vercel dev --listen 5173 --cwd apps/web

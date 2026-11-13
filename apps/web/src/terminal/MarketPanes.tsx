@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type MouseEvent } from 'react';
-import type { Feed, Stock } from '../data';
+import type { SignalFeed, Stock } from '../data';
 import { treemap } from '../treemap';
 import { nf, short, signed, dateText } from '../ticker/format';
 import { useTerminal } from './state';
@@ -194,14 +194,14 @@ const signalNames = {
   green_on_red: 'RS',
   five_pct_change: '5%',
 };
-const signalOrder: Record<Feed[number]['kind'], number> = {
+const signalOrder: Record<SignalFeed[number]['kind'], number> = {
   ara: 0,
   volume_spike: 1,
   foreign_streak: 2,
   green_on_red: 3,
   five_pct_change: 4,
 };
-function SignalDetail({ row }: { row: Feed[number] }) {
+function SignalDetail({ row }: { row: SignalFeed[number] }) {
   switch (row.kind) {
     case 'ara':
       return (
@@ -246,7 +246,7 @@ export function SignalsPane() {
           nf(row.numbers.pct_before, 2) !== nf(row.numbers.pct_after, 2)),
     )
     .sort((a, b) => b.date.localeCompare(a.date) || signalOrder[a.kind] - signalOrder[b.kind]);
-  const days = new Map<string, Feed>();
+  const days = new Map<string, SignalFeed>();
   for (const row of rows) {
     const day = days.get(row.date);
     if (day) day.push(row);

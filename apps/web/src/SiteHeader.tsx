@@ -4,7 +4,7 @@ import { TerminalLink } from './TerminalLink';
 import { useNarrow } from './useNarrow';
 import './site.css';
 
-type Page = 'home' | 'market' | 'ticker';
+type Page = 'today' | 'market' | 'ticker';
 type Listing = { ticker: string; name: string };
 type SearchState = 'closed' | 'open';
 
@@ -79,7 +79,7 @@ export function SiteHeader({
           <img src="/favicon.svg" alt="Vibe IDX Today" width="28" height="28" />
         </a>
         <nav className="site-nav" aria-label="Main">
-          {link('home', '/', 'Today')}
+          {link('today', '/', 'Today')}
           {link('market', '/market', 'Market')}
           <TerminalLink />
         </nav>

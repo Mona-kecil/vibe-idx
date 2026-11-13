@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 
-export type CorruptionMode = 'spread' | 'hold' | 'retreat' | 'still';
+export type VoidMode = 'spread' | 'hold' | 'retreat' | 'still';
 
 const rootSize = 96;
 const coverCell = 24;
@@ -15,7 +15,7 @@ const pulseSpeed = 0.15;
 const layoutSeed = Math.floor(Math.random() * 2 ** 32);
 let origin = { x: 0.5, y: 0.5 };
 
-export function aimCorruption(x: number, y: number) {
+export function aimVoid(x: number, y: number) {
   origin = { x, y };
 }
 
@@ -248,13 +248,7 @@ function layoutSparks(width: number, height: number): Spark[] {
   }));
 }
 
-export function Corruption({
-  mode,
-  durationMs = 0,
-}: {
-  mode: CorruptionMode;
-  durationMs?: number;
-}) {
+export function Void({ mode, durationMs = 0 }: { mode: VoidMode; durationMs?: number }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -533,5 +527,5 @@ export function Corruption({
       window.removeEventListener('resize', resize);
     };
   }, [mode, durationMs]);
-  return <canvas className="corruption" ref={canvasRef} aria-hidden="true" />;
+  return <canvas className="void" ref={canvasRef} aria-hidden="true" />;
 }

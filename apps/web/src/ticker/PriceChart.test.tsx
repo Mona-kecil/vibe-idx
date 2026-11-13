@@ -278,7 +278,7 @@ describe('ticker chart event badges', () => {
   });
 });
 
-describe('ticker chart range selection', () => {
+describe('ticker chart selection', () => {
   const drag = async (from: number, to: number) => {
     const axis = element('.chart-axis');
     await pointer(axis, 'pointerdown', { clientX: from, pointerType: 'touch' });

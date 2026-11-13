@@ -18,10 +18,10 @@ import { readStorage, writeStorage } from '../watchlist';
 import { chartTheme as theme, paneLabel } from './chartTheme';
 import { dateText, direction, nf, rangeText, short, signed } from './format';
 import {
-  aggregateRange,
+  aggregateSelection,
   bounds,
   cumulativeForeign,
-  periodRange,
+  periodBounds,
   selectedRows,
   selectionKey,
   visibleWindow,
@@ -34,7 +34,7 @@ import {
 
 export function SelectionLabel({ prices, selection }: { prices: Price[]; selection: Selection }) {
   const b = bounds(selection),
-    totals = aggregateRange(prices, selection);
+    totals = aggregateSelection(prices, selection);
   if (!b || !totals) return null;
   return (
     <>
@@ -249,7 +249,7 @@ export function PriceChart({
   const [totalOpen, setTotalOpen] = useState(false);
   const withTotal = !narrow || totalOpen;
   const [hover, setHover] = useState<number | null>(null);
-  const [view, setView] = useState(() => visibleWindow(rows.length, periodRange(prices, period)));
+  const [view, setView] = useState(() => visibleWindow(rows.length, periodBounds(prices, period)));
   const [band, setBand] = useState<{ left: number; width: number } | null>(null);
   const [docked, setDocked] = useState(false);
   const wrap = useRef<HTMLDivElement>(null),
@@ -324,7 +324,7 @@ export function PriceChart({
     api.subscribeCrosshairMove((event) =>
       setHover(event.time === undefined ? null : (index.get(chartDate(event.time) ?? '') ?? null)),
     );
-    const initial = savedRange.current ?? periodRange(prices, latest.current.period);
+    const initial = savedRange.current ?? periodBounds(prices, latest.current.period);
     sync(initial);
     // The chart only knows its plot width after the first layout.
     let fitted = false;
@@ -386,7 +386,7 @@ export function PriceChart({
 
   function choosePeriod(next: Period) {
     setPeriod(next);
-    chart.current?.timeScale().setVisibleLogicalRange(periodRange(prices, next));
+    chart.current?.timeScale().setVisibleLogicalRange(periodBounds(prices, next));
   }
   function chooseType(next: ChartType) {
     setType(next);

@@ -4,7 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vite-plus/test';
 import { tickerSchema } from '../data';
 import type { Selection } from '../ticker/logic';
-import { DescriptionPane, HoldersPane } from './TickerPanes';
+import { KeyFiguresPane, HoldersAndChangesPane } from './TickerPanes';
 
 const ticker = tickerSchema.parse({
   ticker: 'TEST',
@@ -93,7 +93,7 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 it('shows registry facts above the holders with the reporting date available on hover', async () => {
-  await act(async () => root.render(<HoldersPane />));
+  await act(async () => root.render(<HoldersAndChangesPane />));
   const registry = host.querySelector('dl');
   expect([...(registry?.querySelectorAll('div') ?? [])].map((el) => el.textContent)).toEqual([
     'FREE FLOAT40.00%',
@@ -103,12 +103,12 @@ it('shows registry facts above the holders with the reporting date available on 
   expect(registry?.title).toBe('Registry 31 Oct 2026');
   expect(registry?.nextElementSibling?.querySelector('[aria-label="Holder A"]')).not.toBeNull();
   selection = { anchor: '2026-10-01', end: '2026-10-30' };
-  await act(async () => root.render(<HoldersPane />));
+  await act(async () => root.render(<HoldersAndChangesPane />));
   expect(host.querySelector('dl')?.title).toBe('Registry unavailable');
   expect([...host.querySelectorAll('dl dd')].map((el) => el.textContent)).toEqual(['—', '—', '—']);
 });
 it('shares one percentage chart with inspectable reports and range changes', async () => {
-  await act(async () => root.render(<HoldersPane />));
+  await act(async () => root.render(<HoldersAndChangesPane />));
   expect(host.querySelectorAll('.holder-history')).toHaveLength(2);
   const holder = host.querySelector('[aria-label="Holder A"]');
   expect(host.querySelectorAll('.holders-chart svg')).toHaveLength(1);
@@ -125,16 +125,16 @@ it('shares one percentage chart with inspectable reports and range changes', asy
   expect(exited?.textContent).toContain('Below 5%');
   expect(exited?.querySelector('svg')).toBeNull();
 });
-it('shows an active chart range even with no holder reports and clears it from HDS', async () => {
+it('shows an active selection even with no holder reports and clears it from HDS', async () => {
   selection = { anchor: '2026-11-01', end: '2026-11-02' };
-  await act(async () => root.render(<HoldersPane />));
+  await act(async () => root.render(<HoldersAndChangesPane />));
   expect(host.querySelector('.holder-range')?.textContent).toContain(
     'Selection 1 Nov 2026 to 2 Nov 2026',
   );
   expect(host.textContent).toContain('No holder reports in this selection');
   await act(async () => {
     host.querySelector<HTMLButtonElement>('.holder-range button')?.click();
-    root.render(<HoldersPane />);
+    root.render(<HoldersAndChangesPane />);
   });
   expect(select).toHaveBeenCalledWith(null);
   expect(host.querySelector('.holder-range')).toBeNull();
@@ -180,7 +180,7 @@ it('merges monthly accounts and daily reports once per holder, preferring exact 
       ],
     },
   });
-  await act(async () => root.render(<HoldersPane />));
+  await act(async () => root.render(<HoldersAndChangesPane />));
   expect(
     [...host.querySelectorAll('.holder-history')].map((e) => e.getAttribute('aria-label')),
   ).toEqual(['Holder A', 'Holder C', 'Holder D', 'Exited holder']);
@@ -192,7 +192,7 @@ it('merges monthly accounts and daily reports once per holder, preferring exact 
   expect(holder?.querySelector('[aria-label="Controller affiliate"]')?.textContent).toBe('AFFIL');
   expect(host.querySelector('[aria-label="Holder A"] b')?.textContent).toBe('9.11%');
   selection = { anchor: '2026-10-01', end: '2026-10-30' };
-  await act(async () => root.render(<HoldersPane />));
+  await act(async () => root.render(<HoldersAndChangesPane />));
   expect(host.querySelectorAll('.holder-history')).toHaveLength(3);
   expect(host.querySelector('[aria-label="Holder C"] b')?.textContent).toBe('1.25%');
   expect(host.querySelector('.holder-role')).toBeNull();
@@ -201,11 +201,11 @@ it('merges monthly accounts and daily reports once per holder, preferring exact 
   );
   await act(async () => {
     host.querySelector<HTMLButtonElement>('.holder-range button')?.click();
-    root.render(<HoldersPane />);
+    root.render(<HoldersAndChangesPane />);
   });
   expect(host.querySelectorAll('.holder-history')).toHaveLength(4);
 });
-it('uses registry roles at the chart range end and gives controllers precedence over affiliates', async () => {
+it('uses registry roles at the selection end and gives controllers precedence over affiliates', async () => {
   detailData = tickerSchema.parse({
     ...ticker,
     registry_history: [
@@ -238,11 +238,11 @@ it('uses registry roles at the chart range end and gives controllers precedence 
       },
     ],
   });
-  await act(async () => root.render(<HoldersPane />));
+  await act(async () => root.render(<HoldersAndChangesPane />));
   expect(host.querySelector('[aria-label="Controller"]')?.textContent).toBe('CTRL');
   expect(host.querySelectorAll('.holder-role')).toHaveLength(1);
   selection = { anchor: '2025-11-01', end: '2025-11-30' };
-  await act(async () => root.render(<HoldersPane />));
+  await act(async () => root.render(<HoldersAndChangesPane />));
   expect(host.querySelector('[aria-label="Controller affiliate"]')?.textContent).toBe('AFFIL');
   expect(host.querySelector('[aria-label="Controller"]')).toBeNull();
 });
@@ -266,14 +266,14 @@ it('ends a monthly history below 1% when the holder leaves subsequent snapshots'
     ],
     one_pct: { date: '2026-10-30', holders: [] },
   });
-  await act(async () => root.render(<HoldersPane />));
+  await act(async () => root.render(<HoldersAndChangesPane />));
   const holder = host.querySelector('[aria-label="Monthly exit"]');
   expect(holder?.querySelector('b')?.textContent).toBe('Below 1%');
   expect(host.querySelectorAll('[data-holder="exit"] circle')).toHaveLength(1);
   expect(holder?.querySelector('.holder-change')?.textContent).toBe('−0.20 pp or more');
   expect(holder?.querySelector('tbody tr')?.textContent).toBe('30 Oct 2026Below 1%—');
   selection = { anchor: '2026-09-01', end: '2026-09-30' };
-  await act(async () => root.render(<HoldersPane />));
+  await act(async () => root.render(<HoldersAndChangesPane />));
   expect(host.querySelector('[aria-label="Monthly exit"] b')?.textContent).toBe('1.20%');
 });
 it('shows six lines, previews every holder on focus and allows replacing a pinned line', async () => {
@@ -287,7 +287,7 @@ it('shows six lines, previews every holder on focus and allows replacing a pinne
     })),
     changes: [],
   });
-  await act(async () => root.render(<HoldersPane />));
+  await act(async () => root.render(<HoldersAndChangesPane />));
   expect(host.querySelectorAll('.holder-history')).toHaveLength(8);
   expect(host.querySelectorAll('.holders-chart [data-holder]')).toHaveLength(6);
   const holder = host.querySelector('[aria-label="Holder 7"]');
@@ -308,7 +308,7 @@ it('shows six lines, previews every holder on focus and allows replacing a pinne
   expect(host.querySelector('.holders-chart [data-holder="h0"]')).toBeNull();
 });
 it('keeps ten key figures with formatted price and registry dates and current-ticker pinning', async () => {
-  await act(async () => root.render(<DescriptionPane />));
+  await act(async () => root.render(<KeyFiguresPane />));
   expect(host.querySelectorAll('dd')).toHaveLength(10);
   expect(host.textContent).toContain('PRICE DATE9 Nov 2026');
   expect(host.textContent).toContain('REGISTRY DATE31 Oct 2026');
@@ -334,7 +334,7 @@ it.each([
         pct_after,
       })),
     });
-    await act(async () => root.render(<HoldersPane />));
+    await act(async () => root.render(<HoldersAndChangesPane />));
     const change = host.querySelector('.holder-change');
     expect(change?.textContent).toBe(text);
     expect(change?.className).toBe(`holder-change ${direction}`);
@@ -354,7 +354,7 @@ it.each([
       holders: [{ ...ticker.holders[0], pct }],
       changes: [ticker.changes[0]],
     });
-    await act(async () => root.render(<HoldersPane />));
+    await act(async () => root.render(<HoldersAndChangesPane />));
     const change = host.querySelector('.holder-change');
     expect(change?.textContent).toBe(text);
     expect(change?.getAttribute('title')).toContain(`exact change ${exact}`);

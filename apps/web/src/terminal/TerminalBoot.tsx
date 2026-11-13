@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useReducer, useSyncExternalStore } from 'react';
-import { Corruption } from '../Corruption';
+import { Void } from '../Void';
 import { startGlitch, stopGlitch } from '../glitch';
 
 const retreatMs = 450;
@@ -70,7 +70,7 @@ export function TerminalBoot({
   }, [reducedMotion]);
   return (
     <div className={`terminal-boot terminal-boot--${phase}`}>
-      <Corruption
+      <Void
         mode={reducedMotion ? 'still' : phase === 'leaving' ? 'retreat' : 'hold'}
         durationMs={retreatMs}
       />

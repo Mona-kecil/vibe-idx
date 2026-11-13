@@ -12,7 +12,7 @@ export function bounds(selection: Selection) {
     ? { start: selection.anchor, end: selection.end }
     : { start: selection.end, end: selection.anchor };
 }
-export function inRange(date: string, selection: Selection) {
+export function inSelection(date: string, selection: Selection) {
   const range = bounds(selection);
   return !range || (date >= range.start && date <= range.end);
 }
@@ -73,7 +73,7 @@ export function visiblePrices(prices: Price[], period: Period) {
 export const openingPeriod: Period = '1M';
 export type RowWindow = { first: number; last: number };
 const RIGHT_PADDING = 3;
-export function periodRange(prices: Price[], period: Period) {
+export function periodBounds(prices: Price[], period: Period) {
   const first = prices.length - visiblePrices(prices, period).length;
   return { from: first - 0.5, to: prices.length - 1 + RIGHT_PADDING };
 }
@@ -93,8 +93,8 @@ export function selectedRows(dates: string[], selection: Selection): RowWindow |
   const last = dates.filter((d) => d <= b.end).length - 1;
   return first >= 0 && first <= last ? { first, last } : null;
 }
-export function aggregateRange(prices: Price[], selection: Selection) {
-  const rows = prices.filter((p) => inRange(p.date, selection));
+export function aggregateSelection(prices: Price[], selection: Selection) {
+  const rows = prices.filter((p) => inSelection(p.date, selection));
   const first = rows[0],
     last = rows.at(-1);
   if (!first || !last) return null;
@@ -348,11 +348,11 @@ export function isOwnershipFiling(filing: Filing, events: HoldingEvent[]) {
 export function summaryEvents(events: HoldingEvent[], filings: Filing[], selection: Selection) {
   const rows = [
     ...events
-      .filter((e) => inRange(e.date, selection))
+      .filter((e) => inSelection(e.date, selection))
       .map((event) => ({ kind: 'ownership' as const, date: event.date, time: event.date, event })),
     ...filings
       .filter(
-        (e) => inRange(e.published_at.slice(0, 10), selection) && !isOwnershipFiling(e, events),
+        (e) => inSelection(e.published_at.slice(0, 10), selection) && !isOwnershipFiling(e, events),
       )
       .map((filing) => ({
         kind: 'filing' as const,

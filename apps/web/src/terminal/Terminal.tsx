@@ -19,23 +19,23 @@ import {
   functions,
   initialFilters,
   initialBrokerFilters,
-  parseLayout,
+  parseMode,
   usePublications,
   useTerminal,
   type Filters,
   type BrokerFilters,
   type FunctionId,
-  type Layout,
+  type Mode,
   type Timeframe,
 } from './state';
 import { CommandBar } from './CommandBar';
-import { SplitLayout, layouts } from './Layout';
+import { SplitLayout, modes } from './Layout';
 import { Empty, RiskFlags, StatusBar } from './ui';
 import { PricePane } from './PricePane';
 import { BrokerSummaryPane, BrokerFlowPane, ForeignFlowPane } from './BrokerPanes';
 import { DoneDetailPane, OrderBookPane, RunningTradePane, TradeBookPane } from './TickPanes';
 import { WatchlistPane, MoversPane, SignalsPane, HeatmapPane } from './MarketPanes';
-import { DescriptionPane, HoldersPane, DisclosuresPane } from './TickerPanes';
+import { KeyFiguresPane, HoldersAndChangesPane, DisclosuresPane } from './TickerPanes';
 import { CompanyFeedPane } from './CompanyFeedPane';
 import { NewsPane, CalendarPane, ActionsPane, RiskPane } from './PublicationPanes';
 import './terminal.css';
@@ -72,7 +72,7 @@ export function Terminal({
   return (
     <div className="terminal-page">
       {state.kind === 'ready' ? (
-        <TerminalWorkspace data={state.data} />
+        <LoadedTerminal data={state.data} />
       ) : state.kind === 'loading' && booting ? null : (
         <Empty>
           {state.kind === 'loading' ? (
@@ -95,7 +95,7 @@ export function Terminal({
     </div>
   );
 }
-function TerminalWorkspace({ data }: { data: TerminalData }) {
+function LoadedTerminal({ data }: { data: TerminalData }) {
   const auth = useAuth(),
     authRef = useRef(auth);
   authRef.current = auth;
@@ -109,8 +109,8 @@ function TerminalWorkspace({ data }: { data: TerminalData }) {
       ''
     );
   });
-  const [layout, changeLayout] = useState<Layout>(() => {
-    return parseLayout(query.get('l')) ?? 'grid';
+  const [mode, changeMode] = useState<Mode>(() => {
+    return parseMode(query.get('l')) ?? 'grid';
   });
   const [selection, select] = useState<Selection>(null),
     [timeframe, setTimeframe] = useState<Timeframe>('D');
@@ -150,10 +150,10 @@ function TerminalWorkspace({ data }: { data: TerminalData }) {
   }, [ticker]);
   const [max, setMax] = useState<string | null>(null),
     [focused, setFocused] = useState('b');
-  const [slots, setSlots] = useState<Record<Layout, Record<string, FunctionId[]>>>(() => ({
-    grid: layouts.grid.slots,
-    focus: layouts.focus.slots,
-    flow: layouts.flow.slots,
+  const [slots, setSlots] = useState<Record<Mode, Record<string, FunctionId[]>>>(() => ({
+    grid: modes.grid.slots,
+    focus: modes.focus.slots,
+    flow: modes.flow.slots,
   }));
   const [active, setActive] = useState<Record<string, FunctionId>>({});
   const publications = usePublications();
@@ -185,8 +185,8 @@ function TerminalWorkspace({ data }: { data: TerminalData }) {
     },
     [data, ticker],
   );
-  const setLayout = useCallback((value: Layout) => {
-    changeLayout(value);
+  const setMode = useCallback((value: Mode) => {
+    changeMode(value);
     setMax(null);
     setFocused('b');
   }, []);
@@ -199,22 +199,22 @@ function TerminalWorkspace({ data }: { data: TerminalData }) {
     const url = new URL(window.location.href);
     const push = historyTicker.current !== ticker && url.searchParams.get('t') !== ticker;
     url.searchParams.set('t', ticker);
-    url.searchParams.set('l', layout);
+    url.searchParams.set('l', mode);
     if (push) window.history.pushState(null, '', url);
     else window.history.replaceState(null, '', url);
     historyTicker.current = ticker;
-  }, [ticker, layout]);
+  }, [ticker, mode]);
   useEffect(() => {
     const pop = () => {
       const params = new URLSearchParams(window.location.search),
-        value = parseLayout(params.get('l'));
+        value = parseMode(params.get('l'));
       const target = params.get('t');
       if (target) setTicker(target);
-      if (value) setLayout(value);
+      if (value) setMode(value);
     };
     window.addEventListener('popstate', pop);
     return () => window.removeEventListener('popstate', pop);
-  }, [setTicker, setLayout]);
+  }, [setTicker, setMode]);
   useEffect(() => {
     let current = true;
     setDetail({ kind: 'loading' });
@@ -231,8 +231,8 @@ function TerminalWorkspace({ data }: { data: TerminalData }) {
     };
   }, [ticker]);
   const userId = auth.user?.id;
-  const needsBrokers = Object.entries(slots[layout]).some(([slot, ids]) => {
-    const id = active[`${layout}:${slot}`] ?? ids[0];
+  const needsBrokers = Object.entries(slots[mode]).some(([slot, ids]) => {
+    const id = active[`${mode}:${slot}`] ?? ids[0];
     return id === 'BRK' || id === 'BFL' || id === 'FF';
   });
   useEffect(() => {
@@ -242,7 +242,7 @@ function TerminalWorkspace({ data }: { data: TerminalData }) {
     setBrokerError('');
     void (async () => {
       const token = await authRef.current.getAccessToken();
-      if (!token) throw new Error('Your session expired. Sign in again.');
+      if (!token) throw new Error('Your sign-in expired. Sign in again.');
       const days = await fetchBrokers(ticker, token, controller.signal);
       if (!controller.signal.aborted) setBrokers({ kind: 'ready', data: days });
     })().catch((error) => {
@@ -260,35 +260,33 @@ function TerminalWorkspace({ data }: { data: TerminalData }) {
     );
     void auth.signIn().catch(() => setBrokerError('Could not sign in. Retry.'));
   }
-  function openFunction(id: FunctionId, targetLayout: Layout) {
-    const entries = Object.entries(slots[targetLayout]);
+  function openFunction(id: FunctionId, targetMode: Mode) {
+    const entries = Object.entries(slots[targetMode]);
     const slot =
       entries.find(([, ids]) => ids.includes(id))?.[0] ??
-      (slots[targetLayout][focused] ? focused : 'b');
-    if (!slots[targetLayout][slot]?.includes(id))
+      (slots[targetMode][focused] ? focused : 'b');
+    if (!slots[targetMode][slot]?.includes(id))
       setSlots((previous) => ({
         ...previous,
-        [targetLayout]: {
-          ...previous[targetLayout],
-          [slot]: [id, ...(previous[targetLayout][slot] ?? [])],
+        [targetMode]: {
+          ...previous[targetMode],
+          [slot]: [id, ...(previous[targetMode][slot] ?? [])],
         },
       }));
     if (max && max !== slot) setMax(null);
-    setActive((previous) => ({ ...previous, [`${targetLayout}:${slot}`]: id }));
+    setActive((previous) => ({ ...previous, [`${targetMode}:${slot}`]: id }));
     setFocused(slot);
   }
   function selectTickBlock(block: BlockSelection | null) {
     setTickBlock(block);
     if (!block) return;
-    const targetLayout = Object.values(slots[layout]).some((ids) => ids.includes('RT'))
-      ? layout
-      : 'flow';
-    if (targetLayout !== layout) setLayout(targetLayout);
-    openFunction('RT', targetLayout);
+    const targetMode = Object.values(slots[mode]).some((ids) => ids.includes('RT')) ? mode : 'flow';
+    if (targetMode !== mode) setMode(targetMode);
+    openFunction('RT', targetMode);
   }
   function pane(slot: string) {
-    const ids = slots[layout][slot] ?? [],
-      id = active[`${layout}:${slot}`] ?? ids[0];
+    const ids = slots[mode][slot] ?? [],
+      id = active[`${mode}:${slot}`] ?? ids[0];
     if (!id) return null;
     return (
       <section
@@ -310,8 +308,8 @@ function TerminalWorkspace({ data }: { data: TerminalData }) {
                 key={fn}
                 role="tab"
                 title={functions[fn]}
-                id={`tab-${layout}-${slot}-${fn}`}
-                aria-controls={`panel-${layout}-${slot}`}
+                id={`tab-${mode}-${slot}-${fn}`}
+                aria-controls={`panel-${mode}-${slot}`}
                 aria-selected={fn === id}
                 tabIndex={fn === id ? 0 : -1}
                 onKeyDown={(event) => {
@@ -333,9 +331,7 @@ function TerminalWorkspace({ data }: { data: TerminalData }) {
                   tabs[next]?.click();
                   tabs[next]?.focus();
                 }}
-                onClick={() =>
-                  setActive((previous) => ({ ...previous, [`${layout}:${slot}`]: fn }))
-                }
+                onClick={() => setActive((previous) => ({ ...previous, [`${mode}:${slot}`]: fn }))}
               >
                 {fn}
               </button>
@@ -353,8 +349,8 @@ function TerminalWorkspace({ data }: { data: TerminalData }) {
         <div
           className="pane-view"
           role="tabpanel"
-          id={`panel-${layout}-${slot}`}
-          aria-labelledby={`tab-${layout}-${slot}-${id}`}
+          id={`panel-${mode}-${slot}`}
+          aria-labelledby={`tab-${mode}-${slot}-${id}`}
           key={id}
         >
           <PaneView id={id} />
@@ -381,7 +377,7 @@ function TerminalWorkspace({ data }: { data: TerminalData }) {
         setBroker,
         brokers,
         brokerError,
-        session: auth.isLoading ? 'checking' : auth.user ? 'signed-in' : 'signed-out',
+        authState: auth.isLoading ? 'checking' : auth.user ? 'signed-in' : 'signed-out',
         signIn,
         getToken,
         tickDate,
@@ -399,13 +395,13 @@ function TerminalWorkspace({ data }: { data: TerminalData }) {
     >
       <div className="term">
         <CommandBar
-          layout={layout}
-          setLayout={setLayout}
+          mode={mode}
+          setMode={setMode}
           openFunction={openFunction}
           maximize={() => setMax(null)}
         />
         <main className={`ws${max ? ' has-max' : ''}`}>
-          <SplitLayout key={layout} node={layouts[layout].tree} path={layout} pane={pane} />
+          <SplitLayout key={mode} node={modes[mode].tree} path={mode} pane={pane} />
         </main>
         <StatusBar />
       </div>
@@ -441,7 +437,7 @@ function PaneView({ id }: { id: FunctionId }) {
     case 'GP':
       return <PricePane />;
     case 'KEY':
-      return <DescriptionPane />;
+      return <KeyFiguresPane />;
     case 'BRK':
       return <BrokerSummaryPane />;
     case 'BFL':
@@ -457,7 +453,7 @@ function PaneView({ id }: { id: FunctionId }) {
     case 'TB':
       return <TradeBookPane />;
     case 'HDS':
-      return <HoldersPane />;
+      return <HoldersAndChangesPane />;
     case 'DISC':
       return <DisclosuresPane />;
     case 'FEED':

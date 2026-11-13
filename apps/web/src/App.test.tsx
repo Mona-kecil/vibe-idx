@@ -3,8 +3,8 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { App } from './App';
-import { arrivalMs } from './Corruption';
-import { tickerSchema, type Feed, type Ticker } from './data';
+import { arrivalMs } from './Void';
+import { tickerSchema, type SignalFeed, type Ticker } from './data';
 import { HoldingsChart } from './ticker/Ownership';
 import { holdingSeries } from './ticker/logic';
 import tpiaFixture from './ticker/fixtures/TPIA-history.json';
@@ -19,7 +19,7 @@ vi.mock('@workos-inc/authkit-react', () => ({
   useAuth: () => ({ ...auth, isLoading: false }),
   LoginRequiredError: class extends Error {},
 }));
-// Exercise the workspace without the chart library's browser-only canvas APIs.
+// Exercise the Terminal without the chart library's browser-only canvas APIs.
 vi.mock('./terminal/charts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./terminal/charts')>();
   const chart: object = new Proxy(() => chart, {
@@ -94,7 +94,7 @@ const ownership = (
   before: number,
   after: number | null,
   extra = {},
-): Feed[number] => ({
+): SignalFeed[number] => ({
   ticker,
   date: '2026-10-22',
   kind: 'five_pct_change',
@@ -109,13 +109,13 @@ const ownership = (
     ...extra,
   },
 });
-const ara = (ticker: string, change_pct: number): Feed[number] => ({
+const ara = (ticker: string, change_pct: number): SignalFeed[number] => ({
   ticker,
   date: '2026-10-22',
   kind: 'ara',
   numbers: { change_pct, close: 135, prev: 100, band_pct: 34 },
 });
-const volume = (ticker: string, multiple: number): Feed[number] => ({
+const volume = (ticker: string, multiple: number): SignalFeed[number] => ({
   ticker,
   date: '2026-10-22',
   kind: 'volume_spike',
@@ -738,7 +738,7 @@ describe('terminal availability', () => {
     expect(host.querySelector('.term')).not.toBeNull();
   });
 
-  it('reveals the workspace immediately when reduced motion is requested', async () => {
+  it('reveals the Terminal immediately when reduced motion is requested', async () => {
     vi.useFakeTimers();
     desktop(true);
     await openTerminal();
@@ -1203,7 +1203,7 @@ describe('ticker research regressions', () => {
 
 describe('market summary', () => {
   const order = () => stockOrder('#market-rows .stock-link strong');
-  it('switches trading windows, sorts both ways with missing values last, searches and shares pins with Home', async () => {
+  it('switches trading windows, sorts both ways with missing values last, searches and shares pins with Today', async () => {
     auth.user = { id: 'market-user', email: 'market@example.com' };
     window.history.replaceState(null, '', '/market');
     await render();

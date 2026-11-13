@@ -37,13 +37,13 @@ export const functions = {
 };
 export type FunctionId = keyof typeof functions;
 export const isFunction = (value: string): value is FunctionId => Object.hasOwn(functions, value);
-export type Layout = 'grid' | 'focus' | 'flow';
-export const isLayout = (value: string | null): value is Layout =>
+export type Mode = 'grid' | 'focus' | 'flow';
+export const isMode = (value: string | null): value is Mode =>
   value === 'grid' || value === 'focus' || value === 'flow';
-export const parseLayout = (value: string | null): Layout | null =>
-  value === 'live' ? 'flow' : isLayout(value) ? value : null;
+export const parseMode = (value: string | null): Mode | null =>
+  value === 'live' ? 'flow' : isMode(value) ? value : null;
 export type Timeframe = 'W' | 'D' | '4H' | '1H' | '15M';
-export type Session = 'checking' | 'signed-in' | 'signed-out';
+export type AuthState = 'checking' | 'signed-in' | 'signed-out';
 export type BrokerFilters = {
   board: BrokerBoard | 'all';
   type: InvestorFilter;
@@ -116,7 +116,7 @@ type TerminalContextValue = {
   setBroker: <K extends keyof BrokerFilters>(key: K, value: BrokerFilters[K]) => void;
   brokers: Resource<BrokerDay[]>;
   brokerError: string;
-  session: Session;
+  authState: AuthState;
   signIn: () => void;
   getToken: () => Promise<string | undefined>;
   tickDate: string | null;

@@ -89,10 +89,10 @@ export function Empty({ children }: { children: ReactNode }) {
   );
 }
 export function SignInPrompt() {
-  const { session, signIn } = useTerminal();
+  const { authState, signIn } = useTerminal();
   return (
     <Empty>
-      {session === 'checking' ? (
+      {authState === 'checking' ? (
         'Checking sign-in…'
       ) : (
         <>

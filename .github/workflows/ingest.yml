@@ -101,7 +101,7 @@ jobs:
         if: ${{ !cancelled() }}
         run: |
           if [ ! -f "$OUT/health.json" ]; then
-            echo '::error::The batch stopped before it finished the website JSON; nothing was published'
+            echo '::error::The batch stopped before it finished the public JSON; nothing was published'
             exit 1
           fi
           aws s3 sync "$OUT" s3://vibe-idx-public --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"

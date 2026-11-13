@@ -1,7 +1,7 @@
 import { Fragment, useRef, useState, type ReactNode, type PointerEvent } from 'react';
 import { z } from 'zod';
 import { readStorage, writeStorage } from '../watchlist';
-import type { FunctionId, Layout } from './state';
+import type { FunctionId, Mode } from './state';
 import './layout.css';
 
 export type LayoutNode =
@@ -12,7 +12,7 @@ export type LayoutNode =
       basis?: (number | null)[];
       children: LayoutNode[];
     };
-export const layouts: Record<Layout, { tree: LayoutNode; slots: Record<string, FunctionId[]> }> = {
+export const modes: Record<Mode, { tree: LayoutNode; slots: Record<string, FunctionId[]> }> = {
   grid: {
     tree: {
       direction: 'row',

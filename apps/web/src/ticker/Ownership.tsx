@@ -6,7 +6,7 @@ import {
   holderLabel,
   holderRole,
   holdingsMoved,
-  inRange,
+  inSelection,
   registryAt,
   pctAt,
   pctAxis,
@@ -19,7 +19,7 @@ import {
   type Selection,
 } from './logic';
 import { dateText, direction, nf, short, signed } from './format';
-import { HoldingValue, OwnershipName } from './Feeds';
+import { HoldingValue, OwnershipName } from './Timeline';
 
 const palette = [
   '#2858ae',
@@ -73,7 +73,7 @@ export function Ownership({
       label: 'Other',
       shares: types.slice(6).reduce((sum, t) => sum + t.shares, 0),
     });
-  const activity = events.filter((e) => inRange(e.date, selection));
+  const activity = events.filter((e) => inSelection(e.date, selection));
   const chartSeries = topSeries(series, latest);
   const color = new Map(chartSeries.map((s, i) => [s.name, palette[i % palette.length]!]));
   const tint = (name: string) => color.get(name) ?? neutral[name] ?? unlisted;
@@ -145,7 +145,7 @@ export function Ownership({
       <ol className="holder-list" id="holders">
         {holders.slice(0, allHolders ? holders.length : TOP_HOLDERS).map(({ s, shares, pct }) => {
           const role = holderRole(snapshot, s.holder_key);
-          const changed = !!selection && s.events.some((e) => inRange(e.date, selection));
+          const changed = !!selection && s.events.some((e) => inSelection(e.date, selection));
           const before = sharesAt(s, previous),
             source =
               s.events

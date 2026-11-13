@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { load, type Health, type Stock, type Ticker } from '../data';
 import { usePublished } from '../publicData';
-import { RiskBadge, useRiskFor } from '../RiskBadge';
+import { RiskFlagChips, useRiskFor } from '../RiskFlagChips';
 import { PinButton, SiteHeader } from '../SiteHeader';
 import { Stale } from '../Stale';
 import { usePins } from '../watchlist';
@@ -19,9 +19,9 @@ import {
 import { calendarDate, dateText, direction, nf, short, signed, moveWord } from './format';
 import { Freshness } from './Freshness';
 import { PriceChart } from './PriceChart';
-import { SelectionSummary, Timeline } from './Feeds';
+import { SelectionSummary, Timeline } from './Timeline';
 import { Ownership } from './Ownership';
-import { BrokerFlow } from './BrokerFlow';
+import { BrokerSummary } from './BrokerSummary';
 import { ShareButton } from './ShareButton';
 import './ticker.css';
 
@@ -234,7 +234,7 @@ function TickerDetail({
         </div>
         <div className="identity-sub">
           <p>{data.name.replace(/\.$/, '')}</p>
-          <RiskBadge risk={risk} />
+          <RiskFlagChips risk={risk} />
           {chip && (
             <span className="action-chip" title={chip.title} tabIndex={0}>
               {chip.label}
@@ -295,7 +295,7 @@ function TickerDetail({
       />
       <Timeline data={data} events={events} selection={selection} />
       {last && (
-        <BrokerFlow
+        <BrokerSummary
           ticker={data.ticker}
           selection={selection}
           start={visible[0]?.date ?? last.date}

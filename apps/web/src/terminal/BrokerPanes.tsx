@@ -16,8 +16,8 @@ import { ChartAttribution as Attribution } from '../ChartAttribution';
 import './broker-panes.css';
 
 function BrokerGate({ children }: { children: (days: BrokerDay[]) => ReactNode }) {
-  const { brokers, session, signIn, brokerError, retryBrokers } = useTerminal();
-  if (session !== 'signed-in') return <SignInPrompt />;
+  const { brokers, authState, signIn, brokerError, retryBrokers } = useTerminal();
+  if (authState !== 'signed-in') return <SignInPrompt />;
   if (brokerError)
     return (
       <p className="empty" role="alert">
@@ -34,8 +34,8 @@ function BrokerGate({ children }: { children: (days: BrokerDay[]) => ReactNode }
   return children(brokers.data);
 }
 function BrokerControls({ flow = false, foreign = false }: { flow?: boolean; foreign?: boolean }) {
-  const { broker, setBroker, select, selection, session } = useTerminal();
-  if (session !== 'signed-in') return null;
+  const { broker, setBroker, select, selection, authState } = useTerminal();
+  if (authState !== 'signed-in') return null;
   return (
     <div className="broker-controls">
       <Segments
