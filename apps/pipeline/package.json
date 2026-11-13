@@ -5,7 +5,7 @@
   "scripts": {
     "brokers": "tsx brokers.ts",
     "ingest": "tsx ingest.ts",
-    "test": "CI=true vp test"
+    "test": "CI=true vp test --configLoader runner"
   },
   "dependencies": {
     "@duckdb/node-api": "^1.4.3-r.3",
