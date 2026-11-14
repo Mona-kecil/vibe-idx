@@ -267,14 +267,25 @@ export async function collectTicks({
       return;
     }
     const { missing } = await store.gaps(progress.expected);
-    if (missing.length <= Math.max(20, progress.expected * 1e-5)) {
+    // Rows only accumulate across crawls, so an equal count over the same range is the same set of numbers.
+    // A crawl that keeps failing at the same spot is stable too, so only a small stable gap counts as unserved.
+    const unserved =
+      progress.previousGaps?.expected === progress.expected &&
+      progress.previousGaps.missing === missing.length &&
+      missing.length <= Math.max(200, progress.expected * 1e-4);
+    if (missing.length <= Math.max(20, progress.expected * 1e-5) || unserved) {
       await store.publish(progress, missing);
       summary.published.push(`running_trade/${date}`);
       return;
     }
     summary.pending.push(`running_trade/${date}`);
     // Far more gaps than cancelled trades explain means the crawl itself failed. Crawl the day again next run.
-    Object.assign(progress, { phase: 'bulk', lanes: tradeLanes(progress.expected), repairs: 0 });
+    Object.assign(progress, {
+      phase: 'bulk',
+      lanes: tradeLanes(progress.expected),
+      repairs: 0,
+      previousGaps: { expected: progress.expected, missing: missing.length },
+    });
     await flush();
     await report(new Error(`${missing.length} running trades missing for ${date}`), {
       source: 'ticks',
