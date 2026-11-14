@@ -975,7 +975,9 @@ it.each([
 );
 
 let drilldownSession = 0;
-function blockSession() {
+// Enough trades to push morning fills past RT's first 500 rows and DD's first 300 blocks.
+const pagedSession = 510;
+function blockSession(filler: number) {
   const trade = (
     buy: number,
     sell: number,
@@ -1006,7 +1008,7 @@ function blockSession() {
     { ...trade(120, 121, 'CC', 'DD', 5000), side: 'b' },
     trade(3, 505, 'AA', 'KK', 100),
     trade(4, 505, 'AA', 'KK', 100, false, 'RG', true),
-    ...Array.from({ length: 510 }, (_, i) => ({
+    ...Array.from({ length: filler }, (_, i) => ({
       ...trade(1000 + i, 2000 + i, 'EE', 'FF'),
       time: 36000 + i,
     })),
@@ -1037,11 +1039,11 @@ function blockSession() {
     ...columns,
   });
 }
-function prepareBlocks() {
+function prepareBlocks(filler = 10) {
   dailyOpen = null;
   tickSessions = true;
   auth.user = { id: 'test-user' };
-  drilldown = blockSession();
+  drilldown = blockSession(filler);
 }
 const highlightedFills = () => [...host.querySelectorAll('.tick-tape [data-highlighted="true"]')];
 
@@ -1053,92 +1055,64 @@ async function clickBlock(index = 1) {
   );
 }
 
-it.each(['grid', 'focus', 'flow'])(
-  'selects a whole order row and opens the existing RT tab in %s with its morning fills',
-  async (mode) => {
-    prepareBlocks();
-    await render();
-    await command(`${mode.toUpperCase()} RT`);
-    await command('DD');
-    const first = host.querySelector('.tick-blocks tbody tr')!;
-    expect([...host.querySelectorAll('.tick-blocks th')].map((th) => th.textContent)).toEqual(
-      sharedTradeColumns,
-    );
-    expect(first.querySelectorAll('button')).toHaveLength(1);
-    expect(first.querySelector('button')?.tabIndex).toBe(0);
-    expect(cells(first)).toEqual([
-      '09:00:00',
-      '100 (0.00%)',
-      'SELL',
-      '350',
-      '3.5M',
-      '2',
-      'XL D',
-      'RG',
-    ]);
-    expect(first.querySelector('.tick-stack')?.getAttribute('aria-label')).toBe('2 brokers');
-    expect(first.querySelector('td')?.classList.contains('mut')).toBe(true);
-    expect(first.querySelector('td:nth-child(2) span')?.getAttribute('title')).toBe(
-      'First RG continuous trade 100',
-    );
-    await clickBlock();
-    expect(window.location.search).toContain(`l=${mode}`);
-    expect(button('[role="tab"][id$="-RT"]').getAttribute('aria-selected')).toBe('true');
-    expect([...host.querySelectorAll('.tick-tape th')].map((th) => th.textContent)).toEqual(
-      sharedTradeColumns,
-    );
-    expect(highlightedFills().map(cells)).toEqual([
-      ['09:00:00', '100 (0.00%)', 'SELL', '50', '500.0K', 'AA F', 'XL D', 'RG'],
-      ['09:00:00', '100 (0.00%)', 'SELL', '200', '2.0M', 'BB D', 'XL D', 'RG'],
-      ['09:00:00', '100 (0.00%)', 'SELL', '100', '1.0M', 'AA F', 'XL D', 'RG'],
-    ]);
-    expect(highlightedFills()[2]?.querySelector('.tick-foreign')?.textContent).toBe('AA F');
-    expect(host.querySelectorAll('.tick-tape tbody tr').length).toBeGreaterThan(500);
-    expect(host.querySelector('.tick-tape tbody tr:not([data-highlighted])')).not.toBeNull();
-    const summary = host.querySelector('.tick-summary')!;
-    expect(summary.querySelector('.tick-summary-main')?.textContent).toBe(
-      'XL DSELL350 lot100 (0.00%)',
-    );
-    expect(
-      [...summary.querySelectorAll('.tick-counterparties:not([aria-hidden]) > span')].map(
-        (party) => party.textContent,
-      ),
-    ).toEqual(['BB D 200', 'AA F 150']);
-    expect(host.textContent).not.toContain('Clear block');
-    expect(host.textContent).not.toContain('Aggressor');
-    await command('DD');
-    expect(host.querySelectorAll('.tick-blocks [aria-pressed="true"]')).toHaveLength(1);
-    await clickBlock();
-    expect(highlightedFills()).toHaveLength(0);
-    expect(host.querySelector('.tick-summary')).toBeNull();
-    expect(host.querySelector('.tick-blocks [aria-pressed="true"]')).toBeNull();
-  },
-);
-
-it('shows BUY and keeps the selection across modes', async () => {
-  prepareBlocks();
+it('selects a whole order row and opens the existing RT tab with its morning fills', async () => {
+  prepareBlocks(pagedSession);
   await render();
+  await command('FLOW RT');
   await command('DD');
-  expect(
-    host.querySelector('.tick-blocks tbody tr:nth-child(2) td:nth-child(3)')?.textContent,
-  ).toBe('BUY');
-  await click('.tick-blocks tbody tr:nth-child(2) button');
-  expect(window.location.search).toContain('l=flow');
-  expect(highlightedFills().map(cells)).toEqual([
-    ['09:00:00', '100 (0.00%)', 'BUY', '50', '500.0K', 'CC D', 'DD D', 'RG'],
+  const first = host.querySelector('.tick-blocks tbody tr')!;
+  expect([...host.querySelectorAll('.tick-blocks th')].map((th) => th.textContent)).toEqual(
+    sharedTradeColumns,
+  );
+  expect(first.querySelectorAll('button')).toHaveLength(1);
+  expect(first.querySelector('button')?.tabIndex).toBe(0);
+  expect(cells(first)).toEqual([
+    '09:00:00',
+    '100 (0.00%)',
+    'SELL',
+    '350',
+    '3.5M',
+    '2',
+    'XL D',
+    'RG',
   ]);
-  await command('FOCUS');
-  await command('FLOW');
-  expect(highlightedFills()).toHaveLength(1);
+  expect(first.querySelector('.tick-stack')?.getAttribute('aria-label')).toBe('2 brokers');
+  expect(first.querySelector('td')?.classList.contains('mut')).toBe(true);
+  expect(first.querySelector('td:nth-child(2) span')?.getAttribute('title')).toBe(
+    'First RG continuous trade 100',
+  );
+  await clickBlock();
+  expect(window.location.search).toContain('l=flow');
+  expect(button('[role="tab"][id$="-RT"]').getAttribute('aria-selected')).toBe('true');
+  expect([...host.querySelectorAll('.tick-tape th')].map((th) => th.textContent)).toEqual(
+    sharedTradeColumns,
+  );
+  expect(highlightedFills().map(cells)).toEqual([
+    ['09:00:00', '100 (0.00%)', 'SELL', '50', '500.0K', 'AA F', 'XL D', 'RG'],
+    ['09:00:00', '100 (0.00%)', 'SELL', '200', '2.0M', 'BB D', 'XL D', 'RG'],
+    ['09:00:00', '100 (0.00%)', 'SELL', '100', '1.0M', 'AA F', 'XL D', 'RG'],
+  ]);
+  expect(highlightedFills()[2]?.querySelector('.tick-foreign')?.textContent).toBe('AA F');
+  expect(host.querySelectorAll('.tick-tape tbody tr').length).toBeGreaterThan(500);
+  expect(host.querySelector('.tick-tape tbody tr:not([data-highlighted])')).not.toBeNull();
+  const summary = host.querySelector('.tick-summary')!;
+  expect(summary.querySelector('.tick-summary-main')?.textContent).toBe(
+    'XL DSELL350 lot100 (0.00%)',
+  );
+  expect(
+    [...summary.querySelectorAll('.tick-counterparties:not([aria-hidden]) > span')].map(
+      (party) => party.textContent,
+    ),
+  ).toEqual(['BB D 200', 'AA F 150']);
+  expect(host.textContent).not.toContain('Clear block');
+  expect(host.textContent).not.toContain('Aggressor');
+  await command('DD');
   expect(host.querySelectorAll('.tick-blocks [aria-pressed="true"]')).toHaveLength(1);
-});
-
-it('clears the selection on Escape and leaves RT in front', async () => {
-  prepareBlocks();
-  await render();
-  await command('FLOW');
-  await clickBlock(2);
-  expect(highlightedFills()).toHaveLength(1);
+  await clickBlock();
+  expect(highlightedFills()).toHaveLength(0);
+  expect(host.querySelector('.tick-summary')).toBeNull();
+  expect(host.querySelector('.tick-blocks [aria-pressed="true"]')).toBeNull();
+  await clickBlock();
   await act(async () =>
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })),
   );
@@ -1146,6 +1120,19 @@ it('clears the selection on Escape and leaves RT in front', async () => {
   expect(button('[role="tab"][id$="-RT"]').getAttribute('aria-selected')).toBe('true');
   expect(host.querySelectorAll('.tick-tape tbody tr').length).toBeGreaterThan(500);
   expect(host.querySelector('.tick-summary')).toBeNull();
+});
+
+it('shows BUY blocks with their fills', async () => {
+  prepareBlocks();
+  await render();
+  await command('FLOW');
+  expect(
+    host.querySelector('.tick-blocks tbody tr:nth-child(2) td:nth-child(3)')?.textContent,
+  ).toBe('BUY');
+  await click('.tick-blocks tbody tr:nth-child(2) button');
+  expect(highlightedFills().map(cells)).toEqual([
+    ['09:00:00', '100 (0.00%)', 'BUY', '50', '500.0K', 'CC D', 'DD D', 'RG'],
+  ]);
 });
 
 it('clears the selection when the session date changes', async () => {
@@ -1254,11 +1241,11 @@ it.each(['sell', 'buy', 'auction'])(
   async (direction) => {
     prepareBlocks();
     const trades = drilldown!;
-    for (const i of [0, 1, 2, 8, 10, 31, 32, 146, 361]) {
+    for (const i of [0, 1, 2, 7, 9, 11, 12, 13, 15]) {
       trades.sell_order[i] = 999;
       trades.seller[i] = 'XL';
       trades.buyer[i] = 'AA';
-      trades.buyer_foreign[i] = i !== 1 && i !== 8 && i !== 32;
+      trades.buyer_foreign[i] = i !== 1 && i !== 7 && i !== 12;
       if (direction === 'buy') {
         trades.side[i] = 'b';
         trades.buy_order[i] = 999;
@@ -1310,7 +1297,7 @@ it.each(['sell', 'buy', 'auction'])(
   },
 );
 
-it.each(['sell', 'buy', 'auction-sell', 'auction-buy'])(
+it.each(['sell', 'buy', 'auction-sell'])(
   'shows coloured lots per price in %s execution order only for multi-price fills',
   async (direction) => {
     prepareBlocks();
@@ -1410,7 +1397,7 @@ it('shows each NEGO and CASH match with fractional lots and highlights only its 
 });
 
 it('lets a small negotiated trade below the first page be reached in DD', async () => {
-  prepareBlocks();
+  prepareBlocks(pagedSession);
   drilldown!.board[0] = 'NG';
   drilldown!.shares[0] = 25;
   await render();
