@@ -31,6 +31,7 @@ import { SplitLayout, layout, layoutPath } from './Layout.js';
 import { Empty, Lock, StatusBar } from './ui.js';
 import { PricePane } from './PricePane.js';
 import { BrokerSummaryPane, BrokerFlowPane, ForeignFlowPane } from './BrokerPanes.js';
+import { BrokerDistributionPane } from './DistributionPane.js';
 import { DoneDetailPane, OrderBookPane, RunningTradePane, TradeBookPane } from './TickPanes.js';
 import { WatchlistPane, MoversPane, SignalsPane, HeatmapPane } from './MarketPanes.js';
 import { KeyFiguresPane, HoldersAndChangesPane, DisclosuresPane } from './TickerPanes.js';
@@ -232,7 +233,7 @@ function LoadedTerminal({ data }: { data: TerminalData }) {
   }, [ticker]);
   const userId = auth.user?.id;
   const needsBrokers = Object.keys(slots).some((slot) =>
-    shownIn(slot).some((id) => id === 'BRK' || id === 'BFL' || id === 'FF'),
+    shownIn(slot).some((id) => id === 'BRK' || id === 'BFL' || id === 'BD' || id === 'FF'),
   );
   useEffect(() => {
     if (!userId) {
@@ -443,6 +444,8 @@ function PaneView({ id }: { id: FunctionId }) {
       return <BrokerSummaryPane />;
     case 'BFL':
       return <BrokerFlowPane />;
+    case 'BD':
+      return <BrokerDistributionPane />;
     case 'FF':
       return <ForeignFlowPane />;
     case 'OB':

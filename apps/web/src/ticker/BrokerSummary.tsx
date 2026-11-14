@@ -61,6 +61,52 @@ export function BrokerSummary({
     </section>
   );
 }
+type History =
+  | { kind: 'loading' | 'error' | 'unauthorized' | 'missing' }
+  | { kind: 'ready'; days: BrokerDay[] };
+// The summary and the distribution both read the ticker's history, so they share one request.
+const histories = new Map<string, Promise<History>>();
+async function readHistory(ticker: string, token: string): Promise<History> {
+  const response = await fetch(`/api/brokers?ticker=${encodeURIComponent(ticker)}`, {
+    headers: { Authorization: `Bearer ${token}` },
+    cache: 'no-store',
+  });
+  if (response.status === 401) return { kind: 'unauthorized' };
+  if (response.status === 404) return { kind: 'missing' };
+  if (!response.ok) throw new Error('Broker request failed');
+  const history = brokerHistorySchema.parse(await response.json());
+  if (history.ticker !== ticker) throw new Error('Broker ticker mismatch');
+  return { kind: 'ready', days: history.days };
+}
+export function useBrokerHistory(ticker: string) {
+  const { getAccessToken, user } = useAuth();
+  const key = `${user?.id}:${ticker}`;
+  const [state, setState] = useState<History>({ kind: 'loading' });
+  const [attempt, setAttempt] = useState(0);
+  useEffect(() => {
+    let current = true;
+    setState({ kind: 'loading' });
+    let request = histories.get(key);
+    if (!request) {
+      request = getAccessToken().then((token) =>
+        token ? readHistory(ticker, token) : { kind: 'unauthorized' as const },
+      );
+      histories.set(key, request);
+      void request.then(
+        (result) => result.kind !== 'ready' && histories.delete(key),
+        () => histories.delete(key),
+      );
+    }
+    request.then(
+      (result) => current && setState(result),
+      () => current && setState({ kind: 'error' }),
+    );
+    return () => {
+      current = false;
+    };
+  }, [key, ticker, getAccessToken, attempt]);
+  return { state, retry: () => setAttempt(attempt + 1) };
+}
 function BrokerData({
   ticker,
   selection,
@@ -72,51 +118,12 @@ function BrokerData({
   start: string;
   end: string;
 }) {
-  const { getAccessToken } = useAuth();
-  const [state, setState] = useState<
-    | { kind: 'loading' | 'error' | 'unauthorized' | 'missing' }
-    | { kind: 'ready'; days: BrokerDay[] }
-  >({ kind: 'loading' });
-  const [attempt, retry] = useState(0);
+  const { state, retry } = useBrokerHistory(ticker);
   const [board, setBoard] = useState<BrokerBoard | 'all'>('regular');
   const [mode, setMode] = useState<'net' | 'gross'>('net');
   const [showAll, setShowAll] = useState(false);
   const [picked, setPicked] = useState<string | null>(null);
   const tip = useBrokerTip();
-  useEffect(() => {
-    const controller = new AbortController();
-    setState({ kind: 'loading' });
-    async function read() {
-      const token = await getAccessToken();
-      if (controller.signal.aborted) return;
-      if (!token) {
-        setState({ kind: 'unauthorized' });
-        return;
-      }
-      const response = await fetch(`/api/brokers?ticker=${encodeURIComponent(ticker)}`, {
-        headers: { Authorization: `Bearer ${token}` },
-        cache: 'no-store',
-        signal: controller.signal,
-      });
-      if (controller.signal.aborted) return;
-      if (response.status === 401) {
-        setState({ kind: 'unauthorized' });
-        return;
-      }
-      if (response.status === 404) {
-        setState({ kind: 'missing' });
-        return;
-      }
-      if (!response.ok) throw new Error('Broker request failed');
-      const history = brokerHistorySchema.parse(await response.json());
-      if (history.ticker !== ticker) throw new Error('Broker ticker mismatch');
-      if (!controller.signal.aborted) setState({ kind: 'ready', days: history.days });
-    }
-    void read().catch(() => {
-      if (!controller.signal.aborted) setState({ kind: 'error' });
-    });
-    return () => controller.abort();
-  }, [ticker, getAccessToken, attempt]);
   if (state.kind === 'loading') return <p role="status">Loading data…</p>;
   if (state.kind === 'unauthorized') return <AccountControls />;
   if (state.kind === 'missing')
@@ -124,7 +131,7 @@ function BrokerData({
   if (state.kind === 'error')
     return (
       <p role="alert">
-        Could not load broker data. <button onClick={() => retry(attempt + 1)}>Retry</button>
+        Could not load broker data. <button onClick={retry}>Retry</button>
       </p>
     );
   if (state.kind !== 'ready') return null;

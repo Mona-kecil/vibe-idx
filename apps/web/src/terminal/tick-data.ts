@@ -141,3 +141,37 @@ export function useBars(): BarState {
   }, [ticker, signedIn, getToken]);
   return state;
 }
+
+/** Running trade for several sessions of the current ticker, in date order, skipping sessions without one. */
+export function useSessionsTrades(dates: string[]) {
+  const { ticker, authState, getToken } = useTerminal();
+  const list = dates.join(',');
+  const key = `${ticker}|${list}`;
+  const [state, setState] = useState<
+    | { kind: 'loading'; key: string }
+    | { kind: 'error'; key: string; message: string }
+    | { kind: 'ready'; key: string; data: TickTrades[] }
+  >({ kind: 'loading', key: '' });
+  useEffect(() => {
+    if (authState !== 'signed-in' || !list) return;
+    let current = true;
+    Promise.all(list.split(',').map((date) => loadTicks(ticker, date, 'trades', getToken))).then(
+      (sessions) => {
+        if (current)
+          setState({ kind: 'ready', key, data: sessions.filter((data) => data !== null) });
+      },
+      (error: unknown) => {
+        if (current)
+          setState({
+            kind: 'error',
+            key,
+            message: error instanceof Error ? error.message : 'Tick data is unavailable. Retry.',
+          });
+      },
+    );
+    return () => {
+      current = false;
+    };
+  }, [ticker, list, key, authState, getToken]);
+  return state.key === key ? state : ({ kind: 'loading' } as const);
+}
