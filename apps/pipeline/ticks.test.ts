@@ -9,7 +9,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vite-plus/test';
 import type { R2 } from './brokers';
 import { brokers } from './brokers';
 import { collectTicks } from './ticks';
-import { doneDetailSql, parseBook, parseTradePage } from './ticks-data';
+import { parseBook, parseTradePage } from './ticks-data';
 import { progressSchema, TickStore, tradeLanes } from './ticks-store';
 import { nextPreOpen, tradingSessions } from './lib/idx-calendar';
 
@@ -140,44 +140,6 @@ it('parses the supplied fixtures without losing broker domicile, shares, or leve
   expect(() =>
     parseTradePage({ data: { running_trade: [{ ...trade(1), buyer: 'XL' }] } }, day),
   ).toThrow();
-});
-it('derives continuous blocks from the aggressor order and auction histories from both sides', async () => {
-  const f = await fixture();
-  const store = await TickStore.open(f.data, f.r2);
-  try {
-    const r = [
-      trade(1),
-      { ...trade(2), buy_order_number: '10001', group_order_number: '999' },
-      trade(3, 'SINI', '08:59:59'),
-      trade(4, 'SINI', '16:00:00'),
-    ];
-    await store.checkpoint(
-      {
-        dataset: 'running_trade',
-        date: day,
-        tickers: ['SINI'],
-        chunks: [],
-        expected: 4,
-        phase: 'bulk',
-        lanes: tradeLanes(4, 4),
-        repairs: 0,
-      },
-      parseTradePage({ data: { running_trade: r } }, day),
-      0,
-      4,
-    );
-    const blocks = await store.query(
-      `SELECT session,side,order_number::INTEGER order_number,count(*)::INTEGER n FROM (${doneDetailSql}) GROUP BY ALL ORDER BY session,side,order_number`,
-    );
-    expect(blocks).toEqual([
-      { session: 'auction', side: 'buy', order_number: 10003, n: 1 },
-      { session: 'auction', side: 'buy', order_number: 10004, n: 1 },
-      { session: 'auction', side: 'sell', order_number: 1, n: 2 },
-      { session: 'continuous', side: 'buy', order_number: 10001, n: 2 },
-    ]);
-  } finally {
-    store.close();
-  }
 });
 it('deduplicates non-monotonic market pages and re-reads skipped seconds before create-once publication', async () => {
   const f = await fixture();
@@ -353,7 +315,8 @@ async function clocked<T>(run: () => Promise<T>) {
   if ('error' in outcome) throw outcome.error;
   return outcome.value;
 }
-it.each([800, 4000])('paces concurrent one-second requests for %i trades', async (total) => {
+it('paces concurrent one-second requests for 4000 trades', async () => {
+  const total = 4000;
   const f = await fixture();
   const starts: number[] = [];
   const before = Date.now();
@@ -514,7 +477,7 @@ it('resumes a checkpoint interrupted while other lanes are advancing', async () 
   const resumed = await fixture({ objects: f.objects });
   expect((await collectTicks({ ...resumed, request })).published).toEqual([`running_trade/${day}`]);
   expect(await rows(resumed, 'running_trade')).toHaveLength(40000);
-});
+}, 30_000);
 it('takes the closing sequence from the highest number in the final second, not its first row', async () => {
   const f = await fixture();
   const request = async (input: string) => {

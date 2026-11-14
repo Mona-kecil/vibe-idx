@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "check": "CI=true vp check",
-    "test": "CI=true vp test",
+    "test": "CI=true vp test --configLoader runner",
     "verify:live": "tsx verify-live.ts",
     "collect": "tsx src/index.ts"
   },

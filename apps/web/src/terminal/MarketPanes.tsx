@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import type { SignalFeed, Stock } from '../data';
-import { treemap } from '../treemap';
-import { nf, short, signed, dateText } from '../ticker/format';
-import { useTerminal } from './state';
-import { Empty, Scroll, Segments, TickerLink, percent, direction } from './ui';
+import { treemap } from '../treemap.js';
+import { nf, short, signed, dateText } from '../ticker/format.js';
+import { useTerminal } from './state.js';
+import { Empty, Scroll, Segments, TickerLink, percent, direction } from './ui.js';
 import './market-panes.css';
 
 export function WatchlistPane() {

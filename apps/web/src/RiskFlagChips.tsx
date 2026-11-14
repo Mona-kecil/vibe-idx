@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { usePublished } from './publicData';
+import { usePublished } from './publicData.js';
 import type { Risk } from './terminal/sources';
-import { dateText } from './ticker/format';
+import { dateText } from './ticker/format.js';
 
 const noteCode = (code: string) => (code === 'X' ? 'FCA' : code);
 

@@ -16,5 +16,6 @@ export default defineConfig({
   },
   test: {
     include: ['src/**/*.test.{ts,tsx}'],
+    execArgv: ['--no-experimental-webstorage'],
   },
 });

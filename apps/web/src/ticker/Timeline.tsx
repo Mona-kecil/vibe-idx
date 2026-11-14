@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { loadNews, type Ticker } from '../data';
+import { loadNews, type Ticker } from '../data.js';
 import {
   aggregateSelection,
   attachments,
@@ -14,8 +14,8 @@ import {
   type Filing,
   type HoldingEvent,
   type Selection,
-} from './logic';
-import { dateText, direction, itemDate, nf, rangeText, short, signed } from './format';
+} from './logic.js';
+import { dateText, direction, itemDate, nf, rangeText, short, signed } from './format.js';
 
 export function OwnershipName({
   event,

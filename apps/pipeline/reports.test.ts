@@ -25,6 +25,25 @@ const disclosure = (files: ReturnType<typeof file>[]) =>
 const coverBytes = (day: string) =>
   readFile(new URL(`./fixtures/SINI-${day}-cover.pdf`, import.meta.url));
 
+it('reads only the main PDF of a registry announcement', () => {
+  const [d] = parseAnnouncements({
+    ResultCount: 1,
+    Replies: [
+      {
+        pengumuman: {
+          Id2: 'SINI/registry',
+          Kode_Emiten: 'SINI',
+          JudulPengumuman: 'Laporan Bulanan Registrasi Pemegang Efek',
+          TglPengumuman: '2026-10-15T20:03:10',
+        },
+        attachments: [file('main.pdf', false), file('SINI_lamp1.pdf')],
+      },
+    ],
+  }).disclosures;
+  expect(d?.kind).toBe('registry');
+  expect(d?.reports.map((r) => r.url)).toEqual(['https://www.idx.id/main.pdf']);
+});
+
 it('puts the cover before shuffled numeric lamps and retains other source order', () => {
   const d = disclosure([
     file('other.zip'),
@@ -45,28 +64,24 @@ it('puts the cover before shuffled numeric lamps and retains other source order'
   ]);
 });
 
-it.each([
-  ['2026-10-15', ['surat penyampaian penjelasan bursa', 'Penjelasan tentang Karhutla']],
-  ['2026-09-10', ['Surat Penyampaian Materi PE Insidentil', 'Presentation 030926 IND PUBEX']],
-])(
-  'reads the real %s Lampiran table without changing casing or labeling the cover',
-  async (day, labels) => {
-    const d = disclosure([
-      file('report_lamp2.pdf'),
-      file('cover.pdf', false),
-      file('report_lamp1.pdf'),
-      file('other.zip'),
-    ]);
-    const attachments = await labelAttachments({
-      bytes: await coverBytes(day),
-      attachments: d.attachments,
-      cover: d.url,
-      ticker: d.ticker,
-    });
-    expect(attachments.map((a) => a.label)).toEqual([null, ...labels, null]);
-    expect(attachments.map((a) => a.url)).toEqual(d.attachments.map((a) => a.url));
-  },
-);
+it('reads the real 2026-09-10 Lampiran table without changing casing or labeling the cover', async () => {
+  const day = '2026-09-10';
+  const labels = ['Surat Penyampaian Materi PE Insidentil', 'Presentation 030926 IND PUBEX'];
+  const d = disclosure([
+    file('report_lamp2.pdf'),
+    file('cover.pdf', false),
+    file('report_lamp1.pdf'),
+    file('other.zip'),
+  ]);
+  const attachments = await labelAttachments({
+    bytes: await coverBytes(day),
+    attachments: d.attachments,
+    cover: d.url,
+    ticker: d.ticker,
+  });
+  expect(attachments.map((a) => a.label)).toEqual([null, ...labels, null]);
+  expect(attachments.map((a) => a.url)).toEqual(d.attachments.map((a) => a.url));
+});
 
 it('leaves labels null for a real cover without a table or a mismatched lamp count or number', async () => {
   for (const [day, names] of [

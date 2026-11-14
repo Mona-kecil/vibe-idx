@@ -10,7 +10,7 @@ import type { DuckDBValue } from '@duckdb/node-api';
 import { parsePrices } from './lib/prices';
 import { parseIndices } from './lib/indices';
 import { parseIssuers } from './lib/issuers';
-import { parseFivePct, parseFivePctPdf } from './lib/fivePct';
+import { parseFivePct } from './lib/fivePct';
 import { parseOnePct } from './lib/onePct';
 import { reportError, startSentry } from './lib/sentry';
 import { multiStockNotices, readNotice } from './lib/suspensions';
@@ -106,7 +106,6 @@ export async function ingest({
   since,
   until,
   registryOnly = false,
-  ownershipOnly = false,
   reparseRegistry = false,
   limit = 100,
   attachmentLabelLimit = 200,
@@ -118,7 +117,6 @@ export async function ingest({
   since?: string;
   until?: string;
   registryOnly?: boolean;
-  ownershipOnly?: boolean;
   reparseRegistry?: boolean;
   limit?: number;
   attachmentLabelLimit?: number;
@@ -128,17 +126,8 @@ export async function ingest({
   date(today);
   if (since) date(since);
   if (until) date(until);
-  if (until && ((!registryOnly && !ownershipOnly) || until > today || (since && since > until)))
-    throw new Error(
-      `${ownershipOnly ? 'Ownership' : 'Registry'} date range must end on or before today and after since`,
-    );
-  if (
-    ownershipOnly &&
-    (registryOnly || !since || !until || since.slice(0, 7) !== until.slice(0, 7))
-  )
-    throw new Error(
-      'Ownership backfill requires --since and --until within one calendar month, without --registry-only',
-    );
+  if (until && (!registryOnly || until > today || (since && since > until)))
+    throw new Error('Registry date range must end on or before today and after since');
   if (!Number.isSafeInteger(limit) || limit < 1)
     throw new Error('limit must be a positive integer');
   if (!Number.isSafeInteger(attachmentLabelLimit) || attachmentLabelLimit < 0)
@@ -149,7 +138,6 @@ export async function ingest({
   let labelsBackfilled = 0;
   let labelsRemaining = 0;
   let lastRequest = 0;
-  const skippedOnePctPdfs: string[] = [];
   const instance = await DuckDBInstance.create(':memory:');
   const db = await instance.connect();
   let fetched = 0;
@@ -163,7 +151,7 @@ export async function ingest({
       }),
     );
   async function download(url: string, timeout = 60000) {
-    if (registryOnly || ownershipOnly) {
+    if (registryOnly) {
       await new Promise((resolve) =>
         setTimeout(resolve, Math.max(0, lastRequest + 1000 - Date.now())),
       );
@@ -328,7 +316,7 @@ export async function ingest({
         DELETE FROM ${table} WHERE ticker = '1'`);
       await save(table, years);
     }
-    if (!registryOnly && !ownershipOnly && !(await present('issuers')).has(today))
+    if (!registryOnly && !(await present('issuers')).has(today))
       await step('issuers', async () => {
         const issuerBytes = await raw(
           `issuers/${today}.json`,
@@ -359,7 +347,7 @@ export async function ingest({
       }),
     );
     for (const table of ['prices', 'indices'] as const) {
-      if (registryOnly || ownershipOnly) continue;
+      if (registryOnly) continue;
       await step(table, async () => {
         const dates = await present(table);
         const years = new Set<string>();
@@ -438,14 +426,6 @@ export async function ingest({
       const knownFiles = new Set(
         (await query('SELECT url FROM ownership_files')).map((r) => r.url),
       );
-      const through = until ?? today;
-      // Include the next publication month, but bound downloads by the requested snapshot window.
-      const nextMonthEnd = new Date(
-        Date.UTC(Number(through.slice(0, 4)), Number(through.slice(5, 7)) + 1, 0),
-      )
-        .toISOString()
-        .slice(0, 10);
-      const publishedThrough = nextMonthEnd < today ? nextMonthEnd : today;
       let listing: Promise<ReturnType<typeof parseOwnershipList>> | undefined;
       const ownershipFiles = (source: 'fivePct' | 'onePct') =>
         (listing ??= (async () => {
@@ -461,97 +441,27 @@ export async function ingest({
             await archive(`ownership-list/${year}-${hash(bytes)}.json`, bytes);
             files.push(...parseOwnershipList(json(bytes)));
           }
-          if (ownershipOnly) {
-            // Announcements may publish a month-end snapshot in the following month.
-            let offset = 0;
-            let pageNumber = 0;
-            let total: number | undefined;
-            const ids = new Set<string>();
-            while (total === undefined || offset < total) {
-              const params = new URLSearchParams({
-                kodeEmiten: '',
-                emitenType: '*',
-                indexFrom: String(pageNumber),
-                pageSize: '100',
-                dateFrom: first.replaceAll('-', ''),
-                dateTo: publishedThrough.replaceAll('-', ''),
-                lang: 'id',
-                keyword: 'Pemegang Saham di atas',
-              });
-              const bytes = await download(`/primary/ListedCompany/GetAnnouncement?${params}`);
-              await archive(
-                `ownership-announcements/${first}-${publishedThrough}/${pageNumber}-${hash(bytes)}.json`,
-                bytes,
-              );
-              const page = parseAnnouncements(json(bytes));
-              if (total !== undefined && total !== page.total)
-                throw new Error(
-                  'Ownership announcement count changed during pagination; retry the run',
-                );
-              total = page.total;
-              if (
-                (!page.disclosures.length && offset < total) ||
-                offset + page.disclosures.length > total
-              )
-                throw new Error(`Incomplete ownership announcement page at ${offset} of ${total}`);
-              for (const d of page.disclosures) {
-                if (ids.has(d.id)) throw new Error(`Repeated ownership announcement: ${d.id}`);
-                ids.add(d.id);
-                const match = /^Pemegang Saham di\s*atas\s*([15])\s*%(?:\s*\(KSEI\))?$/i.exec(
-                  d.title.trim(),
-                );
-                if (!match || d.ticker !== null) continue;
-                const attachments = d.attachments.filter(
-                  (a) =>
-                    /\.xlsx$/i.test(new URL(a.url).pathname) ||
-                    (a.url !== d.url && /\.pdf$/i.test(new URL(a.url).pathname)),
-                );
-                const xlsx = attachments.filter((a) => /\.xlsx$/i.test(new URL(a.url).pathname));
-                const selected = xlsx.length ? xlsx : attachments;
-                if (selected.length !== 1)
-                  throw new Error(`Unsupported ownership attachments: ${d.id}`);
-                for (const attachment of selected)
-                  files.push({
-                    source: match[1] === '1' ? 'onePct' : 'fivePct',
-                    date: d.published_at.slice(0, 10),
-                    url: attachment.url,
-                  });
-              }
-              offset += page.disclosures.length;
-              pageNumber++;
-            }
-          }
-          // The two sections overlap. Parse the XLSX snapshot first and retain it on overlap.
-          files.sort(
-            (a, b) =>
-              Number(/\.pdf$/i.test(new URL(a.url).pathname)) -
-                Number(/\.pdf$/i.test(new URL(b.url).pathname)) || a.date.localeCompare(b.date),
-          );
+          files.sort((a, b) => a.date.localeCompare(b.date));
           return files;
-        })()).then((files) =>
-          files.filter((f) => f.source === source && f.date <= publishedThrough),
-        );
+        })()).then((files) => files.filter((f) => f.source === source && f.date <= today));
       await step('five_pct', async () => {
         const years = new Set<string>();
         const fileYears = new Set<string>();
         try {
           for (const file of await ownershipFiles('fivePct')) {
             if (knownFiles.has(file.url)) continue;
-            // Outside a backfill, where XLSX and PDF copies overlap, a new file for a stored date is a correction.
-            if (file.date < first && (ownershipOnly || !dates.has(file.date))) continue;
-            const pdf = /\.pdf$/i.test(new URL(file.url).pathname);
-            const bytes = await raw(`five-pct/${hash(file.url)}.${pdf ? 'pdf' : 'xlsx'}`, file.url);
-            const parsed = pdf ? await parseFivePctPdf(bytes) : parseFivePct(bytes);
+            // A new file for a stored date is a correction.
+            if (file.date < first && !dates.has(file.date)) continue;
+            const bytes = await raw(`five-pct/${hash(file.url)}.xlsx`, file.url);
+            const parsed = parseFivePct(bytes);
             if (!parsed.groups.length) throw new Error(`Empty 5% ownership file: ${file.url}`);
-            const correction = !ownershipOnly && dates.has(parsed.asOf);
-            if ((parsed.asOf < first && !correction) || parsed.asOf > through) continue;
+            const correction = dates.has(parsed.asOf);
+            if ((parsed.asOf < first && !correction) || parsed.asOf > today) continue;
             await append('ownership_files', [
               [dayValue(parsed.asOf), file.source, file.url, hash(bytes)],
             ]);
             fileYears.add(parsed.asOf.slice(0, 4));
             knownFiles.add(file.url);
-            if (ownershipOnly) processed++;
-            if (dates.has(parsed.asOf) && !correction) continue;
             const rows = parsed.groups.flatMap((g) =>
               g.accounts.map((a) => [
                 dayValue(parsed.asOf),
@@ -604,20 +514,14 @@ export async function ingest({
         try {
           for (const file of await ownershipFiles('onePct')) {
             if (knownFiles.has(file.url)) continue;
-            if (file.date < monthlyFirst && (ownershipOnly || !monthlyDates.has(file.date)))
-              continue;
-            // The XLSX list republishes these month-end snapshots; report the PDFs instead of parsing them.
-            if (/\.pdf$/i.test(new URL(file.url).pathname)) {
-              skippedOnePctPdfs.push(file.url);
-              continue;
-            }
+            if (file.date < monthlyFirst && !monthlyDates.has(file.date)) continue;
             const bytes = await raw(`one-pct/${hash(file.url)}.xlsx`, file.url);
             const rows = parseOnePct(bytes);
             if (!rows.length) throw new Error(`Empty 1% ownership file: ${file.url}`);
             const incomingDates = new Set(rows.map((r) => r.asOf));
             if (incomingDates.size !== 1) throw new Error(`Mixed 1% snapshot dates: ${file.url}`);
             const asOf = rows[0]!.asOf;
-            if (!ownershipOnly && monthlyDates.has(asOf)) {
+            if (monthlyDates.has(asOf)) {
               const changed = await replaceOnePct(asOf, rows, file.url);
               if (changed) {
                 monthlyYears.add(asOf.slice(0, 4));
@@ -636,7 +540,7 @@ export async function ingest({
               continue;
             }
             const incoming = rows.filter(
-              (r) => r.asOf >= monthlyFirst && r.asOf <= through && !monthlyDates.has(r.asOf),
+              (r) => r.asOf >= monthlyFirst && r.asOf <= today && !monthlyDates.has(r.asOf),
             );
             await append(
               'one_pct',
@@ -647,13 +551,12 @@ export async function ingest({
               monthlyYears.add(r.asOf.slice(0, 4));
             }
             for (const asOf of incomingDates) {
-              if (asOf < monthlyFirst || asOf > through) continue;
+              if (asOf < monthlyFirst || asOf > today) continue;
               await append('ownership_files', [
                 [dayValue(asOf), file.source, file.url, hash(bytes)],
               ]);
               fileYears.add(asOf.slice(0, 4));
               knownFiles.add(file.url);
-              if (ownershipOnly) processed++;
             }
           }
         } finally {
@@ -663,7 +566,7 @@ export async function ingest({
       });
     }
     // IDX may correct a 1% month by replacing its XLSX at the same link.
-    if (!registryOnly && !ownershipOnly)
+    if (!registryOnly)
       await step('corrections', async () => {
         const found: string[] = [];
         const years = { files: new Set<string>(), one_pct: new Set<string>() };
@@ -705,321 +608,307 @@ export async function ingest({
         }
         if (found.length) throw new Error(found.join('\n'));
       });
-    if (!ownershipOnly)
-      await step('disclosures', async () => {
-        const known = new Map(
-          (
-            await query(
-              'SELECT id, date::VARCHAR date, source_json, kind, registry_parser_version FROM disclosures',
-            )
-          ).map((r) => {
-            if (
-              typeof r.id !== 'string' ||
-              typeof r.date !== 'string' ||
-              typeof r.source_json !== 'string'
-            )
-              throw new Error('Expected disclosure ledger identity');
-            const d = archivedDisclosure.parse(JSON.parse(r.source_json));
-            return [
-              r.id,
-              {
-                date: r.date,
-                source: JSON.stringify({
-                  ...d,
-                  attachments: orderAttachments(d.attachments, d.url),
-                }),
-                kind: r.kind,
-                version: r.registry_parser_version,
-              },
-            ];
-          }),
-        );
-        const latest = [...known.values()]
-          .map((r) => r.date)
-          .sort()
-          .at(-1);
-        const first = since ?? (latest ? shiftDay(latest, -2) : shiftDay(today, -89));
-        const through = until ?? today;
-        const disclosures: ReturnType<typeof parseAnnouncements>['disclosures'] = [];
-        const ids = new Set<string>();
-        let offset = 0;
-        let pageNumber = 0;
-        let total: number | undefined;
-        if (reparseRegistry) {
-          for (const record of known.values()) {
-            if (record.kind !== 'registry' || record.date < first || record.date > through)
-              continue;
-            // Revalidate stored announcement metadata through the same boundary as live discovery.
-            const source: unknown = JSON.parse(record.source);
-            const archived = archivedDisclosure.parse(source);
-            disclosures.push(archived);
-          }
-        }
-        while (!reparseRegistry && (total === undefined || offset < total)) {
-          const params = new URLSearchParams({
-            kodeEmiten: '',
-            emitenType: '*',
-            indexFrom: String(pageNumber),
-            pageSize: '100',
-            dateFrom: first.replaceAll('-', ''),
-            dateTo: through.replaceAll('-', ''),
-            lang: 'id',
-            keyword: registryOnly ? 'Laporan Bulanan Registrasi Pemegang Efek' : '',
-          });
-          const url = `/primary/ListedCompany/GetAnnouncement?${params}`;
-          const bytes = registryOnly
-            ? await raw(`registry-pages/${first}-${through}/${pageNumber}.json`, url)
-            : await download(url);
-          await archive(`disclosures/${first}-${today}/${offset}-${hash(bytes)}.json`, bytes);
-          const page = parseAnnouncements(json(bytes));
-          if (total !== undefined && total !== page.total)
-            throw new Error('Announcement count changed during pagination; retry the run');
-          total = page.total;
-          if (
-            (!page.disclosures.length && offset < total) ||
-            offset + page.disclosures.length > total
+    await step('disclosures', async () => {
+      const known = new Map(
+        (
+          await query(
+            'SELECT id, date::VARCHAR date, source_json, kind, registry_parser_version FROM disclosures',
           )
-            throw new Error(`Incomplete announcement page at ${offset} of ${total}`);
-          for (const d of page.disclosures) {
-            if (ids.has(d.id)) throw new Error(`Repeated announcement during pagination: ${d.id}`);
-            ids.add(d.id);
-            disclosures.push(d);
-          }
-          offset += page.disclosures.length;
-          pageNumber++;
+        ).map((r) => {
+          if (
+            typeof r.id !== 'string' ||
+            typeof r.date !== 'string' ||
+            typeof r.source_json !== 'string'
+          )
+            throw new Error('Expected disclosure ledger identity');
+          const d = archivedDisclosure.parse(JSON.parse(r.source_json));
+          return [
+            r.id,
+            {
+              date: r.date,
+              source: JSON.stringify({
+                ...d,
+                attachments: orderAttachments(d.attachments, d.url),
+              }),
+              kind: r.kind,
+              version: r.registry_parser_version,
+            },
+          ];
+        }),
+      );
+      const latest = [...known.values()]
+        .map((r) => r.date)
+        .sort()
+        .at(-1);
+      const first = since ?? (latest ? shiftDay(latest, -2) : shiftDay(today, -89));
+      const through = until ?? today;
+      const disclosures: ReturnType<typeof parseAnnouncements>['disclosures'] = [];
+      const ids = new Set<string>();
+      let offset = 0;
+      let pageNumber = 0;
+      let total: number | undefined;
+      if (reparseRegistry) {
+        for (const record of known.values()) {
+          if (record.kind !== 'registry' || record.date < first || record.date > through) continue;
+          // Revalidate stored announcement metadata through the same boundary as live discovery.
+          const source: unknown = JSON.parse(record.source);
+          const archived = archivedDisclosure.parse(source);
+          disclosures.push(archived);
         }
-        const years = {
-          disclosures: new Set<string>(),
-          insiders: new Set<string>(),
-          registry: new Set<string>(),
-          registry_investors: new Set<string>(),
-          registry_holders: new Set<string>(),
-        };
-        try {
-          for (const d of disclosures.sort(
-            (a, b) => a.published_at.localeCompare(b.published_at) || a.id.localeCompare(b.id),
-          )) {
-            const source = JSON.stringify(d);
-            if (registryOnly && d.kind !== 'registry') continue;
-            if (
-              known.get(d.id)?.source === source &&
-              (d.kind !== 'registry' || known.get(d.id)?.version === registryParserVersion)
-            )
-              continue;
-            if (registryOnly && processed >= limit) {
-              remaining++;
-              continue;
-            }
-            processed++;
-            const labeled = await attachmentLabels(d);
-            const gaps: { url: string; reason: string }[] = labeled.gaps;
-            const reports: {
-              url: string;
-              report: Extract<
-                Awaited<ReturnType<typeof parseReport>>,
-                { kind: 'parsed' }
-              >['report'];
-            }[] = [];
-            if (d.kind !== 'other' && d.ticker) {
-              if (!d.reports.length)
-                gaps.push({ url: d.url, reason: 'No supported report PDF attachment' });
-              for (const attachment of d.reports) {
-                const result = await parseReport({
-                  bytes: await raw(`reports/${hash(attachment.url)}.pdf`, attachment.url),
-                  ticker: d.ticker,
-                  kind: d.kind,
-                });
-                if (result.kind === 'unsupported')
-                  gaps.push({ url: attachment.url, reason: result.reason });
-                else {
-                  reports.push({ url: attachment.url, report: result.report });
-                  gaps.push(...result.gaps.map((reason) => ({ url: attachment.url, reason })));
-                }
-              }
-            }
-            for (const table of ['disclosures', 'insiders', 'registry'] as const) {
-              for (const r of await query(
-                `SELECT DISTINCT year(date)::VARCHAR AS partition_year FROM ${table} WHERE id = ${literal(d.id)}`,
-              )) {
-                if (typeof r.partition_year !== 'string')
-                  throw new Error('Expected report ledger year');
-                years[table].add(r.partition_year);
-              }
-              if (table === 'registry') {
-                for (const child of ['registry_investors', 'registry_holders'] as const) {
-                  for (const year of years.registry) years[child].add(year);
-                  await db.run(`DELETE FROM ${child} WHERE (date, ticker) IN
-                (SELECT date, ticker FROM registry WHERE id = ${literal(d.id)})`);
-                }
-              }
-              await db.run(`DELETE FROM ${table} WHERE id = ${literal(d.id)}`);
-            }
-            await append('disclosures', [
-              [
-                dayValue(date(d.published_at)),
-                d.id,
-                d.ticker,
-                d.title,
-                d.published_at,
-                d.url,
-                d.kind,
-                JSON.stringify(labeled.attachments),
-                source,
-                JSON.stringify(gaps),
-                d.kind === 'registry' ? registryParserVersion : null,
-                1,
-              ],
-            ]);
-            years.disclosures.add(d.published_at.slice(0, 4));
-            for (const { report: r, url } of reports) {
-              if (r.kind === 'insider')
-                await append('insiders', [
-                  [
-                    dayValue(r.date),
-                    d.id,
-                    d.ticker,
-                    r.reporter,
-                    r.shares_before,
-                    r.shares_after,
-                    r.net_shares,
-                    url,
-                  ],
-                ]);
+      }
+      while (!reparseRegistry && (total === undefined || offset < total)) {
+        const params = new URLSearchParams({
+          kodeEmiten: '',
+          emitenType: '*',
+          indexFrom: String(pageNumber),
+          pageSize: '100',
+          dateFrom: first.replaceAll('-', ''),
+          dateTo: through.replaceAll('-', ''),
+          lang: 'id',
+          keyword: registryOnly ? 'Laporan Bulanan Registrasi Pemegang Efek' : '',
+        });
+        const url = `/primary/ListedCompany/GetAnnouncement?${params}`;
+        const bytes = registryOnly
+          ? await raw(`registry-pages/${first}-${through}/${pageNumber}.json`, url)
+          : await download(url);
+        await archive(`disclosures/${first}-${today}/${offset}-${hash(bytes)}.json`, bytes);
+        const page = parseAnnouncements(json(bytes));
+        if (total !== undefined && total !== page.total)
+          throw new Error('Announcement count changed during pagination; retry the run');
+        total = page.total;
+        if (
+          (!page.disclosures.length && offset < total) ||
+          offset + page.disclosures.length > total
+        )
+          throw new Error(`Incomplete announcement page at ${offset} of ${total}`);
+        for (const d of page.disclosures) {
+          if (ids.has(d.id)) throw new Error(`Repeated announcement during pagination: ${d.id}`);
+          ids.add(d.id);
+          disclosures.push(d);
+        }
+        offset += page.disclosures.length;
+        pageNumber++;
+      }
+      const years = {
+        disclosures: new Set<string>(),
+        insiders: new Set<string>(),
+        registry: new Set<string>(),
+        registry_investors: new Set<string>(),
+        registry_holders: new Set<string>(),
+      };
+      try {
+        for (const d of disclosures.sort(
+          (a, b) => a.published_at.localeCompare(b.published_at) || a.id.localeCompare(b.id),
+        )) {
+          const source = JSON.stringify(d);
+          if (registryOnly && d.kind !== 'registry') continue;
+          if (
+            known.get(d.id)?.source === source &&
+            (d.kind !== 'registry' || known.get(d.id)?.version === registryParserVersion)
+          )
+            continue;
+          if (registryOnly && processed >= limit) {
+            remaining++;
+            continue;
+          }
+          processed++;
+          const labeled = await attachmentLabels(d);
+          const gaps: { url: string; reason: string }[] = labeled.gaps;
+          const reports: {
+            url: string;
+            report: Extract<Awaited<ReturnType<typeof parseReport>>, { kind: 'parsed' }>['report'];
+          }[] = [];
+          if (d.kind !== 'other' && d.ticker) {
+            if (!d.reports.length)
+              gaps.push({ url: d.url, reason: 'No supported report PDF attachment' });
+            for (const attachment of d.reports) {
+              const result = await parseReport({
+                bytes: await raw(`reports/${hash(attachment.url)}.pdf`, attachment.url),
+                ticker: d.ticker,
+                kind: d.kind,
+              });
+              if (result.kind === 'unsupported')
+                gaps.push({ url: attachment.url, reason: result.reason });
               else {
-                const identity = `ticker = ${literal(d.ticker ?? '')} AND date = DATE ${literal(r.date)}`;
-                const newer = await query(`SELECT r.id FROM registry r JOIN disclosures d USING(id)
-              WHERE r.ticker = ${literal(d.ticker ?? '')} AND r.date = DATE ${literal(r.date)} AND (d.published_at, r.id) > (${literal(d.published_at)}, ${literal(d.id)})`);
-                if (newer.length) continue;
-                for (const table of [
-                  'registry',
-                  'registry_investors',
-                  'registry_holders',
-                ] as const) {
-                  await db.run(`DELETE FROM ${table} WHERE ${identity}`);
-                  years[table].add(r.date.slice(0, 4));
-                }
-                await append('registry', [
-                  [
-                    dayValue(r.date),
-                    d.id,
-                    d.ticker,
-                    r.free_float_pct,
-                    r.total_shares,
-                    r.sid_count,
-                    url,
-                    r.free_float_shares,
-                    r.unlisted_shares,
-                  ],
-                ]);
-                await append(
-                  'registry_investors',
-                  r.investor_types.map((v) => [
-                    dayValue(r.date),
-                    d.ticker,
-                    v.label,
-                    v.shares,
-                    v.page,
-                  ]),
-                );
-                await append(
-                  'registry_holders',
-                  r.holders.map((v) => [
-                    dayValue(r.date),
-                    d.ticker,
-                    v.investor,
-                    v.pct,
-                    v.controller,
-                    v.controller_affiliate,
-                    v.page,
-                  ]),
-                );
+                reports.push({ url: attachment.url, report: result.report });
+                gaps.push(...result.gaps.map((reason) => ({ url: attachment.url, reason })));
               }
-              years[r.kind === 'insider' ? 'insiders' : 'registry'].add(r.date.slice(0, 4));
             }
           }
-          if (!registryOnly) {
-            const pending = await query(`SELECT id, year(date)::VARCHAR partition_year, ticker, url,
+          for (const table of ['disclosures', 'insiders', 'registry'] as const) {
+            for (const r of await query(
+              `SELECT DISTINCT year(date)::VARCHAR AS partition_year FROM ${table} WHERE id = ${literal(d.id)}`,
+            )) {
+              if (typeof r.partition_year !== 'string')
+                throw new Error('Expected report ledger year');
+              years[table].add(r.partition_year);
+            }
+            if (table === 'registry') {
+              for (const child of ['registry_investors', 'registry_holders'] as const) {
+                for (const year of years.registry) years[child].add(year);
+                await db.run(`DELETE FROM ${child} WHERE (date, ticker) IN
+                (SELECT date, ticker FROM registry WHERE id = ${literal(d.id)})`);
+              }
+            }
+            await db.run(`DELETE FROM ${table} WHERE id = ${literal(d.id)}`);
+          }
+          await append('disclosures', [
+            [
+              dayValue(date(d.published_at)),
+              d.id,
+              d.ticker,
+              d.title,
+              d.published_at,
+              d.url,
+              d.kind,
+              JSON.stringify(labeled.attachments),
+              source,
+              JSON.stringify(gaps),
+              d.kind === 'registry' ? registryParserVersion : null,
+              1,
+            ],
+          ]);
+          years.disclosures.add(d.published_at.slice(0, 4));
+          for (const { report: r, url } of reports) {
+            if (r.kind === 'insider')
+              await append('insiders', [
+                [
+                  dayValue(r.date),
+                  d.id,
+                  d.ticker,
+                  r.reporter,
+                  r.shares_before,
+                  r.shares_after,
+                  r.net_shares,
+                  url,
+                ],
+              ]);
+            else {
+              const identity = `ticker = ${literal(d.ticker ?? '')} AND date = DATE ${literal(r.date)}`;
+              const newer = await query(`SELECT r.id FROM registry r JOIN disclosures d USING(id)
+              WHERE r.ticker = ${literal(d.ticker ?? '')} AND r.date = DATE ${literal(r.date)} AND (d.published_at, r.id) > (${literal(d.published_at)}, ${literal(d.id)})`);
+              if (newer.length) continue;
+              for (const table of ['registry', 'registry_investors', 'registry_holders'] as const) {
+                await db.run(`DELETE FROM ${table} WHERE ${identity}`);
+                years[table].add(r.date.slice(0, 4));
+              }
+              await append('registry', [
+                [
+                  dayValue(r.date),
+                  d.id,
+                  d.ticker,
+                  r.free_float_pct,
+                  r.total_shares,
+                  r.sid_count,
+                  url,
+                  r.free_float_shares,
+                  r.unlisted_shares,
+                ],
+              ]);
+              await append(
+                'registry_investors',
+                r.investor_types.map((v) => [
+                  dayValue(r.date),
+                  d.ticker,
+                  v.label,
+                  v.shares,
+                  v.page,
+                ]),
+              );
+              await append(
+                'registry_holders',
+                r.holders.map((v) => [
+                  dayValue(r.date),
+                  d.ticker,
+                  v.investor,
+                  v.pct,
+                  v.controller,
+                  v.controller_affiliate,
+                  v.page,
+                ]),
+              );
+            }
+            years[r.kind === 'insider' ? 'insiders' : 'registry'].add(r.date.slice(0, 4));
+          }
+        }
+        if (!registryOnly) {
+          const pending = await query(`SELECT id, year(date)::VARCHAR partition_year, ticker, url,
             attachments::VARCHAR attachments, report_gaps::VARCHAR gaps FROM disclosures
             WHERE attachment_labels_version IS NULL ORDER BY published_at DESC, id DESC`);
-            for (const row of pending) {
-              const d = z
-                .object({
-                  id: z.string(),
-                  partition_year: z.string(),
-                  ticker: z.string().nullable(),
-                  url: z.url(),
-                  attachments: z
-                    .string()
-                    .transform((value) =>
-                      archivedDisclosure.shape.attachments.parse(JSON.parse(value)),
-                    ),
-                  gaps: z
-                    .string()
-                    .transform((value) =>
-                      z
-                        .array(z.object({ url: z.string(), reason: z.string() }))
-                        .parse(JSON.parse(value)),
-                    ),
-                })
-                .parse(row);
-              const attachments = orderAttachments(d.attachments, d.url);
-              const needsCover = attachments.some(
-                (a) => a.url !== d.url && /_lamp\d+\.[^.]+$/i.test(a.name),
-              );
-              const attempt = !needsCover || labelsBackfilled < attachmentLabelLimit;
-              const labeled = attempt
-                ? await attachmentLabels({ ...d, attachments })
-                : { attachments, gaps: [] };
-              await db.run(`UPDATE disclosures SET attachments = ${literal(JSON.stringify(labeled.attachments))},
+          for (const row of pending) {
+            const d = z
+              .object({
+                id: z.string(),
+                partition_year: z.string(),
+                ticker: z.string().nullable(),
+                url: z.url(),
+                attachments: z
+                  .string()
+                  .transform((value) =>
+                    archivedDisclosure.shape.attachments.parse(JSON.parse(value)),
+                  ),
+                gaps: z
+                  .string()
+                  .transform((value) =>
+                    z
+                      .array(z.object({ url: z.string(), reason: z.string() }))
+                      .parse(JSON.parse(value)),
+                  ),
+              })
+              .parse(row);
+            const attachments = orderAttachments(d.attachments, d.url);
+            const needsCover = attachments.some(
+              (a) => a.url !== d.url && /_lamp\d+\.[^.]+$/i.test(a.name),
+            );
+            const attempt = !needsCover || labelsBackfilled < attachmentLabelLimit;
+            const labeled = attempt
+              ? await attachmentLabels({ ...d, attachments })
+              : { attachments, gaps: [] };
+            await db.run(`UPDATE disclosures SET attachments = ${literal(JSON.stringify(labeled.attachments))},
               attachment_labels_version = ${attempt ? '1' : 'NULL'},
               report_gaps = ${literal(JSON.stringify([...d.gaps, ...labeled.gaps]))}
               WHERE id = ${literal(d.id)}`);
-              years.disclosures.add(d.partition_year);
-              if (needsCover) {
-                if (attempt) labelsBackfilled++;
-                else labelsRemaining++;
-              }
+            years.disclosures.add(d.partition_year);
+            if (needsCover) {
+              if (attempt) labelsBackfilled++;
+              else labelsRemaining++;
             }
           }
-        } finally {
-          for (const table of [
-            'insiders',
-            'registry',
-            'registry_investors',
-            'registry_holders',
-            'disclosures',
-          ] as const)
-            await save(table, years[table]);
         }
-      });
-    const suspensions =
-      registryOnly || ownershipOnly
-        ? undefined
-        : await step('suspensions', async () => {
-            const notices: Record<string, Awaited<ReturnType<typeof readNotice>>> = {};
-            const unreadable: string[] = [];
-            for (const url of multiStockNotices(
-              json(
-                await download(
-                  '/primary/NewsAnnouncement/GetSuspension?pageNumber=1&pageSize=5000',
-                ),
-              ),
-            ))
-              try {
-                notices[url] = await readNotice(await raw(`suspensions/${hash(url)}.pdf`, url));
-              } catch (error) {
-                unreadable.push(
-                  `${url} (${error instanceof Error ? error.message : String(error)})`,
-                );
-              }
-            if (unreadable.length)
-              fail(
-                'suspensions',
-                new Error(`Unreadable suspension notices: ${unreadable.join('; ')}`),
-              );
-            return notices;
-          });
-    if (!registryOnly && !ownershipOnly) {
+      } finally {
+        for (const table of [
+          'insiders',
+          'registry',
+          'registry_investors',
+          'registry_holders',
+          'disclosures',
+        ] as const)
+          await save(table, years[table]);
+      }
+    });
+    const suspensions = registryOnly
+      ? undefined
+      : await step('suspensions', async () => {
+          const notices: Record<string, Awaited<ReturnType<typeof readNotice>>> = {};
+          const unreadable: string[] = [];
+          for (const url of multiStockNotices(
+            json(
+              await download('/primary/NewsAnnouncement/GetSuspension?pageNumber=1&pageSize=5000'),
+            ),
+          ))
+            try {
+              notices[url] = await readNotice(await raw(`suspensions/${hash(url)}.pdf`, url));
+            } catch (error) {
+              unreadable.push(`${url} (${error instanceof Error ? error.message : String(error)})`);
+            }
+          if (unreadable.length)
+            fail(
+              'suspensions',
+              new Error(`Unreadable suspension notices: ${unreadable.join('; ')}`),
+            );
+          return notices;
+        });
+    if (!registryOnly) {
       const stocks = new Set(names.keys());
       if (!stocks.size) {
         fail('corporate_actions', new Error('No issuer universe for corporate actions'));
@@ -1071,30 +960,29 @@ export async function ingest({
         });
       }
     }
-    const brokers =
-      registryOnly || ownershipOnly
-        ? undefined
-        : await step('brokers', async () => {
-            // Collection follows the evening price batch, so expect the previous session to be complete.
-            const coverage = join(data, 'parquet', 'broker-activity-coverage.parquet');
-            if (!existsSync(coverage)) return null;
-            await db.run(`CREATE OR REPLACE TEMP VIEW broker_activity_coverage AS
+    const brokers = registryOnly
+      ? undefined
+      : await step('brokers', async () => {
+          // Collection follows the evening price batch, so expect the previous session to be complete.
+          const coverage = join(data, 'parquet', 'broker-activity-coverage.parquet');
+          if (!existsSync(coverage)) return null;
+          await db.run(`CREATE OR REPLACE TEMP VIEW broker_activity_coverage AS
               SELECT * FROM read_parquet(${literal(coverage)})`);
-            const [row] = await query(`SELECT
+          const [row] = await query(`SELECT
               (SELECT max(date)::VARCHAR FROM (SELECT date FROM (${completeActivityBoards})
                 WHERE board IN ('regular', 'negotiation', 'cash')
                 GROUP BY date HAVING count(DISTINCT board) = 3)) complete,
               (SELECT max(date)::VARCHAR FROM prices WHERE date < DATE ${literal(today)}) expected`);
-            const complete = typeof row?.complete === 'string' ? row.complete : null;
-            if (typeof row?.expected === 'string' && (complete ?? '') < row.expected)
-              fail(
-                'brokers',
-                new Error(
-                  `Broker data is complete through ${complete ?? 'no session'}; expected ${row.expected}`,
-                ),
-              );
-            return complete;
-          });
+          const complete = typeof row?.complete === 'string' ? row.complete : null;
+          if (typeof row?.expected === 'string' && (complete ?? '') < row.expected)
+            fail(
+              'brokers',
+              new Error(
+                `Broker data is complete through ${complete ?? 'no session'}; expected ${row.expected}`,
+              ),
+            );
+          return complete;
+        });
     await db.run(analytics);
     await mkdir(join(out, 'ticker'), { recursive: true });
     await writeFile(
@@ -1161,27 +1049,6 @@ export async function ingest({
       report_gaps,
       processed,
       remaining,
-      ownership: ownershipOnly
-        ? {
-            since,
-            until,
-            five_pct_dates: [...(await present('five_pct'))]
-              .filter((d) => d >= (since ?? '') && d <= (until ?? today))
-              .sort(),
-            one_pct_dates: [...(await present('one_pct'))]
-              .filter((d) => d >= (since ?? '') && d <= (until ?? today))
-              .sort(),
-            skipped_one_pct_pdfs: skippedOnePctPdfs,
-            price_dates_checked: (
-              await query(`SELECT count(DISTINCT date)::INTEGER n FROM prices
-              WHERE date BETWEEN ${literal(since ?? today)} AND ${literal(until ?? today)}`)
-            )[0]?.n,
-            missing_five_pct_price_dates:
-              await query(`SELECT DISTINCT date::VARCHAR date FROM prices
-          WHERE date BETWEEN ${literal(since ?? today)} AND ${literal(until ?? today)}
-          EXCEPT SELECT DISTINCT date::VARCHAR date FROM five_pct ORDER BY date`),
-          }
-        : undefined,
       attachment_labels: { backfilled: labelsBackfilled, remaining: labelsRemaining },
       failed,
     };
@@ -1202,7 +1069,6 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
         since: { type: 'string' },
         until: { type: 'string' },
         'registry-only': { type: 'boolean' },
-        'ownership-only': { type: 'boolean' },
         'reparse-registry': { type: 'boolean' },
         limit: { type: 'string' },
         'attachment-label-limit': { type: 'string' },
@@ -1210,7 +1076,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     });
     if (!values.data || !values.out)
       throw new Error(
-        'Usage: ingest -- --data <dir> --out <dir> [--since YYYY-MM-DD] [--attachment-label-limit 200] [--registry-only --until YYYY-MM-DD --limit 100 --reparse-registry] [--ownership-only --since YYYY-MM-DD --until YYYY-MM-DD]',
+        'Usage: ingest -- --data <dir> --out <dir> [--since YYYY-MM-DD] [--attachment-label-limit 200] [--registry-only --until YYYY-MM-DD --limit 100 --reparse-registry]',
       );
     const result = await ingest({
       data: resolve(values.data),
@@ -1218,7 +1084,6 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
       since: values.since,
       until: values.until,
       registryOnly: values['registry-only'],
-      ownershipOnly: values['ownership-only'],
       reparseRegistry: values['reparse-registry'],
       limit: values.limit ? Number(values.limit) : undefined,
       attachmentLabelLimit:

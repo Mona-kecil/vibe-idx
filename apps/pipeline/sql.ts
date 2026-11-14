@@ -1,4 +1,4 @@
-export const thresholds = {
+const thresholds = {
   volumeDays: 20,
   volumeMultiple: 5,
   volumeMinValue: 5e9,

@@ -47,7 +47,7 @@ const listSchema = z.object({
 const pageLimit = 3000;
 // Auth, network and HTTP errors fail every target alike, so they end the phase instead of failing each one.
 class ActivityStop extends Error {}
-export const BROKER_ACTIVITY_RPS = 10;
+const BROKER_ACTIVITY_RPS = 10;
 export type ActivitySummary = {
   completed: number;
   pending: number;

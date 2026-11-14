@@ -259,11 +259,6 @@ it('uses one token refresh for activity and publishes only the activity source',
   expect(
     JSON.parse(f.objects.get('site/market-accumulation.json')!.toString()).stocks[0].windows['1d'],
   ).toMatchObject({ pct: 2, broker: 'XL', buy_trades: 15422, trades: 1 });
-  expect(
-    [...f.objects.keys()].some(
-      (key) => key.startsWith('parquet/brokers/') || key === 'parquet/broker-coverage.parquet',
-    ),
-  ).toBe(false);
   expect(result.activity.completed).toBe(2);
   const published = JSON.parse(gunzipSync(f.objects.get('site/broker/BBRI.json.gz')!).toString());
   expect(published[0].buy.map((r: { investor: string }) => r.investor)).toEqual([

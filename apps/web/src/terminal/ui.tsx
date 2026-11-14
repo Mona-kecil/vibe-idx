@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Stale } from '../Stale';
+import { Stale } from '../Stale.js';
 import type { Resource, Risk } from './sources';
-import { useTerminal } from './state';
-import { dateText, nf, short, signed } from '../ticker/format';
+import { useTerminal } from './state.js';
+import { dateText, nf, short, signed } from '../ticker/format.js';
 
 export const direction = (value: number | null | undefined) =>
   value && value > 0 ? 'up' : value && value < 0 ? 'dn' : 'mut';

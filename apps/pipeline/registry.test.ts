@@ -166,16 +166,60 @@ it('repairs AIMS holder rows checkpointed before a duplicate-key failure', async
   }
 }, 30_000);
 
-it('keeps corrected monthly snapshots, KSEI cells and blank relationships through archive replay and Parquet reload', async () => {
+async function registrySnapshots(ticker: string) {
   const registry = keys.parse(
     JSON.parse(await readFile(new URL('registry-source.json', answerKeys), 'utf8')),
   );
+  return Promise.all(
+    snapshots.parse(registry[ticker]).snapshots.map(async (row) => ({
+      row,
+      bytes: await readFile(
+        new URL(`./fixtures/${ticker}-${row.asOf.slice(0, 7)}-main.pdf`, import.meta.url),
+      ),
+    })),
+  );
+}
+
+async function parseRegistry(bytes: Uint8Array, ticker: string) {
+  const result = await parseReport({ bytes, ticker, kind: 'registry' });
+  expect(result.kind).toBe('parsed');
+  if (result.kind !== 'parsed' || result.report.kind !== 'registry')
+    throw new Error('Expected registry');
+  return { report: result.report, gaps: result.gaps };
+}
+
+it('reads SID count, free float, KSEI investor types and controller flags from the real May and June reports', async () => {
   const investorTypes = types.parse(
     JSON.parse(await readFile(new URL('investor-types-source.json', answerKeys), 'utf8')),
   );
   const affiliations = flags.parse(
     JSON.parse(await readFile(new URL('affiliation-source.json', answerKeys), 'utf8')),
   );
+  for (const ticker of ['SINI', 'BRPT', 'TPIA', 'BREN'])
+    for (const { row, bytes } of await registrySnapshots(ticker)) {
+      const { report, gaps } = await parseRegistry(bytes, ticker);
+      expect(gaps).toEqual([]);
+      expect(report).toMatchObject({
+        date: row.asOf,
+        sid_count: row.sidCount,
+        free_float_pct: row.reportedFreeFloatPct,
+        total_shares: row.totalShares,
+        free_float_shares: row.reportedFreeFloatShares,
+      });
+      expect(report.investor_types.map(({ label, shares }) => ({ label, shares }))).toEqual(
+        investorTypes.snapshots.find((s) => s.ticker === ticker && s.asOf === row.asOf)?.categories,
+      );
+      for (const holder of affiliations[ticker]?.filter((h) => h.asOf === row.asOf) ?? []) {
+        expect(report.holders.find((h) => h.investor === holder.investor)).toMatchObject({
+          controller: holder.controller,
+          controller_affiliate: holder.controllerAffiliate,
+          page: holder.page,
+        });
+      }
+    }
+});
+
+it('resumes batched registry runs from one listing, ignores an older correction arriving after June, and rebuilds a legacy ledger from archives', async () => {
   const root = await mkdtemp(join(tmpdir(), 'registry-monthly-'));
   const data = join(root, 'data'),
     out = join(root, 'out');
@@ -188,74 +232,40 @@ it('keeps corrected monthly snapshots, KSEI cells and blank relationships throug
     };
     attachments: { OriginalFilename: string; FullSavePath: string; IsAttachment: boolean }[];
   }[] = [];
-  const expected = new Map<string, object[]>();
+  const expected: object[] = [];
   try {
     await mkdir(join(data, 'raw/reports'), { recursive: true });
-    for (const ticker of ['SINI', 'BRPT', 'TPIA', 'BREN']) {
-      const history = snapshots.parse(registry[ticker]).snapshots;
-      for (const row of history) {
-        const bytes = await readFile(
-          new URL(`./fixtures/${ticker}-${row.asOf.slice(0, 7)}-main.pdf`, import.meta.url),
-        );
-        const result = await parseReport({ bytes, ticker, kind: 'registry' });
-        expect(result.kind).toBe('parsed');
-        if (result.kind !== 'parsed' || result.report.kind !== 'registry')
-          throw new Error('Expected registry');
-        const report = result.report;
-        expect(result.gaps).toEqual([]);
-        expect(report).toMatchObject({
-          date: row.asOf,
-          sid_count: row.sidCount,
-          free_float_pct: row.reportedFreeFloatPct,
-          total_shares: row.totalShares,
-          free_float_shares: row.reportedFreeFloatShares,
-        });
-        expect(report.investor_types.map(({ label, shares }) => ({ label, shares }))).toEqual(
-          investorTypes.snapshots.find((s) => s.ticker === ticker && s.asOf === row.asOf)
-            ?.categories,
-        );
-        for (const holder of affiliations[ticker]?.filter((h) => h.asOf === row.asOf) ?? []) {
-          expect(report.holders.find((h) => h.investor === holder.investor)).toMatchObject({
-            controller: holder.controller,
-            controller_affiliate: holder.controllerAffiliate,
-            page: holder.page,
-          });
-        }
-        expected.set(ticker, [
-          ...(expected.get(ticker) ?? []),
-          {
-            date: report.date,
-            free_float_pct: report.free_float_pct,
-            issued_shares:
-              report.total_shares === null
-                ? null
-                : report.total_shares + (report.unlisted_shares ?? 0),
-            sid_count: report.sid_count,
-            free_float_shares: report.free_float_shares,
-            url: row.sourceUrl,
-            investor_types: [...report.investor_types].sort((a, b) =>
-              a.label.localeCompare(b.label, 'en', { sensitivity: 'variant' }),
-            ),
-            holders: [...report.holders]
-              .sort((a, b) => (a.investor < b.investor ? -1 : a.investor > b.investor ? 1 : 0))
-              .map((h) => ({ ...h, holder_key: expect.any(String) })),
-          },
-        ]);
-        const hash = createHash('sha256').update(row.sourceUrl).digest('hex');
-        await writeFile(join(data, `raw/reports/${hash}.pdf`), bytes);
-        replies.push({
-          pengumuman: {
-            Id2: `${ticker}/${row.asOf}`,
-            Kode_Emiten: ticker,
-            JudulPengumuman: 'Laporan Bulanan Registrasi Pemegang Efek',
-            TglPengumuman:
-              row.asOf.slice(0, 7) === '2026-05' ? '2026-06-10T12:00:00' : '2026-07-09T12:00:00',
-          },
-          attachments: [
-            { OriginalFilename: 'main.pdf', FullSavePath: row.sourceUrl, IsAttachment: false },
-          ],
-        });
-      }
+    for (const { row, bytes } of await registrySnapshots('TPIA')) {
+      const { report } = await parseRegistry(bytes, 'TPIA');
+      expected.push({
+        date: report.date,
+        free_float_pct: report.free_float_pct,
+        issued_shares:
+          report.total_shares === null ? null : report.total_shares + (report.unlisted_shares ?? 0),
+        sid_count: report.sid_count,
+        free_float_shares: report.free_float_shares,
+        url: row.sourceUrl,
+        investor_types: [...report.investor_types].sort((a, b) =>
+          a.label.localeCompare(b.label, 'en', { sensitivity: 'variant' }),
+        ),
+        holders: [...report.holders]
+          .sort((a, b) => (a.investor < b.investor ? -1 : a.investor > b.investor ? 1 : 0))
+          .map((h) => ({ ...h, holder_key: expect.any(String) })),
+      });
+      const hash = createHash('sha256').update(row.sourceUrl).digest('hex');
+      await writeFile(join(data, `raw/reports/${hash}.pdf`), bytes);
+      replies.push({
+        pengumuman: {
+          Id2: `TPIA/${row.asOf}`,
+          Kode_Emiten: 'TPIA',
+          JudulPengumuman: 'Laporan Bulanan Registrasi Pemegang Efek',
+          TglPengumuman:
+            row.asOf.slice(0, 7) === '2026-05' ? '2026-06-10T12:00:00' : '2026-07-09T12:00:00',
+        },
+        attachments: [
+          { OriginalFilename: 'main.pdf', FullSavePath: row.sourceUrl, IsAttachment: false },
+        ],
+      });
     }
     // An older correction arrives after the selected revision. It must not replace June.
     const latest = replies.find((r) => r.pengumuman.Id2 === 'TPIA/2026-06-30');
@@ -279,30 +289,26 @@ it('keeps corrected monthly snapshots, KSEI cells and blank relationships throug
       today: '2026-10-24',
       registryOnly: true,
       fetcher,
-      limit: 4,
+      limit: 2,
     };
     const first = await ingest(options);
-    expect(first.processed).toBe(4);
-    expect(first.remaining).toBe(5);
+    expect(first.processed).toBe(2);
+    expect(first.remaining).toBe(1);
     const second = await ingest(options);
-    expect(second.processed).toBe(4);
-    const third = await ingest(options);
-    expect(third.processed).toBe(1);
-    expect(third.remaining).toBe(0);
+    expect(second.processed).toBe(1);
+    expect(second.remaining).toBe(0);
     expect(requests).toBe(1);
-    expect(third.counts.registry).toBe(8);
-    expect(third.counts.registry_investors).toBe(312);
+    expect(second.counts.registry).toBe(2);
+    expect(second.counts.registry_investors).toBe(78);
     const offline: typeof fetch = () => {
       throw new Error('Archive replay fetched IDX');
     };
     expect((await ingest({ ...options, fetcher: offline })).processed).toBe(0);
-    for (const [ticker, history] of expected) {
-      const actual = tickerSchema.parse(
-        JSON.parse(await readFile(join(out, `ticker/${ticker}.json`), 'utf8')),
-      );
-      expect(actual.registry_history.map((r) => r.date)).toEqual(['2026-05-31', '2026-06-30']);
-      expect(actual.registry_history).toEqual(history);
-    }
+    const actual = tickerSchema.parse(
+      JSON.parse(await readFile(join(out, 'ticker/TPIA.json'), 'utf8')),
+    );
+    expect(actual.registry_history.map((r) => r.date)).toEqual(['2026-05-31', '2026-06-30']);
+    expect(actual.registry_history).toEqual(expected);
     // Simulate a parser upgrade and a legacy report-per-file registry ledger.
     const instance = await DuckDBInstance.create(':memory:');
     const db = await instance.connect();
@@ -329,8 +335,8 @@ it('keeps corrected monthly snapshots, KSEI cells and blank relationships throug
       fetcher: offline,
       limit: 100,
     });
-    expect(replay.processed).toBe(9);
-    expect(replay.counts.registry).toBe(8);
+    expect(replay.processed).toBe(3);
+    expect(replay.counts.registry).toBe(2);
     expect(replay.report_gaps).toEqual([]);
     expect((await ingest({ ...options, reparseRegistry: true, fetcher: offline })).processed).toBe(
       0,
@@ -428,4 +434,55 @@ it('exports BBCA listed plus unlisted shares without inferring the base from rou
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+it('reads the current SID count when shareholders fell since last month', async () => {
+  const header =
+    'Perihal X Laporan TEST 1 Laporan Bulanan Registrasi Pemegang Efek akhir bulan September - 2026 ' +
+    '% Saham Free Float 42,00 41,00 Pernyataan ' +
+    'Jumlah Pemegang Saham Nasabah Pemilik SID Bulan Sebelumnya Bulan Sekarang Perubahan 1.000 900 -100';
+  const stream = `BT /F1 10 Tf 1 0 0 1 10 800 Tm (${header}) Tj ET
+BT /F1 10 Tf 1 0 0 1 34 600 Tm (Jumlah Pemegang Saham Nasabah Pemilik SID) Tj ET
+BT /F1 10 Tf 1 0 0 1 81 560 Tm (Bulan Sebelumnya) Tj ET
+BT /F1 10 Tf 1 0 0 1 259 560 Tm (Bulan Sekarang) Tj ET
+BT /F1 10 Tf 1 0 0 1 445 560 Tm (Perubahan) Tj ET
+BT /F1 10 Tf 1 0 0 1 172 530 Tm (1.000) Tj ET
+BT /F1 10 Tf 1 0 0 1 335 530 Tm (900) Tj ET
+BT /F1 10 Tf 1 0 0 1 529 530 Tm (-100) Tj ET`;
+  const objects = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 2000 1000] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>',
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+    `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`,
+  ];
+  let pdf = '%PDF-1.4\n';
+  const offsets: number[] = [];
+  for (const [i, object] of objects.entries()) {
+    offsets.push(pdf.length);
+    pdf += `${i + 1} 0 obj\n${object}\nendobj\n`;
+  }
+  const xref = pdf.length;
+  pdf += `xref\n0 6\n0000000000 65535 f \n${offsets
+    .map((offset) => `${String(offset).padStart(10, '0')} 00000 n \n`)
+    .join('')}trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  const result = await parseReport({
+    bytes: new TextEncoder().encode(pdf),
+    ticker: 'TEST',
+    kind: 'registry',
+  });
+  if (result.kind !== 'parsed' || result.report.kind !== 'registry')
+    throw new Error(`Expected a parsed registry report, got ${result.kind}`);
+  expect(result.report).toMatchObject({ date: '2026-09-30', sid_count: 900 });
+  expect(result.gaps).toEqual(
+    expect.arrayContaining(
+      [
+        'total shares',
+        'free float percentage',
+        'free float shares',
+        'investor types',
+        'holder flags',
+      ].map((field) => `Registry ${field}: unsupported or missing labeled cells`),
+    ),
+  );
 });

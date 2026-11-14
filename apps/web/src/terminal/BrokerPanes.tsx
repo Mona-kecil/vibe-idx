@@ -5,14 +5,14 @@ import {
   type AutoscaleInfoProvider,
   type ISeriesApi,
 } from 'lightweight-charts';
-import { aggregateBrokers, brokerName, edgeFills } from '../broker-data';
-import { matchesInvestor, type InvestorFilter, type BrokerDay } from '../brokers';
-import { bounds } from '../ticker/logic';
-import { dateText, rangeText, nf, short, signed } from '../ticker/format';
-import { useTerminal, type BrokerFilters } from './state';
-import { Empty, Scroll, Segments, SignInPrompt, direction } from './ui';
-import { terminalChart, chartDate } from './charts';
-import { ChartAttribution as Attribution } from '../ChartAttribution';
+import { aggregateBrokers, brokerName, edgeFills } from '../broker-data.js';
+import { matchesInvestor, type InvestorFilter, type BrokerDay } from '../brokers.js';
+import { bounds } from '../ticker/logic.js';
+import { dateText, rangeText, nf, short, signed } from '../ticker/format.js';
+import { useTerminal, type BrokerFilters } from './state.js';
+import { Empty, Scroll, Segments, SignInPrompt, direction } from './ui.js';
+import { terminalChart, chartDate } from './charts.js';
+import { ChartAttribution as Attribution } from '../ChartAttribution.js';
 import './broker-panes.css';
 
 function BrokerGate({ children }: { children: (days: BrokerDay[]) => ReactNode }) {

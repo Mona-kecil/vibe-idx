@@ -9,11 +9,11 @@ import {
   type Time,
 } from 'lightweight-charts';
 import type { Ticker } from '../data';
-import { nf, short, dateText } from '../ticker/format';
-import { bounds } from '../ticker/logic';
-import { readStorage, writeStorage } from '../watchlist';
-import { useTerminal } from './state';
-import { Availability, Segments, Empty, SignInPrompt } from './ui';
+import { nf, short, dateText } from '../ticker/format.js';
+import { bounds } from '../ticker/logic.js';
+import { readStorage, writeStorage } from '../watchlist.js';
+import { useTerminal } from './state.js';
+import { Availability, Segments, Empty, SignInPrompt } from './ui.js';
 import {
   terminalChart,
   chartDate,
@@ -21,9 +21,9 @@ import {
   weeklyBars,
   intradayBars,
   type PriceBar,
-} from './charts';
-import { useTradeSessions } from './tick-data';
-import { ChartAttribution as Attribution } from '../ChartAttribution';
+} from './charts.js';
+import { useTradeSessions } from './tick-data.js';
+import { ChartAttribution as Attribution } from '../ChartAttribution.js';
 import './charts.css';
 
 const chartTypes = ['CANDLE', 'LINE'] as const;

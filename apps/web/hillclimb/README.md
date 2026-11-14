@@ -47,7 +47,7 @@ A pane that answers none of these leaves the default slots. `questions.ts` scrip
 ## Rules for a change
 
 - Make one change per attempt, measure it, then keep or revert it.
-- `vp test` and `vp check` stay green. Run the tests with `NODE_OPTIONS=--no-experimental-webstorage`. Node's built-in `localStorage` breaks happy-dom on Node 24.22 and 26.
+- `vp test` and `vp check` stay green.
 - Font size and row height stay fixed, so shrinking text cannot count as a win.
 - Visible controls per item never rise, and no new kind of control appears. A count that rises only because more items fit is allowed.
 - Take a before and after screenshot of each kept change. Steps cannot measure legibility, so the owner can veto any change.

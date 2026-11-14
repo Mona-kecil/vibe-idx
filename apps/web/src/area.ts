@@ -1,5 +1,5 @@
 export type Tone = 'up' | 'down' | 'flat';
-export type Extreme = { x: number; y: number; value: number };
+type Extreme = { x: number; y: number; value: number };
 export type Pad = { top: number; bottom: number };
 export type Area = {
   line: string;

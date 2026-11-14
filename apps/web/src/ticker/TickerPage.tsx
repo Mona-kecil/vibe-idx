@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { load, type Health, type Stock, type Ticker } from '../data';
-import { usePublished } from '../publicData';
-import { RiskFlagChips, useRiskFor } from '../RiskFlagChips';
-import { PinButton, SiteHeader } from '../SiteHeader';
-import { Stale } from '../Stale';
-import { usePins } from '../watchlist';
+import { load, type Health, type Stock, type Ticker } from '../data.js';
+import { usePublished } from '../publicData.js';
+import { RiskFlagChips, useRiskFor } from '../RiskFlagChips.js';
+import { PinButton, SiteHeader } from '../SiteHeader.js';
+import { Stale } from '../Stale.js';
+import { usePins } from '../watchlist.js';
 import {
   holdingSeries,
   nextAction,
@@ -15,14 +15,14 @@ import {
   type Selection,
   chartMarks,
   openingPeriod,
-} from './logic';
-import { calendarDate, dateText, direction, nf, short, signed, moveWord } from './format';
-import { Freshness } from './Freshness';
-import { PriceChart } from './PriceChart';
-import { SelectionSummary, Timeline } from './Timeline';
-import { Ownership } from './Ownership';
-import { BrokerSummary } from './BrokerSummary';
-import { ShareButton } from './ShareButton';
+} from './logic.js';
+import { calendarDate, dateText, direction, nf, short, signed, moveWord } from './format.js';
+import { Freshness } from './Freshness.js';
+import { PriceChart } from './PriceChart.js';
+import { SelectionSummary, Timeline } from './Timeline.js';
+import { Ownership } from './Ownership.js';
+import { BrokerSummary } from './BrokerSummary.js';
+import { ShareButton } from './ShareButton.js';
 import './ticker.css';
 
 export function TickerPage({ ticker }: { ticker: string }) {

@@ -1,4 +1,4 @@
-import { matchesInvestor, type InvestorFilter, type BrokerRow, type BrokerDay } from './brokers';
+import { matchesInvestor, type InvestorFilter, type BrokerRow, type BrokerDay } from './brokers.js';
 import directory from './broker-directory.json';
 
 const brokers = new Map(Object.entries(directory.brokers));

@@ -2,16 +2,18 @@ import './styles.css';
 import './site.css';
 import './terminal/terminal.css';
 import { lazy, Suspense, useEffect, useState, useSyncExternalStore } from 'react';
-import { LocaleProvider, useLocale, type Locale } from './locale';
-import { LoginPage } from './BrokerPanel';
-import { Today } from './Today';
-import { MarketPage } from './MarketPage';
-import { TerminalBoot, useTerminalBoot } from './terminal/TerminalBoot';
+import { LocaleProvider, useLocale, type Locale } from './locale.js';
+import { LoginPage } from './BrokerPanel.js';
+import { Today } from './Today.js';
+import { MarketPage } from './MarketPage.js';
+import { TerminalBoot, useTerminalBoot } from './terminal/TerminalBoot.js';
 
 const TickerPage = lazy(() =>
-  import('./ticker/TickerPage').then((m) => ({ default: m.TickerPage })),
+  import('./ticker/TickerPage.js').then((m) => ({ default: m.TickerPage })),
 );
-const Terminal = lazy(() => import('./terminal/Terminal').then((m) => ({ default: m.Terminal })));
+const Terminal = lazy(() =>
+  import('./terminal/Terminal.js').then((m) => ({ default: m.Terminal })),
+);
 
 export function App({
   initialUrl,

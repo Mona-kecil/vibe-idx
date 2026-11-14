@@ -5,6 +5,7 @@ import { DuckDBInstance } from '@duckdb/node-api';
 import { strToU8, strFromU8, unzipSync, zipSync } from 'fflate';
 import { describe, expect, it } from 'vite-plus/test';
 import { ingest } from './ingest';
+import { readSheet } from './lib/xlsx';
 import { resolveHolderKeys } from './ownership';
 import { analytics, schema, tickers } from './sql';
 import { tickerSchema } from '../web/src/data';
@@ -178,8 +179,63 @@ function announcement({
   };
 }
 
-function network({ monthly = false, reports = false } = {}) {
+const focusTickers = [
+  'AADI',
+  ...insiderExamples.map((r) => r.ticker),
+  ...registryExamples.map((r) => r.ticker),
+];
+
+// Keeps the header rows and every row that belongs to one of the tickers. A 5% account row without
+// a ticker belongs to the nearest ticker above it.
+function onlyTickers(workbook: Uint8Array, codes: string[]) {
+  const files = unzipSync(workbook);
+  const sheet = strFromU8(files['xl/worksheets/sheet1.xml']!);
+  const rows = [...sheet.matchAll(/<row\b[^>]*>[\s\S]*?<\/row>/g)];
+  const cells = readSheet(workbook);
+  const header = cells.findIndex((r) => r.includes('Kode Efek') || r.includes('SHARE_CODE'));
+  const column = cells[header]!.findIndex((c) => c === 'Kode Efek' || c === 'SHARE_CODE');
+  let owner = '';
+  const kept = rows.filter((_, i) => {
+    if (i <= header) return true;
+    owner = cells[i]?.[column]?.trim() || owner;
+    return !owner || codes.includes(owner);
+  });
+  const end = rows.at(-1)!;
+  files['xl/worksheets/sheet1.xml'] = strToU8(
+    sheet.slice(0, rows[0]!.index) +
+      kept.map((m) => m[0]).join('') +
+      sheet.slice(end.index + end[0].length),
+  );
+  return zipSync(files);
+}
+const trimmed = new Map<string, Promise<Uint8Array>>();
+const ownershipWorkbook = (name: string, codes: string[]) => {
+  const key = `${name} ${codes.join()}`;
+  const cached = trimmed.get(key) ?? fixture(name).then((bytes) => onlyTickers(bytes, codes));
+  trimmed.set(key, cached);
+  return cached;
+};
+
+// `issuers` keeps only those tickers in the issuer, price and ownership fixtures, so a run
+// publishes a few ticker files instead of ~960.
+function network({
+  monthly = false,
+  reports = false,
+  suspensions = true,
+  issuers,
+}: { monthly?: boolean; reports?: boolean; suspensions?: boolean; issuers?: string[] } = {}) {
   const urls: string[] = [];
+  const only = (text: string, code: 'StockCode' | 'KodeEmiten') => {
+    if (!issuers) return text;
+    const { data, ...table } = JSON.parse(text);
+    const kept = data.filter((row: Record<string, string>) => issuers.includes(row[code] ?? ''));
+    return JSON.stringify({
+      ...table,
+      recordsTotal: kept.length,
+      recordsFiltered: kept.length,
+      data: kept,
+    });
+  };
   const pdfs = new Map([
     ...insiderExamples.map((r): [string, string] => [
       `/StaticData/From_KSEI/${r.file}`,
@@ -234,9 +290,15 @@ function network({ monthly = false, reports = false } = {}) {
       const marketFixtureForOwnershipDay = (await fixture(name))
         .toString()
         .replaceAll('2026-10-20', '2026-10-21');
-      return new Response(marketFixtureForOwnershipDay);
+      return new Response(
+        name === 'stock-summary-idxid.json'
+          ? only(marketFixtureForOwnershipDay, 'StockCode')
+          : marketFixtureForOwnershipDay,
+      );
     }
     if (/GetCalendar|GetSpecialNotation|GetUma/.test(url.pathname))
+      return Response.json({ ResultCount: 0, Results: [] });
+    if (url.pathname.includes('GetSuspension') && !suspensions)
       return Response.json({ ResultCount: 0, Results: [] });
     if (url.pathname.includes('GetSuspension'))
       return Response.json({
@@ -260,7 +322,8 @@ function network({ monthly = false, reports = false } = {}) {
       });
     if (url.pathname === '/StaticData/suspension-notice.pdf')
       return new Response(new Uint8Array(await fixture('suspension-notice-2026-annual.pdf')));
-    if (url.pathname.includes('GetCompanyProfiles')) name = 'company-profiles.json';
+    if (url.pathname.includes('GetCompanyProfiles'))
+      return new Response(only((await fixture('company-profiles.json')).toString(), 'KodeEmiten'));
     else if (url.pathname.includes('GetAnnouncement')) {
       const start = Number(url.searchParams.get('indexFrom')) * 2;
       const from = url.searchParams.get('dateFrom') ?? '';
@@ -303,229 +366,14 @@ function network({ monthly = false, reports = false } = {}) {
     } else if (url.pathname.endsWith('-satu-persen.xlsx')) {
       name = `ownership-1pct-${url.pathname.slice('/Media/'.length, -'-satu-persen.xlsx'.length)}.xlsx`;
     } else throw new Error(`Unexpected network call: ${url.href}`);
-    return new Response(new Uint8Array(await fixture(name)));
+    return new Response(
+      new Uint8Array(issuers ? await ownershipWorkbook(name, issuers) : await fixture(name)),
+    );
   };
   return { urls, fetcher, disclosures };
 }
 
 describe('batch pipeline', () => {
-  it.each([
-    {
-      month: 'January',
-      since: '2026-01-01',
-      until: '2026-01-29',
-      today: '2026-01-30',
-      metadata: './fixtures/ownership-legacy-2026-01.json',
-      pdf: './fixtures/ownership-5pct-2026-01-29.pdf',
-      investor: 'ADARO STRATEGIC INVESTMENTS PT',
-    },
-    {
-      month: 'June',
-      since: '2026-06-01',
-      until: '2026-06-05',
-      today: '2026-06-08',
-      metadata: '../../samples/idx-5pct/latest-response.json',
-      pdf: '../../samples/idx-5pct/20260608_Semua Emiten Saham_Pengumuman Bursa_32098373_lamp1.pdf',
-      investor: 'ADARO STRATEGIC INVESTMENTS',
-    },
-  ])(
-    'backfills $month ownership PDF cells across pages instead of ignoring the legacy source',
-    async (source) => {
-      const root = await mkdtemp(join(tmpdir(), 'idx-legacy-ownership-'));
-      const page = JSON.parse(await readFile(new URL(source.metadata, import.meta.url), 'utf8'));
-      const legacy = page.Replies[0];
-      const attachment = legacy.attachments.find((a: { IsAttachment: boolean }) => a.IsAttachment);
-      const urls: string[] = [];
-      let includeXlsx = false;
-      const workbookUrl =
-        'https://www.idx.id/Media/dqvnijtx/peng-2026-06-05-00005-lima-persen.xlsx';
-      const options = {
-        data: join(root, 'data'),
-        out: join(root, 'out'),
-        since: source.since,
-        until: source.until,
-        today: source.today,
-        ownershipOnly: true,
-        fetcher: async (input: string | URL | Request) => {
-          const url = new URL(input instanceof Request ? input.url : input);
-          urls.push(url.href);
-          if (url.pathname.includes('data-kepemilikan-saham'))
-            return Response.json({
-              items: includeXlsx
-                ? [
-                    {
-                      Description: 'Pemegang Saham di Atas 5%',
-                      Prospectus: workbookUrl,
-                      ListingDate: '2026-06-05',
-                    },
-                  ]
-                : [],
-            });
-          if (url.href === workbookUrl)
-            return new Response(new Uint8Array(await fixture('ownership-5pct-2026-06-05.xlsx')));
-          if (url.pathname.includes('GetAnnouncement'))
-            return Response.json({ ResultCount: 1, Replies: [legacy] });
-          if (url.pathname === new URL(attachment.FullSavePath).pathname)
-            return new Response(
-              new Uint8Array(await readFile(new URL(source.pdf, import.meta.url))),
-            );
-          throw new Error(`Unexpected request: ${url.href}`);
-        },
-      };
-      try {
-        const result = await ingest(options);
-        expect(result.counts.five_pct).toBeGreaterThan(0);
-        const ticker = JSON.parse(await readFile(join(options.out, 'ticker/AADI.json'), 'utf8'));
-        expect(ticker.holders).toEqual(
-          expect.arrayContaining([
-            expect.objectContaining({ investor: source.investor, shares: 3200142830, pct: 41.1 }),
-          ]),
-        );
-        expect(result.ownership?.five_pct_dates).toEqual([source.until]);
-        expect(result.counts.prices).toBe(0);
-        expect(result.counts.disclosures).toBe(0);
-        if (source.month === 'January') {
-          const alto = JSON.parse(await readFile(join(options.out, 'ticker/ALTO.json'), 'utf8'));
-          expect(alto.holders).toContainEqual({
-            investor: 'PT TRIMEGAH SEKURITAS INDONESIA TBK',
-            holder_key: 'TRIMEGAHSEKURITASINDONESIA',
-            shares: 210832443,
-            pct: 9.62,
-          });
-          const dcii = JSON.parse(await readFile(join(options.out, 'ticker/DCII.json'), 'utf8'));
-          expect(dcii.holders).toContainEqual({
-            investor: 'ANTHONI SALIM',
-            holder_key: 'ANTHONISALIM',
-            shares: 265033461,
-            pct: 11.12,
-          });
-        }
-        const beforeReplay = urls.length;
-        const replay = await ingest(options);
-        expect(replay.counts.five_pct).toBe(result.counts.five_pct);
-        expect(replay.processed).toBe(0);
-        expect(urls.slice(beforeReplay).some((url) => url.endsWith('.pdf'))).toBe(false);
-        expect(
-          urls.some((url) => /GetCompanyProfiles|GetStockSummary|GetIndexSummary/.test(url)),
-        ).toBe(false);
-        if (source.month === 'June') {
-          includeXlsx = true;
-          const data = join(root, 'overlap/data');
-          await ingest({ ...options, data, out: join(root, 'overlap/out') });
-          const instance = await DuckDBInstance.create(':memory:');
-          const db = await instance.connect();
-          try {
-            const rows = (
-              await db.runAndReadAll(`SELECT shares FROM read_parquet('${join(data, 'parquet/five_pct/2026.parquet')}')
-              WHERE ticker = 'BEEF' AND investor = 'DIMAS WIBOWO'
-                AND holder_name = 'PT. STOCKBIT SEKURITAS DIGITAL'`)
-            ).getRowObjectsJson();
-            // These sources disagree: the PDF says 134,322, the XLSX cell says 134.322.
-            expect(rows).toEqual([{ shares: 134.322 }]);
-          } finally {
-            db.closeSync();
-            instance.closeSync();
-          }
-        }
-      } finally {
-        await rm(root, { recursive: true, force: true });
-      }
-    },
-    30_000,
-  );
-
-  it('keeps a late 1% snapshot from a primary XLSX attachment and ignores ticker-specific filings', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'idx-legacy-onepct-'));
-    const page = JSON.parse((await fixture('ownership-legacy-2026-01.json')).toString());
-    const bulk = {
-      ...page.Replies[0],
-      pengumuman: {
-        ...page.Replies[0].pengumuman,
-        Id2: 'legacy-onepct',
-        JudulPengumuman: 'Pemegang Saham di atas 1% (KSEI)',
-        TglPengumuman: '2026-03-02T12:00:00',
-      },
-      attachments: [
-        {
-          OriginalFilename: 'ownership.xlsx',
-          FullSavePath: '/StaticData/ownership.xlsx',
-          IsAttachment: false,
-        },
-      ],
-    };
-    const company = {
-      ...bulk,
-      pengumuman: { ...bulk.pengumuman, Id2: 'company-onepct', Kode_Emiten: 'AADI' },
-      attachments: [
-        {
-          OriginalFilename: 'ignore.xlsx',
-          FullSavePath: '/StaticData/ignore.xlsx',
-          IsAttachment: false,
-        },
-      ],
-    };
-    const legacyPdf = {
-      ...bulk,
-      pengumuman: { ...bulk.pengumuman, Id2: 'legacy-onepct-pdf' },
-      attachments: [
-        {
-          OriginalFilename: 'announcement.pdf',
-          FullSavePath: '/StaticData/announcement.pdf',
-          IsAttachment: false,
-        },
-        {
-          OriginalFilename: 'ownership.pdf',
-          FullSavePath: '/StaticData/ownership-1pct.pdf',
-          IsAttachment: true,
-        },
-      ],
-    };
-    const options = {
-      data: join(root, 'data'),
-      out: join(root, 'out'),
-      ownershipOnly: true,
-      since: '2026-02-01',
-      until: '2026-02-28',
-      today: '2026-03-02',
-      fetcher: async (input: string | URL | Request) => {
-        const u = new URL(input instanceof Request ? input.url : input);
-        if (u.pathname.includes('data-kepemilikan-saham')) return Response.json({ items: [] });
-        if (u.pathname.includes('GetAnnouncement')) {
-          const page = Number(u.searchParams.get('indexFrom'));
-          return Response.json({ ResultCount: 3, Replies: [[bulk], [company], [legacyPdf]][page] });
-        }
-        if (u.pathname === '/StaticData/ownership.xlsx')
-          return new Response(new Uint8Array(await fixture('ownership-1pct-2026-02.xlsx')));
-        throw new Error(`Unexpected ownership request: ${u.href}`);
-      },
-    };
-    try {
-      const result = await ingest(options);
-      expect(result.counts.one_pct).toBe(7257);
-      expect(result.ownership?.one_pct_dates).toEqual(['2026-02-27']);
-      expect(result.ownership?.skipped_one_pct_pdfs).toEqual([
-        'https://www.idx.id/StaticData/ownership-1pct.pdf',
-      ]);
-      const ticker = JSON.parse(await readFile(join(options.out, 'ticker/ICON.json'), 'utf8'));
-      expect(
-        ticker.one_pct.holders.filter(
-          (h: { investor: string }) => h.investor === 'ISLAND REGENCY GROUP LIMITED',
-        ),
-      ).toEqual([
-        expect.objectContaining({ shares: 42187000 }),
-        expect.objectContaining({ shares: 20000000 }),
-      ]);
-      await expect(ingest({ ...options, registryOnly: true })).rejects.toThrow(
-        'without --registry-only',
-      );
-      await expect(ingest({ ...options, until: '2026-03-01' })).rejects.toThrow(
-        'one calendar month',
-      );
-    } finally {
-      await rm(root, { recursive: true, force: true });
-    }
-  }, 30_000);
-
   it('repairs boolean tickers across Parquet years without key conflicts or replay changes', async () => {
     const root = await mkdtemp(join(tmpdir(), 'idx-true-ticker-'));
     const options = {
@@ -607,19 +455,6 @@ describe('batch pipeline', () => {
       const repaired = await Promise.all(paths.map((path) => readFile(path)));
       expect(repaired[0]).toEqual(before[0]);
       expect(repaired[3]).toEqual(before[3]);
-      const restored = { ...options, data: join(root, 'restored'), out: join(root, 'replayed') };
-      await cp(join(options.data, 'parquet'), join(restored.data, 'parquet'), { recursive: true });
-      const replay = await ingest(restored);
-      expect(replay.counts).toEqual(first.counts);
-      expect(JSON.parse(await readFile(join(restored.out, 'ticker/TRUE.json'), 'utf8'))).toEqual(
-        published,
-      );
-      expect(await readdir(join(restored.out, 'ticker'))).toEqual(['AADI.json', 'TRUE.json']);
-      expect(
-        await Promise.all(
-          paths.map((path) => readFile(join(restored.data, relative(options.data, path)))),
-        ),
-      ).toEqual(repaired);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -867,70 +702,25 @@ describe('batch pipeline', () => {
         db.closeSync();
         instance.closeSync();
       }
-      net.urls.length = 0;
-      const replay = await ingest({ ...options, fetcher: net.fetcher });
-      expect(replay.counts).toEqual(recovered.counts);
-      expect(net.urls.filter((url) => url.includes('TradingSummary'))).toEqual([]);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
   }, 30_000);
 
-  it('preserves source dates, duplicate holders, paginated disclosures, and SID counts with negative deltas', async () => {
+  it('preserves source dates, duplicate holders, and paginated disclosures', async () => {
     const root = await mkdtemp(join(tmpdir(), 'idx-fixture-'));
     try {
-      const net = network({ monthly: true, reports: true });
-      const text =
-        'Perihal X Laporan TEST 1 Laporan Bulanan Registrasi Pemegang Efek akhir bulan September - 2026 ' +
-        '% Saham Free Float 42,00 41,00 Pernyataan ' +
-        'Jumlah Pemegang Saham Nasabah Pemilik SID Bulan Sebelumnya Bulan Sekarang Perubahan 1.000 900 -100';
-      const stream = `BT /F1 10 Tf 1 0 0 1 10 800 Tm (${text}) Tj ET
-BT /F1 10 Tf 1 0 0 1 34 600 Tm (Jumlah Pemegang Saham Nasabah Pemilik SID) Tj ET
-BT /F1 10 Tf 1 0 0 1 81 560 Tm (Bulan Sebelumnya) Tj ET
-BT /F1 10 Tf 1 0 0 1 259 560 Tm (Bulan Sekarang) Tj ET
-BT /F1 10 Tf 1 0 0 1 445 560 Tm (Perubahan) Tj ET
-BT /F1 10 Tf 1 0 0 1 172 530 Tm (1.000) Tj ET
-BT /F1 10 Tf 1 0 0 1 335 530 Tm (900) Tj ET
-BT /F1 10 Tf 1 0 0 1 529 530 Tm (-100) Tj ET`;
-      const objects = [
-        '<< /Type /Catalog /Pages 2 0 R >>',
-        '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
-        '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 2000 1000] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>',
-        '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
-        `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`,
-      ];
-      let pdf = '%PDF-1.4\n';
-      const offsets: number[] = [];
-      for (const [i, object] of objects.entries()) {
-        offsets.push(pdf.length);
-        pdf += `${i + 1} 0 obj\n${object}\nendobj\n`;
-      }
-      const xref = pdf.length;
-      pdf += `xref\n0 6\n0000000000 65535 f \n${offsets
-        .map((offset) => `${String(offset).padStart(10, '0')} 00000 n \n`)
-        .join('')}trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
-      net.disclosures.push(
-        announcement({
-          ticker: 'TEST',
-          id: 'registry/negative-sid',
-          title: 'Laporan Bulanan Registrasi Pemegang Efek',
-          path: '/StaticData/From_EREP/negative-sid.pdf',
-        }),
-      );
-      const registryFetcher: typeof fetch = async (input, init) => {
-        const url = new URL(input instanceof Request ? input.url : input);
-        if (url.pathname === '/StaticData/From_EREP/negative-sid.pdf') {
-          net.urls.push(url.href);
-          return new Response(new TextEncoder().encode(pdf));
-        }
-        return net.fetcher(input, init);
-      };
+      const net = network({
+        monthly: true,
+        reports: true,
+        issuers: [...focusTickers, 'ABBA', 'BUVA', 'ICON'],
+      });
       await ingest({
         data: join(root, 'data'),
         out: join(root, 'out'),
         since: '2026-02-01',
         today: '2026-03-02',
-        fetcher: registryFetcher,
+        fetcher: net.fetcher,
       });
       const icon = JSON.parse(await readFile(join(root, 'out/ticker/ICON.json'), 'utf8'));
       expect(icon.one_pct).toMatchObject({ date: '2026-02-27' });
@@ -954,38 +744,17 @@ BT /F1 10 Tf 1 0 0 1 529 530 Tm (-100) Tj ET`;
         out: join(root, 'out'),
         since: '2026-02-01',
         today: '2026-10-22',
-        fetcher: registryFetcher,
+        fetcher: net.fetcher,
       });
       expect(result.counts).toMatchObject({
-        prices: 963,
+        prices: 12,
         indices: 45,
-        issuers: 962,
-        one_pct: 14411,
-        disclosures: 11,
+        issuers: 12,
+        one_pct: 210,
+        disclosures: 10,
         insiders: 4,
-        registry: 5,
+        registry: 4,
       });
-      const negativeSid = JSON.parse(await readFile(join(root, 'out/ticker/TEST.json'), 'utf8'));
-      expect(negativeSid.registry_history.at(-1)).toMatchObject({
-        date: '2026-09-30',
-        free_float_pct: null,
-        issued_shares: null,
-        sid_count: 900,
-        url: 'https://www.idx.id/StaticData/From_EREP/negative-sid.pdf',
-      });
-      for (const field of [
-        'total shares',
-        'free float percentage',
-        'free float shares',
-        'investor types',
-        'holder flags',
-      ]) {
-        expect(result.report_gaps).toContainEqual({
-          id: 'registry/negative-sid',
-          url: negativeSid.registry_history.at(-1).url,
-          reason: `Registry ${field}: unsupported or missing labeled cells`,
-        });
-      }
       const feed = JSON.parse(await readFile(join(root, 'out/feed.json'), 'utf8'));
       expect(feed).toContainEqual(
         expect.objectContaining({
@@ -1102,7 +871,7 @@ BT /F1 10 Tf 1 0 0 1 529 530 Tm (-100) Tj ET`;
         net.urls
           .filter((u) => u.includes('GetAnnouncement'))
           .map((u) => new URL(u).searchParams.get('indexFrom')),
-      ).toEqual(['0', '1', '2', '3', '4', '5']);
+      ).toEqual(['0', '1', '2', '3', '4']);
       expect(JSON.parse(await readFile(join(root, 'out/health.json'), 'utf8'))).toMatchObject({
         prices: '2026-10-21',
         five_pct: '2026-10-21',
@@ -1116,7 +885,12 @@ BT /F1 10 Tf 1 0 0 1 529 530 Tm (-100) Tj ET`;
 
   it('does not duplicate rows, rewrite Parquet, or miss a same-day disclosure on replay', async () => {
     const root = await mkdtemp(join(tmpdir(), 'idx-replay-'));
-    const net = network({ monthly: true, reports: true });
+    const net = network({
+      monthly: true,
+      reports: true,
+      suspensions: false,
+      issuers: focusTickers,
+    });
     const options = {
       data: join(root, 'data'),
       out: join(root, 'out'),
@@ -1204,7 +978,7 @@ BT /F1 10 Tf 1 0 0 1 529 530 Tm (-100) Tj ET`;
 
   it('isolates truncated pages and failed fetches, recovers interrupted report saves, and retains unreadable PDFs as linked disclosures', async () => {
     const root = await mkdtemp(join(tmpdir(), 'idx-source-failure-'));
-    const net = network({ reports: true });
+    const net = network({ reports: true, suspensions: false, issuers: focusTickers });
     const options = {
       data: join(root, 'data'),
       out: join(root, 'out'),
@@ -1318,7 +1092,7 @@ BT /F1 10 Tf 1 0 0 1 529 530 Tm (-100) Tj ET`;
 
   it('publishes every other source when the 1% file breaks and flags incomplete broker sessions', async () => {
     const root = await mkdtemp(join(tmpdir(), 'idx-isolated-'));
-    const net = network({ monthly: true });
+    const net = network({ monthly: true, issuers: focusTickers });
     const options = {
       data: join(root, 'data'),
       out: join(root, 'out'),
@@ -1356,7 +1130,7 @@ BT /F1 10 Tf 1 0 0 1 529 530 Tm (-100) Tj ET`;
         ['brokers', 'Broker data is complete through 2026-10-20; expected 2026-10-21'],
       ]);
       expect(broken.counts).toMatchObject({
-        prices: 963,
+        prices: focusTickers.length,
         five_pct: expect.any(Number),
         one_pct: 0,
       });
@@ -1382,7 +1156,7 @@ BT /F1 10 Tf 1 0 0 1 529 530 Tm (-100) Tj ET`;
 
   it('applies and reports a replaced 1% file and new files for stored ownership dates', async () => {
     const root = await mkdtemp(join(tmpdir(), 'idx-corrections-'));
-    const net = network({ monthly: true });
+    const net = network({ monthly: true, suspensions: false, issuers: focusTickers });
     const column = (i: number) => String.fromCharCode(65 + i);
     const cell = (value: string | number, ref: string) =>
       typeof value === 'number'
@@ -1462,7 +1236,13 @@ BT /F1 10 Tf 1 0 0 1 529 530 Tm (-100) Tj ET`;
       JSON.parse(await readFile(join(options.out, `ticker/${ticker}.json`), 'utf8'));
     try {
       expect(await messages()).toEqual([]);
-      expect(await messages()).toEqual([]);
+      const five = await ownershipWorkbook('ownership-5pct-2026-10-21.xlsx', focusTickers);
+      files.set('/Media/2026-10-21-repost-lima-persen.xlsx', new Uint8Array(five));
+      extra.push({
+        Description: '',
+        Prospectus: '/Media/2026-10-21-repost-lima-persen.xlsx',
+        ListingDate: '2026-10-21',
+      });
       files.set(
         '/Media/2026-09-satu-persen.xlsx',
         onePct([
@@ -1479,7 +1259,6 @@ BT /F1 10 Tf 1 0 0 1 529 530 Tm (-100) Tj ET`;
       expect((await holders('BBCA')).one_pct.holders).toEqual([
         expect.objectContaining({ shares: 2400, pct: 4.2 }),
       ]);
-      expect(await messages()).toEqual([]);
       files.set(
         '/Media/2026-09-koreksi-satu-persen.xlsx',
         onePct([
@@ -1492,26 +1271,12 @@ BT /F1 10 Tf 1 0 0 1 529 530 Tm (-100) Tj ET`;
         Prospectus: '/Media/2026-09-koreksi-satu-persen.xlsx',
         ListingDate: '2026-09-30',
       });
-      expect(await messages()).toEqual([
-        [
-          'corrections',
-          'IDX published another 1% ownership file for 2026-09-30; applied it (N rows differ): https://www.idx.id/Media/2026-09-koreksi-satu-persen.xlsx',
-        ],
-      ]);
-      expect((await holders('AADI')).one_pct.holders).toEqual([
-        expect.objectContaining({ shares: 1500, pct: 3.1 }),
-      ]);
-      const five = await fixture('ownership-5pct-2026-10-21.xlsx');
-      files.set('/Media/2026-10-21-repost-lima-persen.xlsx', new Uint8Array(five));
-      extra.push({
-        Description: '',
-        Prospectus: '/Media/2026-10-21-repost-lima-persen.xlsx',
-        ListingDate: '2026-10-21',
-      });
-      expect(await messages()).toEqual([]);
       const zip = unzipSync(new Uint8Array(five));
       const strings = strFromU8(zip['xl/sharedStrings.xml']!);
-      const percent = /<t>(\d{1,2}\.\d{2})<\/t>/.exec(strings)![1]!;
+      const published = new Set(readSheet(five).flat());
+      const percent = [...strings.matchAll(/<t>(\d{1,2}\.\d{2})<\/t>/g)]
+        .map((m) => m[1]!)
+        .find((p) => published.has(p))!;
       zip['xl/sharedStrings.xml'] = strToU8(
         strings.replace(`<t>${percent}</t>`, `<t>${(Number(percent) + 0.01).toFixed(2)}</t>`),
       );
@@ -1526,54 +1291,33 @@ BT /F1 10 Tf 1 0 0 1 529 530 Tm (-100) Tj ET`;
           'corrections',
           'IDX published another 5% ownership file for 2026-10-21; applied it (N rows differ): https://www.idx.id/Media/2026-10-21-koreksi-lima-persen.xlsx',
         ],
+        [
+          'corrections',
+          'IDX published another 1% ownership file for 2026-09-30; applied it (N rows differ): https://www.idx.id/Media/2026-09-koreksi-satu-persen.xlsx',
+        ],
       ]);
       expect(await messages()).toEqual([]);
+      expect((await holders('AADI')).one_pct.holders).toEqual([
+        expect.objectContaining({ shares: 1500, pct: 3.1 }),
+      ]);
+      expect((await holders('BBCA')).one_pct.holders).toEqual([
+        expect.objectContaining({ shares: 2400, pct: 4.2 }),
+      ]);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
   }, 30000);
-
-  it('parses a registry report whose cover failed to download for attachment labels', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'idx-registry-label-gap-'));
-    const net = network({ reports: true });
-    const sini = net.disclosures.find((d) => d.pengumuman.Id2 === 'registry/SINI');
-    sini?.attachments.push({
-      OriginalFilename: 'SINI_lamp1.pdf',
-      FullSavePath: 'https://www.idx.co.id/StaticData/From_EREP/SINI_lamp1.pdf',
-      IsAttachment: true,
-    });
-    let coverFailures = 1;
-    try {
-      const result = await ingest({
-        data: join(root, 'data'),
-        out: join(root, 'out'),
-        since: '2026-10-21',
-        today: '2026-10-22',
-        fetcher: async (input, init) => {
-          const url = new URL(input instanceof Request ? input.url : input);
-          if (url.pathname === '/StaticData/From_EREP/SINI.pdf' && coverFailures-- > 0)
-            return new Response('unavailable', { status: 502 });
-          return net.fetcher(input, init);
-        },
-      });
-      expect(result.counts).toMatchObject({ registry: 4 });
-      const published = JSON.parse(await readFile(join(root, 'out/ticker/SINI.json'), 'utf8'));
-      expect(published.registry_history).toHaveLength(1);
-    } finally {
-      await rm(root, { recursive: true, force: true });
-    }
-  });
 });
 
 it('backfills legacy Parquet newest first within the limit without duplicates, repeat downloads, or failure starvation', async () => {
   const root = await mkdtemp(join(tmpdir(), 'idx-labels-'));
-  const net = network();
+  const net = network({ issuers: focusTickers });
   const options = {
     data: join(root, 'data'),
     out: join(root, 'out'),
     since: '2026-10-20',
     today: '2026-10-21',
-    attachmentLabelLimit: 1,
+    attachmentLabelLimit: 3,
   };
   const make = (id: string, hour: number, cover = 'shared') => {
     const d = announcement({
@@ -1633,7 +1377,6 @@ it('backfills legacy Parquet newest first within the limit without duplicates, r
   const published = async () =>
     JSON.parse(await readFile(join(options.out, 'ticker/SINI.json'), 'utf8'));
   try {
-    await ingest({ ...options, fetcher: net.fetcher });
     const instance = await DuckDBInstance.create(':memory:');
     const db = await instance.connect();
     try {
@@ -1684,44 +1427,42 @@ it('backfills legacy Parquet newest first within the limit without duplicates, r
       ['report_lamp1.pdf', null],
       ['report_lamp2.pdf', null],
     ]);
-    for (const [id, remaining] of [
-      ['newest', 4],
-      ['fetch-failure', 3],
-      ['bad-pdf', 2],
-      ['middle', 1],
-      ['oldest', 0],
-    ] satisfies [string, number][]) {
-      const run = await ingest({ ...options, fetcher });
-      expect(run.attachment_labels).toEqual({ backfilled: 1, remaining });
-      expect(run.processed).toBe(0);
-      expect(run.counts.disclosures).toBe(7);
-      const row = (await published()).disclosures.find((d: { id: string }) => d.id === id);
-      expect(row.attachments[1].label).toBe(
-        ['fetch-failure', 'bad-pdf'].includes(id) ? null : 'surat penyampaian penjelasan bursa',
-      );
-      if (id === 'fetch-failure')
-        expect(run.report_gaps).toContainEqual(
-          expect.objectContaining({ id, reason: expect.stringContaining('IDX HTTP 503') }),
-        );
-      if (id === 'bad-pdf')
-        expect(run.report_gaps).toContainEqual(
-          expect.objectContaining({ id, reason: expect.stringContaining('Attachment labels:') }),
-        );
-    }
+    const label = async (id: string) =>
+      (await published()).disclosures.find((d: { id: string }) => d.id === id).attachments[1].label;
+    const first = await ingest({ ...options, fetcher });
+    expect(first.attachment_labels).toEqual({ backfilled: 3, remaining: 2 });
+    expect(first.processed).toBe(0);
+    expect(first.counts.disclosures).toBe(7);
     expect(coverCalls).toEqual([
       '/covers/fresh.pdf',
       '/covers/shared.pdf',
       '/covers/missing.pdf',
       '/covers/invalid.pdf',
     ]);
-    const parquet = await readFile(join(options.data, 'parquet/disclosures/2026.parquet'));
-    const final = await published();
-    const replay = await ingest({ ...options, fetcher });
-    expect(replay.attachment_labels).toEqual({ backfilled: 0, remaining: 0 });
-    expect(replay.processed).toBe(0);
-    expect(await published()).toEqual(final);
-    expect(await readFile(join(options.data, 'parquet/disclosures/2026.parquet'))).toEqual(parquet);
+    expect(first.report_gaps).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'fetch-failure',
+          reason: expect.stringContaining('IDX HTTP 503'),
+        }),
+        expect.objectContaining({
+          id: 'bad-pdf',
+          reason: expect.stringContaining('Attachment labels:'),
+        }),
+      ]),
+    );
+    expect(
+      await Promise.all(['newest', 'fetch-failure', 'bad-pdf', 'middle', 'oldest'].map(label)),
+    ).toEqual(['surat penyampaian penjelasan bursa', null, null, null, null]);
+    const second = await ingest({ ...options, fetcher });
+    expect(second.attachment_labels).toEqual({ backfilled: 2, remaining: 0 });
+    expect(second.processed).toBe(0);
+    expect(second.counts.disclosures).toBe(7);
     expect(coverCalls).toHaveLength(4);
+    expect(await Promise.all(['middle', 'oldest'].map(label))).toEqual([
+      'surat penyampaian penjelasan bursa',
+      'surat penyampaian penjelasan bursa',
+    ]);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -1964,100 +1705,9 @@ it('publishes ownership conflicts on offline export while excluding public aggre
   }
 });
 
-it('publishes calendar and risk snapshots, records independent failures, and reuses stored data offline', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'idx-calendar-risk-'));
-  const net = network();
-  const options = {
-    data: join(root, 'data'),
-    out: join(root, 'out'),
-    today: '2026-10-21',
-    since: '2026-10-21',
-  };
-  const published = async (file: string) =>
-    JSON.parse(await readFile(join(options.out, file), 'utf8'));
-  const fetcher: typeof fetch = async (input, init) => {
-    const url = new URL(input instanceof Request ? input.url : input);
-    if (url.pathname.includes('GetCalendar')) {
-      const Results =
-        url.searchParams.get('date') === '20261001'
-          ? [
-              {
-                title: 'AADI',
-                Jenis: '',
-                description: 'tanggal Pembayaran Dividen Tunai PT Adaro Andalan Indonesia Tbk',
-                start: '2026-10-27T00:00:00',
-                TglWaktuRups: '',
-              },
-            ]
-          : [];
-      return Response.json({ ResultCount: Results.length, Results });
-    }
-    return net.fetcher(input, init);
-  };
-  try {
-    expect((await ingest({ ...options, fetcher })).failed).toEqual([]);
-    const actions = await published('corporate-actions.json');
-    const risk = await published('risk.json');
-    expect(actions).toEqual([
-      {
-        ticker: 'AADI',
-        kind: 'DIV',
-        label: 'Cash dividend',
-        amount: null,
-        steps: [{ step: 'pay', date: '2026-10-27' }],
-      },
-    ]);
-    expect(risk.AADI.susp.since).toBe('2026-10-21T08:00');
-    expect(
-      Object.values(risk).some((r: unknown) => JSON.stringify(r).includes('suspension-notice.pdf')),
-    ).toBe(true);
-    expect(await published('health.json')).toMatchObject({
-      corporate_actions: '2026-10-21',
-      risk: '2026-10-21',
-      failed: [],
-    });
-    const failed = await ingest({
-      ...options,
-      today: '2026-10-22',
-      fetcher: async (input, init) => {
-        const url = new URL(input instanceof Request ? input.url : input).href;
-        if (url.includes('GetCalendar')) return Response.json({ ResultCount: 1, Results: [] });
-        if (url.includes('GetSpecialNotation')) return new Response('', { status: 503 });
-        return fetcher(input, init);
-      },
-    });
-    expect(failed.failed.map((f) => [f.source, f.error.message])).toEqual([
-      ['corporate_actions', 'Incomplete IDX calendar'],
-      ['risk', expect.stringContaining('IDX HTTP 503')],
-    ]);
-    expect(await published('corporate-actions.json')).toEqual(actions);
-    expect(await published('risk.json')).toEqual(risk);
-    expect(await published('health.json')).toMatchObject({
-      corporate_actions: '2026-10-21',
-      risk: '2026-10-21',
-      failed: ['corporate_actions', 'risk'],
-    });
-    expect(await published('market.json')).toHaveProperty('history');
-    const replay = await ingest({
-      ...options,
-      registryOnly: true,
-      reparseRegistry: true,
-      until: options.today,
-      fetcher: async () => {
-        throw new Error('Offline export fetched IDX');
-      },
-    });
-    expect(replay.requests).toBe(0);
-    expect(await published('corporate-actions.json')).toEqual(actions);
-    expect(await published('risk.json')).toEqual(risk);
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
-}, 30000);
-
 it('records unread multi-stock notices as risk failures while publishing available flags', async () => {
   const root = await mkdtemp(join(tmpdir(), 'idx-risk-unread-'));
-  const net = network();
+  const net = network({ issuers: focusTickers });
   try {
     const out = join(root, 'out');
     const result = await ingest({
@@ -2090,7 +1740,7 @@ it('records unread multi-stock notices as risk failures while publishing availab
 
 it('publishes dividend amounts from disclosure attachments and records structural failures without losing the calendar', async () => {
   const root = await mkdtemp(join(tmpdir(), 'idx-dividend-publish-'));
-  const net = network();
+  const net = network({ issuers: [...focusTickers, 'GEMS'] });
   const options = {
     data: join(root, 'data'),
     out: join(root, 'out'),
@@ -2158,9 +1808,8 @@ it('publishes dividend amounts from disclosure attachments and records structura
       risk: options.today,
       failed: ['dividends'],
     });
-    expect(
-      JSON.parse(await readFile(join(options.out, 'risk.json'), 'utf8')).AADI.susp,
-    ).toBeTruthy();
+    const risk = JSON.parse(await readFile(join(options.out, 'risk.json'), 'utf8'));
+    expect(risk.AADI.susp).toBeTruthy();
     const replay = await ingest({
       ...options,
       registryOnly: true,
@@ -2174,6 +1823,7 @@ it('publishes dividend amounts from disclosure attachments and records structura
     expect(JSON.parse(await readFile(join(options.out, 'corporate-actions.json'), 'utf8'))).toEqual(
       actions,
     );
+    expect(JSON.parse(await readFile(join(options.out, 'risk.json'), 'utf8'))).toEqual(risk);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

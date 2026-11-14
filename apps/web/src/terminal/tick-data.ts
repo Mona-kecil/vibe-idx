@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { TickBook, TickKind, TickTrades } from '../ticks';
-import { fetchTicks } from './sources';
-import { useTerminal } from './state';
+import { fetchTicks } from './sources.js';
+import { useTerminal } from './state.js';
 
 export type Loaded<K extends TickKind> = K extends 'book' ? TickBook : TickTrades;
 export type TickState<K extends TickKind> =

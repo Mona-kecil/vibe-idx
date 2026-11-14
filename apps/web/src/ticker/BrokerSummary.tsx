@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState, type FocusEvent, type PointerEvent } from 'react';
 import { useAuth } from '@workos-inc/authkit-react';
-import { AccountControls } from '../BrokerPanel';
-import { aggregateBrokers, brokerName, edgeFills } from '../broker-data';
-import { brokerBoards, brokerHistorySchema, type BrokerBoard, type BrokerDay } from '../brokers';
-import { bounds, inSelection, type Selection } from './logic';
-import { dateText, nf, rangeText, short } from './format';
+import { AccountControls } from '../BrokerPanel.js';
+import { aggregateBrokers, brokerName, edgeFills } from '../broker-data.js';
+import { brokerBoards, brokerHistorySchema, type BrokerBoard, type BrokerDay } from '../brokers.js';
+import { bounds, inSelection, type Selection } from './logic.js';
+import { dateText, nf, rangeText, short } from './format.js';
 
 const boardLabels = {
   regular: 'Regular',
@@ -282,7 +282,7 @@ function BrokerData({
   );
 }
 
-export { edgeFills } from '../broker-data';
+export { edgeFills } from '../broker-data.js';
 
 function useBrokerTip() {
   const box = useRef<HTMLDivElement>(null),

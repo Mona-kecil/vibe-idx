@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useReducer, useSyncExternalStore } from 'react';
-import { Void } from '../Void';
-import { startGlitch, stopGlitch } from '../glitch';
+import { Void } from '../Void.js';
+import { startGlitch, stopGlitch } from '../glitch.js';
 
 const retreatMs = 450;
 

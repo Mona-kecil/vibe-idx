@@ -285,12 +285,11 @@ describe('private broker pipeline', () => {
       } else expect(f.objects.has('auth/stockbit-unsaved.json')).toBe(false);
     }
   });
-  it('takes over an expired or legacy marker and leaves an unexpired one alone', async () => {
+  it('takes over an expired or unreadable marker and leaves an unexpired one alone', async () => {
     const now = Date.now();
     for (const [held, takes] of [
       [{ id: 'dead', started: now - 7200000, expires: now - 1 }, true],
-      [{ id: 'github', started: now - 7 * 3600000 }, true],
-      [{ id: 'github', started: now - 3600000 }, false],
+      [{ id: 'github', started: now - 3600000, expires: now + 3600000 }, false],
       ['not json', true],
     ] as const) {
       const f = await fixture();

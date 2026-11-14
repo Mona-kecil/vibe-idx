@@ -16,16 +16,34 @@ export default defineConfig({
     },
     overrides: [
       {
+        // Vercel runs api/*.ts and what they import under plain Node ESM, which needs the .js suffix.
         files: ['apps/web/**'],
-        plugins: ['typescript', 'react'],
+        plugins: ['typescript', 'react', 'import'],
+        rules: {
+          'import/extensions': [
+            'error',
+            'always',
+            { ignorePackages: true, checkTypeImports: false },
+          ],
+        },
       },
       {
         files: ['apps/web/**/*.test.{ts,tsx}'],
-        plugins: ['typescript', 'react', 'vitest'],
+        plugins: ['typescript', 'react', 'vitest', 'import'],
+        rules: { 'import/extensions': 'off' },
+      },
+      {
+        // Run locally with tsx, never by Vercel.
+        files: ['apps/web/hillclimb/**', 'apps/web/scripts/**'],
+        plugins: ['typescript', 'react', 'import'],
+        rules: { 'import/extensions': 'off' },
       },
     ],
   },
   staged: {
-    '*.{js,jsx,ts,tsx}': 'vp check --fix',
+    '*.{js,jsx,ts,tsx}': [
+      'vp check --fix',
+      'pnpm -r --workspace-concurrency=1 exec vp test related --run --passWithNoTests',
+    ],
   },
 });

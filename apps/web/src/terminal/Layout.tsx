@@ -1,6 +1,6 @@
 import { Fragment, useRef, useState, type ReactNode, type PointerEvent } from 'react';
 import { z } from 'zod';
-import { readStorage, writeStorage } from '../watchlist';
+import { readStorage, writeStorage } from '../watchlist.js';
 import type { FunctionId, Mode } from './state';
 import './layout.css';
 

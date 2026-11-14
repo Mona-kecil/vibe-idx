@@ -1,4 +1,4 @@
-import { nf } from './ticker/format';
+import { nf } from './ticker/format.js';
 
 export const compact = (n: number | null) => {
   if (n === null) return '—';

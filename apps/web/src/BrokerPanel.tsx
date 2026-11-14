@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '@workos-inc/authkit-react';
-import { useLocale } from './locale';
+import { useLocale } from './locale.js';
 
-export function SignInButton() {
+function SignInButton() {
   const { signIn, isLoading } = useAuth();
   const { t } = useLocale();
   const [failed, setFailed] = useState(false);

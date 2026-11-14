@@ -1,7 +1,7 @@
 import type { Ticker } from '../data';
-import { chartTheme } from '../ticker/chartTheme';
-import { dateText } from '../ticker/format';
-import { bars, type TickTrades } from '../ticks';
+import { chartTheme } from '../ticker/chartTheme.js';
+import { dateText } from '../ticker/format.js';
+import { bars, type TickTrades } from '../ticks.js';
 import {
   ColorType,
   CrosshairMode,

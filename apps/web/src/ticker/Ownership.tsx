@@ -17,9 +17,9 @@ import {
   type HoldingEvent,
   type HoldingSeries,
   type Selection,
-} from './logic';
-import { dateText, direction, nf, short, signed } from './format';
-import { HoldingValue, OwnershipName } from './Timeline';
+} from './logic.js';
+import { dateText, direction, nf, short, signed } from './format.js';
+import { HoldingValue, OwnershipName } from './Timeline.js';
 
 const palette = [
   '#2858ae',

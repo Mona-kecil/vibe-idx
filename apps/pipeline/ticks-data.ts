@@ -171,21 +171,6 @@ export const bookColumns = `date DATE, ticker VARCHAR, record_type VARCHAR, side
   previous BIGINT, open BIGINT, high BIGINT, low BIGINT, close BIGINT, lastprice BIGINT,
   volume BIGINT, value BIGINT, frequency BIGINT, status VARCHAR`;
 
-// Run against a running_trade table/view. Auctions intentionally participate in both order histories.
-export const doneDetailSql = `
-SELECT date, ticker, board, session, 'aggressor' AS role, action AS side,
-  CASE action WHEN 'buy' THEN buy_order_number ELSE sell_order_number END AS order_number,
-  trade_number, price, shares, buyer, buyer_domicile, seller, seller_domicile
-FROM running_trade WHERE session = 'continuous'
-UNION ALL
-SELECT date, ticker, board, session, 'auction' AS role, 'buy' AS side, buy_order_number AS order_number,
-  trade_number, price, shares, buyer, buyer_domicile, seller, seller_domicile
-FROM running_trade WHERE session = 'auction'
-UNION ALL
-SELECT date, ticker, board, session, 'auction' AS role, 'sell' AS side, sell_order_number AS order_number,
-  trade_number, price, shares, buyer, buyer_domicile, seller, seller_domicile
-FROM running_trade WHERE session = 'auction'`;
-
 // One private site file per ticker and session. Trades are columnar so a busy stock stays a few hundred KB gzipped.
 export const siteSql = {
   running_trade: `SELECT ticker, to_json({

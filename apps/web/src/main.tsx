@@ -3,8 +3,8 @@ import { createRoot } from 'react-dom/client';
 import { AuthKitProvider } from '@workos-inc/authkit-react';
 import * as Sentry from '@sentry/react';
 
-import { App } from './App';
-import { SENTRY_DSN } from './sentry';
+import { App } from './App.js';
+import { SENTRY_DSN } from './sentry.js';
 
 Sentry.init({
   dsn: import.meta.env.PROD ? SENTRY_DSN : undefined,
