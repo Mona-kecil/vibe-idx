@@ -575,6 +575,9 @@ it('never publishes an empty history response or a crawl with far more gaps than
     g.objects.get(`staging/ticks/running_trade/${day}/progress.json`)!.toString(),
   );
   expect(progress).toMatchObject({ phase: 'bulk', lanes: tradeLanes(1000), repairs: 0 });
+  const again = await fixture({ objects: g.objects });
+  await collectTicks({ ...again, request: async () => page([1000]) });
+  expect(g.objects.has(`ticks/running_trade/${day}.parquet`)).toBe(false);
 });
 it('publishes a day whose few missing trade numbers Stockbit never serves, and records them', async () => {
   const f = await fixture();
@@ -593,6 +596,26 @@ it('publishes a day whose few missing trade numbers Stockbit never serves, and r
     { key: 'expected', value: '5' },
     { key: 'missing', value: '3' },
   ]);
+});
+it('publishes a day once a full re-crawl leaves the same trade numbers missing', async () => {
+  const served = sequence(1, 200).filter((n) => n <= 100 || n > 130);
+  const request = async (input: string) => {
+    const u = new URL(input);
+    if (u.searchParams.get('sort') === 'DESC') return page([200]);
+    const cursor = Number(u.searchParams.get('trade_number') ?? 0);
+    return page(served.filter((n) => n > cursor).slice(0, 100));
+  };
+  const f = await fixture();
+  expect((await collectTicks({ ...f, request })).pending).toEqual([`running_trade/${day}`]);
+  expect(report.mock.calls.some(([e]) => String(e).includes('30 running trades missing'))).toBe(
+    true,
+  );
+  const resumed = await fixture({ objects: f.objects });
+  expect((await collectTicks({ ...resumed, request })).published).toEqual([`running_trade/${day}`]);
+  const [missing] = await sql(
+    `SELECT decode(value) AS value FROM parquet_kv_metadata('${resumed.data}/ticks/running_trade/${day}.parquet') WHERE decode(key) = 'missing'`,
+  );
+  expect(missing.value).toBe(sequence(101, 130).join(','));
 });
 it('captures every book level first, preserves an empty book header, and then backfills newest first', async () => {
   vi.setSystemTime(new Date(`${day}T09:20:00Z`));

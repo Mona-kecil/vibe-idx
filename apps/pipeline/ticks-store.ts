@@ -45,6 +45,12 @@ export const progressSchema = z.union([
       expected: z.number().int().nonnegative(),
       phase: z.enum(['bulk', 'repair']),
       repairs: z.number().int().nonnegative(),
+      previousGaps: z
+        .object({
+          expected: z.number().int().nonnegative(),
+          missing: z.number().int().nonnegative(),
+        })
+        .optional(),
     })
     .and(
       z.union([
