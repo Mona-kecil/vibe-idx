@@ -25,6 +25,25 @@ const disclosure = (files: ReturnType<typeof file>[]) =>
 const coverBytes = (day: string) =>
   readFile(new URL(`./fixtures/SINI-${day}-cover.pdf`, import.meta.url));
 
+it('reads only the main PDF of a registry announcement', () => {
+  const [d] = parseAnnouncements({
+    ResultCount: 1,
+    Replies: [
+      {
+        pengumuman: {
+          Id2: 'SINI/registry',
+          Kode_Emiten: 'SINI',
+          JudulPengumuman: 'Laporan Bulanan Registrasi Pemegang Efek',
+          TglPengumuman: '2026-10-15T20:03:10',
+        },
+        attachments: [file('main.pdf', false), file('SINI_lamp1.pdf')],
+      },
+    ],
+  }).disclosures;
+  expect(d?.kind).toBe('registry');
+  expect(d?.reports.map((r) => r.url)).toEqual(['https://www.idx.id/main.pdf']);
+});
+
 it('puts the cover before shuffled numeric lamps and retains other source order', () => {
   const d = disclosure([
     file('other.zip'),

@@ -101,6 +101,7 @@ describe('suspension notices', () => {
     );
     expect(Object.keys(risk).sort()).toEqual(['ALTO', 'WSBP']);
     expect(risk.ALTO?.susp).toMatchObject({ reason: 'Late financial statements' });
+    expect(risk.WSBP?.susp).toMatchObject({ since: '2026-11-02T08:00' });
     expect(errors).toEqual(['1 multi-stock suspension notice not read yet (2026-11-04)']);
   });
 

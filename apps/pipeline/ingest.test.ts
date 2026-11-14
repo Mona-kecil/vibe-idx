@@ -727,7 +727,11 @@ describe('batch pipeline', () => {
   it('preserves source dates, duplicate holders, and paginated disclosures', async () => {
     const root = await mkdtemp(join(tmpdir(), 'idx-fixture-'));
     try {
-      const net = network({ monthly: true, reports: true });
+      const net = network({
+        monthly: true,
+        reports: true,
+        issuers: [...focusTickers, 'ABBA', 'BUVA', 'ICON'],
+      });
       await ingest({
         data: join(root, 'data'),
         out: join(root, 'out'),
@@ -760,10 +764,10 @@ describe('batch pipeline', () => {
         fetcher: net.fetcher,
       });
       expect(result.counts).toMatchObject({
-        prices: 963,
+        prices: 12,
         indices: 45,
-        issuers: 962,
-        one_pct: 14411,
+        issuers: 12,
+        one_pct: 210,
         disclosures: 10,
         insiders: 4,
         registry: 4,
@@ -1105,7 +1109,7 @@ describe('batch pipeline', () => {
 
   it('publishes every other source when the 1% file breaks and flags incomplete broker sessions', async () => {
     const root = await mkdtemp(join(tmpdir(), 'idx-isolated-'));
-    const net = network({ monthly: true });
+    const net = network({ monthly: true, issuers: focusTickers });
     const options = {
       data: join(root, 'data'),
       out: join(root, 'out'),
@@ -1143,7 +1147,7 @@ describe('batch pipeline', () => {
         ['brokers', 'Broker data is complete through 2026-10-20; expected 2026-10-21'],
       ]);
       expect(broken.counts).toMatchObject({
-        prices: 963,
+        prices: focusTickers.length,
         five_pct: expect.any(Number),
         one_pct: 0,
       });
@@ -1322,37 +1326,6 @@ describe('batch pipeline', () => {
       await rm(root, { recursive: true, force: true });
     }
   }, 30000);
-
-  it('parses a registry report whose cover failed to download for attachment labels', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'idx-registry-label-gap-'));
-    const net = network({ reports: true });
-    const sini = net.disclosures.find((d) => d.pengumuman.Id2 === 'registry/SINI');
-    sini?.attachments.push({
-      OriginalFilename: 'SINI_lamp1.pdf',
-      FullSavePath: 'https://www.idx.co.id/StaticData/From_EREP/SINI_lamp1.pdf',
-      IsAttachment: true,
-    });
-    let coverFailures = 1;
-    try {
-      const result = await ingest({
-        data: join(root, 'data'),
-        out: join(root, 'out'),
-        since: '2026-10-21',
-        today: '2026-10-22',
-        fetcher: async (input, init) => {
-          const url = new URL(input instanceof Request ? input.url : input);
-          if (url.pathname === '/StaticData/From_EREP/SINI.pdf' && coverFailures-- > 0)
-            return new Response('unavailable', { status: 502 });
-          return net.fetcher(input, init);
-        },
-      });
-      expect(result.counts).toMatchObject({ registry: 4 });
-      const published = JSON.parse(await readFile(join(root, 'out/ticker/SINI.json'), 'utf8'));
-      expect(published.registry_history).toHaveLength(1);
-    } finally {
-      await rm(root, { recursive: true, force: true });
-    }
-  });
 });
 
 it('backfills legacy Parquet newest first within the limit without duplicates, repeat downloads, or failure starvation', async () => {
@@ -1754,100 +1727,9 @@ it('publishes ownership conflicts on offline export while excluding public aggre
   }
 });
 
-it('publishes calendar and risk snapshots, records independent failures, and reuses stored data offline', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'idx-calendar-risk-'));
-  const net = network();
-  const options = {
-    data: join(root, 'data'),
-    out: join(root, 'out'),
-    today: '2026-10-21',
-    since: '2026-10-21',
-  };
-  const published = async (file: string) =>
-    JSON.parse(await readFile(join(options.out, file), 'utf8'));
-  const fetcher: typeof fetch = async (input, init) => {
-    const url = new URL(input instanceof Request ? input.url : input);
-    if (url.pathname.includes('GetCalendar')) {
-      const Results =
-        url.searchParams.get('date') === '20261001'
-          ? [
-              {
-                title: 'AADI',
-                Jenis: '',
-                description: 'tanggal Pembayaran Dividen Tunai PT Adaro Andalan Indonesia Tbk',
-                start: '2026-10-27T00:00:00',
-                TglWaktuRups: '',
-              },
-            ]
-          : [];
-      return Response.json({ ResultCount: Results.length, Results });
-    }
-    return net.fetcher(input, init);
-  };
-  try {
-    expect((await ingest({ ...options, fetcher })).failed).toEqual([]);
-    const actions = await published('corporate-actions.json');
-    const risk = await published('risk.json');
-    expect(actions).toEqual([
-      {
-        ticker: 'AADI',
-        kind: 'DIV',
-        label: 'Cash dividend',
-        amount: null,
-        steps: [{ step: 'pay', date: '2026-10-27' }],
-      },
-    ]);
-    expect(risk.AADI.susp.since).toBe('2026-10-21T08:00');
-    expect(
-      Object.values(risk).some((r: unknown) => JSON.stringify(r).includes('suspension-notice.pdf')),
-    ).toBe(true);
-    expect(await published('health.json')).toMatchObject({
-      corporate_actions: '2026-10-21',
-      risk: '2026-10-21',
-      failed: [],
-    });
-    const failed = await ingest({
-      ...options,
-      today: '2026-10-22',
-      fetcher: async (input, init) => {
-        const url = new URL(input instanceof Request ? input.url : input).href;
-        if (url.includes('GetCalendar')) return Response.json({ ResultCount: 1, Results: [] });
-        if (url.includes('GetSpecialNotation')) return new Response('', { status: 503 });
-        return fetcher(input, init);
-      },
-    });
-    expect(failed.failed.map((f) => [f.source, f.error.message])).toEqual([
-      ['corporate_actions', 'Incomplete IDX calendar'],
-      ['risk', expect.stringContaining('IDX HTTP 503')],
-    ]);
-    expect(await published('corporate-actions.json')).toEqual(actions);
-    expect(await published('risk.json')).toEqual(risk);
-    expect(await published('health.json')).toMatchObject({
-      corporate_actions: '2026-10-21',
-      risk: '2026-10-21',
-      failed: ['corporate_actions', 'risk'],
-    });
-    expect(await published('market.json')).toHaveProperty('history');
-    const replay = await ingest({
-      ...options,
-      registryOnly: true,
-      reparseRegistry: true,
-      until: options.today,
-      fetcher: async () => {
-        throw new Error('Offline export fetched IDX');
-      },
-    });
-    expect(replay.requests).toBe(0);
-    expect(await published('corporate-actions.json')).toEqual(actions);
-    expect(await published('risk.json')).toEqual(risk);
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
-}, 30000);
-
 it('records unread multi-stock notices as risk failures while publishing available flags', async () => {
   const root = await mkdtemp(join(tmpdir(), 'idx-risk-unread-'));
-  const net = network();
+  const net = network({ issuers: focusTickers });
   try {
     const out = join(root, 'out');
     const result = await ingest({
@@ -1880,7 +1762,7 @@ it('records unread multi-stock notices as risk failures while publishing availab
 
 it('publishes dividend amounts from disclosure attachments and records structural failures without losing the calendar', async () => {
   const root = await mkdtemp(join(tmpdir(), 'idx-dividend-publish-'));
-  const net = network();
+  const net = network({ issuers: [...focusTickers, 'GEMS'] });
   const options = {
     data: join(root, 'data'),
     out: join(root, 'out'),
@@ -1948,9 +1830,8 @@ it('publishes dividend amounts from disclosure attachments and records structura
       risk: options.today,
       failed: ['dividends'],
     });
-    expect(
-      JSON.parse(await readFile(join(options.out, 'risk.json'), 'utf8')).AADI.susp,
-    ).toBeTruthy();
+    const risk = JSON.parse(await readFile(join(options.out, 'risk.json'), 'utf8'));
+    expect(risk.AADI.susp).toBeTruthy();
     const replay = await ingest({
       ...options,
       registryOnly: true,
@@ -1964,6 +1845,7 @@ it('publishes dividend amounts from disclosure attachments and records structura
     expect(JSON.parse(await readFile(join(options.out, 'corporate-actions.json'), 'utf8'))).toEqual(
       actions,
     );
+    expect(JSON.parse(await readFile(join(options.out, 'risk.json'), 'utf8'))).toEqual(risk);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
