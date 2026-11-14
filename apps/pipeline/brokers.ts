@@ -173,8 +173,6 @@ const MARKER_GRACE_MS = 15 * 60000;
 // A stop signal ends the process without running finally blocks, so the CLI releases the marker itself.
 let releaseMarker: (() => Promise<void>) | undefined;
 // Markers written before expiry existed belong to GitHub runs, whose job timeout was 355 minutes.
-const LEGACY_MARKER_MS = 6 * 3600000;
-
 function markerExpiry(bytes: Buffer): number {
   let value: unknown;
   try {
@@ -183,8 +181,7 @@ function markerExpiry(bytes: Buffer): number {
     return 0;
   }
   if (!isObject(value)) return 0;
-  if (typeof value.expires === 'number') return value.expires;
-  return typeof value.started === 'number' ? value.started + LEGACY_MARKER_MS : 0;
+  return typeof value.expires === 'number' ? value.expires : 0;
 }
 
 export async function brokers({

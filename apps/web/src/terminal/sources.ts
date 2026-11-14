@@ -39,24 +39,16 @@ const publication = {
     .refine((value) => Number.isFinite(Date.parse(value)))
     .nullable()
     .optional(),
-  errors: z.array(z.string()).default([]),
   sources: z.record(z.string(), sourceStatus).default({}),
 };
-function publicationWarnings(data: {
-  sources: Record<string, z.infer<typeof sourceStatus>>;
-  errors: string[];
-}) {
-  const failed = Object.entries(data.sources).filter(([, source]) => source.status !== 'ready');
-  return failed.length
-    ? failed.map(([id, source]) =>
-        source.status === 'stale'
-          ? `${sourceNames[id] ?? 'Some publication sources'} not updated${source.as_of ? ` since ${dateText(source.as_of)}` : ''}`
-          : `${sourceNames[id] ?? 'Some publication sources'} missing`,
-      )
-    : data.errors.map((error) => {
-        const id = error.match(/^(.*?) (?:feed|calendar) unavailable$/)?.[1];
-        return `${sourceNames[id ?? ''] ?? 'Some publication sources'} missing`;
-      });
+function publicationWarnings(data: { sources: Record<string, z.infer<typeof sourceStatus>> }) {
+  return Object.entries(data.sources)
+    .filter(([, source]) => source.status !== 'ready')
+    .map(([id, source]) =>
+      source.status === 'stale'
+        ? `${sourceNames[id] ?? 'Some publication sources'} not updated${source.as_of ? ` since ${dateText(source.as_of)}` : ''}`
+        : `${sourceNames[id] ?? 'Some publication sources'} missing`,
+    );
 }
 const newsSchema = z
   .object({ ...publication, news: z.array(newsArticleSchema) })

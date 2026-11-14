@@ -9,7 +9,6 @@ import {
   composition,
   cumulativeForeign,
   holdingSeries,
-  moveEdge,
   nextAction,
   ownershipEvents,
   pctAt,
@@ -162,33 +161,6 @@ describe('ticker selection and historical data', () => {
       end: '2026-08-24',
     });
     expect(selectionKey(reversed, dates, 'Escape')).toBeNull();
-  });
-  it('moves only the focused edge, clamps crossing handles and honors Home and End', () => {
-    const selection = { anchor: '2026-08-21', end: '2026-08-11' };
-    expect(moveEdge(selection, 'start', '2026-08-24')).toEqual({
-      anchor: '2026-08-21',
-      end: '2026-08-21',
-    });
-    expect(selectionKey(selection, dates, 'ArrowLeft', false, 'start')).toEqual({
-      anchor: '2026-08-21',
-      end: '2026-08-10',
-    });
-    expect(selectionKey(selection, dates, 'Home', false, 'start')).toEqual({
-      anchor: '2026-08-21',
-      end: '2026-08-10',
-    });
-    expect(selectionKey(selection, dates, 'End', false, 'start')).toEqual({
-      anchor: '2026-08-21',
-      end: '2026-08-21',
-    });
-    expect(selectionKey(selection, dates, 'Home', false, 'end')).toEqual({
-      anchor: '2026-08-11',
-      end: '2026-08-11',
-    });
-    expect(selectionKey(selection, dates, 'End', false, 'end')).toEqual({
-      anchor: '2026-08-24',
-      end: '2026-08-11',
-    });
     expect(selectionKey(null, dates, 'ArrowRight')).toBeNull();
   });
   it('measures range change from the preceding close and sums suspended and traded rows once', () => {

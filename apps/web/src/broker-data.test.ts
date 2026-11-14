@@ -1,6 +1,6 @@
 import { expect, it } from 'vite-plus/test';
 import { aggregateBrokers } from './broker-data';
-import { brokerDaySchema, investorFilter } from './brokers';
+import { brokerDaySchema } from './brokers';
 
 const amounts = { broker: 'XL', shares: 100, value: 1000, avg_price: 999, freq: 1 };
 const domestic = { ...amounts, investor: 'domestic', broker_type: 'foreign' };
@@ -36,13 +36,4 @@ it('filters client domicile before merging brokers and derives averages from tot
     buyValue: 1000,
     sell: 0,
   });
-});
-
-it('falls back to ALL for obsolete persisted ownership filters', () => {
-  for (const source of ['LOCAL', 'GOV', null, undefined]) {
-    expect(investorFilter(source)).toBe('ALL');
-    expect(aggregateBrokers([day], investorFilter(source))).toEqual(aggregateBrokers([day]));
-  }
-  expect(investorFilter('DOMESTIC')).toBe('DOMESTIC');
-  expect(investorFilter('FOREIGN')).toBe('FOREIGN');
 });

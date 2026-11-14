@@ -18,12 +18,8 @@ const brokerRowSchema = brokerAmounts.extend({
   broker_type: brokerTypeSchema,
 });
 export type InvestorFilter = 'ALL' | 'FOREIGN' | 'DOMESTIC';
-export function investorFilter(value: unknown): InvestorFilter {
-  return value === 'FOREIGN' || value === 'DOMESTIC' ? value : 'ALL';
-}
 export function matchesInvestor(row: BrokerRow, filter: InvestorFilter) {
-  const selected = investorFilter(filter);
-  return selected === 'ALL' || row.investor === selected.toLowerCase();
+  return filter === 'ALL' || row.investor === filter.toLowerCase();
 }
 
 export const brokerDaySchema = z.object({

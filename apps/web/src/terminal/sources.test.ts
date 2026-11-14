@@ -240,14 +240,6 @@ describe('publication source presentation', () => {
       'Bank Indonesia decisions not updated since 9 Nov 2026',
     ]);
   });
-  it('translates legacy failure text when no source status is published', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => Response.json({ cal: [], errors: ['bps calendar unavailable'] })),
-    );
-    const calendar = await fetchCalendar();
-    expect(calendar.kind === 'ready' && calendar.data.errors).toEqual(['BPS releases missing']);
-  });
 });
 
 const context: {

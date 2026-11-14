@@ -5,7 +5,6 @@ import { dateText, monthsBefore, publishedMs } from './format.js';
 export type Price = Ticker['prices'][number];
 export type Filing = Ticker['disclosures'][number];
 export type Selection = { anchor: string; end: string } | null;
-export type Edge = 'start' | 'end';
 export function bounds(selection: Selection) {
   if (!selection) return null;
   return selection.anchor <= selection.end
@@ -16,50 +15,19 @@ export function inSelection(date: string, selection: Selection) {
   const range = bounds(selection);
   return !range || (date >= range.start && date <= range.end);
 }
-export function moveEdge(selection: NonNullable<Selection>, edge: Edge, date: string) {
-  const range = bounds(selection);
-  if (!range) return selection;
-  const day =
-    edge === 'start'
-      ? date > range.end
-        ? range.end
-        : date
-      : date < range.start
-        ? range.start
-        : date;
-  return (edge === 'start') === selection.anchor <= selection.end
-    ? { ...selection, anchor: day }
-    : { ...selection, end: day };
-}
 export function selectionKey(
   selection: Selection,
   dates: string[],
   key: string,
   shift = false,
-  edge?: Edge,
 ): Selection {
   if (key === 'Escape') return null;
-  if (!selection || !dates.length || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(key))
+  if (!selection || !dates.length || (key !== 'ArrowLeft' && key !== 'ArrowRight'))
     return selection;
-  if (!edge && (key === 'Home' || key === 'End')) return selection;
-  const range = bounds(selection);
-  if (!range) return selection;
-  const current = edge ? range[edge] : selection.end;
-  const index = dates.indexOf(current);
-  const next =
-    dates[Math.max(0, Math.min(dates.length - 1, index + (key === 'ArrowRight' ? 1 : -1)))];
+  const index = dates.indexOf(selection.end);
   const day =
-    key === 'Home'
-      ? edge === 'start'
-        ? dates[0]
-        : range.start
-      : key === 'End'
-        ? edge === 'end'
-          ? dates.at(-1)
-          : range.end
-        : next;
+    dates[Math.max(0, Math.min(dates.length - 1, index + (key === 'ArrowRight' ? 1 : -1)))];
   if (!day) return selection;
-  if (edge) return moveEdge(selection, edge, day);
   return shift ? { ...selection, end: day } : { anchor: day, end: day };
 }
 export type Period = '1M' | '3M' | '6M' | 'YTD';

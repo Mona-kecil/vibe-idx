@@ -469,20 +469,6 @@ describe('React terminal', () => {
       },
     );
   });
-  it.each(['LOCAL', 'GOV'])(
-    'falls back to ALL with obsolete stored %s broker preferences',
-    async (type) => {
-      window.localStorage.setItem('vibe-idx:broker', JSON.stringify({ type }));
-      window.history.replaceState(null, '', `/terminal?t=BREN&l=grid&brokerType=${type}`);
-      auth.user = { id: 'test-user' };
-      await render();
-      await command('BRK');
-      expect(
-        host.querySelector('[aria-label="Client domicile"] button[aria-pressed="true"]')
-          ?.textContent,
-      ).toBe('ALL');
-    },
-  );
   it('pins the current ticker in the empty watchlist and can unpin it', async () => {
     await render();
     expect(host.querySelector('[data-slot="a"] a[href="/"]')).toBeNull();
