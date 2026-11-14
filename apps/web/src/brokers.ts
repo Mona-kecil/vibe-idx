@@ -69,3 +69,37 @@ export const accumulationSchema = z.object({
   ),
 });
 export type Accumulation = z.infer<typeof accumulationSchema>;
+
+export const brokerCodeSchema = z.string().regex(/^[A-Z0-9]{2,4}$/);
+const columns = <T extends z.ZodRawShape>(shape: T) =>
+  z.object(shape).refine(
+    (value) =>
+      new Set(
+        Object.values(value)
+          .filter((column) => Array.isArray(column))
+          .map((column) => column.length),
+      ).size <= 1,
+    'Columns differ in length',
+  );
+const amounts = {
+  ticker: z.array(z.string()),
+  buy_value: z.array(z.number()),
+  buy_shares: z.array(z.number()),
+  sell_value: z.array(z.number()),
+  sell_shares: z.array(z.number()),
+};
+/** What one broker bought and sold in each ticker, per session and board. */
+export const brokerLedgerSchema = z.object({
+  broker: brokerCodeSchema,
+  days: z.array(columns({ date: z.iso.date(), board: z.enum(brokerBoards), ...amounts })),
+});
+export type BrokerLedger = z.infer<typeof brokerLedgerSchema>;
+/** One broker's buying and selling in one session, per minute, ticker and board. */
+export const brokerSessionSchema = columns({
+  date: z.iso.date(),
+  broker: brokerCodeSchema,
+  minute: z.array(z.number()),
+  board: z.array(z.string()),
+  ...amounts,
+});
+export type BrokerSession = z.infer<typeof brokerSessionSchema>;

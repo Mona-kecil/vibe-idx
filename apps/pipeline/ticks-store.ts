@@ -219,10 +219,10 @@ export class TickStore {
   }
   /** Uploads the per-ticker files the terminal reads; rerun on every recovery, so it must stay idempotent. */
   private async eachSiteFile(
-    dataset: Dataset,
+    sql: keyof typeof siteSql,
     upload: (file: { ticker: string; json: string }) => Promise<unknown>,
   ) {
-    const files = (await this.query(siteSql[dataset])).map((r) => ({
+    const files = (await this.query(siteSql[sql])).map((r) => ({
       ticker: tickerCode.parse(r.ticker),
       json: z.string().parse(r.json),
     }));
@@ -244,17 +244,21 @@ export class TickStore {
   }
   private async publishSite(date: string, dataset: Dataset) {
     if (dataset === 'closing_book') {
-      await this.eachSiteFile(dataset, (file) =>
+      await this.eachSiteFile('closing_book', (file) =>
         this.r2.put(`site/ticks/${file.ticker}/${date}.book.json.gz`, gzipSync(file.json)),
       );
       return;
     }
     // The session's 15-minute bars go into each ticker's bar file, so a republished session rebuilds them too.
-    await this.eachSiteFile(dataset, async (file) => {
+    await this.eachSiteFile('running_trade', async (file) => {
       await this.r2.put(`site/ticks/${file.ticker}/${date}.trades.json.gz`, gzipSync(file.json));
       await publishTickerBars(this.r2, date, file.json);
     });
     await markBarSession(this.r2, date);
+    // The file's code is a broker's here.
+    await this.eachSiteFile('broker_running_trade', (file) =>
+      this.r2.put(`site/broker-ticks/${file.ticker}/${date}.json.gz`, gzipSync(file.json)),
+    );
   }
   /** Builds the bars of a session whose running trade was published before bars existed. */
   async backfillBars(date: string) {

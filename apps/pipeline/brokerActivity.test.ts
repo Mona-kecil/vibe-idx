@@ -367,6 +367,21 @@ it('publishes per-investor rows only after complete day-boards and bootstraps un
   expect(
     read('BBRI')[0].buy.reduce((sum: number, r: { shares: number }) => sum + r.shares, 0),
   ).toBe(38607400);
+  const ledger = JSON.parse(gunzipSync(f.objects.get('site/broker-ledger/XL.json.gz')!).toString());
+  expect(ledger).toEqual({
+    broker: 'XL',
+    days: [
+      {
+        date: day,
+        board: 'regular',
+        ticker: ['BBRI', 'XIJI'],
+        buy_value: [108510406000, 108510406000],
+        buy_shares: [38607400, 38607400],
+        sell_value: [0, 0],
+        sell_shares: [0, 0],
+      },
+    ],
+  });
   f.objects.delete('site/broker-activity-publication.json');
   f.objects.delete('site/broker/BBRI.json.gz');
   const upload = f.r2.put.bind(f.r2);
@@ -381,6 +396,9 @@ it('publishes per-investor rows only after complete day-boards and bootstraps un
   expect(read('BBRI')[0].buy).toEqual(buy);
   const put = vi.spyOn(f.r2, 'put');
   await publishBrokerActivity(f.data, out, f.r2);
-  expect(put.mock.calls.map(([key]) => key)).toEqual(['site/broker-activity-publication.json']);
+  expect(put.mock.calls.map(([key]) => key)).toEqual([
+    'site/broker-activity-publication.json',
+    'site/broker-ledger-publication.json',
+  ]);
   put.mockRestore();
 });

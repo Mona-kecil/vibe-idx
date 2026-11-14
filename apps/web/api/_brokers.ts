@@ -1,7 +1,13 @@
 import { AwsClient } from 'aws4fetch';
 import { createRemoteJWKSet, customFetch, errors, jwtVerify } from 'jose';
 import { z } from 'zod';
-import { accumulationSchema, brokerDaySchema, brokerTickerSchema } from '../src/brokers.js';
+import {
+  accumulationSchema,
+  brokerCodeSchema,
+  brokerDaySchema,
+  brokerLedgerSchema,
+  brokerTickerSchema,
+} from '../src/brokers.js';
 import { tickKinds } from '../src/ticks.js';
 
 const clientIdSchema = z.string().regex(/^client_[a-zA-Z0-9]+$/);
@@ -90,20 +96,26 @@ export function createBrokerHandler({
     const tick = z
       .object({ date: z.iso.date(), kind: z.enum(tickKinds) })
       .safeParse({ date: one('date'), kind: one('kind') });
+    const code = brokerCodeSchema.safeParse(one('broker') ?? undefined);
+    const day = z.iso.date().safeParse(one('date') ?? undefined);
     const target =
       view === 'market'
         ? 'market'
-        : !ticker.success
-          ? null
-          : view === 'ticks'
-            ? tick.success
-              ? { ticker: ticker.data, ...tick.data }
-              : null
-            : view === 'bars'
-              ? { ticker: ticker.data, bars: true as const }
-              : view === null
-                ? { ticker: ticker.data }
-                : null;
+        : view === 'broker'
+          ? code.success && (one('date') === null || day.success)
+            ? { broker: code.data, date: day.success ? day.data : undefined }
+            : null
+          : !ticker.success
+            ? null
+            : view === 'ticks'
+              ? tick.success
+                ? { ticker: ticker.data, ...tick.data }
+                : null
+              : view === 'bars'
+                ? { ticker: ticker.data, bars: true as const }
+                : view === null
+                  ? { ticker: ticker.data }
+                  : null;
     if (!target) return json({ error: 'invalid_ticker' }, 400);
 
     const bearer = /^Bearer (\S+)$/i.exec(request.headers.get('Authorization') ?? '');
@@ -152,11 +164,15 @@ export function createBrokerHandler({
       const key =
         target === 'market'
           ? 'site/market-accumulation.json'
-          : 'kind' in target
-            ? `site/ticks/${target.ticker}/${target.date}.${target.kind}.json.gz`
-            : 'bars' in target
-              ? `site/bars/${target.ticker}.json.gz`
-              : `site/broker/${target.ticker}.json.gz`;
+          : 'broker' in target
+            ? target.date
+              ? `site/broker-ticks/${target.broker}/${target.date}.json.gz`
+              : `site/broker-ledger/${target.broker}.json.gz`
+            : 'kind' in target
+              ? `site/ticks/${target.ticker}/${target.date}.${target.kind}.json.gz`
+              : 'bars' in target
+                ? `site/bars/${target.ticker}.json.gz`
+                : `site/broker/${target.ticker}.json.gz`;
       const [response, latest] = await Promise.all([
         read(key),
         target !== 'market' && 'kind' in target ? latestSession(read) : null,
@@ -165,13 +181,13 @@ export function createBrokerHandler({
       if (!response.ok) {
         await reportFailure(
           'brokers',
-          `R2 ${target === 'market' ? 'market' : target.ticker} HTTP ${response.status}`,
+          `R2 ${target === 'market' ? 'market' : 'broker' in target ? target.broker : target.ticker} HTTP ${response.status}`,
         );
         return json({ error: 'unavailable' }, 503);
       }
       if (target === 'market') return json(accumulationSchema.parse(await response.json()), 200);
       // A busy stock's trades are megabytes as JSON, so pass the stored gzip through for the browser to inflate.
-      if ('kind' in target || 'bars' in target)
+      if ('kind' in target || 'bars' in target || ('broker' in target && target.date))
         return new Response(response.body, {
           status: 200,
           headers: {
@@ -184,6 +200,7 @@ export function createBrokerHandler({
           encodeBody: 'manual',
         } as ResponseInit);
       const source = new Response(response.body?.pipeThrough(new DecompressionStream('gzip')));
+      if ('broker' in target) return json(brokerLedgerSchema.parse(await source.json()), 200);
       const days = sourceSchema.parse(await source.json());
       days.sort((a, b) => b.date.localeCompare(a.date));
       return json({ ticker: target.ticker, days }, 200);

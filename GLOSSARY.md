@@ -145,7 +145,7 @@ _Avoid_: boot, loading screen, splash, void
 ### Terminal
 
 **Layout**:
-The Terminal's one fixed arrangement of panes: the market list on the left, Heatmap, Chart and Broker distribution above the ticker's holders and brokers in the middle, and News and Done detail above Key figures and the trade functions on the right.
+The Terminal's one fixed arrangement of panes: the market list on the left, Heatmap, Chart and Broker distribution above the ticker's holders and brokers in the middle, and News, Done detail and Broker activity above Key figures and the trade functions on the right.
 _Avoid_: mode, view, desk, workspace
 
 **Pane**:
@@ -262,6 +262,10 @@ _Avoid_: broker summary, accumulation chart
 Gross buying between brokers from running trade, drawn as bands from each buyer to the sellers it bought from, for one session or the latest 20 sessions of the selection. It shares a pane with Heatmap and Chart. The Site's twin has the same name.
 _Avoid_: sankey, broker flow (that is a function of its own)
 
+**Broker activity** (BA):
+One broker's net buying and selling in every ticker over the selection or flow period, from broker data, in the pane it shares with News and Done detail. Picking a ticker opens it. For one session it adds the running total of the broker's top buys and sells through the day, from running trade. It has no Site twin.
+_Avoid_: broker tracker, broker summary (that is BRK)
+
 **Foreign flow** (FF):
 Daily net buying by foreign clients and its running total, from broker data.
 _Avoid_: foreign estimate (that is the IDX figure in Pulse and the status bar)
@@ -356,7 +360,7 @@ _Avoid_: registrar report
 
 **Broker data**:
 Stockbit's per-broker trading activity, shown only after sign-in.
-_Avoid_: broker flow (that is a Terminal function), bandarmology
+_Avoid_: broker flow and broker activity (those are Terminal functions), bandarmology
 
 ### Data
 
