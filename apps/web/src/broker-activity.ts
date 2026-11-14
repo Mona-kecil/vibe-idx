@@ -1,5 +1,6 @@
 import type { UTCTimestamp } from 'lightweight-charts';
 import type { BrokerBoard, BrokerLedger, BrokerSession } from './brokers.js';
+import directory from './broker-directory.json';
 import { boardCodes } from './ticks.js';
 
 export type Position = {
@@ -98,4 +99,33 @@ export function sessionLines(
       })),
     };
   });
+}
+
+// Revoked codes still name past trades, but nobody picks them for today's activity.
+const brokers = Object.entries(directory.brokers)
+  .filter(([, row]) => !('historicalOnly' in row))
+  .map(([code, row]) => ({ code, name: row.name.replace(/^PT /, '').replace(/ Tbk\.?$/, '') }))
+  .sort((a, b) => a.code.localeCompare(b.code));
+// Nearly every name has these, so matching them would list every broker.
+const common = new Set(['SEKURITAS', 'SECURITIES', 'INDONESIA']);
+const words = new Map(
+  brokers.map((b) => [
+    b.code,
+    b.name
+      .toUpperCase()
+      .split(' ')
+      .filter((word) => !common.has(word)),
+  ]),
+);
+
+/** Code prefixes first, then, from two letters, names with a word starting with the text. */
+export function matchBrokers(text: string, limit = 8) {
+  const query = text.trim().toUpperCase();
+  if (!query) return brokers.slice(0, limit);
+  const named = (code: string) =>
+    query.length > 1 && words.get(code)!.some((word) => word.startsWith(query));
+  return [
+    ...brokers.filter((b) => b.code.startsWith(query)),
+    ...brokers.filter((b) => !b.code.startsWith(query) && named(b.code)),
+  ].slice(0, limit);
 }

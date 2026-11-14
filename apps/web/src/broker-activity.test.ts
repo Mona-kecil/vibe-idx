@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vite-plus/test';
-import { ledgerPositions, net, sessionLines, sessionPositions } from './broker-activity';
+import {
+  ledgerPositions,
+  matchBrokers,
+  net,
+  sessionLines,
+  sessionPositions,
+} from './broker-activity';
 import type { BrokerLedger, BrokerSession } from './brokers';
 
 const ledger: BrokerLedger = {
@@ -87,12 +93,12 @@ describe('broker activity', () => {
 });
 
 describe('broker picker', () => {
-  it('lists code prefixes before name matches, with short names and no revoked codes', async () => {
-    const { matchBrokers } = await import('./terminal/BrokerActivityPane');
-    expect(matchBrokers('A', 3).map((b) => b.code)).toEqual(['AD', 'AF', 'AG']);
-    expect(matchBrokers('MAN')).toContainEqual({ code: 'CC', name: 'Mandiri' });
+  it('puts a typed code first and matches names on words other than Sekuritas', () => {
+    expect(matchBrokers('SS')[0]).toEqual({ code: 'SS', name: 'Supra Sekuritas Indonesia' });
+    expect(matchBrokers('SUPRA').map((b) => b.code)).toEqual(['SS']);
+    expect(matchBrokers('MAN').map((b) => b.code)).toContain('CC');
+    expect(matchBrokers('SEKURITAS')).toEqual([]);
     expect(matchBrokers('S').every((b) => b.code.startsWith('S'))).toBe(true);
-    expect(matchBrokers('UBS')).toEqual([{ code: 'AK', name: 'UBS' }]);
-    expect(matchBrokers('')).toHaveLength(8);
+    expect(matchBrokers('A', 3).map((b) => b.code)).toEqual(['AD', 'AF', 'AG']);
   });
 });

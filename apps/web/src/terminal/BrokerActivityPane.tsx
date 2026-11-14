@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { LineSeries } from 'lightweight-charts';
 import {
   ledgerPositions,
+  matchBrokers,
   net,
   sessionLines,
   sessionPositions,
@@ -9,7 +10,6 @@ import {
 } from '../broker-activity.js';
 import { brokerName } from '../broker-data.js';
 import type { BrokerLedger, BrokerSession } from '../brokers.js';
-import directory from '../broker-directory.json';
 import { bounds } from '../ticker/logic.js';
 import { dateText, nf, rangeText, short, signed } from '../ticker/format.js';
 import { readStorage, writeStorage } from '../watchlist.js';
@@ -24,30 +24,6 @@ type Load<T> =
   | { kind: 'idle' | 'loading' | 'missing' }
   | { kind: 'error'; message: string }
   | { kind: 'ready'; data: T };
-// Revoked codes still name past trades, but nobody picks them for today's activity.
-const brokers = Object.entries(directory.brokers)
-  .filter(([, row]) => !('historicalOnly' in row))
-  .map(([code, row]) => ({
-    code,
-    // Nearly every name ends in Sekuritas Indonesia, which says nothing in a list of brokers.
-    name: row.name
-      .replace(/^PT /, '')
-      .replace(/ Tbk\.?$/, '')
-      .replace(/( (Sekuritas|Securities))?( Indonesia)?$/, '')
-      .replace(/ and$/, ''),
-  }))
-  .sort((a, b) => a.code.localeCompare(b.code));
-/** Code prefixes first, then, from two letters, names with a word starting with the text. */
-export function matchBrokers(text: string, limit = 8) {
-  const query = text.trim().toUpperCase();
-  if (!query) return brokers.slice(0, limit);
-  const named = (name: string) =>
-    query.length > 1 && ` ${name.toUpperCase()}`.includes(` ${query}`);
-  return [
-    ...brokers.filter((b) => b.code.startsWith(query)),
-    ...brokers.filter((b) => !b.code.startsWith(query) && named(b.name)),
-  ].slice(0, limit);
-}
 const storageKey = 'terminal:ba-broker';
 
 function useLoad<T>(key: string | null, read: () => Promise<T | null>): Load<T> {
@@ -203,8 +179,10 @@ export function BrokerActivityPane() {
 function BrokerPicker({ value, onPick }: { value: string; onPick: (code: string) => void }) {
   const [text, setText] = useState(value);
   const [open, setOpen] = useState(false);
+  // Picking blurs the input before the parent passes the new code down.
+  useEffect(() => setText(value), [value]);
   const [active, setActive] = useState(0);
-  const matches = open ? matchBrokers(text === value ? '' : text) : [];
+  const matches = open ? matchBrokers(text) : [];
   const pick = (code: string) => {
     setText(code);
     setOpen(false);
