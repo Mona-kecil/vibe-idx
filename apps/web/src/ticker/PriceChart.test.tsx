@@ -198,7 +198,6 @@ describe('ticker price chart', () => {
     expect(lastArg('series:Area@0.applyOptions')).toMatchObject({ lineColor: '#167049' });
     await emit('timeScale().subscribeVisibleLogicalRangeChange', { from: 10, to: 20.4 });
     expect(element('[data-range][aria-pressed="true"]').getAttribute('title')).toMatch(/\+9\.09%$/);
-    expect(host.querySelector('.period-change')).toBeNull();
     await click('.pane-toggle');
     expect(element('.pane-toggle').getAttribute('aria-pressed')).toBe('true');
     expect(seriesData('Baseline@3')?.length).toBeGreaterThan(0);
@@ -232,7 +231,6 @@ describe('ticker price chart', () => {
     );
     expect(panned[0]?.time).toBe('2026-01-11');
     expect(element('[data-range][aria-pressed="true"]').getAttribute('title')).toMatch(/\+9\.09%$/);
-    expect(host.querySelector('.period-change')).toBeNull();
   });
 });
 

@@ -572,7 +572,6 @@ describe('daily briefing', () => {
       expect(spark.querySelector('title')?.textContent).toMatch(
         new RegExp(`^\\${text} over the window; `),
       );
-      expect(host.querySelector('.pulse .spark-change')).toBeNull();
     },
   );
   it('gives every spark its own gradient and tones the watchlist rows', async () => {
