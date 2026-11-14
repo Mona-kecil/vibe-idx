@@ -218,6 +218,10 @@ _Avoid_: treemap
 The top movers by change and by value traded, side by side.
 _Avoid_: gainers
 
+**BA** (Broker activity):
+One broker's net buying and selling in every ticker over a flow period or the selection, from broker data. For one session it adds each ticker's running total through the day, from running trade. It has no Site twin.
+_Avoid_: broker tracker, broker summary (that is BRK)
+
 **NEWS**:
 News for Indonesia, the world or the current ticker. The Site's twin is News.
 _Avoid_: feed

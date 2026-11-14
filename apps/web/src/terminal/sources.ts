@@ -7,7 +7,12 @@ import {
 } from '../ticks.js';
 import { z } from 'zod';
 import { load, loadNews, corporateActionsSchema, risksSchema, riskSchema } from '../data.js';
-import { brokerHistorySchema, brokerTickerSchema } from '../brokers.js';
+import {
+  brokerHistorySchema,
+  brokerLedgerSchema,
+  brokerSessionSchema,
+  brokerTickerSchema,
+} from '../brokers.js';
 import { newsArticleSchema, calendarEventSchema } from './contracts.js';
 import { dateText } from '../ticker/format.js';
 
@@ -152,4 +157,30 @@ export async function fetchTicks<K extends TickKind>(
   const parsed = (kind === 'book' ? tickBookSchema : tickTradesSchema).parse(await response.json());
   if (parsed.ticker !== ticker || parsed.date !== date) throw new Error('Tick data mismatch.');
   return parsed as K extends 'book' ? TickBook : TickTrades;
+}
+
+async function brokerView(broker: string, token: string, date?: string) {
+  const query = new URLSearchParams({ view: 'broker', broker, ...(date ? { date } : {}) });
+  const response = await fetch(`/api/brokers?${query}`, {
+    headers: { Authorization: `Bearer ${token}` },
+    cache: 'no-store',
+  });
+  if (response.status === 401) throw new Error('Your sign-in expired. Sign in again.');
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error('Broker data is unavailable. Retry.');
+  return (await response.json()) as unknown;
+}
+export async function fetchBrokerLedger(broker: string, token: string) {
+  const body = await brokerView(broker, token);
+  if (body === null) return null;
+  const ledger = brokerLedgerSchema.parse(body);
+  if (ledger.broker !== broker) throw new Error('Broker data mismatch.');
+  return ledger;
+}
+export async function fetchBrokerSession(broker: string, date: string, token: string) {
+  const body = await brokerView(broker, token, date);
+  if (body === null) return null;
+  const session = brokerSessionSchema.parse(body);
+  if (session.broker !== broker || session.date !== date) throw new Error('Broker data mismatch.');
+  return session;
 }

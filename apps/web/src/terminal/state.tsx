@@ -20,6 +20,7 @@ export const functions = {
   BRK: 'Broker summary',
   BFL: 'Broker flow',
   BD: 'Broker distribution',
+  BA: 'Broker activity',
   FF: 'Foreign flow',
   OB: 'Closing order book',
   RT: 'Running trade',

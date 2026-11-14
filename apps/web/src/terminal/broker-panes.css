@@ -175,3 +175,24 @@
   height: 7px;
   background: currentColor;
 }
+.terminal-page .ba-broker {
+  width: 8ch;
+  padding: 2px 6px;
+  font: inherit;
+  text-transform: uppercase;
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid var(--line);
+}
+.terminal-page .ba-chart {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  height: 42%;
+  min-height: 160px;
+}
+.terminal-page .broker-ledger button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
