@@ -19,6 +19,7 @@ export const functions = {
   KEY: 'Key figures',
   BRK: 'Broker summary',
   BFL: 'Broker flow',
+  BD: 'Broker distribution',
   FF: 'Foreign flow',
   OB: 'Closing order book',
   RT: 'Running trade',

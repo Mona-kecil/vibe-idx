@@ -54,7 +54,7 @@ export const modes: Record<Mode, { tree: LayoutNode; slots: Record<string, Funct
       b: ['GP'],
       c: ['DD'],
       d: ['OB', 'RT'],
-      e: ['FF', 'BRK', 'BFL', 'TB'],
+      e: ['FF', 'BRK', 'BFL', 'BD', 'TB'],
     },
   },
 };

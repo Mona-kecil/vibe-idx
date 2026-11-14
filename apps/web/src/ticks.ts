@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { Ticker } from './data';
 
 export const tickKinds = ['book', 'trades'] as const;
+export const boardCodes = { regular: 'RG', negotiation: 'NG', cash: 'TN' } as const;
 export type TickKind = (typeof tickKinds)[number];
 
 const level = z.tuple([z.number(), z.number(), z.number()]);

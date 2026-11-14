@@ -212,6 +212,7 @@ const fetcher = vi.fn<(input: string) => Promise<Response>>(async (input) => {
   if (url.includes('risk.json')) return Response.json(riskFlags);
   if (url.includes('market-summary.json')) return Response.json(summary);
   if (url.includes('/api/brokers?view=market')) return Response.json(marketAccumulation);
+  if (url.includes('/api/brokers?view=ticks')) return new Response(null, { status: 404 });
   if (url.includes('/api/brokers'))
     return Response.json({
       ticker: new URL(url, 'http://localhost').searchParams.get('ticker'),

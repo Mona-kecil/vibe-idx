@@ -59,7 +59,7 @@ The Site page that lists every ticker that traded in the latest session, ranked 
 _Avoid_: stock list, market page
 
 **Ticker page**:
-The Site page for one ticker: price chart, stats, ownership, timeline and broker summary.
+The Site page for one ticker: price chart, stats, ownership, timeline, broker summary and broker distribution.
 _Avoid_: stock page, company page, detail page
 
 **Search**:
@@ -129,6 +129,10 @@ _Avoid_: feed, disclosures
 **Broker summary**:
 The Ticker page section with buyers and sellers by broker over the selection. The Terminal's twin is BRK.
 _Avoid_: broker table
+
+**Broker distribution**:
+The Ticker page section that links each buyer to the brokers it bought from, on the regular board, for one session or the selection. The Terminal's twin is BD.
+_Avoid_: sankey, broker flow (that is BFL)
 
 **Action chip**:
 The Ticker page header badge for the next corporate action within 30 days.
@@ -258,6 +262,10 @@ _Avoid_: broker flow (that is BFL), broker table
 Each chosen broker's net buying, summed from zero across the selection or flow period, not the broker's total holding. For one session, from a one-day selection or the 1D flow period, it sums that session's running trade minute by minute. It has no Site twin.
 _Avoid_: broker summary, accumulation chart
 
+**BD** (Broker distribution):
+Gross buying between brokers from running trade, drawn as bands from each buyer to the sellers it bought from, for one session or the latest 20 sessions of the selection. The Site's twin is Broker distribution.
+_Avoid_: sankey, broker flow (that is BFL)
+
 **FF** (Foreign flow):
 Daily net buying by foreign clients and its running total, from broker data.
 _Avoid_: foreign estimate (that is the IDX figure in Pulse and the status bar)
@@ -321,6 +329,10 @@ _Avoid_: market (for a board), segment
 **Domestic client** / **Foreign client**:
 Where the client behind a broker's trade is based. Not where the broker is owned.
 _Avoid_: local broker, foreign broker
+
+**Broker type**:
+Who owns the broker: local, government or foreign. Not where its clients are based.
+_Avoid_: domestic broker, BUMN broker, broker domicile
 
 **UMA**:
 An IDX notice of unusual market activity in a ticker. A risk flag, not a signal.

@@ -33,6 +33,7 @@ import { SplitLayout, modes } from './Layout.js';
 import { Empty, RiskFlags, StatusBar } from './ui.js';
 import { PricePane } from './PricePane.js';
 import { BrokerSummaryPane, BrokerFlowPane, ForeignFlowPane } from './BrokerPanes.js';
+import { BrokerDistributionPane } from './DistributionPane.js';
 import { DoneDetailPane, OrderBookPane, RunningTradePane, TradeBookPane } from './TickPanes.js';
 import { WatchlistPane, MoversPane, SignalsPane, HeatmapPane } from './MarketPanes.js';
 import { KeyFiguresPane, HoldersAndChangesPane, DisclosuresPane } from './TickerPanes.js';
@@ -233,7 +234,7 @@ function LoadedTerminal({ data }: { data: TerminalData }) {
   const userId = auth.user?.id;
   const needsBrokers = Object.entries(slots[mode]).some(([slot, ids]) => {
     const id = active[`${mode}:${slot}`] ?? ids[0];
-    return id === 'BRK' || id === 'BFL' || id === 'FF';
+    return id === 'BRK' || id === 'BFL' || id === 'BD' || id === 'FF';
   });
   useEffect(() => {
     if (!userId || !needsBrokers) return;
@@ -411,7 +412,21 @@ function LoadedTerminal({ data }: { data: TerminalData }) {
 function PaneContext({ id }: { id: FunctionId }) {
   const { ticker, detail, publications } = useTerminal();
   if (
-    !['GP', 'KEY', 'BRK', 'BFL', 'FF', 'OB', 'RT', 'DD', 'TB', 'HDS', 'DISC', 'FEED'].includes(id)
+    ![
+      'GP',
+      'KEY',
+      'BRK',
+      'BFL',
+      'BD',
+      'FF',
+      'OB',
+      'RT',
+      'DD',
+      'TB',
+      'HDS',
+      'DISC',
+      'FEED',
+    ].includes(id)
   )
     return <span className="ctx" />;
   return (
@@ -442,6 +457,8 @@ function PaneView({ id }: { id: FunctionId }) {
       return <BrokerSummaryPane />;
     case 'BFL':
       return <BrokerFlowPane />;
+    case 'BD':
+      return <BrokerDistributionPane />;
     case 'FF':
       return <ForeignFlowPane />;
     case 'OB':

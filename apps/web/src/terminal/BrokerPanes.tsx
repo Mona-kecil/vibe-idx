@@ -14,7 +14,7 @@ import { dateText, rangeText, nf, short, signed } from '../ticker/format.js';
 import { useTerminal, type BrokerFilters } from './state.js';
 import { useSession, useTicks } from './tick-data.js';
 import { SessionPicker } from './TickPanes.js';
-import { clock, type TickTrades } from '../ticks.js';
+import { boardCodes, clock, type TickTrades } from '../ticks.js';
 import { Empty, Scroll, Segments, SignInPrompt, direction } from './ui.js';
 import { terminalChart, chartDate } from './charts.js';
 import { ChartAttribution as Attribution } from '../ChartAttribution.js';
@@ -326,7 +326,6 @@ export function cumulativeFlows(
     };
   });
 }
-const boardCodes = { regular: 'RG', negotiation: 'NG', cash: 'TN' } as const;
 /**
  * Each broker's net buying summed from the session open, one point per minute that traded. Times are
  * the Jakarta clock written as UTC, so the chart's own axis labels read in Jakarta time.

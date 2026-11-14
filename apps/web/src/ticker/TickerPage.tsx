@@ -22,6 +22,7 @@ import { PriceChart } from './PriceChart.js';
 import { SelectionSummary, Timeline } from './Timeline.js';
 import { Ownership } from './Ownership.js';
 import { BrokerSummary } from './BrokerSummary.js';
+import { BrokerDistribution } from './Distribution.js';
 import { ShareButton } from './ShareButton.js';
 import './ticker.css';
 
@@ -135,6 +136,10 @@ function TickerDetail({
     pct = change !== null && previous?.close ? (change / previous.close) * 100 : null,
     ytd = last && first?.close ? (last.close / first.close - 1) * 100 : null;
   const visible = visiblePrices(prices, period);
+  const sessionDates = useMemo(
+    () => prices.map((p) => p.date).filter((date) => date >= '2026-01-01'),
+    [prices],
+  );
   const chip =
     actions.kind === 'ready'
       ? nextAction(actions.data.actions, data.ticker, calendarDate(new Date().toISOString()))
@@ -302,6 +307,7 @@ function TickerDetail({
           end={last.date}
         />
       )}
+      <BrokerDistribution ticker={data.ticker} selection={selection} dates={sessionDates} />
       <footer>
         <span className="footer-brand">Vibe IDX</span>
         <span>
