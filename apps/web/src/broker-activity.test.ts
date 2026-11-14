@@ -85,3 +85,14 @@ describe('broker activity', () => {
     ]);
   });
 });
+
+describe('broker picker', () => {
+  it('lists code prefixes before name matches, with short names and no revoked codes', async () => {
+    const { matchBrokers } = await import('./terminal/BrokerActivityPane');
+    expect(matchBrokers('A', 3).map((b) => b.code)).toEqual(['AD', 'AF', 'AG']);
+    expect(matchBrokers('MAN')).toContainEqual({ code: 'CC', name: 'Mandiri' });
+    expect(matchBrokers('S').every((b) => b.code.startsWith('S'))).toBe(true);
+    expect(matchBrokers('UBS')).toEqual([{ code: 'AK', name: 'UBS' }]);
+    expect(matchBrokers('')).toHaveLength(8);
+  });
+});

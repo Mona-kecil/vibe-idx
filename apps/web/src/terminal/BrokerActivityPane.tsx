@@ -24,7 +24,30 @@ type Load<T> =
   | { kind: 'idle' | 'loading' | 'missing' }
   | { kind: 'error'; message: string }
   | { kind: 'ready'; data: T };
-const codes = Object.keys(directory.brokers).sort();
+// Revoked codes still name past trades, but nobody picks them for today's activity.
+const brokers = Object.entries(directory.brokers)
+  .filter(([, row]) => !('historicalOnly' in row))
+  .map(([code, row]) => ({
+    code,
+    // Nearly every name ends in Sekuritas Indonesia, which says nothing in a list of brokers.
+    name: row.name
+      .replace(/^PT /, '')
+      .replace(/ Tbk\.?$/, '')
+      .replace(/( (Sekuritas|Securities))?( Indonesia)?$/, '')
+      .replace(/ and$/, ''),
+  }))
+  .sort((a, b) => a.code.localeCompare(b.code));
+/** Code prefixes first, then, from two letters, names with a word starting with the text. */
+export function matchBrokers(text: string, limit = 8) {
+  const query = text.trim().toUpperCase();
+  if (!query) return brokers.slice(0, limit);
+  const named = (name: string) =>
+    query.length > 1 && ` ${name.toUpperCase()}`.includes(` ${query}`);
+  return [
+    ...brokers.filter((b) => b.code.startsWith(query)),
+    ...brokers.filter((b) => !b.code.startsWith(query) && named(b.name)),
+  ].slice(0, limit);
+}
 const storageKey = 'terminal:ba-broker';
 
 function useLoad<T>(key: string | null, read: () => Promise<T | null>): Load<T> {
@@ -67,7 +90,6 @@ function periodDates(dates: string[], period: '1W' | '1M' | '3M' | 'YTD') {
 export function BrokerActivityPane() {
   const { authState, getToken, broker, setBroker, selection, select } = useTerminal();
   const [code, setCode] = useState(() => readStorage(storageKey) ?? '');
-  const [draft, setDraft] = useState(code);
   const [picked, setPicked] = useState<string | null>(null);
   const ledger = useLoad<BrokerLedger>(code || null, async () => {
     const token = await getToken();
@@ -99,40 +121,15 @@ export function BrokerActivityPane() {
     [oneDay, b?.start, b?.end, dates, broker.flow],
   );
   if (authState !== 'signed-in') return <SignInPrompt />;
-  function choose(value: string) {
-    const next = value.trim().toUpperCase();
-    setDraft(next);
-    if (!/^[A-Z0-9]{2}$/.test(next) || next === code) return;
+  function choose(next: string) {
+    if (next === code) return;
     setCode(next);
     setPicked(null);
     writeStorage(storageKey, next);
   }
   const controls = (
     <div className="broker-controls">
-      <input
-        className="ba-broker"
-        role="combobox"
-        aria-label="Broker"
-        list="ba-brokers"
-        value={draft}
-        maxLength={2}
-        placeholder="Broker"
-        title={code ? brokerName(code) : undefined}
-        onChange={(event) => {
-          setDraft(event.target.value.toUpperCase());
-          if (codes.includes(event.target.value.toUpperCase())) choose(event.target.value);
-        }}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter') choose(draft);
-        }}
-      />
-      <datalist id="ba-brokers">
-        {codes.map((c) => (
-          <option key={c} value={c}>
-            {brokerName(c)}
-          </option>
-        ))}
-      </datalist>
+      <BrokerPicker value={code} onPick={choose} />
       <Segments
         label="Board"
         values={['regular', 'negotiation', 'cash', 'all']}
@@ -200,6 +197,86 @@ export function BrokerActivityPane() {
       {controls}
       {body}
     </>
+  );
+}
+
+function BrokerPicker({ value, onPick }: { value: string; onPick: (code: string) => void }) {
+  const [text, setText] = useState(value);
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(0);
+  const matches = open ? matchBrokers(text === value ? '' : text) : [];
+  const pick = (code: string) => {
+    setText(code);
+    setOpen(false);
+    onPick(code);
+  };
+  return (
+    <div className="ba-picker">
+      <input
+        role="combobox"
+        aria-label="Broker"
+        aria-controls="ba-brokers"
+        aria-expanded={matches.length > 0}
+        aria-activedescendant={matches[active] ? `ba-broker-${matches[active].code}` : undefined}
+        autoComplete="off"
+        spellCheck={false}
+        placeholder="Broker"
+        title={value ? brokerName(value) : undefined}
+        value={text}
+        onFocus={(event) => {
+          event.target.select();
+          setOpen(true);
+          setActive(0);
+        }}
+        onBlur={() => {
+          setOpen(false);
+          setText(value);
+        }}
+        onChange={(event) => {
+          setText(event.target.value.toUpperCase());
+          setOpen(true);
+          setActive(0);
+        }}
+        onKeyDown={(event) => {
+          if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+            event.preventDefault();
+            if (matches.length)
+              setActive(
+                (active + (event.key === 'ArrowDown' ? 1 : -1) + matches.length) % matches.length,
+              );
+          } else if (event.key === 'Enter') {
+            event.preventDefault();
+            const match = matches[active] ?? matchBrokers(text, 1)[0];
+            if (match) pick(match.code);
+            event.currentTarget.blur();
+          } else if (event.key === 'Escape') {
+            event.stopPropagation();
+            event.currentTarget.blur();
+          }
+        }}
+      />
+      {matches.length > 0 && (
+        <div id="ba-brokers" className="ba-options" role="listbox" aria-label="Brokers">
+          {matches.map((broker, index) => (
+            <div
+              key={broker.code}
+              id={`ba-broker-${broker.code}`}
+              role="option"
+              aria-selected={index === active}
+              className={index === active ? 'on' : ''}
+              onMouseEnter={() => setActive(index)}
+              onMouseDown={(event) => {
+                event.preventDefault();
+                pick(broker.code);
+              }}
+            >
+              <b>{broker.code}</b>
+              <span>{broker.name}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
