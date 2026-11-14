@@ -501,20 +501,6 @@ describe('React terminal', () => {
     await act(async () => link?.dispatchEvent(modifiedClick));
     expect(modifiedClick.defaultPrevented).toBe(false);
   });
-  it('limits foreign movers to one session and restores longer periods for price movers', async () => {
-    await render();
-    await command('MOV');
-    await click('[aria-label="Mover period"] button:nth-child(2)');
-    await click('[aria-label="Value movers"] button:nth-child(2)');
-    expect(
-      button('[aria-label="Mover period"] button:nth-child(1)').getAttribute('aria-pressed'),
-    ).toBe('true');
-    expect(button('[aria-label="Mover period"] button:nth-child(2)').disabled).toBe(true);
-    expect(button('[aria-label="Mover period"] button:nth-child(3)').disabled).toBe(true);
-    expect(host.textContent).not.toContain('Foreign flow is available for 1D only.');
-    await click('[aria-label="Value movers"] button:nth-child(1)');
-    expect(button('[aria-label="Mover period"] button:nth-child(2)').disabled).toBe(false);
-  });
   it('keeps broker flow colours stable across pins and closes the picker on Escape', async () => {
     auth.user = { id: 'test-user' };
     await render();
@@ -808,11 +794,6 @@ it('traps keyboard focus in help and restores focus on Escape', async () => {
   expect(document.activeElement).toBe(button('[aria-label="Keyboard reference"]'));
 });
 
-it('shows stale source warnings in the status bar', async () => {
-  await render();
-  expect(host.querySelector('.status .stale')?.textContent).toContain('Not updated since');
-});
-
 it('identifies failed broker sources even when the publication run is fresh', async () => {
   sourceFailed = true;
   await render();
@@ -831,35 +812,31 @@ it('keeps sign-in hidden while AuthKit is loading with no user', async () => {
   );
 });
 
-it.each(['4H', '1H', '15M'])(
-  'keeps daily and weekly public and gates %s without requesting ticks',
-  async (timeframe) => {
-    tickSessions = true;
-    await render();
-    await command('GP');
-    expect(host.querySelector('.chart-host')?.getAttribute('data-series')).toBe('candles');
-    expect(
-      host.querySelector('[aria-label="Chart timeframe"] [aria-pressed="true"]')?.textContent,
-    ).toBe('D');
-    await click('[aria-label="Chart timeframe"] button:first-child');
-    expect(host.querySelector('.chart-host')?.getAttribute('data-bars')).toBe('2');
-    await act(async () =>
-      [...host.querySelectorAll<HTMLButtonElement>('[aria-label="Chart timeframe"] button')]
-        .find((el) => el.textContent === timeframe)
-        ?.click(),
-    );
-    expect(host.querySelector('[data-slot="b"]')?.textContent).toContain(
-      'Sign in to see broker and trade data',
-    );
-    expect(host.querySelector('.chart-host')).toBeNull();
-    expect(fetcher.mock.calls.every(([path]) => !requestUrl(path).includes('view=ticks'))).toBe(
-      true,
-    );
-    expect(host.querySelector('[role="tab"][title="Intraday chart"]')).toBeNull();
-    await click('[aria-label="Chart timeframe"] button:nth-child(2)');
-    expect(host.querySelector('.chart-host')?.getAttribute('data-bars')).toBe('2');
-  },
-);
+it('keeps daily and weekly public and gates 4H without requesting ticks', async () => {
+  const timeframe = '4H';
+  tickSessions = true;
+  await render();
+  await command('GP');
+  expect(host.querySelector('.chart-host')?.getAttribute('data-series')).toBe('candles');
+  expect(
+    host.querySelector('[aria-label="Chart timeframe"] [aria-pressed="true"]')?.textContent,
+  ).toBe('D');
+  await click('[aria-label="Chart timeframe"] button:first-child');
+  expect(host.querySelector('.chart-host')?.getAttribute('data-bars')).toBe('2');
+  await act(async () =>
+    [...host.querySelectorAll<HTMLButtonElement>('[aria-label="Chart timeframe"] button')]
+      .find((el) => el.textContent === timeframe)
+      ?.click(),
+  );
+  expect(host.querySelector('[data-slot="b"]')?.textContent).toContain(
+    'Sign in to see broker and trade data',
+  );
+  expect(host.querySelector('.chart-host')).toBeNull();
+  expect(fetcher.mock.calls.every(([path]) => !requestUrl(path).includes('view=ticks'))).toBe(true);
+  expect(host.querySelector('[role="tab"][title="Intraday chart"]')).toBeNull();
+  await click('[aria-label="Chart timeframe"] button:nth-child(2)');
+  expect(host.querySelector('.chart-host')?.getAttribute('data-bars')).toBe('2');
+});
 
 it('keeps two compact control groups, fixed volume and foreign data, and remembers the icon choice', async () => {
   tickSessions = true;

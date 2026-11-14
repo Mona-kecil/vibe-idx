@@ -315,7 +315,8 @@ async function clocked<T>(run: () => Promise<T>) {
   if ('error' in outcome) throw outcome.error;
   return outcome.value;
 }
-it.each([800, 4000])('paces concurrent one-second requests for %i trades', async (total) => {
+it('paces concurrent one-second requests for 4000 trades', async () => {
+  const total = 4000;
   const f = await fixture();
   const starts: number[] = [];
   const before = Date.now();

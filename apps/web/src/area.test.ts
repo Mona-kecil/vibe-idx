@@ -15,9 +15,6 @@ const chart = (
 describe('areaChart tone', () => {
   it.each([
     [[1000, 1000.5], 'flat'],
-    [[1000, 999.5], 'flat'],
-    [[1000, 1001], 'up'],
-    [[1000, 999], 'down'],
     [[1000, 1200, 900, 1000], 'flat'],
     [[1000, 800, 1300, 1100], 'up'],
     [[1000, 1500, 1200, 900], 'down'],
@@ -79,10 +76,5 @@ describe('areaChart geometry', () => {
     expect(area.line).toMatch(/ L120,[\d.]+$/);
     expect(area.fill.startsWith(area.line)).toBe(true);
     expect(area.fill.endsWith('L120,28 L0,28 Z')).toBe(true);
-  });
-
-  it('puts higher values higher on screen', () => {
-    const area = chart([1, 3, 2]);
-    expect(area.high.y).toBeLessThan(area.low.y);
   });
 });

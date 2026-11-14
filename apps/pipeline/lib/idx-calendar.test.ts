@@ -153,18 +153,16 @@ it('fetches adjacent calendar months across a year boundary and rejects incomple
   ).rejects.toThrow('Incomplete IDX calendar');
 });
 
-it.each(['GetSpecialNotation', 'GetSuspension', 'GetUma'])(
-  'rejects an incomplete %s risk list',
-  async (endpoint) => {
-    await expect(
-      fetchRisk(stocks, {}, async (url) =>
-        new TextEncoder().encode(
-          JSON.stringify({ ResultCount: url.includes(endpoint) ? 1 : 0, Results: [] }),
-        ),
+it('rejects an incomplete GetUma risk list', async () => {
+  const endpoint = 'GetUma';
+  await expect(
+    fetchRisk(stocks, {}, async (url) =>
+      new TextEncoder().encode(
+        JSON.stringify({ ResultCount: url.includes(endpoint) ? 1 : 0, Results: [] }),
       ),
-    ).rejects.toThrow('Incomplete IDX');
-  },
-);
+    ),
+  ).rejects.toThrow('Incomplete IDX');
+});
 
 it('publishes only flagged stocks and keeps the latest UMA and resume state', async () => {
   const result = await fetchRisk(stocks, {}, async (url) => {

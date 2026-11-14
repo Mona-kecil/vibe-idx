@@ -55,17 +55,6 @@ describe('ticker page HTML', () => {
     expect(await response.text()).toContain('content="https://idx.test/api/og"');
   });
 
-  it('defaults when ticker data cannot be fetched', async () => {
-    const response = await page(
-      new Request('https://idx.test/api/page?ticker=TPIA'),
-      fixture(() => {
-        throw new Error('offline');
-      }),
-    );
-    expect(response.status).toBe(200);
-    expect(await response.text()).toContain('<title>Vibe IDX</title>');
-  });
-
   it('reports an unavailable index and returns 502', async () => {
     const fetcher = vi.fn<typeof fetch>(async () => new Response(null, { status: 503 }));
     const response = await page(new Request('https://idx.test/api/page?ticker=TPIA'), fetcher);

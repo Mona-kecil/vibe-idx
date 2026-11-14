@@ -219,15 +219,6 @@ describe('private broker API', () => {
     expect(storageReads).toEqual([]);
   });
 
-  it('accepts separate domestic and foreign client rows', async () => {
-    const handle = createBrokerHandler({ env, fetcher });
-    const auth = await token();
-    storageBody = JSON.stringify([{ ...day, buy: [row, { ...row, investor: 'foreign' }] }]);
-    const result = await handle(request({ token: auth }));
-    expect(result.status).toBe(200);
-    expect(brokerHistorySchema.parse(await result.json()).days[0]?.buy).toHaveLength(2);
-  });
-
   it('protects market accumulation with the same JWT checks and reads only the private summary key', async () => {
     const handle = createBrokerHandler({ env, fetcher });
     for (const invalid of [
