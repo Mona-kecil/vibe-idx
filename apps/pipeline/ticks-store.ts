@@ -208,18 +208,25 @@ export class TickStore {
   }
   /** Uploads the per-ticker files the terminal reads; rerun on every recovery, so it must stay idempotent. */
   private async publishSite(date: string, dataset: Dataset) {
-    const kind = dataset === 'running_trade' ? 'trades' : 'book';
-    const files = (await this.query(siteSql[dataset])).map((r) => ({
-      ticker: tickerCode.parse(r.ticker),
-      json: z.string().parse(r.json),
-    }));
+    const read = async (sql: string, key: (code: string) => string) =>
+      (await this.query(sql)).map((r) => ({
+        key: key(tickerCode.parse(r.ticker)),
+        json: z.string().parse(r.json),
+      }));
+    const files =
+      dataset === 'running_trade'
+        ? [
+            ...(await read(siteSql.running_trade, (t) => `site/ticks/${t}/${date}.trades.json.gz`)),
+            ...(await read(
+              siteSql.broker_running_trade,
+              (b) => `site/broker-ticks/${b}/${date}.json.gz`,
+            )),
+          ]
+        : await read(siteSql.closing_book, (t) => `site/ticks/${t}/${date}.book.json.gz`);
     await Promise.all(
       Array.from({ length: 16 }, async () => {
         for (let file = files.pop(); file; file = files.pop())
-          await this.r2.put(
-            `site/ticks/${file.ticker}/${date}.${kind}.json.gz`,
-            gzipSync(file.json),
-          );
+          await this.r2.put(file.key, gzipSync(file.json));
       }),
     );
   }

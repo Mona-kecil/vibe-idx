@@ -176,3 +176,61 @@
   height: 7px;
   background: currentColor;
 }
+.terminal-page .ba-picker {
+  position: relative;
+}
+.terminal-page .ba-picker input {
+  width: 10ch;
+  padding: 2px 6px;
+  font: inherit;
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid var(--line);
+}
+.terminal-page .ba-picker input:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+.terminal-page .ba-options {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  width: 340px;
+  background: var(--head);
+  z-index: 40;
+  border: 1px solid var(--muted);
+  box-shadow: 0 8px 24px #000c;
+}
+.terminal-page .ba-options [role='option'] {
+  display: grid;
+  grid-template-columns: 3ch 1fr;
+  gap: 12px;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 10px;
+  cursor: pointer;
+}
+.terminal-page .ba-options .on {
+  background: var(--sel);
+}
+.terminal-page .ba-options b {
+  color: var(--accent);
+}
+.terminal-page .ba-options span {
+  color: var(--ink-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.terminal-page .ba-chart {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  height: 42%;
+  min-height: 160px;
+}
+.terminal-page .broker-ledger button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}

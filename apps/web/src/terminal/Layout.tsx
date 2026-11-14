@@ -28,7 +28,7 @@ export const modes: Record<Mode, { tree: LayoutNode; slots: Record<string, Funct
       a: ['WL'],
       b: ['NEWS', 'CA'],
       c: ['SIG'],
-      d: ['HEAT', 'MOV'],
+      d: ['HEAT', 'MOV', 'BA'],
     },
   },
   focus: {

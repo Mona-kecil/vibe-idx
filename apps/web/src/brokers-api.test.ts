@@ -201,6 +201,57 @@ describe('private broker API', () => {
       expect((await handle(request({ token: auth, query }))).status).toBe(400);
   });
 
+  it('reads one broker across tickers, passes its session through gzipped and rejects bad codes', async () => {
+    const keys: string[] = [];
+    const ledger = {
+      broker: 'HP',
+      days: [
+        {
+          date: '2026-11-10',
+          board: 'regular',
+          ticker: ['BBCA', 'SINI'],
+          buy_value: [10, 20],
+          buy_shares: [1, 2],
+          sell_value: [0, 5],
+          sell_shares: [0, 1],
+        },
+      ],
+    };
+    const session = gzipSync(JSON.stringify({ date: '2026-11-10', broker: 'HP' }));
+    const handle = createBrokerHandler({
+      env: { WORKOS_CLIENT_ID: clientId },
+      fetcher,
+      store: async (key) => {
+        keys.push(key);
+        return new Response(
+          key.includes('broker-ticks') ? session : gzipSync(JSON.stringify(ledger)),
+        );
+      },
+    });
+    const auth = await token();
+    const range = await handle(request({ token: auth, query: 'view=broker&broker=HP' }));
+    expect(range.status).toBe(200);
+    expectPrivate(range);
+    expect(await range.json()).toEqual(ledger);
+    const day = await handle(
+      request({ token: auth, query: 'view=broker&broker=HP&date=2026-11-10' }),
+    );
+    expect(day.headers.get('Content-Encoding')).toBe('gzip');
+    expect(Buffer.from(await day.arrayBuffer()).equals(session)).toBe(true);
+    expect(keys).toEqual([
+      'site/broker-ledger/HP.json.gz',
+      'site/broker-ticks/HP/2026-11-10.json.gz',
+    ]);
+    for (const query of [
+      'view=broker',
+      'view=broker&broker=../HP',
+      'view=broker&broker=hp',
+      'view=broker&broker=HP&date=2026-13',
+    ])
+      expect((await handle(request({ token: auth, query }))).status).toBe(400);
+    expect(keys).toHaveLength(2);
+  });
+
   it('reads broker history from an injected store without R2 credentials', async () => {
     const keys: string[] = [];
     const handle = createBrokerHandler({

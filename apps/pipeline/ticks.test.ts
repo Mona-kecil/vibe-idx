@@ -188,9 +188,11 @@ it('deduplicates non-monotonic market pages and re-reads skipped seconds before 
     { ticker: 'SINI', n: 205, status: 'complete' },
     { ticker: 'ZERO', n: 0, status: 'no_trades' },
   ]);
-  expect([...f.objects.keys()].every((k) => /^(ticks|staging\/ticks|site\/ticks)\//.test(k))).toBe(
-    true,
-  );
+  expect(
+    [...f.objects.keys()].every((k) =>
+      /^(ticks|staging\/ticks|site\/ticks|site\/broker-ticks)\//.test(k),
+    ),
+  ).toBe(true);
   const site = JSON.parse(
     gunzipSync(f.objects.get(`site/ticks/SINI/${day}.trades.json.gz`)!).toString(),
   );
@@ -199,6 +201,19 @@ it('deduplicates non-monotonic market pages and re-reads skipped seconds before 
   expect(site.shares[0]).toBe(100);
   expect(site.buyer_foreign[0]).toBe(false);
   expect(site.seller_foreign[0]).toBe(true);
+  const broker = (code: string) =>
+    JSON.parse(gunzipSync(f.objects.get(`site/broker-ticks/${code}/${day}.json.gz`)!).toString());
+  const sold = { minute: [36000], ticker: ['SINI'], board: ['RG'] };
+  expect(broker('XL')).toEqual({
+    date: day,
+    broker: 'XL',
+    ...sold,
+    buy_value: [205 * 100 * 7675],
+    buy_shares: [20500],
+    sell_value: [0],
+    sell_shares: [0],
+  });
+  expect(broker('YP')).toMatchObject({ sell_value: [205 * 100 * 7675], buy_value: [0] });
 });
 it('resumes a budgeted market crawl on a fresh runner without refreshing its closing sequence', async () => {
   const f = await fixture();

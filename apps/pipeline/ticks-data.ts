@@ -184,6 +184,22 @@ export const siteSql = {
     seller: list(seller ORDER BY trade_number), seller_foreign: list(seller_domicile = 'F' ORDER BY trade_number),
     buy_order: list(buy_order_number ORDER BY trade_number), sell_order: list(sell_order_number ORDER BY trade_number)
   })::VARCHAR AS json FROM running_trade GROUP BY ticker`,
+  // One file per broker and session: what it bought and sold in each ticker, minute by minute.
+  broker_running_trade: `WITH sides AS (
+      SELECT buyer AS broker, ticker, board, time, price * shares AS value, shares, true AS buy FROM running_trade
+      UNION ALL SELECT seller, ticker, board, time, price * shares, shares, false FROM running_trade),
+    minutes AS (SELECT broker, ticker, board,
+        extract('hour' FROM time::TIME) * 3600 + extract('minute' FROM time::TIME) * 60 AS minute,
+        coalesce(sum(value) FILTER (WHERE buy), 0) buy_value, coalesce(sum(shares) FILTER (WHERE buy), 0) buy_shares,
+        coalesce(sum(value) FILTER (WHERE NOT buy), 0) sell_value, coalesce(sum(shares) FILTER (WHERE NOT buy), 0) sell_shares
+      FROM sides GROUP BY ALL)
+    SELECT broker AS ticker, to_json({
+      date: (SELECT any_value(date)::VARCHAR FROM running_trade), broker: broker,
+      minute: list(minute ORDER BY minute, ticker, board), ticker: list(ticker ORDER BY minute, ticker, board),
+      board: list(board ORDER BY minute, ticker, board),
+      buy_value: list(buy_value ORDER BY minute, ticker, board), buy_shares: list(buy_shares ORDER BY minute, ticker, board),
+      sell_value: list(sell_value ORDER BY minute, ticker, board), sell_shares: list(sell_shares ORDER BY minute, ticker, board)
+    })::VARCHAR AS json FROM minutes GROUP BY broker`,
   closing_book: `SELECT ticker, to_json({
     date: any_value(date)::VARCHAR, ticker: ticker, close: max(close),
     bid: coalesce(list([price, orders, shares] ORDER BY level) FILTER (WHERE side = 'bid'), []),

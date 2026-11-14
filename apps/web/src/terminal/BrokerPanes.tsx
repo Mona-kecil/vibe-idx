@@ -281,7 +281,7 @@ function flowDays(days: BrokerDay[], broker: BrokerFilters, start?: string, end?
   return { dates, onBoard: board.filter((day) => selected.has(day.date)) };
 }
 // Teal, red and gold mean up, down and accent elsewhere, so broker lines avoid them.
-const palette = ['#6f9be8', '#b28ae6', '#e58bb8', '#79d2f0', '#cfd3d8', '#9a7f5c'];
+export const palette = ['#6f9be8', '#b28ae6', '#e58bb8', '#79d2f0', '#cfd3d8', '#9a7f5c'];
 export function BrokerFlowPane() {
   const { broker, selection } = useTerminal();
   const b = bounds(selection);
