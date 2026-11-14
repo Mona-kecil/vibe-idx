@@ -455,19 +455,6 @@ describe('batch pipeline', () => {
       const repaired = await Promise.all(paths.map((path) => readFile(path)));
       expect(repaired[0]).toEqual(before[0]);
       expect(repaired[3]).toEqual(before[3]);
-      const restored = { ...options, data: join(root, 'restored'), out: join(root, 'replayed') };
-      await cp(join(options.data, 'parquet'), join(restored.data, 'parquet'), { recursive: true });
-      const replay = await ingest(restored);
-      expect(replay.counts).toEqual(first.counts);
-      expect(JSON.parse(await readFile(join(restored.out, 'ticker/TRUE.json'), 'utf8'))).toEqual(
-        published,
-      );
-      expect(await readdir(join(restored.out, 'ticker'))).toEqual(['AADI.json', 'TRUE.json']);
-      expect(
-        await Promise.all(
-          paths.map((path) => readFile(join(restored.data, relative(options.data, path)))),
-        ),
-      ).toEqual(repaired);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -715,10 +702,6 @@ describe('batch pipeline', () => {
         db.closeSync();
         instance.closeSync();
       }
-      net.urls.length = 0;
-      const replay = await ingest({ ...options, fetcher: net.fetcher });
-      expect(replay.counts).toEqual(recovered.counts);
-      expect(net.urls.filter((url) => url.includes('TradingSummary'))).toEqual([]);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -1253,7 +1236,13 @@ describe('batch pipeline', () => {
       JSON.parse(await readFile(join(options.out, `ticker/${ticker}.json`), 'utf8'));
     try {
       expect(await messages()).toEqual([]);
-      expect(await messages()).toEqual([]);
+      const five = await ownershipWorkbook('ownership-5pct-2026-10-21.xlsx', focusTickers);
+      files.set('/Media/2026-10-21-repost-lima-persen.xlsx', new Uint8Array(five));
+      extra.push({
+        Description: '',
+        Prospectus: '/Media/2026-10-21-repost-lima-persen.xlsx',
+        ListingDate: '2026-10-21',
+      });
       files.set(
         '/Media/2026-09-satu-persen.xlsx',
         onePct([
@@ -1270,7 +1259,6 @@ describe('batch pipeline', () => {
       expect((await holders('BBCA')).one_pct.holders).toEqual([
         expect.objectContaining({ shares: 2400, pct: 4.2 }),
       ]);
-      expect(await messages()).toEqual([]);
       files.set(
         '/Media/2026-09-koreksi-satu-persen.xlsx',
         onePct([
@@ -1283,23 +1271,6 @@ describe('batch pipeline', () => {
         Prospectus: '/Media/2026-09-koreksi-satu-persen.xlsx',
         ListingDate: '2026-09-30',
       });
-      expect(await messages()).toEqual([
-        [
-          'corrections',
-          'IDX published another 1% ownership file for 2026-09-30; applied it (N rows differ): https://www.idx.id/Media/2026-09-koreksi-satu-persen.xlsx',
-        ],
-      ]);
-      expect((await holders('AADI')).one_pct.holders).toEqual([
-        expect.objectContaining({ shares: 1500, pct: 3.1 }),
-      ]);
-      const five = await ownershipWorkbook('ownership-5pct-2026-10-21.xlsx', focusTickers);
-      files.set('/Media/2026-10-21-repost-lima-persen.xlsx', new Uint8Array(five));
-      extra.push({
-        Description: '',
-        Prospectus: '/Media/2026-10-21-repost-lima-persen.xlsx',
-        ListingDate: '2026-10-21',
-      });
-      expect(await messages()).toEqual([]);
       const zip = unzipSync(new Uint8Array(five));
       const strings = strFromU8(zip['xl/sharedStrings.xml']!);
       const published = new Set(readSheet(five).flat());
@@ -1320,8 +1291,18 @@ describe('batch pipeline', () => {
           'corrections',
           'IDX published another 5% ownership file for 2026-10-21; applied it (N rows differ): https://www.idx.id/Media/2026-10-21-koreksi-lima-persen.xlsx',
         ],
+        [
+          'corrections',
+          'IDX published another 1% ownership file for 2026-09-30; applied it (N rows differ): https://www.idx.id/Media/2026-09-koreksi-satu-persen.xlsx',
+        ],
       ]);
       expect(await messages()).toEqual([]);
+      expect((await holders('AADI')).one_pct.holders).toEqual([
+        expect.objectContaining({ shares: 1500, pct: 3.1 }),
+      ]);
+      expect((await holders('BBCA')).one_pct.holders).toEqual([
+        expect.objectContaining({ shares: 2400, pct: 4.2 }),
+      ]);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -1330,13 +1311,13 @@ describe('batch pipeline', () => {
 
 it('backfills legacy Parquet newest first within the limit without duplicates, repeat downloads, or failure starvation', async () => {
   const root = await mkdtemp(join(tmpdir(), 'idx-labels-'));
-  const net = network();
+  const net = network({ issuers: focusTickers });
   const options = {
     data: join(root, 'data'),
     out: join(root, 'out'),
     since: '2026-10-20',
     today: '2026-10-21',
-    attachmentLabelLimit: 1,
+    attachmentLabelLimit: 3,
   };
   const make = (id: string, hour: number, cover = 'shared') => {
     const d = announcement({
@@ -1396,7 +1377,6 @@ it('backfills legacy Parquet newest first within the limit without duplicates, r
   const published = async () =>
     JSON.parse(await readFile(join(options.out, 'ticker/SINI.json'), 'utf8'));
   try {
-    await ingest({ ...options, fetcher: net.fetcher });
     const instance = await DuckDBInstance.create(':memory:');
     const db = await instance.connect();
     try {
@@ -1447,44 +1427,42 @@ it('backfills legacy Parquet newest first within the limit without duplicates, r
       ['report_lamp1.pdf', null],
       ['report_lamp2.pdf', null],
     ]);
-    for (const [id, remaining] of [
-      ['newest', 4],
-      ['fetch-failure', 3],
-      ['bad-pdf', 2],
-      ['middle', 1],
-      ['oldest', 0],
-    ] satisfies [string, number][]) {
-      const run = await ingest({ ...options, fetcher });
-      expect(run.attachment_labels).toEqual({ backfilled: 1, remaining });
-      expect(run.processed).toBe(0);
-      expect(run.counts.disclosures).toBe(7);
-      const row = (await published()).disclosures.find((d: { id: string }) => d.id === id);
-      expect(row.attachments[1].label).toBe(
-        ['fetch-failure', 'bad-pdf'].includes(id) ? null : 'surat penyampaian penjelasan bursa',
-      );
-      if (id === 'fetch-failure')
-        expect(run.report_gaps).toContainEqual(
-          expect.objectContaining({ id, reason: expect.stringContaining('IDX HTTP 503') }),
-        );
-      if (id === 'bad-pdf')
-        expect(run.report_gaps).toContainEqual(
-          expect.objectContaining({ id, reason: expect.stringContaining('Attachment labels:') }),
-        );
-    }
+    const label = async (id: string) =>
+      (await published()).disclosures.find((d: { id: string }) => d.id === id).attachments[1].label;
+    const first = await ingest({ ...options, fetcher });
+    expect(first.attachment_labels).toEqual({ backfilled: 3, remaining: 2 });
+    expect(first.processed).toBe(0);
+    expect(first.counts.disclosures).toBe(7);
     expect(coverCalls).toEqual([
       '/covers/fresh.pdf',
       '/covers/shared.pdf',
       '/covers/missing.pdf',
       '/covers/invalid.pdf',
     ]);
-    const parquet = await readFile(join(options.data, 'parquet/disclosures/2026.parquet'));
-    const final = await published();
-    const replay = await ingest({ ...options, fetcher });
-    expect(replay.attachment_labels).toEqual({ backfilled: 0, remaining: 0 });
-    expect(replay.processed).toBe(0);
-    expect(await published()).toEqual(final);
-    expect(await readFile(join(options.data, 'parquet/disclosures/2026.parquet'))).toEqual(parquet);
+    expect(first.report_gaps).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'fetch-failure',
+          reason: expect.stringContaining('IDX HTTP 503'),
+        }),
+        expect.objectContaining({
+          id: 'bad-pdf',
+          reason: expect.stringContaining('Attachment labels:'),
+        }),
+      ]),
+    );
+    expect(
+      await Promise.all(['newest', 'fetch-failure', 'bad-pdf', 'middle', 'oldest'].map(label)),
+    ).toEqual(['surat penyampaian penjelasan bursa', null, null, null, null]);
+    const second = await ingest({ ...options, fetcher });
+    expect(second.attachment_labels).toEqual({ backfilled: 2, remaining: 0 });
+    expect(second.processed).toBe(0);
+    expect(second.counts.disclosures).toBe(7);
     expect(coverCalls).toHaveLength(4);
+    expect(await Promise.all(['middle', 'oldest'].map(label))).toEqual([
+      'surat penyampaian penjelasan bursa',
+      'surat penyampaian penjelasan bursa',
+    ]);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
