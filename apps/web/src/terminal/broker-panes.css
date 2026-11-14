@@ -144,6 +144,7 @@
   fill: var(--ink);
   font-weight: 600;
 }
+.terminal-page .bd-node:hover text,
 .terminal-page .bd-node:focus-visible text {
   text-decoration: underline;
 }

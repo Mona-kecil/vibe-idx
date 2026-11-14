@@ -58,8 +58,11 @@ export function DistributionChart({
         aria-pressed={on}
         aria-label={`${code} ${left ? 'bought' : 'sold'} ${format(amount)} ${unit}`}
         onClick={() => setPicked({ side, code })}
-        onMouseEnter={() => setPicked({ side, code })}
-        onFocus={() => setPicked({ side, code })}
+        onKeyDown={(event) => {
+          if (event.key !== 'Enter' && event.key !== ' ') return;
+          event.preventDefault();
+          setPicked({ side, code });
+        }}
       >
         <rect x={left ? 0 : width - bar} y={y} width={bar} height={Math.max(h, 1)} rx={1} />
         <text
@@ -84,13 +87,7 @@ export function DistributionChart({
   return (
     <div className="bd-chart" ref={host}>
       {view && (
-        <svg
-          width={width}
-          height={height}
-          role="group"
-          aria-label={`Buyers to sellers, ${unit}`}
-          onMouseLeave={() => setPicked(null)}
-        >
+        <svg width={width} height={height} role="group" aria-label={`Buyers to sellers, ${unit}`}>
           {[...view.bands]
             .sort((a, b) => Number(lit(a)) - Number(lit(b)))
             .map((band) => (

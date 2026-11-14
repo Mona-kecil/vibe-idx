@@ -1577,6 +1577,11 @@
 .ticker-page .bd-node:focus-visible text {
   text-decoration: underline;
 }
+@media (hover: hover) and (pointer: fine) {
+  .ticker-page .bd-node:hover text {
+    text-decoration: underline;
+  }
+}
 .ticker-page .bd-local {
   color: #7a4fc4;
 }
