@@ -14,15 +14,21 @@ const { values: args, positionals } = parseArgs({
     within: { type: 'string' },
     shot: { type: 'string' },
     urls: { type: 'boolean', default: false },
+    depth: { type: 'string' },
+    strict: { type: 'boolean', default: false },
     click: { type: 'string', multiple: true, default: [] },
     fill: { type: 'string', multiple: true, default: [] },
   },
 });
-const usage = `pnpm ui:check [path] [--clock HH:MM] [--signed-out] [--size 1440x900] [--within name] [--shot file.png] [--urls] [--click name]... [--fill name=value]...
+const usage = `pnpm ui:check [path] [--clock HH:MM] [--signed-out] [--size 1440x900] [--click name]... [--fill name=value]...
+                [--within name] [--depth N] [--urls] [--shot file.png] [--strict]
 
 Opens the path in the local preview and prints errors, failed requests, 404s and the page's accessibility outline.
+Exits 1 on errors and failed requests, and with --strict on 404s too. A 404 the preview sends on purpose, such as
+the order book before the close, is listed apart and never fails.
 --click presses the tab or button with that name, and --fill types into the field with that name and presses Enter.
-Clicks run first, then fills, in the order given. --within keeps the outline to the panel or region with that name.`;
+Clicks run first, then fills, in the order given. --within keeps the outline to the panel or region with that name,
+and --depth N to its first N levels.`;
 const path = positionals.find((arg) => arg !== '--') ?? '/';
 if (!path.startsWith('/')) throw new Error(usage);
 const fill = args.fill.map((pair): [string, string] => {
@@ -32,6 +38,8 @@ const fill = args.fill.map((pair): [string, string] => {
 });
 
 const shot = args.shot && outsideRepo(args.shot);
+const depth = args.depth === undefined ? Infinity : Number(args.depth);
+if (!(depth >= 1)) throw new Error(`--depth takes a number from 1.\n\n${usage}`);
 
 const preview = await startPreview({ port: 0, quiet: true });
 const browser = await launch();
@@ -47,6 +55,7 @@ try {
   console.log(
     `${path} at ${args.clock}, ${args['signed-out'] ? 'signed out' : 'signed in'}, ${args.size}, data as of ${preview.asOf}`,
   );
+  for (const url of visit.held) console.log(`held until the close, as in production: ${url}`);
   for (const url of visit.missing) console.log(`not found (404): ${url}`);
   console.log(
     visit.problems.length
@@ -55,14 +64,19 @@ try {
   );
   console.log();
   const target = await scope(visit.page, args.within);
-  const outline = await target.ariaSnapshot();
   // Link targets are long and rarely the point, so they stay out unless asked for.
-  console.log(args.urls ? outline : outline.replace(/\n\s*- \/url: .*/g, ''));
+  const lines = (await target.ariaSnapshot())
+    .split('\n')
+    .filter((line) => args.urls || !/^\s*- \/url: /.test(line));
+  const shown = lines.filter((line) => line.search(/\S/) / 2 < depth);
+  console.log(shown.join('\n'));
+  if (shown.length < lines.length)
+    console.log(`  ${lines.length - shown.length} deeper lines hidden, raise --depth to see them`);
   if (shot) {
     await target.screenshot({ path: shot });
     console.log(`\nscreenshot ${shot}`);
   }
-  process.exitCode = visit.problems.length ? 1 : 0;
+  process.exitCode = visit.problems.length || (args.strict && visit.missing.length) ? 1 : 0;
 } finally {
   await browser.close();
   await preview.close();

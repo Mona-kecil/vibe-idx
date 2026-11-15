@@ -85,6 +85,22 @@ function cookies(req: IncomingMessage) {
   );
 }
 
+/** Seconds after midnight when the preview clock is set inside the session, undefined after the close. */
+function sessionClock(req: IncomingMessage) {
+  const clock = cookies(req).get('preview-clock');
+  return clock && clock !== 'close'
+    ? Number(clock.slice(0, 2)) * 3600 + Number(clock.slice(3, 5)) * 60
+    : undefined;
+}
+
+/** A 404 the preview sends on purpose, marked so ui:check can tell it from a missing file. */
+const heldHeader = 'X-Preview-Held';
+function heldUntilClose(res: ServerResponse) {
+  res.statusCode = 404;
+  res.setHeader(heldHeader, 'until the close');
+  res.end();
+}
+
 /** `web` is the app checkout to serve; the preview's own code always comes from this checkout. */
 export async function startPreview({
   port = 5173,
@@ -96,30 +112,32 @@ export async function startPreview({
   const api = await localBrokerApi(web);
 
   async function brokers(req: IncomingMessage, res: ServerResponse) {
-    const jar = cookies(req);
     const url = new URL(req.url!, 'http://localhost');
     const headers = new Headers();
-    if (jar.get('preview-signed-out') !== '1') headers.set('Authorization', `Bearer ${api.token}`);
+    if (cookies(req).get('preview-signed-out') !== '1')
+      headers.set('Authorization', `Bearer ${api.token}`);
     const response = await api.handle(new Request(url, { headers }));
     let body: Buffer = Buffer.from(await response.arrayBuffer());
-    const clock = jar.get('preview-clock');
-    if (clock && clock !== 'close' && url.searchParams.get('date') === state.asOf) {
-      // The closing order book only exists after the close.
-      if (url.searchParams.get('kind') === 'book') {
-        res.statusCode = 404;
-        return res.end();
-      }
-      if (response.ok) {
+    const seconds = sessionClock(req);
+    if (seconds !== undefined && response.ok) {
+      const view = url.searchParams.get('view');
+      if (view === 'ticks' && url.searchParams.get('date') === state.asOf) {
+        // The closing order book only exists after the close.
+        if (url.searchParams.get('kind') === 'book') return heldUntilClose(res);
         const gzip = response.headers.get('Content-Encoding') === 'gzip';
-        const cut = cutAtClock(
-          gzip ? gunzipSync(body) : body,
-          Number(clock.slice(0, 2)) * 3600 + Number(clock.slice(3, 5)) * 60,
-        );
+        const cut = cutAtClock(gzip ? gunzipSync(body) : body, seconds);
         body = gzip ? gzipSync(cut) : cut;
+      } else if (view === null) {
+        // Broker data for a session is published in the evening, so during it the history ends the day before.
+        const history = JSON.parse(body.toString()) as { days: { date: string }[] };
+        history.days = history.days.filter((day) => day.date !== state.asOf);
+        body = Buffer.from(JSON.stringify(history));
       }
     }
     res.statusCode = response.status;
-    response.headers.forEach((value, key) => res.setHeader(key, value));
+    response.headers.forEach((value, key) => {
+      if (key !== 'content-length') res.setHeader(key, value);
+    });
     res.end(body);
   }
 
@@ -132,7 +150,23 @@ export async function startPreview({
       return res.end();
     }
     res.setHeader('Content-Type', 'application/json');
-    res.end(await readFile(file));
+    let body = await readFile(file);
+    // Daily prices and the broker data for a session are published after the close, so during it they end the
+    // session before. Market-wide files keep the as-of close; the snapshot has no earlier copy of them.
+    if (sessionClock(req) !== undefined) {
+      const previous = state.sessions[state.sessions.indexOf(state.asOf) - 1];
+      if (path.startsWith('ticker/')) {
+        const ticker = JSON.parse(body.toString()) as { prices?: { date: string }[] };
+        ticker.prices = ticker.prices?.filter((price) => price.date !== state.asOf);
+        body = Buffer.from(JSON.stringify(ticker));
+      } else if (path === 'health.json' && previous) {
+        const health = JSON.parse(body.toString()) as Record<string, unknown>;
+        for (const key of ['prices', 'indices', 'brokers'])
+          if (health[key] === state.asOf) health[key] = previous;
+        body = Buffer.from(JSON.stringify(health));
+      }
+    }
+    res.end(body);
   }
 
   /**

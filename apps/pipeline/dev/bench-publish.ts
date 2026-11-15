@@ -1,13 +1,13 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, rmSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { readdir, readFile, rm } from 'node:fs/promises';
-import { cpus, loadavg } from 'node:os';
+import { cpus } from 'node:os';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { z } from 'zod';
 import { checkout } from './checkout';
 import { alive, cliErrors, plural } from './cli';
-import { cutBrokerData, fixturePaths, fixturesWriter, fixtureStateSchema } from './local-r2';
+import { cutBrokerData, fixturePaths, lockHolder, takeLock, fixtureStateSchema } from './local-r2';
 
 const usage = `pnpm bench:publish [--base <git ref>] [--step broker|ticks] [--runs N] [--date <session>]
 
@@ -38,11 +38,12 @@ const state = fixtureStateSchema.parse(JSON.parse(await readFile(paths.state, 'u
 const date = z.iso.date().parse(args.date ?? state.asOf);
 if (!state.sessions.includes(date))
   throw new Error(`${date} is not a fixture session. Sessions: ${state.sessions.join(' ')}`);
-const writer = fixturesWriter();
+const writer = lockHolder('fixtures');
 if (writer)
   throw new Error(
     `\`pnpm fixtures\` (pid ${writer}) is rewriting the fixtures. Wait for it to finish.`,
   );
+await takeLock('bench');
 
 // Each benchmark works in its own folder, so two can run at once; folders of finished processes go.
 const benches = join(paths.root, 'bench');
@@ -53,9 +54,16 @@ process.once('exit', () => rmSync(bench, { recursive: true, force: true }));
 const brokerData = join(bench, 'broker');
 const run = join(bench, 'run');
 
-const load = loadavg()[0]!;
+// What the machine uses with no benchmark running, so a run can tell extra work from its usual background.
+const idleBusy = busySeconds();
+await new Promise((done) => setTimeout(done, 2000));
+const idleAfter = busySeconds();
+const baseline =
+  idleBusy === undefined || idleAfter === undefined
+    ? undefined
+    : (idleAfter - idleBusy) / (cpus().length * 2);
 console.log(
-  `load ${load.toFixed(1)} on ${cpus().length} cores${load > cpus().length / 2 ? ', busy: timings will be noisy' : ''}, ${plural(runs, 'run')} per side${args.base ? ', alternating' : ''}`,
+  `${cpus().length} cores${baseline === undefined ? '' : `, ${(baseline * 100).toFixed(0)}% busy before starting`}, ${plural(runs, 'run')} per side${args.base ? ', alternating' : ''}`,
 );
 
 if (steps.includes('broker')) {
@@ -80,17 +88,41 @@ const resultSchema = z.object({
   peakMB: z.number(),
   files: z.number(),
   digest: z.string(),
+  cpuSeconds: z.number(),
 });
-type Result = z.infer<typeof resultSchema>;
+type Result = z.infer<typeof resultSchema> & { others: number | undefined };
 
-function once(pipeline: string, step: string) {
+/** CPU seconds the whole machine has spent busy, from Linux's counters; undefined elsewhere. */
+function busySeconds() {
+  if (!existsSync('/proc/stat')) return undefined;
+  const ticks = readFileSync('/proc/stat', 'utf8')
+    .split('\n')[0]!
+    .trim()
+    .split(/\s+/)
+    .slice(1)
+    .map(Number);
+  const idle = ticks[3]! + ticks[4]!;
+  return (ticks.reduce((sum, tick) => sum + tick, 0) - idle) / 100;
+}
+
+function once(pipeline: string, step: string): Result {
+  const busy = busySeconds();
+  const started = performance.now();
   const child = spawnSync(
     join(here, 'node_modules/.bin/tsx'),
     [join(import.meta.dirname, 'bench-run.ts'), pipeline, step, date, run, brokerData],
     { encoding: 'utf8', maxBuffer: 1 << 26 },
   );
   if (child.status !== 0) throw new Error(`${step} run failed:\n${child.stderr || child.stdout}`);
-  return resultSchema.parse(JSON.parse(child.stdout.trim().split('\n').at(-1)!));
+  const result = resultSchema.parse(JSON.parse(child.stdout.trim().split('\n').at(-1)!));
+  const wall = (performance.now() - started) / 1000;
+  const after = busySeconds();
+  // What the rest of the machine used while this run went, as a share of all its cores.
+  const others =
+    busy === undefined || after === undefined
+      ? undefined
+      : Math.max(0, after - busy - result.cpuSeconds) / (cpus().length * wall);
+  return { ...result, others };
 }
 
 const median = (values: number[]) => {
@@ -145,6 +177,17 @@ try {
             : 'no measurable difference in time: the ranges overlap';
       console.log(
         `${verdict}, peak memory ${after.peak - before.peak >= 0 ? '+' : ''}${(after.peak - before.peak).toLocaleString('en')} MB, ${after.digest === before.digest ? 'same output' : 'OUTPUT DIFFERS'}`,
+      );
+    }
+    const others = [...results.values()]
+      .flat()
+      .flatMap((r) => (r.others === undefined ? [] : [r.others]));
+    if (others.length) {
+      const worst = Math.max(...others);
+      console.log(
+        worst > (baseline ?? 0) + 0.1
+          ? `other processes used up to ${(worst * 100).toFixed(0)}% of the machine during a run, against ${((baseline ?? 0) * 100).toFixed(0)}% before starting, so these timings are noisy`
+          : 'nothing else ran during the runs',
       );
     }
   }

@@ -17,7 +17,9 @@ export function previewClient(asOf: string) {
     ((clock === 'close' ? 19 * 60 : minutes(clock)) - 420) * 60000;
   const real = Date;
   const began = performance.now();
-  const now = () => start + (performance.now() - began);
+  // Screenshots freeze the clock, so the same page renders the same pixels on every run.
+  const frozen = cookies.get('preview-frozen') === '1';
+  const now = () => (frozen ? start : start + (performance.now() - began));
   class PinnedDate extends real {
     constructor(...args: ConstructorParameters<DateConstructor> | []) {
       if (args.length) super(...(args as ConstructorParameters<DateConstructor>));

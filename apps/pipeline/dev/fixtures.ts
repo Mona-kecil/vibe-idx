@@ -1,19 +1,19 @@
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { readFile, rm } from 'node:fs/promises';
+import { readdir, readFile, rm } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import { parseArgs } from 'node:util';
 import { DuckDBInstance } from '@duckdb/node-api';
 import { z } from 'zod';
 import { publishBrokerActivity } from '../broker-publication';
-import { createR2 } from '../brokers';
+import { createR2, type R2 } from '../brokers';
 import { sqlLiteral as lit } from '../ticks-data';
 import { TickStore } from '../ticks-store';
-import { cliErrors } from './cli';
+import { cliErrors, plural } from './cli';
 import {
   cutBrokerData,
-  lockFixtures,
+  takeLock,
   fixturePaths,
   fixtureStateSchema,
   localR2,
@@ -29,7 +29,7 @@ const { values: args } = parseArgs({
 });
 const sessions = z.coerce.number().int().positive().max(60).parse(args.sessions);
 const paths = fixturePaths();
-await lockFixtures();
+await takeLock('fixtures');
 type State = z.infer<typeof fixtureStateSchema>;
 
 const started = performance.now();
@@ -63,11 +63,39 @@ async function source(key: string, fresh = false) {
 }
 
 /** Running trade and order book sources come from the cache, everything else stays local. */
-const sandbox = localR2(paths.bucket, async (key) =>
+const local = localR2(paths.bucket, async (key) =>
   /^ticks\/(running_trade|closing_book)\/\d{4}-\d{2}-\d{2}\.parquet$/.test(key)
     ? readFile(await source(key))
     : undefined,
 );
+/** The app files each build wrote, so files that no current build writes can be removed. */
+const outputsFile = join(paths.root, 'outputs.json');
+const outputs = z
+  .record(z.string(), z.array(z.string()))
+  .parse(existsSync(outputsFile) ? JSON.parse(await readFile(outputsFile, 'utf8')) : {});
+let building: Set<string> | undefined;
+const sandbox: R2 = {
+  ...local,
+  put(key, bytes, condition) {
+    building?.add(key);
+    return local.put(key, bytes, condition);
+  },
+};
+let manifestsCleared = false;
+async function build(key: string, run: () => Promise<void>) {
+  // Publication skips files its manifest says are unchanged, so without the manifests every file is written and
+  // recorded, and the cleanup below never removes a current file.
+  const site = join(paths.bucket, 'site');
+  if (!manifestsCleared)
+    for (const file of existsSync(site) ? await readdir(site) : [])
+      if (file.endsWith('-publication.json')) await rm(join(site, file));
+  manifestsCleared = true;
+  building = new Set();
+  await run();
+  outputs[key] = [...building].filter((written) => written.startsWith('site/')).sort();
+  building = undefined;
+  await writeAtomic(outputsFile, JSON.stringify(outputs));
+}
 
 const db = await (await DuckDBInstance.create(':memory:')).connect();
 const rows = async (sql: string) => (await db.runAndReadAll(sql)).getRowObjectsJson();
@@ -121,12 +149,14 @@ if (state.generated[brokerKey] !== brokerCode) {
     await source(`parquet/broker_activity/${state.asOf.slice(0, 4)}.parquet`, args.latest),
     await source('parquet/broker-activity-coverage.parquet', args.latest),
   ]);
-  await step('broker files', async () => {
-    const data = join(paths.work, 'broker');
-    await cutBrokerData(activity, coverage, state.asOf, data);
-    await publishBrokerActivity(data, join(data, 'out'), sandbox);
-    await rm(data, { recursive: true, force: true });
-  });
+  await step('broker files', () =>
+    build(brokerKey, async () => {
+      const data = join(paths.work, 'broker');
+      await cutBrokerData(activity, coverage, state.asOf, data);
+      await publishBrokerActivity(data, join(data, 'out'), sandbox);
+      await rm(data, { recursive: true, force: true });
+    }),
+  );
   state.generated[brokerKey] = brokerCode;
   await save();
 }
@@ -144,11 +174,13 @@ if (pending.length) {
     // A store per session, as in production: DuckDB keeps the memory of deleted rows.
     const store = await TickStore.open(join(paths.work, 'ticks'), sandbox);
     try {
-      await step(`running trade ${date}`, async () => {
-        if (!(await store.recoverPublished(date, 'running_trade')))
-          throw new Error(`No published running trade for ${date}`);
-        if (books.has(date)) await store.recoverPublished(date, 'closing_book');
-      });
+      await step(`running trade ${date}`, () =>
+        build(`ticks@${date}`, async () => {
+          if (!(await store.recoverPublished(date, 'running_trade')))
+            throw new Error(`No published running trade for ${date}`);
+          if (books.has(date)) await store.recoverPublished(date, 'closing_book');
+        }),
+      );
     } finally {
       store.close();
     }
@@ -156,6 +188,32 @@ if (pending.length) {
     await save();
     await rm(join(paths.work, 'ticks'), { recursive: true, force: true });
   }
+}
+
+// Files from older code, another branch's code, or sessions that left the window.
+const keys = [brokerKey, ...state.sessions.map((date) => `ticks@${date}`)];
+if (keys.every((key) => outputs[key])) {
+  const live = new Set(keys.flatMap((key) => outputs[key]!));
+  const site = join(paths.bucket, 'site');
+  const files = existsSync(site)
+    ? await readdir(site, { recursive: true, withFileTypes: true })
+    : [];
+  let removed = 0;
+  for (const file of files) {
+    const full = join(file.parentPath, file.name);
+    if (!file.isFile() || live.has(relative(paths.bucket, full))) continue;
+    await rm(full);
+    removed++;
+  }
+  const folders = files
+    .filter((file) => file.isDirectory())
+    .map((file) => join(file.parentPath, file.name));
+  // Deepest first, so a folder emptied by removing its subfolders goes too.
+  for (const folder of folders.sort((a, b) => b.length - a.length))
+    if (!(await readdir(folder)).length) await rm(folder, { recursive: true });
+  for (const key of Object.keys(outputs)) if (!keys.includes(key)) delete outputs[key];
+  await writeAtomic(outputsFile, JSON.stringify(outputs));
+  if (removed) console.log(`removed ${plural(removed, 'file')} that no current build writes`);
 }
 
 console.log(

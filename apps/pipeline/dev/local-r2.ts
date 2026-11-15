@@ -23,33 +23,36 @@ export function fixturePaths(
     cache: join(root, 'r2'),
     work: join(root, 'work'),
     state: join(root, 'fixtures.json'),
-    lock: join(root, 'fixtures.lock'),
   };
 }
 
-/** The pid of a `pnpm fixtures` still writing the fixtures, if one is. */
-export function fixturesWriter(root?: string) {
-  const { lock } = fixturePaths(root);
-  const pid = existsSync(lock) ? Number(readFileSync(lock, 'utf8')) : 0;
+/**
+ * The pid holding a lock in the fixture folder, if it's alive. `fixtures` is held while the fixtures are rewritten,
+ * and `bench` while a benchmark runs, since two at once would skew each other's timings and could run out of memory.
+ */
+export function lockHolder(name: 'fixtures' | 'bench') {
+  const file = join(fixturePaths().root, `${name}.lock`);
+  const pid = existsSync(file) ? Number(readFileSync(file, 'utf8')) : 0;
   return pid && pid !== process.pid && alive(pid) ? pid : undefined;
 }
 
-/** Lets one `pnpm fixtures` write at a time, until this process exits. */
-export async function lockFixtures() {
-  const { root, lock } = fixturePaths();
+/** Holds the lock until this process exits, or fails naming the process that holds it. */
+export async function takeLock(name: 'fixtures' | 'bench') {
+  const { root } = fixturePaths();
+  const file = join(root, `${name}.lock`);
   await mkdir(root, { recursive: true });
   try {
-    writeFileSync(lock, String(process.pid), { flag: 'wx' });
+    writeFileSync(file, String(process.pid), { flag: 'wx' });
   } catch {
-    const writer = fixturesWriter();
-    if (writer)
+    const holder = lockHolder(name);
+    if (holder)
       throw new Error(
-        `Another \`pnpm fixtures\` (pid ${writer}) is writing ${root}. Wait for it to finish.`,
+        `Another \`pnpm ${name === 'bench' ? 'bench:publish' : name}\` (pid ${holder}) is running. Wait for it to finish.`,
       );
     // A lock left by a run that was killed belongs to no live process, so it is taken over.
-    writeFileSync(lock, String(process.pid));
+    writeFileSync(file, String(process.pid));
   }
-  process.once('exit', () => rmSync(lock, { force: true }));
+  process.once('exit', () => rmSync(file, { force: true }));
 }
 export const fixtureStateSchema = z.object({
   asOf: z.iso.date(),

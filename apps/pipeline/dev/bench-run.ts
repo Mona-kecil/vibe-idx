@@ -8,6 +8,7 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { gunzipSync } from 'node:zlib';
+import { DuckDBInstance } from '@duckdb/node-api';
 import { z } from 'zod';
 import type { publishBrokerActivity as PublishBrokerActivity } from '../broker-publication';
 import type { TickStore as Store } from '../ticks-store';
@@ -30,21 +31,35 @@ const storage = localR2(join(run, 'bucket'), async (key) =>
     ? readFile(join(paths.cache, key))
     : undefined,
 );
-// Parquet bytes carry writer details, so the output digest covers the published JSON only.
+const hash = (bytes: Buffer | string) => createHash('sha256').update(bytes).digest('hex');
 const written = new Map<string, string>();
+const parquet = new Set<string>();
 const r2 = {
   ...storage,
   async put(key: string, bytes: Buffer, condition?: Parameters<typeof storage.put>[2]) {
-    if (!key.endsWith('.parquet'))
-      written.set(
-        key,
-        createHash('sha256')
-          .update(key.endsWith('.gz') ? gunzipSync(bytes) : bytes)
-          .digest('hex'),
-      );
+    if (key.endsWith('.parquet')) parquet.add(key);
+    else written.set(key, hash(key.endsWith('.gz') ? gunzipSync(bytes) : bytes));
     return storage.put(key, bytes, condition);
   },
 };
+
+/** Parquet bytes carry writer details, so a parquet file counts by its rows, in file order. */
+async function parquetRows() {
+  const instance = await DuckDBInstance.create(':memory:');
+  const db = await instance.connect();
+  try {
+    for (const key of parquet) {
+      const file = join(run, 'bucket', key).replaceAll("'", "''");
+      const rows = (
+        await db.runAndReadAll(`SELECT * FROM read_parquet('${file}')`)
+      ).getRowObjectsJson();
+      written.set(key, hash(JSON.stringify(rows)));
+    }
+  } finally {
+    db.closeSync();
+    instance.closeSync();
+  }
+}
 
 let work: () => Promise<void>;
 if (step === 'broker') {
@@ -71,6 +86,9 @@ if (step === 'broker') {
 const started = performance.now();
 await work();
 const seconds = (performance.now() - started) / 1000;
+await parquetRows();
+// The whole process, so the benchmark can tell its own CPU from other processes'.
+const cpu = process.cpuUsage();
 const digest = createHash('sha256');
 for (const [key, hash] of [...written].sort(([a], [b]) => a.localeCompare(b)))
   digest.update(`${key} ${hash}\n`);
@@ -78,6 +96,7 @@ console.log(
   JSON.stringify({
     seconds,
     peakMB: Math.round(process.resourceUsage().maxRSS / 1024),
+    cpuSeconds: (cpu.user + cpu.system) / 1e6,
     files: written.size,
     digest: digest.digest('hex').slice(0, 12),
   }),
