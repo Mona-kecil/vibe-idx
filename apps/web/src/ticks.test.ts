@@ -8,50 +8,53 @@ import {
   doneDetail,
   tickTradesSchema,
   tradeBook,
-  type TickTrades,
 } from './ticks';
+import { seconds, tradeSession, type Fill } from './test-builders';
 
-type Trade = [
-  time: string,
-  price: number,
-  lots: number,
-  side: 'b' | 's',
-  buyer: string,
-  seller: string,
-  buyOrder: number,
-  sellOrder: number,
-  extra?: { auction?: boolean; board?: string; buyerForeign?: boolean; sellerForeign?: boolean },
-];
-const seconds = (time: string) => {
-  const [h, m, s] = time.split(':').map(Number);
-  return h! * 3600 + m! * 60 + s!;
-};
-function session(rows: Trade[]): TickTrades {
-  return tickTradesSchema.parse({
-    date: '2026-11-10',
-    ticker: 'SINI',
-    time: rows.map((r) => seconds(r[0])),
-    price: rows.map((r) => r[1]),
-    shares: rows.map((r) => r[2] * 100),
-    side: rows.map((r) => r[3]),
-    auction: rows.map((r) => r[8]?.auction ?? false),
-    board: rows.map((r) => r[8]?.board ?? 'RG'),
-    buyer: rows.map((r) => r[4]),
-    buyer_foreign: rows.map((r) => r[8]?.buyerForeign ?? false),
-    seller: rows.map((r) => r[5]),
-    seller_foreign: rows.map((r) => r[8]?.sellerForeign ?? false),
-    buy_order: rows.map((r) => r[6]),
-    sell_order: rows.map((r) => r[7]),
-  });
-}
+const session = (fills: Fill[]) => tradeSession(fills, { date: '2026-11-10', ticker: 'SINI' });
 
+// XL's sell order 99 sweeps two bids; AK then buys twice on the offer.
 const day = session([
-  ['08:58:00', 7700, 30, 's', 'PG', 'XL', 1, 2, { auction: true }],
-  ['09:05:29', 7675, 400, 's', 'XC', 'XL', 10, 99],
-  ['09:05:29', 7650, 1050, 's', 'YP', 'XL', 11, 99, { buyerForeign: true }],
-  ['09:05:31', 7650, 20, 'b', 'AK', 'XC', 120, 12, { buyerForeign: true }],
-  ['09:07:02', 7675, 5, 'b', 'AK', 'YP', 121, 13],
-  ['16:20:00', 7000, 5000, 'b', 'AO', 'AO', 200, 201, { board: 'NG' }],
+  {
+    time: '08:58:00',
+    price: 7700,
+    shares: 3000,
+    side: 's',
+    buyer: 'PG',
+    seller: 'XL',
+    auction: true,
+  },
+  {
+    time: '09:05:29',
+    price: 7675,
+    shares: 40000,
+    side: 's',
+    buyer: 'XC',
+    seller: 'XL',
+    sellOrder: 99,
+  },
+  {
+    time: '09:05:29',
+    price: 7650,
+    shares: 105000,
+    side: 's',
+    buyer: 'YP',
+    seller: 'XL',
+    sellOrder: 99,
+    buyerForeign: true,
+  },
+  { time: '09:05:31', price: 7650, shares: 2000, buyer: 'AK', seller: 'XC', buyerForeign: true },
+  { time: '09:07:02', price: 7675, shares: 500, buyer: 'AK', seller: 'YP' },
+  {
+    time: '16:20:00',
+    price: 7000,
+    shares: 500000,
+    buyer: 'AO',
+    seller: 'AO',
+    board: 'NG',
+    buyOrder: 200,
+    sellOrder: 201,
+  },
 ]);
 
 describe('done detail', () => {
@@ -134,11 +137,36 @@ it('uses the daily open that GP charts, before falling back to the first RG cont
 });
 
 it('keeps non-RG matches separate even with the same orders and never highlights RG by accident', () => {
+  const orders = { buyOrder: 10, sellOrder: 20 };
   const trades = session([
-    ['09:00:00', 4960, 0.24, 'b', 'CD', 'CD', 10, 20, { board: 'NG' }],
-    ['09:00:01', 4960, 712, 'b', 'CD', 'CD', 10, 20, { board: 'NG' }],
-    ['09:00:02', 5300, 19, 'b', 'CC', 'NI', 10, 20, { board: 'TN' }],
-    ['09:00:03', 5300, 10, 'b', 'CD', 'CD', 10, 20],
+    {
+      ...orders,
+      time: '09:00:00',
+      price: 4960,
+      shares: 24,
+      buyer: 'CD',
+      seller: 'CD',
+      board: 'NG',
+    },
+    {
+      ...orders,
+      time: '09:00:01',
+      price: 4960,
+      shares: 71200,
+      buyer: 'CD',
+      seller: 'CD',
+      board: 'NG',
+    },
+    {
+      ...orders,
+      time: '09:00:02',
+      price: 5300,
+      shares: 1900,
+      buyer: 'CC',
+      seller: 'NI',
+      board: 'TN',
+    },
+    { ...orders, time: '09:00:03', price: 5300, shares: 1000, buyer: 'CD', seller: 'CD' },
   ]);
   const blocks = doneDetail(trades);
   expect(blocks).toHaveLength(4);
