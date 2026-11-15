@@ -140,6 +140,23 @@ function restatedBy(s: Session) {
   );
 }
 
+const noTrades = (ticker: string, date: string) => ({
+  ticker,
+  date,
+  time: [],
+  price: [],
+  shares: [],
+  side: [],
+  auction: [],
+  board: [],
+  buyer: [],
+  buyer_foreign: [],
+  seller: [],
+  seller_foreign: [],
+  buy_order: [],
+  sell_order: [],
+});
+
 /** Every board where broker data or running trade has something, with both sides of it. */
 function boards(s: Session) {
   return brokerBoards
@@ -155,9 +172,12 @@ const checks: Check[] = [
   {
     name: 'brk-rt',
     title: 'BRK net by broker matches RT',
-    session: (s) =>
-      boards(s).flatMap(({ board, days, rt }) => {
+    session: (s) => {
+      const active = boards(s);
+      if (!active.length) return undefined;
+      return active.flatMap(({ board, days, rt }) => {
         if (!days.length) return [`${board}: RT has ${rt.count} trades, BRK has none`];
+        if (!rt.count) return [`${board}: BRK has trading, RT has no trades`];
         const brk = new Map(aggregateBrokers(days).map((b) => [b.code, b]));
         const codes = [...new Set([...brk.keys(), ...rt.brokers.keys()])].sort();
         const netShares = (factor: number) =>
@@ -201,21 +221,24 @@ const checks: Check[] = [
             ['BRK', 'RT'],
           ),
         ];
-      }),
+      });
+    },
   },
   {
     name: 'ff-rt',
     title: 'FF net matches RT foreign clients',
-    session: (s) =>
-      boards(s).flatMap(({ board, days, rt }) =>
-        days.length
-          ? differences(
-              board,
-              [['net', foreignFlow(days, [s.date], 'VALUE')[0]!.net, rt.foreign]],
-              ['FF', 'RT'],
-            )
-          : [],
-      ),
+    // A board that only one source has fails brk-rt; here it has nothing to compare.
+    session: (s) => {
+      const withBrokers = boards(s).filter(({ days, rt }) => days.length && rt.count);
+      if (!withBrokers.length) return undefined;
+      return withBrokers.flatMap(({ board, days, rt }) =>
+        differences(
+          board,
+          [['net', foreignFlow(days, [s.date], 'VALUE')[0]!.net, rt.foreign]],
+          ['FF', 'RT'],
+        ),
+      );
+    },
   },
   {
     name: 'prices-rt',
@@ -318,7 +341,14 @@ const tickers = positionals.length
           .regex(/^[A-Z0-9-]{1,12}$/)
           .parse(t.toUpperCase()),
       )
-  : (await readdir(ticks)).sort();
+  : [
+      ...new Set([
+        ...(await readdir(ticks)),
+        ...(await readdir(join(fixturesRoot, 'public/ticker'))).map((file) =>
+          file.replace(/\.json$/, ''),
+        ),
+      ]),
+    ].sort();
 
 const api = await localBrokerApi();
 const publicTicker = async (ticker: string) => {
@@ -350,12 +380,14 @@ const record = (check: Check, where: string, outcome: Outcome) => {
 
 const started = performance.now();
 let sessions = 0;
+const found = new Set<string>();
 const queue = [...tickers];
 await Promise.all(
   Array.from({ length: 8 }, async () => {
     for (let ticker = queue.shift(); ticker; ticker = queue.shift()) {
       const body = await api.json(`ticker=${ticker}`);
       const brokers = body ? brokerHistorySchema.parse(body).days : [];
+      if (brokers.length) found.add(ticker);
       for (const check of chosen)
         if ('history' in check)
           record(check, ticker, brokers.length ? check.history({ brokers }) : undefined);
@@ -363,18 +395,21 @@ await Promise.all(
       const prices = (await publicTicker(ticker))?.prices;
       for (const date of dates) {
         const raw = await api.json(`view=ticks&ticker=${ticker}&date=${date}&kind=trades`);
-        if (!raw) continue;
+        // A session without a running trade file still runs, as no trades, so broker data or prices for it fail.
+        if (raw) {
+          sessions++;
+          found.add(ticker);
+        }
         const book = await api.json(`view=ticks&ticker=${ticker}&date=${date}&kind=book`);
         const session: Session = {
           ticker,
           date,
-          trades: tickTradesSchema.parse(raw),
+          trades: tickTradesSchema.parse(raw ?? noTrades(ticker, date)),
           book: book ? tickBookSchema.parse(book) : undefined,
           brokers,
           prices,
           actions: actions.filter((action) => action.ticker === ticker),
         };
-        sessions++;
         for (const check of chosen)
           if ('session' in check) record(check, `${ticker} ${date}`, check.session(session));
       }
@@ -382,8 +417,14 @@ await Promise.all(
   }),
 );
 
+const unknownTickers = positionals.length ? tickers.filter((t) => !found.has(t)) : [];
+if (unknownTickers.length)
+  throw new Error(
+    `No broker data or running trade for ${unknownTickers.join(', ')} in the fixtures.`,
+  );
 const results = chosen.map((c) => ({ name: c.name, title: c.title, ...tally.get(c.name)! }));
-process.exitCode = results.some((r) => r.failed) ? 1 : 0;
+const compared = results.some((r) => r.passed || r.failed);
+process.exitCode = results.some((r) => r.failed) || !compared ? 1 : 0;
 if (args.json) {
   console.log(JSON.stringify({ dates, tickers: tickers.length, sessions, results }, null, 2));
 } else {
@@ -393,7 +434,7 @@ if (args.json) {
   );
   table(
     results.map((r) => [
-      r.failed ? 'FAIL' : 'PASS',
+      r.failed ? 'FAIL' : r.passed ? 'PASS' : 'NONE',
       r.name,
       r.passed,
       r.failed,
@@ -412,3 +453,4 @@ if (args.json) {
     if (lines.length > show) console.log(`  ${lines.length - show} more, --show N for more`);
   }
 }
+if (!compared) console.error('\nNothing was compared. Check the tickers, dates and checks given.');

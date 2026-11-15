@@ -4,7 +4,7 @@ import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 import type { Browser, Page } from 'playwright-core';
-import { checkout } from '../../pipeline/dev/checkout.js';
+import { checkout, outsideRepo } from '../../pipeline/dev/checkout.js';
 import { cliErrors } from '../../pipeline/dev/cli.js';
 import { launch, open, scope } from './browser.js';
 import type { Visit } from './browser.js';
@@ -51,7 +51,7 @@ if (!scenarios.length)
   throw new Error(`No scenarios${args.only ? ` named ${args.only}` : ''} in ${file}.`);
 const stamp = new Date().toISOString().slice(0, 19).replace(/[-:]/g, '').replace('T', '-');
 // Shots show private broker data, so they stay outside the repository.
-const out = args.out ?? join(homedir(), '.cache/vibe-idx/shots', stamp);
+const out = args.out ? outsideRepo(args.out) : join(homedir(), '.cache/vibe-idx/shots', stamp);
 await mkdir(out, { recursive: true });
 
 /** Draws each note's box and number into the page, then returns the shot of the scenario's area. */

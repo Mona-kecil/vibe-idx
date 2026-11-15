@@ -1,4 +1,5 @@
 import { parseArgs } from 'node:util';
+import { outsideRepo } from '../../pipeline/dev/checkout.js';
 import { cliErrors } from '../../pipeline/dev/cli.js';
 import { launch, open, scope } from './browser.js';
 import { startPreview } from './preview.js';
@@ -30,6 +31,8 @@ const fill = args.fill.map((pair): [string, string] => {
   return [pair.slice(0, at), pair.slice(at + 1)];
 });
 
+const shot = args.shot && outsideRepo(args.shot);
+
 const preview = await startPreview({ port: 0, quiet: true });
 const browser = await launch();
 try {
@@ -44,16 +47,20 @@ try {
   console.log(
     `${path} at ${args.clock}, ${args['signed-out'] ? 'signed out' : 'signed in'}, ${args.size}, data as of ${preview.asOf}`,
   );
-  console.log(visit.problems.length ? visit.problems.join('\n') : 'no errors or failed requests');
   for (const url of visit.missing) console.log(`not found (404): ${url}`);
+  console.log(
+    visit.problems.length
+      ? visit.problems.join('\n')
+      : `no errors or failed requests${visit.missing.length ? ' besides the 404s above' : ''}`,
+  );
   console.log();
   const target = await scope(visit.page, args.within);
   const outline = await target.ariaSnapshot();
   // Link targets are long and rarely the point, so they stay out unless asked for.
   console.log(args.urls ? outline : outline.replace(/\n\s*- \/url: .*/g, ''));
-  if (args.shot) {
-    await target.screenshot({ path: args.shot });
-    console.log(`\nscreenshot ${args.shot}`);
+  if (shot) {
+    await target.screenshot({ path: shot });
+    console.log(`\nscreenshot ${shot}`);
   }
   process.exitCode = visit.problems.length ? 1 : 0;
 } finally {

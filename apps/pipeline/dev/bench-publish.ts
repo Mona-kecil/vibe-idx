@@ -1,13 +1,13 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
-import { readFile, rm } from 'node:fs/promises';
+import { existsSync, rmSync } from 'node:fs';
+import { readdir, readFile, rm } from 'node:fs/promises';
 import { cpus, loadavg } from 'node:os';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { z } from 'zod';
 import { checkout } from './checkout';
-import { cliErrors, plural } from './cli';
-import { cutBrokerData, fixturePaths, fixtureStateSchema } from './local-r2';
+import { alive, cliErrors, plural } from './cli';
+import { cutBrokerData, fixturePaths, fixturesWriter, fixtureStateSchema } from './local-r2';
 
 const usage = `pnpm bench:publish [--base <git ref>] [--step broker|ticks] [--runs N] [--date <session>]
 
@@ -38,6 +38,20 @@ const state = fixtureStateSchema.parse(JSON.parse(await readFile(paths.state, 'u
 const date = z.iso.date().parse(args.date ?? state.asOf);
 if (!state.sessions.includes(date))
   throw new Error(`${date} is not a fixture session. Sessions: ${state.sessions.join(' ')}`);
+const writer = fixturesWriter();
+if (writer)
+  throw new Error(
+    `\`pnpm fixtures\` (pid ${writer}) is rewriting the fixtures. Wait for it to finish.`,
+  );
+
+// Each benchmark works in its own folder, so two can run at once; folders of finished processes go.
+const benches = join(paths.root, 'bench');
+for (const pid of existsSync(benches) ? await readdir(benches) : [])
+  if (!alive(Number(pid))) await rm(join(benches, pid), { recursive: true, force: true });
+const bench = join(benches, String(process.pid));
+process.once('exit', () => rmSync(bench, { recursive: true, force: true }));
+const brokerData = join(bench, 'broker');
+const run = join(bench, 'run');
 
 const load = loadavg()[0]!;
 console.log(
@@ -52,7 +66,7 @@ if (steps.includes('broker')) {
   ] as const;
   if (!sources.every(existsSync))
     throw new Error('Broker sources are missing. Run `pnpm fixtures` first.');
-  await cutBrokerData(...sources, state.asOf, join(paths.root, 'bench/broker'));
+  await cutBrokerData(...sources, state.asOf, brokerData);
 }
 
 const here = join(import.meta.dirname, '..');
@@ -70,10 +84,9 @@ const resultSchema = z.object({
 type Result = z.infer<typeof resultSchema>;
 
 function once(pipeline: string, step: string) {
-  const run = join(paths.root, 'bench', `run-${process.pid}`);
   const child = spawnSync(
     join(here, 'node_modules/.bin/tsx'),
-    [join(import.meta.dirname, 'bench-run.ts'), pipeline, step, date, run],
+    [join(import.meta.dirname, 'bench-run.ts'), pipeline, step, date, run, brokerData],
     { encoding: 'utf8', maxBuffer: 1 << 26 },
   );
   if (child.status !== 0) throw new Error(`${step} run failed:\n${child.stderr || child.stdout}`);
@@ -92,7 +105,7 @@ try {
     for (let i = 0; i < runs; i++)
       for (const side of sides) {
         // Each run starts from an empty bucket.
-        await rm(join(paths.root, 'bench', `run-${process.pid}`), { recursive: true, force: true });
+        await rm(run, { recursive: true, force: true });
         results.get(side.label)!.push(once(side.pipeline, step));
       }
     console.log(
@@ -123,12 +136,18 @@ try {
     if (before && after) {
       const change = (after.time / before.time - 1) * 100;
       const separate = after.high < before.low || after.low > before.high;
+      // With one or two runs a side, a gap between the ranges says little about the code.
+      const verdict =
+        runs < 3
+          ? `${plural(runs, 'run')} per side is too few to tell a difference in time; use --runs 3 or more`
+          : separate
+            ? `${Math.abs(change).toFixed(0)}% ${change < 0 ? 'faster' : 'slower'}`
+            : 'no measurable difference in time: the ranges overlap';
       console.log(
-        `${separate ? `${Math.abs(change).toFixed(0)}% ${change < 0 ? 'faster' : 'slower'}` : 'no measurable difference in time: the ranges overlap'}, peak memory ${after.peak - before.peak >= 0 ? '+' : ''}${(after.peak - before.peak).toLocaleString('en')} MB, ${after.digest === before.digest ? 'same output' : 'OUTPUT DIFFERS'}`,
+        `${verdict}, peak memory ${after.peak - before.peak >= 0 ? '+' : ''}${(after.peak - before.peak).toLocaleString('en')} MB, ${after.digest === before.digest ? 'same output' : 'OUTPUT DIFFERS'}`,
       );
     }
   }
 } finally {
   base?.remove();
-  await rm(join(paths.root, 'bench'), { recursive: true, force: true });
 }

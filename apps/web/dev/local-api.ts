@@ -3,12 +3,17 @@ import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { gunzipSync } from 'node:zlib';
 import { exportJWK, generateKeyPair, SignJWT } from 'jose';
-import { fixturePaths, fixtureStateSchema } from '../../pipeline/dev/local-r2.js';
+import { fixturePaths, fixturesWriter, fixtureStateSchema } from '../../pipeline/dev/local-r2.js';
 import type { createBrokerHandler as BrokerHandler } from '../api/_brokers.js';
 
 export const fixturesRoot = fixturePaths().root;
 
 export async function fixtureState() {
+  const writer = fixturesWriter();
+  if (writer)
+    throw new Error(
+      `\`pnpm fixtures\` (pid ${writer}) is rewriting ${fixturesRoot}. Wait for it to finish.`,
+    );
   const text = await readFile(fixturePaths().state, 'utf8').catch(() => {
     throw new Error(`No fixtures in ${fixturesRoot}. Run \`pnpm fixtures\` first.`);
   });

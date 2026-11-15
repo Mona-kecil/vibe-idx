@@ -13,8 +13,8 @@ import type { publishBrokerActivity as PublishBrokerActivity } from '../broker-p
 import type { TickStore as Store } from '../ticks-store';
 import { fixturePaths, localR2 } from './local-r2';
 
-const [pipeline, step, date, run] = z
-  .tuple([z.string(), z.enum(['broker', 'ticks']), z.iso.date(), z.string()])
+const [pipeline, step, date, run, brokerData] = z
+  .tuple([z.string(), z.enum(['broker', 'ticks']), z.iso.date(), z.string(), z.string()])
   .parse(process.argv.slice(2));
 const paths = fixturePaths();
 const load = (file: string) => import(pathToFileURL(join(pipeline, file)).href);
@@ -51,7 +51,7 @@ if (step === 'broker') {
   const { publishBrokerActivity } = (await load('broker-publication.ts')) as {
     publishBrokerActivity: typeof PublishBrokerActivity;
   };
-  work = () => publishBrokerActivity(join(paths.root, 'bench/broker'), join(run, 'out'), r2);
+  work = () => publishBrokerActivity(brokerData, join(run, 'out'), r2);
 } else {
   const { TickStore } = (await load('ticks-store.ts')) as { TickStore: typeof Store };
   work = async () => {

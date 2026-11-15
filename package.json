@@ -9,7 +9,7 @@
     "prepare": "vp config --no-agent",
     "test": "vp run --filter \"./apps/*\" --cache --concurrency-limit 1 test",
     "knip": "knip",
-    "fixtures": "pnpm --filter @vibe-idx/pipeline fixtures",
+    "fixtures": "pnpm --filter @vibe-idx/pipeline -s fixtures",
     "inspect": "pnpm --filter @vibe-idx/web -s inspect",
     "preview:local": "pnpm --filter @vibe-idx/web preview:local",
     "ui:check": "pnpm --filter @vibe-idx/web -s ui:check",

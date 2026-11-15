@@ -2,23 +2,14 @@
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "workspaces": {
     ".": {
-      "entry": [
-        "workers/dispatch/src/index.js"
-      ]
+      "entry": ["workers/dispatch/src/index.js"]
     },
     "apps/pipeline": {
-      "entry": [
-        "dev/*.ts"
-      ]
+      "entry": ["dev/*.ts"]
     },
     "apps/feeds": {},
     "apps/web": {
-      "entry": [
-        "api/*.ts",
-        "scripts/icons.ts",
-        "dev/*.{ts,tsx}",
-        "dev/shots/*.ts"
-      ]
+      "entry": ["api/*.ts", "scripts/icons.ts", "dev/*.{ts,tsx}", "dev/shots/*.ts"]
     }
   }
 }

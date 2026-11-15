@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { readFile, rm } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
@@ -11,7 +11,14 @@ import { createR2 } from '../brokers';
 import { sqlLiteral as lit } from '../ticks-data';
 import { TickStore } from '../ticks-store';
 import { cliErrors } from './cli';
-import { cutBrokerData, fixturePaths, fixtureStateSchema, localR2, writeAtomic } from './local-r2';
+import {
+  cutBrokerData,
+  lockFixtures,
+  fixturePaths,
+  fixtureStateSchema,
+  localR2,
+  writeAtomic,
+} from './local-r2';
 
 cliErrors();
 const { values: args } = parseArgs({
@@ -22,6 +29,7 @@ const { values: args } = parseArgs({
 });
 const sessions = z.coerce.number().int().positive().max(60).parse(args.sessions);
 const paths = fixturePaths();
+await lockFixtures();
 type State = z.infer<typeof fixtureStateSchema>;
 
 const started = performance.now();
@@ -64,7 +72,10 @@ const sandbox = localR2(paths.bucket, async (key) =>
 const db = await (await DuckDBInstance.create(':memory:')).connect();
 const rows = async (sql: string) => (await db.runAndReadAll(sql)).getRowObjectsJson();
 
-/** The newest dates with complete broker data and complete running trade, so every view agrees. Order books started later, so they may be missing. */
+/**
+ * The newest sessions with complete running trade, ending at the last one that also has complete broker data, so
+ * every view agrees. Order books started later, so they may be missing.
+ */
 async function pickWindow(fresh: boolean): Promise<Pick<State, 'asOf' | 'sessions'>> {
   const ledger = await source('ticks/ledger.parquet', fresh);
   const coverage = await source('parquet/broker-activity-coverage.parquet', fresh);
@@ -72,12 +83,14 @@ async function pickWindow(fresh: boolean): Promise<Pick<State, 'asOf' | 'session
     await rows(`SELECT max(date)::VARCHAR AS last FROM read_parquet(${lit(coverage)}) d
     WHERE broker IS NULL AND listed AND NOT EXISTS (SELECT 1 FROM read_parquet(${lit(coverage)}) t
       WHERE t.date = d.date AND t.board = d.board AND t.broker IS NOT NULL AND t.complete IS DISTINCT FROM true)`);
-  const asOf = z.iso.date().parse(broker?.last);
   const dates = await rows(`SELECT date::VARCHAR AS date FROM read_parquet(${lit(ledger)})
-    WHERE date <= ${lit(asOf)}::DATE AND dataset = 'running_trade' GROUP BY date
+    WHERE date <= ${lit(z.iso.date().parse(broker?.last))}::DATE AND dataset = 'running_trade' GROUP BY date
     HAVING bool_and(status IN ('complete', 'no_trades'))
     ORDER BY date DESC LIMIT ${sessions}`);
-  return { asOf, sessions: dates.map((r) => z.iso.date().parse(r.date)).reverse() };
+  const picked = dates.map((r) => z.iso.date().parse(r.date)).reverse();
+  const asOf = picked.at(-1);
+  if (!asOf) throw new Error('No session has complete running trade and broker data.');
+  return { asOf, sessions: picked };
 }
 
 /** A hash of the publication code, so fixtures made by other code are made again. */
@@ -91,18 +104,17 @@ const saved = existsSync(paths.state)
   ? fixtureStateSchema.parse(JSON.parse(await readFile(paths.state, 'utf8')))
   : undefined;
 const state: State =
-  saved && !args.latest && saved.sessions.length >= sessions
+  saved && !args.latest && saved.sessions.length === sessions
     ? saved
     : {
         generated: saved?.generated ?? {},
         ...(await step('pick sessions', () => pickWindow(args.latest))),
       };
-const save = () => writeFile(paths.state, JSON.stringify(state, null, 2) + '\n');
-await mkdir(paths.root, { recursive: true });
+const save = () => writeAtomic(paths.state, JSON.stringify(state, null, 2) + '\n');
 await save();
 console.log(`as of ${state.asOf}, sessions ${state.sessions[0]} to ${state.sessions.at(-1)}`);
 
-const brokerCode = await codeVersion('../broker-publication.ts');
+const brokerCode = await codeVersion('../broker-publication.ts', './local-r2.ts');
 const brokerKey = `broker@${state.asOf}`;
 if (state.generated[brokerKey] !== brokerCode) {
   const [activity, coverage] = await step('download broker data', async () => [
@@ -119,7 +131,7 @@ if (state.generated[brokerKey] !== brokerCode) {
   await save();
 }
 
-const tickCode = await codeVersion('../ticks-store.ts', '../ticks-data.ts');
+const tickCode = await codeVersion('../ticks-store.ts', '../ticks-data.ts', './local-r2.ts');
 const pending = state.sessions.filter((date) => state.generated[`ticks@${date}`] !== tickCode);
 if (pending.length) {
   const books = new Set(

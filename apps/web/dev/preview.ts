@@ -1,12 +1,13 @@
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { readFile, rm } from 'node:fs/promises';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gunzipSync, gzipSync } from 'node:zlib';
 import { createServer } from 'vite-plus';
 import { z } from 'zod';
+import { writeAtomic } from '../../pipeline/dev/local-r2.js';
 import { fixtureState, fixturesRoot, localBrokerApi } from './local-api.js';
 import { previewClient } from './preview-client.js';
 
@@ -25,22 +26,18 @@ const snapshotFiles = [
   'corporate-actions.json',
 ];
 
-async function save(file: string, bytes: Buffer) {
-  await mkdir(dirname(file), { recursive: true });
-  await writeFile(file + '.tmp', bytes);
-  await rename(file + '.tmp', file);
-}
-
 /** Copies the public data once per fixture date, so prices and broker data describe the same session. */
 async function snapshotPublic(asOf: string) {
   const marker = join(snapshot, 'snapshot.json');
   if (existsSync(marker) && JSON.parse(await readFile(marker, 'utf8')).asOf === asOf) return;
   const started = performance.now();
+  // Responses recorded for the previous date would no longer match the data.
+  await rm(join(snapshot, 'api'), { recursive: true, force: true });
   const fetchFile = async (path: string) => {
     const response = await fetch(`${publicBucket}/${path}`);
     if (response.status === 404) return;
     if (!response.ok) throw new Error(`Public ${path} HTTP ${response.status}`);
-    await save(join(snapshot, path), Buffer.from(await response.arrayBuffer()));
+    await writeAtomic(join(snapshot, path), Buffer.from(await response.arrayBuffer()));
   };
   await Promise.all(snapshotFiles.map(fetchFile));
   const tickers = z
@@ -59,7 +56,7 @@ async function snapshotPublic(asOf: string) {
     console.warn(
       `Public prices are through ${health.prices} but broker data through ${asOf}. Run \`pnpm fixtures --latest\` once both are published.`,
     );
-  await save(marker, Buffer.from(JSON.stringify({ asOf, prices: health.prices })));
+  await writeAtomic(marker, Buffer.from(JSON.stringify({ asOf, prices: health.prices })));
   console.log(`public data copied in ${((performance.now() - started) / 1000).toFixed(1)}s`);
 }
 
@@ -138,25 +135,27 @@ export async function startPreview({
     res.end(await readFile(file));
   }
 
-  /** Other API routes come from production once, then replay, so the page stays the same between runs. */
+  /**
+   * Other API routes come from production once, then replay, so the page stays the same between runs. Errors pass
+   * through unrecorded, so a failed request is tried again next time.
+   */
   async function recorded(req: IncomingMessage, res: ServerResponse) {
     const key = createHash('sha256').update(req.url!).digest('hex').slice(0, 16);
     const file = join(snapshot, 'api', `${key}.json`);
-    if (!existsSync(file)) {
+    let entry: { status: number; type: string; body: string };
+    if (existsSync(file)) entry = JSON.parse(await readFile(file, 'utf8')) as typeof entry;
+    else {
       const response = await fetch(`${liveApi}${req.url}`);
-      const entry = {
+      entry = {
         status: response.status,
         type: response.headers.get('Content-Type') ?? 'application/json',
         body: await response.text(),
       };
-      await save(file, Buffer.from(JSON.stringify(entry)));
-      console.log(`recorded ${req.url} from production`);
+      if (response.ok) {
+        await writeAtomic(file, JSON.stringify(entry));
+        console.log(`recorded ${req.url} from production`);
+      }
     }
-    const entry = JSON.parse(await readFile(file, 'utf8')) as {
-      status: number;
-      type: string;
-      body: string;
-    };
     res.statusCode = entry.status;
     res.setHeader('Content-Type', entry.type);
     res.end(entry.body);
