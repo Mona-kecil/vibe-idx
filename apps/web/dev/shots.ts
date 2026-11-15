@@ -1,11 +1,11 @@
-import { execFileSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
-import { mkdir, symlink, writeFile } from 'node:fs/promises';
-import { homedir, tmpdir } from 'node:os';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 import type { Browser, Page } from 'playwright-core';
+import { checkout } from '../../pipeline/dev/checkout.js';
+import { cliErrors } from '../../pipeline/dev/cli.js';
 import { launch, open, scope } from './browser.js';
 import type { Visit } from './browser.js';
 import { startPreview } from './preview.js';
@@ -26,6 +26,7 @@ export type Scenario = Visit & {
   panel?: boolean;
 };
 
+cliErrors();
 const usage = `pnpm shots <scenarios.ts> [--base <git ref>] [--only <name>] [--out <dir>]
 
 Shoots each scenario on this checkout and, with --base, on that ref too, then writes before, after and
@@ -52,27 +53,6 @@ const stamp = new Date().toISOString().slice(0, 19).replace(/[-:]/g, '').replace
 // Shots show private broker data, so they stay outside the repository.
 const out = args.out ?? join(homedir(), '.cache/vibe-idx/shots', stamp);
 await mkdir(out, { recursive: true });
-
-const web = fileURLToPath(new URL('..', import.meta.url));
-const repo = execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd: web }).toString().trim();
-
-/** A detached checkout of the base ref that borrows this checkout's installed packages. */
-async function checkout(ref: string) {
-  const sha = execFileSync('git', ['rev-parse', '--verify', `${ref}^{commit}`], { cwd: repo })
-    .toString()
-    .trim();
-  const dir = join(tmpdir(), `vibe-idx-base-${sha.slice(0, 12)}`);
-  if (!existsSync(dir)) {
-    execFileSync('git', ['worktree', 'add', '--detach', '--quiet', dir, sha], { cwd: repo });
-    for (const modules of ['node_modules', 'apps/web/node_modules', 'apps/pipeline/node_modules'])
-      if (existsSync(join(repo, modules))) await symlink(join(repo, modules), join(dir, modules));
-  }
-  return {
-    web: join(dir, 'apps/web'),
-    label: `${ref} (${sha.slice(0, 7)})`,
-    remove: () => execFileSync('git', ['worktree', 'remove', '--force', dir], { cwd: repo }),
-  };
-}
 
 /** Draws each note's box and number into the page, then returns the shot of the scenario's area. */
 async function shoot(page: Page, scenario: Scenario, side: 'before' | 'after') {
@@ -105,7 +85,7 @@ async function shoot(page: Page, scenario: Scenario, side: 'before' | 'after') {
     }
     document.body.append(layer);
   }, marks);
-  const area = scenario.within ? await scope(page, scenario.within).boundingBox() : null;
+  const area = scenario.within ? await (await scope(page, scenario.within)).boundingBox() : null;
   const size = page.viewportSize()!;
   const pad = 16;
   const clip = area && {
@@ -133,7 +113,9 @@ async function compare(browser: Browser, before: Buffer, after: Buffer, labels: 
 
 const base = args.base ? await checkout(args.base) : undefined;
 const head = await startPreview({ port: 0, quiet: true });
-const before = base ? await startPreview({ port: 0, quiet: true, web: base.web }) : undefined;
+const before = base
+  ? await startPreview({ port: 0, quiet: true, web: join(base.dir, 'apps/web') })
+  : undefined;
 const browser = await launch();
 const report: string[] = [];
 try {

@@ -4,6 +4,8 @@ import { z } from 'zod';
 import { aggregateBrokers, brokerName } from '../src/broker-data.js';
 import { brokerBoards, brokerHistorySchema } from '../src/brokers.js';
 import { clock, tickTradesSchema } from '../src/ticks.js';
+import { cliErrors } from '../../pipeline/dev/cli.js';
+import { money, table } from './format.js';
 import { fixtureState, fixturesRoot, localBrokerApi } from './local-api.js';
 
 const usage = `pnpm inspect                       fixture dates and contents
@@ -13,12 +15,7 @@ pnpm inspect rt <TICKER> [date]     one session of running trade
 dates: one session (2026-11-13) or a range (2026-11-03..2026-11-13), the as-of session by default
 --board regular|negotiation|cash|all (default regular), --top N (default 8)`;
 
-// Piping into `head` closes stdout early, which is fine.
-process.stdout.on('error', () => process.exit(0));
-process.on('uncaughtException', (error) => {
-  console.error(error.message);
-  process.exit(1);
-});
+cliErrors();
 
 const args = process.argv.slice(2).filter((arg) => arg !== '--');
 const option = (name: string, fallback: string) => {
@@ -45,19 +42,6 @@ const range = () => {
   const [from, to = from] = (rawDates ?? state.asOf).split('..');
   return z.tuple([z.iso.date(), z.iso.date()]).parse([from, to]);
 };
-
-const compact = new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 2 });
-const money = (value: number) => (value < 0 ? '-' : '') + compact.format(Math.abs(value));
-function table(rows: (string | number)[][], header: string[]) {
-  const cells = [...(header.some(Boolean) ? [header] : []), ...rows.map((row) => row.map(String))];
-  const widths = header.map((_, i) => Math.max(...cells.map((row) => row[i]!.length)));
-  for (const row of cells)
-    console.log(
-      row
-        .map((cell, i) => (i === 0 ? cell.padEnd(widths[i]!) : cell.padStart(widths[i]!)))
-        .join('  '),
-    );
-}
 
 if (!command) {
   const tickers = await readdir(join(fixturesRoot, 'bucket/site/broker'));

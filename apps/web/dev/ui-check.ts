@@ -1,7 +1,9 @@
 import { parseArgs } from 'node:util';
+import { cliErrors } from '../../pipeline/dev/cli.js';
 import { launch, open, scope } from './browser.js';
 import { startPreview } from './preview.js';
 
+cliErrors();
 const { values: args, positionals } = parseArgs({
   allowPositionals: true,
   options: {
@@ -45,7 +47,7 @@ try {
   console.log(visit.problems.length ? visit.problems.join('\n') : 'no errors or failed requests');
   for (const url of visit.missing) console.log(`not found (404): ${url}`);
   console.log();
-  const target = scope(visit.page, args.within);
+  const target = await scope(visit.page, args.within);
   const outline = await target.ariaSnapshot();
   // Link targets are long and rarely the point, so they stay out unless asked for.
   console.log(args.urls ? outline : outline.replace(/\n\s*- \/url: .*/g, ''));

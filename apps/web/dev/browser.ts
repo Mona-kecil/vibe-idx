@@ -85,10 +85,24 @@ export async function open(browser: Browser, base: string, visit: Visit) {
 }
 
 /** The panel or region with this accessible name, or the whole page. */
-export const scope = (page: Page, name?: string) =>
-  name
-    ? page
-        .getByRole('tabpanel', { name, exact: true })
-        .or(page.getByRole('region', { name, exact: true }))
-        .first()
-    : page.locator('body');
+export async function scope(page: Page, name?: string) {
+  if (!name) return page.locator('body');
+  const area = page
+    .getByRole('tabpanel', { name, exact: true })
+    .or(page.getByRole('region', { name, exact: true }))
+    .first();
+  if (await area.count()) return area;
+  const names = await page
+    .locator('[role=tabpanel], [role=region], section[aria-label], section[aria-labelledby]')
+    .evaluateAll((areas) =>
+      areas.flatMap((area) => {
+        const label =
+          area.getAttribute('aria-label') ??
+          document.getElementById(area.getAttribute('aria-labelledby') ?? '')?.textContent;
+        return label ? [label.trim()] : [];
+      }),
+    );
+  throw new Error(
+    `No panel or region named ${name}. On this page: ${[...new Set(names)].join(', ')}`,
+  );
+}

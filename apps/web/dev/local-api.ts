@@ -1,22 +1,18 @@
 import { readFile } from 'node:fs/promises';
-import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { gunzipSync } from 'node:zlib';
 import { exportJWK, generateKeyPair, SignJWT } from 'jose';
-import { z } from 'zod';
+import { fixturePaths, fixtureStateSchema } from '../../pipeline/dev/local-r2.js';
 import type { createBrokerHandler as BrokerHandler } from '../api/_brokers.js';
 
-export const fixturesRoot =
-  process.env.VIBE_IDX_FIXTURES ?? join(homedir(), '.cache/vibe-idx/local');
+export const fixturesRoot = fixturePaths().root;
 
-const stateSchema = z.object({ asOf: z.iso.date(), sessions: z.array(z.iso.date()) });
 export async function fixtureState() {
-  const file = join(fixturesRoot, 'fixtures.json');
-  const text = await readFile(file, 'utf8').catch(() => {
+  const text = await readFile(fixturePaths().state, 'utf8').catch(() => {
     throw new Error(`No fixtures in ${fixturesRoot}. Run \`pnpm fixtures\` first.`);
   });
-  return stateSchema.parse(JSON.parse(text));
+  return fixtureStateSchema.parse(JSON.parse(text));
 }
 
 /**
