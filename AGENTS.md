@@ -27,4 +27,7 @@ Use these commands before writing one-off scripts over data files. They run the 
 - `pnpm fixtures` copies the latest 10 sessions of running trade and the year's broker data from the private bucket, read-only, into `~/.cache/vibe-idx/local`. It then builds the files the app reads with the pipeline's publication code. Reruns skip finished work, and publication code changes rebuild what they affect. `--latest` moves the window forward, and `--sessions N` changes its length.
 - `pnpm inspect` prints the fixture dates. `pnpm inspect brk <TICKER> [dates]` prints net buyers and sellers through the broker API, and `pnpm inspect rt <TICKER> [date]` summarises one session of running trade.
 
+- `pnpm preview:local` runs the app on the fixtures, signed in, with no request to production data. It copies the public data once per fixture date, so prices and broker data describe the same session, and pins the browser clock to that session. The panel at the bottom left sets the clock (after the close, or a time during the session, which cuts running trade at that time) and signs in or out.
+- `pnpm ui:check [path]` opens a page in the same preview and prints console errors, failed requests, 404s and the page's accessibility outline. `--click`, `--fill`, `--clock`, `--signed-out` and `--within` reach a state and narrow the outline, and `--shot` saves a screenshot. Check a UI change with it before taking screenshots.
+
 Broker data is private. Never paste its figures into commits, PRs, issues or anything public.

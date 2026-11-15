@@ -10,7 +10,9 @@
     "test": "vp run --filter \"./apps/*\" --cache --concurrency-limit 1 test",
     "knip": "knip",
     "fixtures": "pnpm --filter @vibe-idx/pipeline fixtures",
-    "inspect": "pnpm --filter @vibe-idx/web -s inspect"
+    "inspect": "pnpm --filter @vibe-idx/web -s inspect",
+    "preview:local": "pnpm --filter @vibe-idx/web preview:local",
+    "ui:check": "pnpm --filter @vibe-idx/web -s ui:check"
   },
   "devDependencies": {
     "knip": "6.44.0",

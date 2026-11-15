@@ -16,7 +16,7 @@
       "entry": [
         "api/*.ts",
         "scripts/icons.ts",
-        "dev/*.ts"
+        "dev/*.{ts,tsx}"
       ]
     }
   }
