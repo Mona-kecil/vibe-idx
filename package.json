@@ -8,7 +8,9 @@
   "scripts": {
     "prepare": "vp config --no-agent",
     "test": "vp run --filter \"./apps/*\" --cache --concurrency-limit 1 test",
-    "knip": "knip"
+    "knip": "knip",
+    "fixtures": "pnpm --filter @vibe-idx/pipeline fixtures",
+    "inspect": "pnpm --filter @vibe-idx/web -s inspect"
   },
   "devDependencies": {
     "knip": "6.44.0",

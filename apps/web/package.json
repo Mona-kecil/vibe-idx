@@ -11,7 +11,8 @@
     "dev:web": "CI=true vp dev",
     "hillclimb": "tsx hillclimb/run.ts",
     "preview": "vp preview",
-    "test": "CI=true vp test --configLoader runner"
+    "test": "CI=true vp test --configLoader runner",
+    "inspect": "tsx dev/inspect.ts"
   },
   "dependencies": {
     "@resvg/resvg-js": "2.6.2",

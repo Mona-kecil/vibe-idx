@@ -19,3 +19,12 @@
 Keep units, reporting dates, and material uncertainty where they affect interpretation. Put supporting source details in tooltips or source views instead of repeating them throughout the page.
 
 Use charts for values that change over time. Keep exact values and source records available for inspection.
+
+# Local data
+
+Use these commands before writing one-off scripts over data files. They run the pipeline's and the API's own code, so what they show is what the app shows.
+
+- `pnpm fixtures` copies the latest 10 sessions of running trade and the year's broker data from the private bucket, read-only, into `~/.cache/vibe-idx/local`. It then builds the files the app reads with the pipeline's publication code. Reruns skip finished work, and publication code changes rebuild what they affect. `--latest` moves the window forward, and `--sessions N` changes its length.
+- `pnpm inspect` prints the fixture dates. `pnpm inspect brk <TICKER> [dates]` prints net buyers and sellers through the broker API, and `pnpm inspect rt <TICKER> [date]` summarises one session of running trade.
+
+Broker data is private. Never paste its figures into commits, PRs, issues or anything public.
