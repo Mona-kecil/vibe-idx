@@ -88,14 +88,15 @@ function cookies(req: IncomingMessage) {
   );
 }
 
+/** `web` is the app checkout to serve; the preview's own code always comes from this checkout. */
 export async function startPreview({
   port = 5173,
   quiet = false,
-}: { port?: number; quiet?: boolean } = {}) {
+  web = fileURLToPath(new URL('..', import.meta.url)),
+}: { port?: number; quiet?: boolean; web?: string } = {}) {
   const state = await fixtureState();
   await snapshotPublic(state.asOf);
-  const api = await localBrokerApi();
-  const web = fileURLToPath(new URL('..', import.meta.url));
+  const api = await localBrokerApi(web);
 
   async function brokers(req: IncomingMessage, res: ServerResponse) {
     const jar = cookies(req);
@@ -165,10 +166,18 @@ export async function startPreview({
     root: web,
     configFile: join(web, 'vite.config.ts'),
     logLevel: quiet ? 'silent' : 'info',
+    // Checkouts share node_modules through symlinks, so each keeps its own prebundle cache.
+    cacheDir: join(
+      fixturesRoot,
+      'vite',
+      createHash('sha256').update(web).digest('hex').slice(0, 12),
+    ),
     server: { port, strictPort: port !== 0, proxy: {} },
     define: { 'import.meta.env.VITE_WORKOS_CLIENT_ID': JSON.stringify('client_local') },
     resolve: {
-      alias: { '@workos-inc/authkit-react': join(web, 'dev/preview-auth.tsx') },
+      alias: {
+        '@workos-inc/authkit-react': fileURLToPath(new URL('preview-auth.tsx', import.meta.url)),
+      },
     },
     plugins: [
       {

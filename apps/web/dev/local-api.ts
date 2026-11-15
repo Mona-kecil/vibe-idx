@@ -1,10 +1,11 @@
 import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { gunzipSync } from 'node:zlib';
 import { exportJWK, generateKeyPair, SignJWT } from 'jose';
 import { z } from 'zod';
-import { createBrokerHandler } from '../api/_brokers.js';
+import type { createBrokerHandler as BrokerHandler } from '../api/_brokers.js';
 
 export const fixturesRoot =
   process.env.VIBE_IDX_FIXTURES ?? join(homedir(), '.cache/vibe-idx/local');
@@ -18,8 +19,16 @@ export async function fixtureState() {
   return stateSchema.parse(JSON.parse(text));
 }
 
-/** The production broker API, signed in as a local user and reading the fixtures in place of the private bucket. */
-export async function localBrokerApi() {
+/**
+ * The production broker API, signed in as a local user and reading the fixtures in place of the private bucket.
+ * `web` picks whose API code runs, so a before shot uses the base checkout's handler.
+ */
+export async function localBrokerApi(web = fileURLToPath(new URL('..', import.meta.url))) {
+  const { createBrokerHandler } = (await import(
+    pathToFileURL(join(web, 'api/_brokers.ts')).href
+  )) as {
+    createBrokerHandler: typeof BrokerHandler;
+  };
   const clientId = 'client_local';
   const { publicKey, privateKey } = await generateKeyPair('RS256');
   const jwks = { keys: [{ ...(await exportJWK(publicKey)), alg: 'RS256', kid: 'local' }] };

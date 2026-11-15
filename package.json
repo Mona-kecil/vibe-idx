@@ -12,7 +12,8 @@
     "fixtures": "pnpm --filter @vibe-idx/pipeline fixtures",
     "inspect": "pnpm --filter @vibe-idx/web -s inspect",
     "preview:local": "pnpm --filter @vibe-idx/web preview:local",
-    "ui:check": "pnpm --filter @vibe-idx/web -s ui:check"
+    "ui:check": "pnpm --filter @vibe-idx/web -s ui:check",
+    "shots": "pnpm --filter @vibe-idx/web -s shots"
   },
   "devDependencies": {
     "knip": "6.44.0",
