@@ -82,7 +82,7 @@ if (!command) {
   ];
   const header = (side: string) => [
     side,
-    'type',
+    'broker type',
     'buy IDR',
     'sell IDR',
     'net IDR',

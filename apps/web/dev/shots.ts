@@ -551,7 +551,12 @@ try {
     report.push(
       `## ${scenario.name}`,
       '',
-      ...(change.length ? [`Change: ${change.join('\n')}`, ''] : []),
+      ...(change.length
+        ? [
+            `Change: ${change.join('\n')}${change[0] === 'no visible change' && outline.length ? ', but the accessibility outline differs, below' : ''}`,
+            '',
+          ]
+        : []),
       ...(shots.before && shots.after
         ? outline.length
           ? [
