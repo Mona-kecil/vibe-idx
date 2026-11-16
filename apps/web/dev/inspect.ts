@@ -107,7 +107,7 @@ if (!command) {
   );
   // Printed figures are rounded, so comparing them by eye with running trade proves little.
   console.log(
-    `\nchecked exactly against running trade by: pnpm verify:data ${code} --dates ${from === to ? from : `${from}..${to}`} --check brk-rt`,
+    `\nto check every broker exactly against running trade, run: pnpm verify:data ${code} --dates ${from === to ? from : `${from}..${to}`} --check brk-rt`,
   );
 } else if (command === 'rt') {
   const code = ticker();

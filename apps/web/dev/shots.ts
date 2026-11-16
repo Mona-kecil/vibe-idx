@@ -160,8 +160,14 @@ async function shoot(page: Page, scenario: Scenario, side: 'before' | 'after') {
             width: 22,
             height: 22,
           };
-          // Below the badges already placed in the column when it would overlap one.
-          while (badges.some((b) => overlaps(spot, b))) spot = { ...spot, y: spot.y + 24 };
+          // The nearest free place in the column, above or below, when it would overlap a badge already there.
+          const level = spot.y;
+          for (let step = 1; badges.some((b) => overlaps(spot, b)); step++) {
+            const offset = Math.ceil(step / 2) * 24 * (step % 2 ? -1 : 1);
+            const y = level + offset;
+            if (y >= top && y <= bottom) spot = { ...spot, y };
+            else if (step > 200) break;
+          }
           const middle = spot.y + 11;
           const toLeft = gutter < frame.x;
           const from = toLeft ? spot.x + 22 : spot.x;
