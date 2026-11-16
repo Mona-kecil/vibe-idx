@@ -42,7 +42,9 @@ cliErrors();
 const usage = `pnpm verify:data [TICKER]... [--dates <date|from..to|all>] [--check <name>]... [--show N] [--json]
 
 Checks that views built from different sources agree on the fixtures, through the app's own API and functions.
-The as-of session and every ticker by default. Exits 1 when a check fails.`;
+The as-of session and every ticker by default. Exits 1 when a check fails or nothing was compared. A note is a
+difference with a known cause, and a skip says why a check didn't apply, such as a session without an order book.
+--show N lists up to N failures, notes and skips per check, 5 by default. --json prints only JSON on stdout.`;
 const { values: args, positionals } = parseArgs({
   allowPositionals: true,
   options: {
@@ -69,11 +71,11 @@ type Session = {
 /** A ticker's whole broker history, for checks over a period rather than a session. */
 type History = { brokers: BrokerDay[] };
 /**
- * A mismatch as one line, or a difference with a known cause as a note. No mismatch passes, and undefined
- * means the check doesn't apply.
+ * A mismatch as one line, or a difference with a known cause as a note. No mismatch passes, and a skip says why
+ * the check doesn't apply.
  */
 type Finding = string | { note: string };
-type Outcome = Finding[] | undefined;
+type Outcome = Finding[] | { skip: string };
 type Check =
   | { name: string; title: string; session: (s: Session) => Outcome }
   | { name: string; title: string; history: (h: History) => Outcome };
@@ -174,7 +176,7 @@ const checks: Check[] = [
     title: 'BRK net by broker matches RT',
     session: (s) => {
       const active = boards(s);
-      if (!active.length) return undefined;
+      if (!active.length) return { skip: 'no broker data or running trade' };
       return active.flatMap(({ board, days, rt }) => {
         if (!days.length) return [`${board}: RT has ${rt.count} trades, BRK has none`];
         if (!rt.count) return [`${board}: BRK has trading, RT has no trades`];
@@ -230,7 +232,7 @@ const checks: Check[] = [
     // A board that only one source has fails brk-rt; here it has nothing to compare.
     session: (s) => {
       const withBrokers = boards(s).filter(({ days, rt }) => days.length && rt.count);
-      if (!withBrokers.length) return undefined;
+      if (!withBrokers.length) return { skip: 'no board with both broker data and running trade' };
       return withBrokers.flatMap(({ board, days, rt }) =>
         differences(
           board,
@@ -244,12 +246,14 @@ const checks: Check[] = [
     name: 'prices-rt',
     title: 'Daily prices match RT on the regular board',
     session: (s) => {
-      if (!s.prices) return undefined;
+      if (!s.prices) return { skip: 'no daily prices, as for a warrant' };
       // A day without trades still has a price row, carrying the last close.
       const price = s.prices.find((p) => p.date === s.date && p.volume > 0);
       const [day] = bars(s.trades, 24 * 60);
       if (!price || !day)
-        return price || day ? [`only ${price ? 'prices' : 'RT'} has the session`] : undefined;
+        return price || day
+          ? [`only ${price ? 'prices' : 'RT'} has the session`]
+          : { skip: 'no trades' };
       // IDX leaves open, high and low out on some days.
       const optional = (key: string, a: number | null, b: number): [string, number, number][] =>
         a == null ? [] : [[key, a, b]];
@@ -272,9 +276,10 @@ const checks: Check[] = [
     title: 'OB close matches the daily close',
     session: (s) => {
       const price = s.prices?.find((p) => p.date === s.date);
-      return s.book?.close == null || !price
-        ? undefined
-        : differences('close', [['close', s.book.close, price.close]], ['OB', 'prices']);
+      if (!s.book) return { skip: 'no order book in the fixtures' };
+      if (s.book.close == null) return { skip: 'the order book has no close' };
+      if (!price) return { skip: 'no daily price for the session' };
+      return differences('close', [['close', s.book.close, price.close]], ['OB', 'prices']);
     },
   },
   {
@@ -361,13 +366,22 @@ const publicTicker = async (ticker: string) => {
 const tally = new Map(
   chosen.map((c) => [
     c.name,
-    { passed: 0, failed: 0, skipped: 0, failures: [] as string[], notes: [] as string[] },
+    {
+      passed: 0,
+      failed: 0,
+      skipped: 0,
+      failures: [] as string[],
+      notes: [] as string[],
+      /** Where each reason applied. */
+      skips: {} as Record<string, string[]>,
+    },
   ]),
 );
 const record = (check: Check, where: string, outcome: Outcome) => {
   const t = tally.get(check.name)!;
-  if (!outcome) {
+  if ('skip' in outcome) {
     t.skipped++;
+    (t.skips[outcome.skip] ??= []).push(where);
     return;
   }
   const failures = outcome.filter((f) => typeof f === 'string');
@@ -390,7 +404,11 @@ await Promise.all(
       if (brokers.length) found.add(ticker);
       for (const check of chosen)
         if ('history' in check)
-          record(check, ticker, brokers.length ? check.history({ brokers }) : undefined);
+          record(
+            check,
+            ticker,
+            brokers.length ? check.history({ brokers }) : { skip: 'no broker data' },
+          );
       if (!chosen.some((check) => 'session' in check)) continue;
       const prices = (await publicTicker(ticker))?.prices;
       for (const date of dates) {
@@ -446,7 +464,14 @@ if (args.json) {
     'llrrrrl',
   );
   for (const r of results) {
-    const lines = [...r.failures, ...r.notes.map((note) => `note: ${note}`)];
+    const lines = [
+      ...r.failures,
+      ...r.notes.map((note) => `note: ${note}`),
+      ...Object.entries(r.skips).map(
+        ([reason, where]) =>
+          `skip: ${reason}, ${plural(where.length, 'time')}: ${where.slice(0, 3).join(', ')}${where.length > 3 ? ', ...' : ''}`,
+      ),
+    ];
     if (!lines.length || !show) continue;
     console.log(`\n${r.name}`);
     for (const line of lines.slice(0, show)) console.log(`  ${line}`);

@@ -13,7 +13,7 @@ export type Visit = {
   click?: string[];
   /** Fields to type into, by accessible name; each gets Enter after its value. */
   fill?: [name: string, value: string][];
-  /** For anything the names above can't reach. */
+  /** For anything the names above can't reach: a Playwright page, after the clicks and fills. */
   steps?: (page: Page) => Promise<void>;
 };
 
@@ -43,6 +43,8 @@ export async function open(browser: Browser, base: string, visit: Visit) {
   const missing: string[] = [];
   /** 404s the preview sends on purpose, such as the order book before the close. */
   const held: string[] = [];
+  /** Production responses that offline previews have no recording of. */
+  const unrecorded: string[] = [];
   page.on('console', (message) => {
     // Chrome logs every HTTP error too; the response handler below already reports those.
     if (message.type() === 'error' && !message.text().startsWith('Failed to load resource'))
@@ -59,18 +61,23 @@ export async function open(browser: Browser, base: string, visit: Visit) {
     const url = response.url().replace(base, '');
     if (response.status() === 404)
       (response.headers()['x-preview-held'] ? held : missing).push(url);
+    else if (response.headers()['x-preview-offline']) unrecorded.push(url);
     else if (response.status() >= 400) problems.push(`HTTP ${response.status()}: ${url}`);
   });
-  await page.goto(base + visit.path, { waitUntil: 'networkidle' });
+  // Pages that keep a request open, such as one polling for prices, never go idle, so idle is waited for only so long.
+  const settle = () =>
+    page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => undefined);
+  await page.goto(base + visit.path, { waitUntil: 'load' });
+  await settle();
   for (const name of visit.click ?? []) {
     await (await named(page, ['tab', 'button'], name)).click();
-    await page.waitForLoadState('networkidle');
+    await settle();
   }
   for (const [name, value] of visit.fill ?? []) {
     const field = await named(page, ['combobox', 'textbox'], name);
     await field.fill(value);
     await field.press('Enter');
-    await page.waitForLoadState('networkidle');
+    await settle();
   }
   await visit.steps?.(page);
   // An idle network can still leave the app decoding data, so also wait for its loading messages to go.
@@ -80,7 +87,7 @@ export async function open(browser: Browser, base: string, visit: Visit) {
     .first()
     .waitFor({ state: 'detached', timeout: 15000 })
     .catch(() => problems.push('still loading after 15s'));
-  return { page, problems, missing, held, close: () => context.close() };
+  return { page, problems, missing, held, unrecorded, close: () => context.close() };
 }
 
 /** The first element with one of these roles and this exact accessible name, or an error naming the ones there are. */
@@ -91,7 +98,12 @@ async function named(
 ) {
   const [first, ...rest] = roles.map((role) => page.getByRole(role, { name, exact: true }));
   const match = rest.reduce((all, next) => all.or(next), first!).first();
-  if (await match.count()) return match;
+  // A tab can appear a moment after the network goes idle, once the app has rendered its data.
+  const found = await match
+    .waitFor({ state: 'attached', timeout: 5000 })
+    .then(() => true)
+    .catch(() => false);
+  if (found) return match;
   const selectors = {
     tab: '[role=tab]',
     button: 'button, [role=button]',
@@ -138,3 +150,37 @@ export async function scope(page: Page, name?: string) {
     `No panel or region named ${name}. On this page: ${[...new Set(names)].join(', ')}`,
   );
 }
+
+export type Box = { x: number; y: number; width: number; height: number };
+
+/** Space kept around a panel's shot, for the badge a note puts 14px above and left of its box. */
+const margin = 18;
+
+/**
+ * The area to shoot for a panel or region: the panel with its tab strip, plus a fixed margin, so before and after
+ * shots of the same panel come out the same size. The whole window without a name.
+ */
+export async function shotArea(page: Page, within?: string): Promise<Box | undefined> {
+  if (!within) return undefined;
+  const panel = await scope(page, within);
+  const boxes = await panel.evaluate((element) => {
+    const rect = (el: Element | null | undefined) => {
+      const r = el?.getBoundingClientRect();
+      return r ? { x: r.x, y: r.y, width: r.width, height: r.height } : undefined;
+    };
+    const tab =
+      document.getElementById(element.getAttribute('aria-labelledby') ?? '') ??
+      (element.id ? document.querySelector(`[role=tab][aria-controls="${element.id}"]`) : null);
+    return [rect(element), rect(tab?.closest('[role=tablist]'))].filter((r) => r !== undefined);
+  });
+  const size = page.viewportSize()!;
+  const left = Math.max(0, Math.min(...boxes.map((b) => b.x)) - margin);
+  const top = Math.max(0, Math.min(...boxes.map((b) => b.y)) - margin);
+  const right = Math.min(size.width, Math.max(...boxes.map((b) => b.x + b.width)) + margin);
+  const bottom = Math.min(size.height, Math.max(...boxes.map((b) => b.y + b.height)) + margin);
+  return { x: left, y: top, width: right - left, height: bottom - top };
+}
+
+/** Hides the preview's own panel, which is not part of the app. */
+export const hidePreviewPanel = (page: Page) =>
+  page.locator('#preview-panel').evaluate((panel: HTMLElement) => (panel.hidden = true));

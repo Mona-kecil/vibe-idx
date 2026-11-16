@@ -4,9 +4,11 @@ import { readFile, rm } from 'node:fs/promises';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { parseArgs } from 'node:util';
 import { gunzipSync, gzipSync } from 'node:zlib';
 import { createServer } from 'vite-plus';
 import { z } from 'zod';
+import { cliErrors } from '../../pipeline/dev/cli.js';
 import { writeAtomic } from '../../pipeline/dev/local-r2.js';
 import { fixtureState, fixturesRoot, localBrokerApi } from './local-api.js';
 import { previewClient } from './preview-client.js';
@@ -27,9 +29,13 @@ const snapshotFiles = [
 ];
 
 /** Copies the public data once per fixture date, so prices and broker data describe the same session. */
-async function snapshotPublic(asOf: string) {
+async function snapshotPublic(asOf: string, offline: boolean) {
   const marker = join(snapshot, 'snapshot.json');
   if (existsSync(marker) && JSON.parse(await readFile(marker, 'utf8')).asOf === asOf) return;
+  if (offline)
+    throw new Error(
+      `No public data copied for ${asOf} yet, and --offline leaves the network alone. Run once without --offline.`,
+    );
   const started = performance.now();
   // Responses recorded for the previous date would no longer match the data.
   await rm(join(snapshot, 'api'), { recursive: true, force: true });
@@ -101,14 +107,18 @@ function heldUntilClose(res: ServerResponse) {
   res.end();
 }
 
-/** `web` is the app checkout to serve; the preview's own code always comes from this checkout. */
+/**
+ * `web` is the app checkout to serve; the preview's own code always comes from this checkout. `offline` never
+ * reaches production: an API response not recorded yet answers 503, marked so ui:check can list it.
+ */
 export async function startPreview({
   port = 5173,
   quiet = false,
   web = fileURLToPath(new URL('..', import.meta.url)),
-}: { port?: number; quiet?: boolean; web?: string } = {}) {
+  offline = false,
+}: { port?: number; quiet?: boolean; web?: string; offline?: boolean } = {}) {
   const state = await fixtureState();
-  await snapshotPublic(state.asOf);
+  await snapshotPublic(state.asOf, offline);
   const api = await localBrokerApi(web);
 
   async function brokers(req: IncomingMessage, res: ServerResponse) {
@@ -178,7 +188,12 @@ export async function startPreview({
     const file = join(snapshot, 'api', `${key}.json`);
     let entry: { status: number; type: string; body: string };
     if (existsSync(file)) entry = JSON.parse(await readFile(file, 'utf8')) as typeof entry;
-    else {
+    else if (offline) {
+      if (!quiet) console.warn(`offline, not recorded: ${req.url}`);
+      res.statusCode = 503;
+      res.setHeader('X-Preview-Offline', 'not recorded');
+      return res.end();
+    } else {
       const response = await fetch(`${liveApi}${req.url}`);
       entry = {
         status: response.status,
@@ -252,8 +267,28 @@ export async function startPreview({
   };
 }
 
+export const offlineHelp = `--offline     never reach production: API responses not recorded yet answer 503`;
+
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const port = Number(process.argv[process.argv.indexOf('--port') + 1]) || 5173;
-  const preview = await startPreview({ port });
-  console.log(`${preview.url}  data as of ${preview.asOf}`);
+  cliErrors();
+  const { values: args } = parseArgs({
+    options: {
+      port: { type: 'string', default: '5173' },
+      offline: { type: 'boolean', default: false },
+      help: { type: 'boolean', default: false },
+    },
+  });
+  if (args.help) {
+    console.log(`pnpm preview:local [--port N] [--offline]
+
+Runs the app on the fixtures, signed in, with broker data and running trade read only from them. Public data is
+copied once per fixture date, and other API responses are recorded from production the first time they're asked
+for, then replayed. The panel at the bottom left sets the clock and signs in or out.
+
+--port N      5173 by default
+${offlineHelp}`);
+    process.exit(0);
+  }
+  const preview = await startPreview({ port: Number(args.port), offline: args.offline });
+  console.log(`${preview.url}  data as of ${preview.asOf}${args.offline ? ', offline' : ''}`);
 }

@@ -1,9 +1,9 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { isAbsolute, join, relative, resolve } from 'node:path';
-import { alive } from './cli';
+import { alive, plural } from './cli';
 
 const repoRoot = execFileSync('git', ['rev-parse', '--show-toplevel'], {
   cwd: import.meta.dirname,
@@ -29,12 +29,40 @@ function removeOrphans() {
   }
 }
 
+/** Warns when `ref` is a local branch behind its upstream, which compares against code that isn't merged yet. */
+function warnIfBehind(ref: string) {
+  let upstream: string;
+  try {
+    upstream = git('rev-parse', '--abbrev-ref', `${ref}@{upstream}`).trim();
+  } catch {
+    return;
+  }
+  const count = Number(git('rev-list', '--count', `${ref}..${upstream}`));
+  if (count)
+    console.warn(
+      `${ref} is ${plural(count, 'commit')} behind ${upstream}. Use --base ${upstream} to compare with what is merged.`,
+    );
+}
+
+/**
+ * Removes the checkout once `pid` is gone. It runs as its own process group, so it outlives a Ctrl-C or kill that
+ * stops the tool before its exit handlers run.
+ */
+const watcher = `const [pid, dir, repo] = process.argv.slice(1);
+const alive = () => { try { process.kill(Number(pid), 0); return true; } catch (error) { return error.code === 'EPERM'; } };
+const timer = setInterval(() => {
+  if (alive()) return;
+  clearInterval(timer);
+  try { require('node:child_process').execFileSync('git', ['worktree', 'remove', '--force', dir], { cwd: repo, stdio: 'ignore' }); } catch {}
+}, 500);`;
+
 /**
  * A detached checkout of `ref` in a temporary folder that borrows this checkout's installed packages. Each
  * process gets its own, removed when the process exits, so tools running at once never share one.
  */
 export async function checkout(ref: string) {
   const sha = git('rev-parse', '--verify', `${ref}^{commit}`).trim();
+  warnIfBehind(ref);
   removeOrphans();
   const dir = `${prefix}${sha.slice(0, 12)}-${process.pid}`;
   let removed = false;
@@ -45,10 +73,16 @@ export async function checkout(ref: string) {
   };
   process.once('exit', remove);
   git('worktree', 'add', '--detach', '--quiet', dir, sha);
+  spawn(process.execPath, ['-e', watcher, String(process.pid), dir, repoRoot], {
+    detached: true,
+    stdio: 'ignore',
+  }).unref();
   for (const modules of ['node_modules', 'apps/web/node_modules', 'apps/pipeline/node_modules'])
     if (existsSync(join(repoRoot, modules)))
       await symlink(join(repoRoot, modules), join(dir, modules));
-  return { dir, label: `${ref} (${sha.slice(0, 7)})`, remove };
+  const label = `${ref} (${sha.slice(0, 7)})`;
+  console.warn(`base ${label}`);
+  return { dir, label, remove };
 }
 
 /** Fails for a path inside any checkout of the repository: screenshots can show private broker data. */

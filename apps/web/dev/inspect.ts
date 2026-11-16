@@ -18,6 +18,10 @@ dates: one session (2026-11-13) or a range (2026-11-03..2026-11-13), the as-of s
 cliErrors();
 
 const args = process.argv.slice(2).filter((arg) => arg !== '--');
+if (args.includes('--help') || args.includes('-h')) {
+  console.log(usage);
+  process.exit(0);
+}
 const option = (name: string, fallback: string) => {
   const i = args.indexOf(`--${name}`);
   if (i < 0) return fallback;

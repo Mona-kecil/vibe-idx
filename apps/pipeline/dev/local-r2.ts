@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
-import { homedir } from 'node:os';
+import { homedir, tmpdir, userInfo } from 'node:os';
 import { dirname, join } from 'node:path';
 import { DuckDBInstance } from '@duckdb/node-api';
 import { z } from 'zod';
@@ -27,33 +27,42 @@ export function fixturePaths(
 }
 
 /**
- * The pid holding a lock in the fixture folder, if it's alive. `fixtures` is held while the fixtures are rewritten,
- * and `bench` while a benchmark runs, since two at once would skew each other's timings and could run out of memory.
+ * Where a lock lives. `fixtures` is held while one fixture folder is rewritten, so it lives in that folder. `bench`
+ * is held while a benchmark runs, since two at once skew each other's timings and can run out of memory whichever
+ * fixtures they read, so it is one per machine.
  */
+const lockFile = (name: 'fixtures' | 'bench') =>
+  name === 'bench'
+    ? join(tmpdir(), `vibe-idx-bench-${userInfo().uid}.lock`)
+    : join(fixturePaths().root, 'fixtures.lock');
+
+/** The pid holding the lock, if it's alive. */
 export function lockHolder(name: 'fixtures' | 'bench') {
-  const file = join(fixturePaths().root, `${name}.lock`);
+  const file = lockFile(name);
   const pid = existsSync(file) ? Number(readFileSync(file, 'utf8')) : 0;
   return pid && pid !== process.pid && alive(pid) ? pid : undefined;
 }
 
 /** Holds the lock until this process exits, or fails naming the process that holds it. */
 export async function takeLock(name: 'fixtures' | 'bench') {
-  const { root } = fixturePaths();
-  const file = join(root, `${name}.lock`);
-  await mkdir(root, { recursive: true });
+  const file = lockFile(name);
+  await mkdir(dirname(file), { recursive: true });
   try {
     writeFileSync(file, String(process.pid), { flag: 'wx' });
   } catch {
     const holder = lockHolder(name);
     if (holder)
       throw new Error(
-        `Another \`pnpm ${name === 'bench' ? 'bench:publish' : name}\` (pid ${holder}) is running. Wait for it to finish.`,
+        name === 'bench'
+          ? `Another \`pnpm bench:publish\` (pid ${holder}) is running on this machine. Wait for it to finish.`
+          : `Another \`pnpm fixtures\` (pid ${holder}) is writing ${fixturePaths().root}. Wait for it to finish.`,
       );
     // A lock left by a run that was killed belongs to no live process, so it is taken over.
     writeFileSync(file, String(process.pid));
   }
   process.once('exit', () => rmSync(file, { force: true }));
 }
+
 export const fixtureStateSchema = z.object({
   asOf: z.iso.date(),
   sessions: z.array(z.iso.date()),

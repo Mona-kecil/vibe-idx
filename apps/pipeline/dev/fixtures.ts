@@ -25,8 +25,22 @@ const { values: args } = parseArgs({
   options: {
     sessions: { type: 'string', default: '10' },
     latest: { type: 'boolean', default: false },
+    help: { type: 'boolean', default: false },
   },
 });
+if (args.help) {
+  console.log(`pnpm fixtures [--latest] [--sessions N]
+
+Copies running trade and the year's broker data from the private bucket, read-only, and builds the files the app
+reads with the pipeline's publication code. Reruns skip finished work and rebuild what changed publication code
+affects. The window ends at the newest session with complete broker data.
+
+--latest      check the private bucket for newer sessions and move the window forward
+--sessions N  sessions in the window, 10 by default
+
+The folder is ~/.cache/vibe-idx/local, or VIBE_IDX_FIXTURES for this and every other dev command.`);
+  process.exit(0);
+}
 const sessions = z.coerce.number().int().positive().max(60).parse(args.sessions);
 const paths = fixturePaths();
 await takeLock('fixtures');

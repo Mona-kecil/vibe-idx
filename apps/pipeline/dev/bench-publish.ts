@@ -9,15 +9,23 @@ import { checkout } from './checkout';
 import { alive, cliErrors, plural } from './cli';
 import { cutBrokerData, fixturePaths, lockHolder, takeLock, fixtureStateSchema } from './local-r2';
 
-const usage = `pnpm bench:publish [--base <git ref>] [--step broker|ticks] [--runs N] [--date <session>]
+const usage = `pnpm bench:publish [--base <git ref>] [--step <step>]... [--runs N] [--date <session>]
 
 Times the publication code on the fixtures and reports median time, peak memory and an output digest per side.
-With --base it runs that ref too, alternating sides run by run. Both steps, 5 runs and the as-of session by default.`;
+With --base it runs that ref too, alternating sides run by run. Only one runs at a time on a machine.
+
+--step     broker          broker files as of the as-of session, about a minute a run
+           ticks           running trade and the order book of --date
+           running_trade   running trade of --date alone
+           closing_book    the order book of --date alone
+           broker and ticks by default
+--runs     runs per side, 5 by default; 3 or more to compare times
+--date     the session for the tick steps, the as-of session by default`;
 cliErrors();
 const { values: args } = parseArgs({
   options: {
     base: { type: 'string' },
-    step: { type: 'string' },
+    step: { type: 'string', multiple: true, default: [] },
     runs: { type: 'string', default: '5' },
     date: { type: 'string' },
     help: { type: 'boolean', default: false },
@@ -28,9 +36,11 @@ if (args.help) {
   process.exit(0);
 }
 const runs = z.coerce.number().int().positive().parse(args.runs);
-const steps = args.step
-  ? [z.enum(['broker', 'ticks']).parse(args.step)]
-  : (['broker', 'ticks'] as const);
+const stepSchema = z.enum(['broker', 'ticks', 'running_trade', 'closing_book']);
+type Step = z.infer<typeof stepSchema>;
+const steps: Step[] = args.step.length
+  ? args.step.map((step) => stepSchema.parse(step))
+  : ['broker', 'ticks'];
 const paths = fixturePaths();
 if (!existsSync(paths.state))
   throw new Error(`No fixtures in ${paths.root}. Run \`pnpm fixtures\` first.`);
@@ -38,6 +48,17 @@ const state = fixtureStateSchema.parse(JSON.parse(await readFile(paths.state, 'u
 const date = z.iso.date().parse(args.date ?? state.asOf);
 if (!state.sessions.includes(date))
   throw new Error(`${date} is not a fixture session. Sessions: ${state.sessions.join(' ')}`);
+const stepTitle: Record<Step, string> = {
+  broker: `broker files as of ${state.asOf}`,
+  ticks: `running trade and order book ${date}`,
+  running_trade: `running trade ${date}`,
+  closing_book: `order book ${date}`,
+};
+for (const dataset of ['running_trade', 'closing_book'] as const)
+  if (steps.includes(dataset) && !existsSync(join(paths.cache, `ticks/${dataset}/${date}.parquet`)))
+    throw new Error(
+      `The fixtures have no ${dataset === 'closing_book' ? 'order book' : 'running trade'} for ${date}.`,
+    );
 const writer = lockHolder('fixtures');
 if (writer)
   throw new Error(
@@ -65,6 +86,12 @@ const baseline =
 console.log(
   `${cpus().length} cores${baseline === undefined ? '' : `, ${(baseline * 100).toFixed(0)}% busy before starting`}, ${plural(runs, 'run')} per side${args.base ? ', alternating' : ''}`,
 );
+// Work already running before the start can slow every run alike, which a comparison against the baseline misses.
+const busyStart = baseline !== undefined && baseline > 0.25;
+if (busyStart)
+  console.warn(
+    `The machine was ${(baseline * 100).toFixed(0)}% busy before starting, so every run may be slowed. Close other work for a clean number.`,
+  );
 
 if (steps.includes('broker')) {
   const year = state.asOf.slice(0, 4);
@@ -105,7 +132,7 @@ function busySeconds() {
   return (ticks.reduce((sum, tick) => sum + tick, 0) - idle) / 100;
 }
 
-function once(pipeline: string, step: string): Result {
+function once(pipeline: string, step: Step): Result {
   const busy = busySeconds();
   const started = performance.now();
   const child = spawnSync(
@@ -138,11 +165,13 @@ try {
       for (const side of sides) {
         // Each run starts from an empty bucket.
         await rm(run, { recursive: true, force: true });
-        results.get(side.label)!.push(once(side.pipeline, step));
+        const result = once(side.pipeline, step);
+        results.get(side.label)!.push(result);
+        console.warn(
+          `${step} run ${i + 1} of ${runs}, ${side.label}: ${result.seconds.toFixed(1)}s`,
+        );
       }
-    console.log(
-      `\n${step === 'broker' ? `broker files as of ${state.asOf}` : `running trade and order book ${date}`}`,
-    );
+    console.log(`\n${stepTitle[step]}`);
     const rows = sides.map(({ label }) => {
       const list = results.get(label)!;
       const times = list.map((r) => r.seconds);
@@ -184,10 +213,13 @@ try {
       .flatMap((r) => (r.others === undefined ? [] : [r.others]));
     if (others.length) {
       const worst = Math.max(...others);
+      const before = `${((baseline ?? 0) * 100).toFixed(0)}% before starting`;
       console.log(
         worst > (baseline ?? 0) + 0.1
-          ? `other processes used up to ${(worst * 100).toFixed(0)}% of the machine during a run, against ${((baseline ?? 0) * 100).toFixed(0)}% before starting, so these timings are noisy`
-          : 'nothing else ran during the runs',
+          ? `other processes used up to ${(worst * 100).toFixed(0)}% of the machine during a run, against ${before}, so these timings are noisy`
+          : busyStart
+            ? `other processes stayed near the ${before}, which is high enough to slow every run, so these timings are noisy`
+            : `other processes stayed near the ${before}`,
       );
     }
   }

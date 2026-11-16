@@ -1,4 +1,4 @@
-import type { Scenario } from '../shots.js';
+import type { Scenario } from '../scenario.js';
 
 export default [
   {

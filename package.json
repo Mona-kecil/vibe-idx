@@ -11,7 +11,7 @@
     "knip": "knip",
     "fixtures": "pnpm --filter @vibe-idx/pipeline -s fixtures",
     "inspect": "pnpm --filter @vibe-idx/web -s inspect",
-    "preview:local": "pnpm --filter @vibe-idx/web preview:local",
+    "preview:local": "pnpm --filter @vibe-idx/web -s preview:local",
     "ui:check": "pnpm --filter @vibe-idx/web -s ui:check",
     "shots": "pnpm --filter @vibe-idx/web -s shots",
     "verify:data": "pnpm --filter @vibe-idx/web -s verify:data",

@@ -15,7 +15,13 @@ import type { TickStore as Store } from '../ticks-store';
 import { fixturePaths, localR2 } from './local-r2';
 
 const [pipeline, step, date, run, brokerData] = z
-  .tuple([z.string(), z.enum(['broker', 'ticks']), z.iso.date(), z.string(), z.string()])
+  .tuple([
+    z.string(),
+    z.enum(['broker', 'ticks', 'running_trade', 'closing_book']),
+    z.iso.date(),
+    z.string(),
+    z.string(),
+  ])
   .parse(process.argv.slice(2));
 const paths = fixturePaths();
 const load = (file: string) => import(pathToFileURL(join(pipeline, file)).href);
@@ -70,7 +76,9 @@ if (step === 'broker') {
 } else {
   const { TickStore } = (await load('ticks-store.ts')) as { TickStore: typeof Store };
   work = async () => {
-    for (const dataset of ['running_trade', 'closing_book'] as const) {
+    const datasets =
+      step === 'ticks' ? (['running_trade', 'closing_book'] as const) : ([step] as const);
+    for (const dataset of datasets) {
       if (!existsSync(join(paths.cache, `ticks/${dataset}/${date}.parquet`))) continue;
       // A store per dataset, as in production.
       const store = await TickStore.open(join(run, 'data'), r2);
