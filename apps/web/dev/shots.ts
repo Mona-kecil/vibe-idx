@@ -115,44 +115,83 @@ async function shoot(page: Page, scenario: Scenario, side: 'before' | 'after') {
     .split('\n')
     .filter((line) => !/^\s*- \/url: /.test(line));
   const clean = await page.screenshot(clip);
-  await page.evaluate((list) => {
-    const layer = document.createElement('div');
-    layer.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:2147483647';
-    type Rect = { x: number; y: number; width: number; height: number };
-    const frames = list.map(({ box }) => ({
-      x: box.x - 4,
-      y: box.y - 4,
-      width: box.width + 8,
-      height: box.height + 8,
-    }));
-    const overlaps = (a: Rect, b: Rect) =>
-      a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
-    const badges: Rect[] = [];
-    list.forEach(({ number }, i) => {
-      const frame = frames[i]!;
-      const box = document.createElement('div');
-      box.style.cssText = `position:fixed;left:${frame.x}px;top:${frame.y}px;width:${frame.width}px;height:${frame.height}px;border:3px solid #ff1f1f;border-radius:4px;box-sizing:border-box`;
-      // Outside the frame's corners, so it never covers what it marks; the first spot clear of other notes wins.
-      const spots = [
-        [frame.x - 20, frame.y - 20],
-        [frame.x + frame.width - 2, frame.y - 20],
-        [frame.x - 20, frame.y + frame.height - 2],
-        [frame.x + frame.width - 2, frame.y + frame.height - 2],
-      ].map(([x, y]) => ({ x: Math.max(0, x!), y: Math.max(0, y!), width: 22, height: 22 }));
-      const spot =
-        spots.find(
-          (s) =>
-            !badges.some((b) => overlaps(s, b)) &&
-            !frames.some((f, j) => j !== i && overlaps(s, f)),
-        ) ?? spots[0]!;
-      badges.push(spot);
-      const badge = document.createElement('div');
-      badge.textContent = String(number);
-      badge.style.cssText = `position:fixed;left:${spot.x}px;top:${spot.y}px;width:22px;height:22px;border-radius:11px;background:#ff1f1f;color:#fff;font:bold 13px/22px system-ui,sans-serif;text-align:center`;
-      layer.append(box, badge);
-    });
-    document.body.append(layer);
-  }, marks);
+  // Badges go in the blank margin beside the panel, level with their box and joined to it by a line, so they cover
+  // nothing. The side with room is used; without a margin they sit at a free corner of their box.
+  const gutter = !area
+    ? undefined
+    : area.content.x - area.clip.x >= 26
+      ? area.content.x - 25
+      : area.clip.x + area.clip.width - (area.content.x + area.content.width) >= 26
+        ? area.content.x + area.content.width + 3
+        : undefined;
+  await page.evaluate(
+    ({ list, gutter, bounds }) => {
+      const layer = document.createElement('div');
+      layer.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:2147483647';
+      type Rect = { x: number; y: number; width: number; height: number };
+      const frames = list.map(({ box }) => ({
+        x: box.x - 4,
+        y: box.y - 4,
+        width: box.width + 8,
+        height: box.height + 8,
+      }));
+      const overlaps = (a: Rect, b: Rect) =>
+        a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+      const badges: Rect[] = [];
+      const lines: string[] = [];
+      list.forEach(({ number }, i) => {
+        const frame = frames[i]!;
+        const box = document.createElement('div');
+        box.style.cssText = `position:fixed;left:${frame.x}px;top:${frame.y}px;width:${frame.width}px;height:${frame.height}px;border:3px solid #ff1f1f;border-radius:4px;box-sizing:border-box`;
+        let spot: Rect;
+        if (gutter !== undefined) {
+          const top = bounds ? bounds.y : 0;
+          const bottom = bounds ? bounds.y + bounds.height - 22 : innerHeight - 22;
+          spot = {
+            x: gutter,
+            y: Math.min(bottom, Math.max(top, frame.y + frame.height / 2 - 11)),
+            width: 22,
+            height: 22,
+          };
+          // Below the badges already placed in the column when it would overlap one.
+          while (badges.some((b) => overlaps(spot, b))) spot = { ...spot, y: spot.y + 24 };
+          const middle = spot.y + 11;
+          const toLeft = gutter < frame.x;
+          const from = toLeft ? spot.x + 22 : spot.x;
+          const to = toLeft ? frame.x : frame.x + frame.width;
+          const reach = Math.min(frame.y + frame.height - 4, Math.max(frame.y + 4, middle));
+          lines.push(
+            `<line x1="${from}" y1="${middle}" x2="${to}" y2="${reach}" stroke="#ff1f1f" stroke-width="1" stroke-opacity="0.7"/>`,
+          );
+        } else {
+          // Outside the frame's corners, so it never covers what it marks; the first spot clear of other notes wins.
+          const spots = [
+            [frame.x - 20, frame.y - 20],
+            [frame.x + frame.width - 2, frame.y - 20],
+            [frame.x - 20, frame.y + frame.height - 2],
+            [frame.x + frame.width - 2, frame.y + frame.height - 2],
+          ].map(([x, y]) => ({ x: Math.max(0, x!), y: Math.max(0, y!), width: 22, height: 22 }));
+          spot =
+            spots.find(
+              (s) =>
+                !badges.some((b) => overlaps(s, b)) &&
+                !frames.some((f, j) => j !== i && overlaps(s, f)),
+            ) ?? spots[0]!;
+        }
+        badges.push(spot);
+        const badge = document.createElement('div');
+        badge.textContent = String(number);
+        badge.style.cssText = `position:fixed;left:${spot.x}px;top:${spot.y}px;width:22px;height:22px;border-radius:11px;background:#ff1f1f;color:#fff;font:bold 13px/22px system-ui,sans-serif;text-align:center`;
+        layer.append(box, badge);
+      });
+      layer.insertAdjacentHTML(
+        'afterbegin',
+        `<svg style="position:fixed;inset:0;width:100%;height:100%;overflow:visible">${lines.join('')}</svg>`,
+      );
+      document.body.append(layer);
+    },
+    { list: marks, gutter, bounds: area?.clip },
+  );
   return {
     image: await page.screenshot(clip),
     clean,

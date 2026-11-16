@@ -9,6 +9,11 @@ export type Visit = {
   /** Stops the preview clock, so the same page renders the same pixels every time. */
   frozen?: boolean;
   size?: string;
+  /**
+   * The panel or region the visit is about, by accessible name. Its tab is opened before the clicks, so they can
+   * reach controls inside it.
+   */
+  within?: string;
   /** Tabs or buttons to press, by accessible name, in order. */
   click?: string[];
   /** Fields to type into, by accessible name; each gets Enter after its value. */
@@ -69,6 +74,8 @@ export async function open(browser: Browser, base: string, visit: Visit) {
     page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => undefined);
   await page.goto(base + visit.path, { waitUntil: 'load' });
   await settle();
+  // A panel that only a click reveals is found again after the clicks.
+  if (visit.within) await scope(page, visit.within).catch(() => undefined);
   for (const name of visit.click ?? []) {
     await (await named(page, ['tab', 'button'], name)).click();
     await settle();

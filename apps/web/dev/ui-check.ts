@@ -36,7 +36,7 @@ path            / by default. The terminal is /terminal?t=<TICKER>&l=<grid|focus
 --click NAME    presses the tab or button with that accessible name; repeat for more, in order
 --fill NAME=V   types V into the field with that accessible name and presses Enter; runs after the clicks
 --within NAME   keeps the outline to the panel or region with that name, such as a terminal pane's tab;
-                a tab that isn't open is opened
+                a tab that isn't open is opened, before any --click
 --depth N       keeps the outline to its first N levels
 --urls          keeps link targets in the outline
 --shot FILE     saves a screenshot outside the repository: the --within panel with its tabs, or the window
@@ -66,6 +66,7 @@ try {
     clock: args.clock,
     signedOut: args['signed-out'],
     size: args.size,
+    within: args.within,
     click: args.click,
     fill,
   });

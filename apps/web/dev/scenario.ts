@@ -13,10 +13,8 @@ export type Note = {
 };
 
 export type Scenario = Visit & {
-  /** Names the image files. */
+  /** Names the image files. `within` names the panel to shoot; the whole window when left out. */
   name: string;
-  /** The panel or region to shoot, by accessible name, opening its tab if needed; the whole window when left out. */
-  within?: string;
   notes?: Note[];
   /** Keeps the preview panel in the shot; it is hidden otherwise. */
   panel?: boolean;
