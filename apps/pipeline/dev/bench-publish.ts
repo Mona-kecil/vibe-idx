@@ -12,7 +12,8 @@ import { cutBrokerData, fixturePaths, lockHolder, takeLock, fixtureStateSchema }
 const usage = `pnpm bench:publish [--base <git ref>] [--step <step>]... [--runs N] [--date <session>]
 
 Times the publication code on the fixtures and reports median time, peak memory and an output digest per side.
-With --base it runs that ref too, alternating sides run by run. Only one runs at a time on a machine.
+With --base it runs that ref too, alternating sides run by run. One runs at a time on the machine; a second waits.
+It reads the fixtures without changing them, so it shares them safely with the other dev commands.
 
 --step     broker          broker files as of the as-of session, about a minute a run
            ticks           running trade and the order book of --date
@@ -194,9 +195,11 @@ try {
         `${r.label.padEnd(width)}  ${`${r.time.toFixed(1)}s`.padStart(6)}  ${`${r.low.toFixed(1)} to ${r.high.toFixed(1)}s`.padEnd(15)}  ${r.peak.toLocaleString('en').padStart(7)}  ${r.files.toLocaleString('en').padStart(6)}  ${r.digest}`,
       );
     const [before, after] = rows;
+    let differs = false;
     if (before && after) {
       const change = (after.time / before.time - 1) * 100;
       const separate = after.high < before.low || after.low > before.high;
+      differs = runs >= 3 && separate;
       // With one or two runs a side, a gap between the ranges says little about the code.
       const verdict =
         runs < 3
@@ -213,13 +216,22 @@ try {
       .flatMap((r) => (r.others === undefined ? [] : [r.others]));
     if (others.length) {
       const worst = Math.max(...others);
-      const before = `${((baseline ?? 0) * 100).toFixed(0)}% before starting`;
+      const start = `${((baseline ?? 0) * 100).toFixed(0)}% before starting`;
+      const noisy = worst > (baseline ?? 0) + 0.1 || busyStart;
+      // Noise widens the ranges: it can hide a small difference, or make one where the ranges barely separate.
+      const meaning = !noisy
+        ? ''
+        : !before || !after
+          ? ', so the times may run high'
+          : differs
+            ? ', so the difference may come from the other work; rerun on a quiet machine to confirm it'
+            : ', so a difference smaller than the ranges could be hidden';
       console.log(
-        worst > (baseline ?? 0) + 0.1
-          ? `other processes used up to ${(worst * 100).toFixed(0)}% of the machine during a run, against ${before}, so these timings are noisy`
-          : busyStart
-            ? `other processes stayed near the ${before}, which is high enough to slow every run, so these timings are noisy`
-            : `other processes stayed near the ${before}`,
+        `${
+          worst > (baseline ?? 0) + 0.1
+            ? `other processes used up to ${(worst * 100).toFixed(0)}% of the machine during a run, against ${start}`
+            : `other processes stayed near the ${start}${busyStart ? ', which is high enough to slow every run' : ''}`
+        }${meaning}`,
       );
     }
   }

@@ -6,7 +6,7 @@ import { parseArgs } from 'node:util';
 import type { Browser, Page } from 'playwright-core';
 import { checkout, outsideRepo } from '../../pipeline/dev/checkout.js';
 import { cliErrors, plural } from '../../pipeline/dev/cli.js';
-import { hidePreviewPanel, launch, open, shotArea } from './browser.js';
+import { hidePreviewPanel, launch, open, scope, shotArea } from './browser.js';
 import type { Box } from './browser.js';
 import { offlineHelp, startPreview } from './preview.js';
 import type { Scenario } from './scenario.js';
@@ -17,11 +17,12 @@ const usage = `pnpm shots <scenarios.ts> [--base <git ref>] [--only <name>] [--o
 Shoots each scenario on this checkout and, with --base, on that ref too, with the clock frozen. For each scenario it
 writes, outside the repository:
   NAME-before.png, NAME-after.png   with a numbered red box for each note
-  NAME-compare.png                  side by side, each changed region outlined in blue
+  NAME-compare.png                  side by side, changed pixels shaded in blue, each region lettered
   NAME-diff.png                     the after shot faded, with changed pixels in magenta
   NAME-*-clean.png                  both shots without boxes
-  notes.md                          the numbered notes and what changed
-A note whose selector matches nothing, or matches outside the scenario's panel, fails the run.
+  notes.md                          the numbered notes, the changed regions, and outline lines that changed
+A note whose selector matches nothing, or matches something reaching outside the scenario's panel, fails the run.
+Blank margins frame the panel, so neighbouring panes stay out of the shot.
 
 A scenarios file can live anywhere and default-exports an array of scenarios:
 
@@ -73,19 +74,27 @@ const stamp = new Date().toISOString().slice(0, 19).replace(/[-:]/g, '').replace
 const out = args.out ? outsideRepo(args.out) : join(homedir(), '.cache/vibe-idx/shots', stamp);
 await mkdir(out, { recursive: true });
 
+// A pixel of slack, since boxes come with fractions.
 const inside = (box: Box, area: Box) =>
-  box.x >= area.x &&
-  box.y >= area.y &&
-  box.x + box.width <= area.x + area.width &&
-  box.y + box.height <= area.y + area.height;
+  box.x >= area.x - 1 &&
+  box.y >= area.y - 1 &&
+  box.x + box.width <= area.x + area.width + 1 &&
+  box.y + box.height <= area.y + area.height + 1;
 
-/** Shoots the scenario's area twice: clean, for comparing, and with each note's numbered box. */
+const size = (box: Box) =>
+  `${Math.round(box.width)} by ${Math.round(box.height)} px at ${Math.round(box.x)},${Math.round(box.y)}`;
+
+/**
+ * Shoots the scenario's area twice, clean for comparing and with each note's numbered box, and reads its
+ * accessibility outline, so a renamed label shows up even when the pixels barely move.
+ */
 async function shoot(page: Page, scenario: Scenario, side: 'before' | 'after') {
   const marks: { number: number; box: Box }[] = [];
-  const outside: number[] = [];
+  const outside = new Map<number, string>();
   if (!scenario.panel) await hidePreviewPanel(page);
   // The area doesn't depend on the notes, so before and after come out the same size.
-  const clip = await shotArea(page, scenario.within);
+  const area = await shotArea(page, scenario.within);
+  const clip = area ? { clip: area.clip } : {};
   for (const [i, note] of (scenario.notes ?? []).entries()) {
     const on = note.on ?? 'after';
     if (on !== side && on !== 'both') continue;
@@ -95,37 +104,66 @@ async function shoot(page: Page, scenario: Scenario, side: 'before' | 'after') {
       .boundingBox({ timeout: 3000 })
       .catch(() => null);
     if (!box) continue;
-    if (clip && !inside(box, clip)) outside.push(i + 1);
+    if (area && !inside(box, area.content))
+      outside.set(
+        i + 1,
+        `matched an element of ${size(box)}, which reaches outside ${scenario.within} (${size(area.content)}); pick an element within it`,
+      );
     else marks.push({ number: i + 1, box });
   }
-  const clean = await page.screenshot(clip ? { clip } : {});
+  const outline = (await (await scope(page, scenario.within)).ariaSnapshot())
+    .split('\n')
+    .filter((line) => !/^\s*- \/url: /.test(line));
+  const clean = await page.screenshot(clip);
   await page.evaluate((list) => {
     const layer = document.createElement('div');
     layer.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:2147483647';
     for (const { number, box } of list) {
       const frame = document.createElement('div');
       frame.style.cssText = `position:fixed;left:${box.x - 4}px;top:${box.y - 4}px;width:${box.width + 8}px;height:${box.height + 8}px;border:3px solid #ff1f1f;border-radius:4px;box-sizing:border-box`;
+      // Just outside the frame's top-left corner, so it never covers what it marks.
       const badge = document.createElement('div');
       badge.textContent = String(number);
-      badge.style.cssText = `position:fixed;left:${Math.max(0, box.x - 14)}px;top:${Math.max(0, box.y - 14)}px;width:22px;height:22px;border-radius:11px;background:#ff1f1f;color:#fff;font:bold 13px/22px system-ui,sans-serif;text-align:center`;
+      badge.style.cssText = `position:fixed;left:${Math.max(0, box.x - 24)}px;top:${Math.max(0, box.y - 24)}px;width:22px;height:22px;border-radius:11px;background:#ff1f1f;color:#fff;font:bold 13px/22px system-ui,sans-serif;text-align:center`;
       layer.append(frame, badge);
     }
     document.body.append(layer);
   }, marks);
   return {
-    image: await page.screenshot(clip ? { clip } : {}),
+    image: await page.screenshot(clip),
     clean,
+    outline,
     placed: marks.map((m) => m.number),
     outside,
   };
 }
 
-type Shot = { image: Buffer; clean: Buffer };
+/** Outline lines only one side has, in the order each side shows them. */
+function outlineChanges(before: string[], after: string[]) {
+  const count = (lines: string[]) => {
+    const counts = new Map<string, number>();
+    for (const line of lines) counts.set(line, (counts.get(line) ?? 0) + 1);
+    return counts;
+  };
+  const only = (lines: string[], other: Map<string, number>, sign: string) =>
+    lines.flatMap((line) => {
+      const left = other.get(line) ?? 0;
+      if (left) {
+        other.set(line, left - 1);
+        return [];
+      }
+      return [`${sign} ${line.trim()}`];
+    });
+  return [...only(before, count(after), '-'), ...only(after, count(before), '+')];
+}
+
+type Shot = { image: Buffer; clean: Buffer; outline: string[] };
 type Region = { left: number; top: number; right: number; bottom: number; pixels: number };
 
 /**
- * Puts before and after side by side and outlines each region where the clean shots differ. Changed pixels within
- * 16px of each other form one region. The clock is frozen while shooting, so an unchanged page has no regions.
+ * Puts before and after side by side and shades in blue each 8px cell where the clean shots differ, so a changed
+ * line shows as a line. Changed cells within 16px of each other form one lettered region. The clock is frozen while
+ * shooting, so an unchanged page has no regions.
  */
 async function compare(browser: Browser, before: Shot, after: Shot, labels: [string, string]) {
   const page = await browser.newPage({ viewport: { width: 400, height: 300 } });
@@ -217,26 +255,47 @@ async function compare(browser: Browser, before: Shot, after: Shot, labels: [str
         }
         regions.push(region);
       }
-      const canvas = new OffscreenCanvas(width, height);
-      canvas.getContext('2d')!.putImageData(mask, 0, 0);
-      const blob = await canvas.convertToBlob({ type: 'image/png' });
-      const bytes = new Uint8Array(await blob.arrayBuffer());
-      let binary = '';
-      for (let i = 0; i < bytes.length; i += 0x8000)
-        binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-      return { sized: true as const, sizes, regions, mask: btoa(binary) };
+      const encode = async (canvas: OffscreenCanvas) => {
+        const bytes = new Uint8Array(
+          await (await canvas.convertToBlob({ type: 'image/png' })).arrayBuffer(),
+        );
+        let binary = '';
+        for (let i = 0; i < bytes.length; i += 0x8000)
+          binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+        return btoa(binary);
+      };
+      const diff = new OffscreenCanvas(width, height);
+      diff.getContext('2d')!.putImageData(mask, 0, 0);
+      const shade = new OffscreenCanvas(width, height);
+      const context = shade.getContext('2d')!;
+      context.fillStyle = 'rgba(31, 111, 255, 0.45)';
+      counts.forEach((count, at) => {
+        if (count)
+          context.fillRect((at % columns) * cell, Math.floor(at / columns) * cell, cell, cell);
+      });
+      return {
+        sized: true as const,
+        sizes,
+        regions,
+        mask: await encode(diff),
+        shade: await encode(shade),
+      };
     },
     [url(before.clean), url(after.clean)],
   );
   const regions: Region[] = change.sized
     ? change.regions.sort((a, b) => a.top - b.top || a.left - b.left)
     : [];
-  const outlines = regions
-    .map(
-      (r, i) =>
-        `<div style="position:absolute;left:${r.left - 3}px;top:${r.top - 3}px;width:${r.right - r.left + 7}px;height:${r.bottom - r.top + 7}px;border:2px dashed #1f6fff;box-sizing:border-box"><span style="position:absolute;right:-2px;top:-18px;font:600 11px system-ui,sans-serif;color:#fff;background:#1f6fff;padding:1px 4px;border-radius:3px">${String.fromCharCode(65 + (i % 26))}</span></div>`,
-    )
-    .join('');
+  const letter = (i: number) => String.fromCharCode(65 + (i % 26));
+  const outlines =
+    change.sized && regions.length
+      ? `<img src="data:image/png;base64,${change.shade}" style="position:absolute;left:0;top:0;outline:none">${regions
+          .map(
+            (r, i) =>
+              `<span style="position:absolute;left:${r.left}px;top:${Math.max(0, r.top - 18)}px;font:600 11px system-ui,sans-serif;color:#fff;background:#1f6fff;padding:1px 4px;border-radius:3px">${letter(i)}</span>`,
+          )
+          .join('')}`
+      : '';
   const column = (label: string, image: Buffer, extra = '') =>
     `<figure><figcaption>${label}</figcaption><div style="position:relative"><img src="${url(image)}">${extra}</div></figure>`;
   await page.setContent(`<style>
@@ -253,13 +312,13 @@ async function compare(browser: Browser, before: Shot, after: Shot, labels: [str
     : !regions.length
       ? ['no visible change']
       : [
-          `${plural(regions.length, 'changed region')}, outlined in blue on the after shot:`,
+          `${plural(regions.length, 'changed region')}, shaded in blue on the after shot:`,
           ...regions.map(
             (r, i) =>
-              `   ${String.fromCharCode(65 + (i % 26))}. ${r.right - r.left + 1} by ${r.bottom - r.top + 1} px at ${r.left},${r.top}, ${plural(r.pixels, 'pixel')} changed${
+              `   ${letter(i)}. ${r.right - r.left + 1} by ${r.bottom - r.top + 1} px at ${r.left},${r.top}, ${plural(r.pixels, 'pixel')} changed${
                 // A changed border or rule covers a long box with few pixels.
                 r.pixels < 0.05 * (r.right - r.left + 1) * (r.bottom - r.top + 1)
-                  ? ', thinly spread, such as a line or border; see the diff image'
+                  ? ', thinly spread, such as a line or border'
                   : ''
               }`,
           ),
@@ -288,7 +347,7 @@ try {
   for (const scenario of scenarios) {
     const shots: Partial<Record<'before' | 'after', Shot>> = {};
     const placed = new Set<number>();
-    const outside = new Set<number>();
+    const outside = new Map<number, string>();
     const sides = [
       ...(before ? [['before', before.url] as const] : []),
       ['after', head.url] as const,
@@ -304,8 +363,10 @@ try {
       for (const url of new Set(visit.unrecorded))
         console.warn(`${scenario.name} ${side}: offline, not recorded yet: ${url}`);
       for (const number of shot.placed) placed.add(number);
-      for (const number of shot.outside) outside.add(number);
+      for (const [number, why] of shot.outside) outside.set(number, why);
     }
+    const outline =
+      shots.before && shots.after ? outlineChanges(shots.before.outline, shots.after.outline) : [];
     let change: string[] = [];
     if (shots.before && shots.after) {
       const compared = await compare(browser, shots.before, shots.after, [
@@ -319,24 +380,36 @@ try {
     const notes = scenario.notes ?? [];
     const shot = new Set(sides.map(([side]) => side));
     const problem = (number: number) => {
-      if (outside.has(number)) return `matched outside ${scenario.within}`;
+      if (outside.has(number)) return outside.get(number);
       const on = notes[number - 1]!.on ?? 'after';
       const applies = on === 'both' || shot.has(on);
-      return applies && !placed.has(number) ? 'matched nothing' : undefined;
+      return applies && !placed.has(number)
+        ? `matched nothing; \`pnpm ui:check '${scenario.path}' --within <panel>\` lists the names on the page`
+        : undefined;
     };
     const lost = notes.flatMap((_, i) => (problem(i + 1) ? [i + 1] : []));
     failed += lost.length;
     for (const number of lost)
       console.error(
-        `${scenario.name}: note ${number} ${problem(number)} at ${notes[number - 1]!.at}`,
+        `${scenario.name}: note ${number} at ${notes[number - 1]!.at} ${problem(number)}`,
       );
     report.push(
       `## ${scenario.name}`,
       '',
       ...(change.length ? [`Change: ${change.join('\n')}`, ''] : []),
+      ...(shots.before && shots.after
+        ? outline.length
+          ? [
+              'Accessibility outline, lines only one side has:',
+              ...outline.slice(0, 40).map((line) => `    ${line}`),
+              ...(outline.length > 40 ? [`    ${outline.length - 40} more`] : []),
+              '',
+            ]
+          : ['Accessibility outline: no change.', '']
+        : []),
       ...notes.map(
         (note, i) =>
-          `${i + 1}. ${note.text}${lost.includes(i + 1) ? ` (not shown: its selector ${problem(i + 1)})` : ''}`,
+          `${i + 1}. ${note.text}${lost.includes(i + 1) ? ` (not shown: ${problem(i + 1)})` : ''}`,
       ),
       '',
     );

@@ -469,7 +469,7 @@ if (args.json) {
       ...r.notes.map((note) => `note: ${note}`),
       ...Object.entries(r.skips).map(
         ([reason, where]) =>
-          `skip: ${reason}, ${plural(where.length, 'time')}: ${where.slice(0, 3).join(', ')}${where.length > 3 ? ', ...' : ''}`,
+          `skip: ${reason}, ${plural(where.length, 'time')}: ${where.slice(0, show).join(', ')}${where.length > show ? `, and ${where.length - show} more` : ''}`,
       ),
     ];
     if (!lines.length || !show) continue;

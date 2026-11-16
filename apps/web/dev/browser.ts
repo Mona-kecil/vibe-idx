@@ -146,21 +146,29 @@ export async function scope(page: Page, name?: string) {
         return label ? [label.trim()] : [];
       }),
     );
+  // A pane's other tabs exist only as tabs until they are opened.
+  const tab = (await page.getByRole('tab', { name, exact: true }).count())
+    ? ` ${name} is a tab that isn't open: open it first, with --click ${name} in ui:check or click: ['${name}'] in a scenario.`
+    : '';
   throw new Error(
-    `No panel or region named ${name}. On this page: ${[...new Set(names)].join(', ')}`,
+    `No panel or region named ${name}.${tab} On this page: ${[...new Set(names)].join(', ')}`,
   );
 }
 
 export type Box = { x: number; y: number; width: number; height: number };
 
-/** Space kept around a panel's shot, for the badge a note puts 14px above and left of its box. */
-const margin = 18;
+/** Space kept around a panel's shot for note badges, which sit just outside the box they mark. */
+const margin = 30;
 
 /**
- * The area to shoot for a panel or region: the panel with its tab strip, plus a fixed margin, so before and after
- * shots of the same panel come out the same size. The whole window without a name.
+ * The area to shoot for a panel or region, with the content it frames: the panel and its tab strip. The area is the
+ * content plus a fixed margin, so before and after shots of one panel come out the same size, and the margin is
+ * blanked so neighbouring panes stay out of the shot. The whole window without a name.
  */
-export async function shotArea(page: Page, within?: string): Promise<Box | undefined> {
+export async function shotArea(
+  page: Page,
+  within?: string,
+): Promise<{ clip: Box; content: Box } | undefined> {
   if (!within) return undefined;
   const panel = await scope(page, within);
   const boxes = await panel.evaluate((element) => {
@@ -173,12 +181,46 @@ export async function shotArea(page: Page, within?: string): Promise<Box | undef
       (element.id ? document.querySelector(`[role=tab][aria-controls="${element.id}"]`) : null);
     return [rect(element), rect(tab?.closest('[role=tablist]'))].filter((r) => r !== undefined);
   });
+  const left = Math.min(...boxes.map((b) => b.x));
+  const top = Math.min(...boxes.map((b) => b.y));
+  const content = {
+    x: left,
+    y: top,
+    width: Math.max(...boxes.map((b) => b.x + b.width)) - left,
+    height: Math.max(...boxes.map((b) => b.y + b.height)) - top,
+  };
+  await panel.evaluate((element, box) => {
+    // The nearest painted background behind the panel; the page's own is often transparent.
+    let background = 'rgb(0, 0, 0)';
+    for (let at: Element | null = element; at; at = at.parentElement) {
+      const colour = getComputedStyle(at).backgroundColor;
+      if (colour !== 'rgba(0, 0, 0, 0)' && colour !== 'transparent') {
+        background = colour;
+        break;
+      }
+    }
+    const bands = [
+      `left:0;top:0;right:0;height:${box.y}px`,
+      `left:0;top:${box.y + box.height}px;right:0;bottom:0`,
+      `left:0;top:${box.y}px;width:${box.x}px;height:${box.height}px`,
+      `left:${box.x + box.width}px;top:${box.y}px;right:0;height:${box.height}px`,
+    ];
+    for (const band of bands) {
+      const cover = document.createElement('div');
+      cover.style.cssText = `position:fixed;${band};background:${background};z-index:2147483646;pointer-events:none`;
+      document.body.append(cover);
+    }
+  }, content);
   const size = page.viewportSize()!;
-  const left = Math.max(0, Math.min(...boxes.map((b) => b.x)) - margin);
-  const top = Math.max(0, Math.min(...boxes.map((b) => b.y)) - margin);
-  const right = Math.min(size.width, Math.max(...boxes.map((b) => b.x + b.width)) + margin);
-  const bottom = Math.min(size.height, Math.max(...boxes.map((b) => b.y + b.height)) + margin);
-  return { x: left, y: top, width: right - left, height: bottom - top };
+  const x = Math.max(0, content.x - margin);
+  const y = Math.max(0, content.y - margin);
+  const clip = {
+    x,
+    y,
+    width: Math.min(size.width, content.x + content.width + margin) - x,
+    height: Math.min(size.height, content.y + content.height + margin) - y,
+  };
+  return { clip, content };
 }
 
 /** Hides the preview's own panel, which is not part of the app. */

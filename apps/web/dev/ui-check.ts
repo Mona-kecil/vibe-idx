@@ -92,8 +92,8 @@ try {
     console.log(`  ${lines.length - shown.length} deeper lines hidden, raise --depth to see them`);
   if (shot) {
     await hidePreviewPanel(visit.page);
-    const clip = await shotArea(visit.page, args.within);
-    await visit.page.screenshot({ path: shot, ...(clip && { clip }) });
+    const area = await shotArea(visit.page, args.within);
+    await visit.page.screenshot({ path: shot, ...(area && { clip: area.clip }) });
     console.log(`\nscreenshot ${shot}`);
   }
   process.exitCode = visit.problems.length || (args.strict && visit.missing.length) ? 1 : 0;

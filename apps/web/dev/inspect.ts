@@ -97,6 +97,10 @@ if (!command) {
       .map(line),
     header('NET SELL'),
   );
+  // Printed figures are rounded, so comparing them by eye with running trade proves little.
+  console.log(
+    `\nchecked exactly against running trade by: pnpm verify:data ${code} --dates ${from === to ? from : `${from}..${to}`} --check brk-rt`,
+  );
 } else if (command === 'rt') {
   const code = ticker();
   const [date] = range();
