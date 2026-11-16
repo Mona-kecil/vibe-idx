@@ -451,13 +451,31 @@ try {
         (side) => shot.has(side as 'before' | 'after') && !placed.get(number)?.has(side),
       );
       if (!missed.length) return undefined;
-      return `matched nothing${shot.size > 1 && missed.length === 1 ? ` on the ${missed[0]} side` : ''}; \`pnpm ui:check '${scenario.path}' --within <panel>\` lists the names on the page`;
+      return `matched nothing${shot.size > 1 && missed.length === 1 ? ` on the ${missed[0]} side` : ''}`;
     };
     const lost = notes.flatMap((_, i) => (problem(i + 1) ? [i + 1] : []));
     failed += lost.length;
     for (const number of lost)
       console.error(
         `${scenario.name}: note ${number} at ${notes[number - 1]!.at} ${problem(number)}`,
+      );
+    // Named elements the panel holds, written as selectors a note can use as they are.
+    const candidates = [
+      ...new Set(
+        (shots.after ?? shots.before)!.outline.flatMap((line) => {
+          const match = /^\s*- (\w+) "([^"]{1,40})"/.exec(line);
+          // Data rows are named by their figures, which change and are private.
+          return match &&
+            !['text', 'cell', 'img'].includes(match[1]!) &&
+            !(match[1] === 'row' && /\d/.test(match[2]!))
+            ? [`role=${match[1]}[name="${match[2]}"]`]
+            : [];
+        }),
+      ),
+    ];
+    if (lost.length && candidates.length)
+      console.error(
+        `selectors for named elements in ${scenario.within ?? 'the page'}:\n  ${candidates.slice(0, 30).join('\n  ')}${candidates.length > 30 ? `\n  and ${candidates.length - 30} more` : ''}`,
       );
     report.push(
       `## ${scenario.name}`,
