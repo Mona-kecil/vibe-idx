@@ -6,6 +6,16 @@ import { parseArgs } from 'node:util';
 import type { Browser, Page } from 'playwright-core';
 import { checkout, outsideRepo } from '../../pipeline/dev/checkout.js';
 import { cliErrors, plural } from '../../pipeline/dev/cli.js';
+import {
+  changeSummary,
+  diffPixels,
+  gutterFor,
+  letter,
+  outlineChanges,
+  outlineSelectors,
+  placeBadges,
+  withinPanel,
+} from './annotate.js';
 import { hidePreviewPanel, launch, open, scope, shotArea } from './browser.js';
 import type { Box } from './browser.js';
 import { offlineHelp, startPreview } from './preview.js';
@@ -75,13 +85,6 @@ const stamp = new Date().toISOString().slice(0, 19).replace(/[-:]/g, '').replace
 const out = args.out ? outsideRepo(args.out) : join(homedir(), '.cache/vibe-idx/shots', stamp);
 await mkdir(out, { recursive: true });
 
-// A pixel of slack, since boxes come with fractions.
-const inside = (box: Box, area: Box) =>
-  box.x >= area.x - 1 &&
-  box.y >= area.y - 1 &&
-  box.x + box.width <= area.x + area.width + 1 &&
-  box.y + box.height <= area.y + area.height + 1;
-
 const size = (box: Box) =>
   `${Math.round(box.width)} by ${Math.round(box.height)} px at ${Math.round(box.x)},${Math.round(box.y)}`;
 
@@ -112,117 +115,60 @@ async function shoot(page: Page, scenario: Scenario, side: 'before' | 'after') {
         return null;
       });
     if (!box) continue;
-    if (!area || inside(box, area.content)) {
-      marks.push({ number: i + 1, box });
-      continue;
-    }
-    // An element that runs past the panel, such as a table that scrolls, is boxed where it shows.
-    const c = area.content;
-    const left = Math.max(box.x, c.x),
-      top = Math.max(box.y, c.y);
-    const right = Math.min(box.x + box.width, c.x + c.width),
-      bottom = Math.min(box.y + box.height, c.y + c.height);
-    if (right - left < 2 || bottom - top < 2)
+    const shown = area ? withinPanel(box, area.content) : { box, cut: false };
+    if (!shown)
       outside.set(
         i + 1,
-        `matched an element of ${size(box)}, which lies outside ${scenario.within} (${size(c)}); pick an element within it`,
+        `matched an element of ${size(box)}, which lies outside ${scenario.within} (${size(area!.content)}); pick an element within it`,
       );
     else {
-      console.warn(
-        `${scenario.name} ${side}: note ${i + 1} at ${note.at} runs past ${scenario.within}, so its box is cut to the panel`,
-      );
-      marks.push({
-        number: i + 1,
-        box: { x: left, y: top, width: right - left, height: bottom - top },
-      });
+      if (shown.cut)
+        console.warn(
+          `${scenario.name} ${side}: note ${i + 1} at ${note.at} runs past ${scenario.within}, so its box is cut to the panel`,
+        );
+      marks.push({ number: i + 1, box: shown.box });
     }
   }
   const outline = (await (await scope(page, scenario.within)).ariaSnapshot())
     .split('\n')
     .filter((line) => !/^\s*- \/url: /.test(line));
   const clean = await page.screenshot(clip);
-  // Badges go in the blank margin beside the panel, level with their box and joined to it by a line, so they cover
-  // nothing. The side with room is used; without a margin they sit at a free corner of their box.
-  const gutter = !area
-    ? undefined
-    : area.content.x - area.clip.x >= 26
-      ? area.content.x - 25
-      : area.clip.x + area.clip.width - (area.content.x + area.content.width) >= 26
-        ? area.content.x + area.content.width + 3
-        : undefined;
+  const frames = marks.map(({ box }) => ({
+    x: box.x - 4,
+    y: box.y - 4,
+    width: box.width + 8,
+    height: box.height + 8,
+  }));
+  const viewport = page.viewportSize()!;
+  const badges = placeBadges(
+    frames,
+    gutterFor(area),
+    area?.clip ?? { x: 0, y: 0, width: viewport.width, height: viewport.height },
+  );
   await page.evaluate(
-    ({ list, gutter, bounds }) => {
+    ({ frames, badges, numbers }) => {
       const layer = document.createElement('div');
       layer.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:2147483647';
-      type Rect = { x: number; y: number; width: number; height: number };
-      const frames = list.map(({ box }) => ({
-        x: box.x - 4,
-        y: box.y - 4,
-        width: box.width + 8,
-        height: box.height + 8,
-      }));
-      const overlaps = (a: Rect, b: Rect) =>
-        a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
-      const badges: Rect[] = [];
-      const lines: string[] = [];
-      list.forEach(({ number }, i) => {
-        const frame = frames[i]!;
+      const lines = badges.flatMap(({ line }) =>
+        line
+          ? [
+              `<line x1="${line.x1}" y1="${line.y1}" x2="${line.x2}" y2="${line.y2}" stroke="#ff1f1f" stroke-width="1" stroke-opacity="0.7"/>`,
+            ]
+          : [],
+      );
+      layer.innerHTML = `<svg style="position:fixed;inset:0;width:100%;height:100%;overflow:visible">${lines.join('')}</svg>`;
+      frames.forEach((frame, i) => {
         const box = document.createElement('div');
         box.style.cssText = `position:fixed;left:${frame.x}px;top:${frame.y}px;width:${frame.width}px;height:${frame.height}px;border:3px solid #ff1f1f;border-radius:4px;box-sizing:border-box`;
-        let spot: Rect;
-        if (gutter !== undefined) {
-          const top = bounds ? bounds.y : 0;
-          const bottom = bounds ? bounds.y + bounds.height - 22 : innerHeight - 22;
-          spot = {
-            x: gutter,
-            y: Math.min(bottom, Math.max(top, frame.y + frame.height / 2 - 11)),
-            width: 22,
-            height: 22,
-          };
-          // The nearest free place in the column, above or below, when it would overlap a badge already there.
-          const level = spot.y;
-          for (let step = 1; badges.some((b) => overlaps(spot, b)); step++) {
-            const offset = Math.ceil(step / 2) * 24 * (step % 2 ? -1 : 1);
-            const y = level + offset;
-            if (y >= top && y <= bottom) spot = { ...spot, y };
-            else if (step > 200) break;
-          }
-          const middle = spot.y + 11;
-          const toLeft = gutter < frame.x;
-          const from = toLeft ? spot.x + 22 : spot.x;
-          const to = toLeft ? frame.x : frame.x + frame.width;
-          const reach = Math.min(frame.y + frame.height - 4, Math.max(frame.y + 4, middle));
-          lines.push(
-            `<line x1="${from}" y1="${middle}" x2="${to}" y2="${reach}" stroke="#ff1f1f" stroke-width="1" stroke-opacity="0.7"/>`,
-          );
-        } else {
-          // Outside the frame's corners, so it never covers what it marks; the first spot clear of other notes wins.
-          const spots = [
-            [frame.x - 20, frame.y - 20],
-            [frame.x + frame.width - 2, frame.y - 20],
-            [frame.x - 20, frame.y + frame.height - 2],
-            [frame.x + frame.width - 2, frame.y + frame.height - 2],
-          ].map(([x, y]) => ({ x: Math.max(0, x!), y: Math.max(0, y!), width: 22, height: 22 }));
-          spot =
-            spots.find(
-              (s) =>
-                !badges.some((b) => overlaps(s, b)) &&
-                !frames.some((f, j) => j !== i && overlaps(s, f)),
-            ) ?? spots[0]!;
-        }
-        badges.push(spot);
+        const { spot } = badges[i]!;
         const badge = document.createElement('div');
-        badge.textContent = String(number);
+        badge.textContent = String(numbers[i]);
         badge.style.cssText = `position:fixed;left:${spot.x}px;top:${spot.y}px;width:22px;height:22px;border-radius:11px;background:#ff1f1f;color:#fff;font:bold 13px/22px system-ui,sans-serif;text-align:center`;
         layer.append(box, badge);
       });
-      layer.insertAdjacentHTML(
-        'afterbegin',
-        `<svg style="position:fixed;inset:0;width:100%;height:100%;overflow:visible">${lines.join('')}</svg>`,
-      );
       document.body.append(layer);
     },
-    { list: marks, gutter, bounds: area?.clip },
+    { frames, badges, numbers: marks.map((m) => m.number) },
   );
   return {
     image: await page.screenshot(clip),
@@ -233,193 +179,73 @@ async function shoot(page: Page, scenario: Scenario, side: 'before' | 'after') {
   };
 }
 
-/** Outline lines only one side has, in the order each side shows them. */
-function outlineChanges(before: string[], after: string[]) {
-  const count = (lines: string[]) => {
-    const counts = new Map<string, number>();
-    for (const line of lines) counts.set(line, (counts.get(line) ?? 0) + 1);
-    return counts;
-  };
-  const only = (lines: string[], other: Map<string, number>, sign: string) =>
-    lines.flatMap((line) => {
-      const left = other.get(line) ?? 0;
-      if (left) {
-        other.set(line, left - 1);
-        return [];
-      }
-      return [`${sign} ${line.trim()}`];
-    });
-  return [...only(before, count(after), '-'), ...only(after, count(before), '+')];
-}
-
 type Shot = { image: Buffer; clean: Buffer; outline: string[] };
-type Region = { left: number; top: number; right: number; bottom: number; pixels: number };
+
+/** PNG bytes and RGBA pixels, converted by a blank browser page, which can decode and encode PNG. */
+async function pngCodec(browser: Browser) {
+  const page = await browser.newPage();
+  // tsx names the functions below with an `__name` helper, which a blank page lacks.
+  await page.evaluate('globalThis.__name = (f) => f');
+  return {
+    async decode(png: Buffer) {
+      const { width, height, data } = await page.evaluate(
+        async (src) => {
+          const image = await createImageBitmap(await (await fetch(src)).blob());
+          const canvas = new OffscreenCanvas(image.width, image.height);
+          const context = canvas.getContext('2d')!;
+          context.drawImage(image, 0, 0);
+          const pixels = context.getImageData(0, 0, image.width, image.height).data;
+          let binary = '';
+          for (let i = 0; i < pixels.length; i += 0x8000)
+            binary += String.fromCharCode(...pixels.subarray(i, i + 0x8000));
+          return { width: image.width, height: image.height, data: btoa(binary) };
+        },
+        `data:image/png;base64,${png.toString('base64')}`,
+      );
+      return { width, height, pixels: new Uint8ClampedArray(Buffer.from(data, 'base64')) };
+    },
+    async encode(pixels: Uint8ClampedArray, width: number, height: number) {
+      const data = await page.evaluate(
+        async ({ data, width, height }) => {
+          const bytes = Uint8ClampedArray.from(atob(data), (c) => c.charCodeAt(0));
+          const canvas = new OffscreenCanvas(width, height);
+          canvas.getContext('2d')!.putImageData(new ImageData(bytes, width, height), 0, 0);
+          const png = new Uint8Array(
+            await (await canvas.convertToBlob({ type: 'image/png' })).arrayBuffer(),
+          );
+          let binary = '';
+          for (let i = 0; i < png.length; i += 0x8000)
+            binary += String.fromCharCode(...png.subarray(i, i + 0x8000));
+          return btoa(binary);
+        },
+        { data: Buffer.from(pixels.buffer).toString('base64'), width, height },
+      );
+      return Buffer.from(data, 'base64');
+    },
+    close: () => page.close(),
+  };
+}
 
 /**
  * Puts before and after side by side and shades in blue each 8px cell where the clean shots differ, so a changed
- * line shows as a line. Changed cells within 16px of each other form one lettered region. The clock is frozen while
- * shooting, so an unchanged page has no regions.
+ * line shows as a line, with each region lettered. The clock is frozen while shooting, so an unchanged page has no
+ * regions.
  */
 async function compare(browser: Browser, before: Shot, after: Shot, labels: [string, string]) {
-  const page = await browser.newPage({ viewport: { width: 400, height: 300 } });
-  // tsx names the functions below with an `__name` helper, which a blank page lacks.
-  await page.evaluate('globalThis.__name = (f) => f');
+  const codec = await pngCodec(browser);
+  const [a, b] = [await codec.decode(before.clean), await codec.decode(after.clean)];
+  const sized = a.width === b.width && a.height === b.height;
+  const diff = sized ? diffPixels(a.pixels, b.pixels, a.width, a.height) : undefined;
+  const mask = diff && (await codec.encode(diff.mask, a.width, a.height));
+  const shade = diff?.regions.length
+    ? await codec.encode(diff.shade, a.width, a.height)
+    : undefined;
+  await codec.close();
+
   const url = (image: Buffer) => `data:image/png;base64,${image.toString('base64')}`;
-  const change = await page.evaluate(
-    async ([a, b]) => {
-      const load = (src: string) =>
-        new Promise<HTMLImageElement>((done) => {
-          const img = new Image();
-          img.onload = () => done(img);
-          img.src = src;
-        });
-      const [first, second] = await Promise.all([load(a!), load(b!)]);
-      const sizes = [first, second].map((img) => `${img.width} by ${img.height} px`);
-      if (first.width !== second.width || first.height !== second.height)
-        return { sized: false as const, sizes };
-      const { width, height } = first;
-      const pixels = (img: HTMLImageElement) => {
-        const canvas = new OffscreenCanvas(width, height);
-        const context = canvas.getContext('2d')!;
-        context.drawImage(img, 0, 0);
-        return context.getImageData(0, 0, width, height);
-      };
-      const p = pixels(first).data;
-      // The after shot becomes the diff mask, each pixel overwritten once it has been compared.
-      const mask = pixels(second);
-      const q = mask.data;
-      const cell = 8;
-      const columns = Math.ceil(width / cell);
-      const rows = Math.ceil(height / cell);
-      const counts = new Uint32Array(columns * rows);
-      const changed = new Uint8Array(width * height);
-      const original = q.slice();
-      /**
-       * Whether the pixel at x,y in `a` could be an anti-aliased edge of what `b` shows there: within 32 levels of
-       * the pixel in `b`, and in each channel between the darkest and lightest of `b`'s 3 by 3 neighbourhood, give
-       * or take 12 levels. A recoloured or replaced shape steps further or leaves that range.
-       */
-      const edge = (a: Uint8ClampedArray, b: Uint8ClampedArray, x: number, y: number) => {
-        const at = (y * width + x) * 4;
-        for (let c = 0; c < 3; c++) {
-          if (Math.abs(a[at + c]! - b[at + c]!) > 32) return false;
-          let low = 255,
-            high = 0;
-          for (let dy = -1; dy <= 1; dy++)
-            for (let dx = -1; dx <= 1; dx++) {
-              const nx = x + dx,
-                ny = y + dy;
-              if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
-              const value = b[(ny * width + nx) * 4 + c]!;
-              low = Math.min(low, value);
-              high = Math.max(high, value);
-            }
-          if (a[at + c]! < low - 12 || a[at + c]! > high + 12) return false;
-        }
-        return true;
-      };
-      // Text edges come out slightly shaded or shifted from run to run on a busy machine, so they are counted apart.
-      let faint = 0;
-      const faintPixels = new Uint8Array(width * height);
-      for (let i = 0; i < p.length; i += 4) {
-        if (p[i] === q[i] && p[i + 1] === q[i + 1] && p[i + 2] === q[i + 2]) continue;
-        const x = (i / 4) % width,
-          y = Math.floor(i / 4 / width);
-        if (edge(p, original, x, y) && edge(original, p, x, y)) {
-          faint++;
-          faintPixels[i / 4] = 1;
-        } else {
-          counts[Math.floor(y / cell) * columns + Math.floor(x / cell)]!++;
-          changed[i / 4] = 1;
-        }
-      }
-      for (let i = 0; i < q.length; i += 4) {
-        // Faded, so the changed pixels stand out; faint ones show in light orange.
-        const faded = 255 - (255 - (q[i]! + q[i + 1]! + q[i + 2]!) / 3) / 4;
-        q.set(faintPixels[i / 4] ? [255, 190, 120] : [faded, faded, faded], i);
-      }
-      // Each changed pixel is drawn 3px wide, so a one-pixel line still shows.
-      for (let at = 0; at < changed.length; at++) {
-        if (!changed[at]) continue;
-        const x = at % width,
-          y = Math.floor(at / width);
-        for (let dy = -1; dy <= 1; dy++)
-          for (let dx = -1; dx <= 1; dx++)
-            if (x + dx >= 0 && x + dx < width && y + dy >= 0 && y + dy < height)
-              q.set([255, 0, 200, 255], ((y + dy) * width + x + dx) * 4);
-      }
-      // Cells with changes, joined with their neighbours up to two cells away.
-      const seen = new Uint8Array(columns * rows);
-      const regions: {
-        left: number;
-        top: number;
-        right: number;
-        bottom: number;
-        pixels: number;
-      }[] = [];
-      for (let start = 0; start < counts.length; start++) {
-        if (!counts[start] || seen[start]) continue;
-        const stack = [start];
-        seen[start] = 1;
-        const region = { left: Infinity, top: Infinity, right: -1, bottom: -1, pixels: 0 };
-        while (stack.length) {
-          const at = stack.pop()!;
-          const cx = at % columns,
-            cy = Math.floor(at / columns);
-          region.pixels += counts[at]!;
-          region.left = Math.min(region.left, cx * cell);
-          region.top = Math.min(region.top, cy * cell);
-          region.right = Math.min(width - 1, Math.max(region.right, cx * cell + cell - 1));
-          region.bottom = Math.min(height - 1, Math.max(region.bottom, cy * cell + cell - 1));
-          for (let dy = -2; dy <= 2; dy++)
-            for (let dx = -2; dx <= 2; dx++) {
-              const nx = cx + dx,
-                ny = cy + dy;
-              const next = ny * columns + nx;
-              if (nx < 0 || ny < 0 || nx >= columns || ny >= rows || seen[next] || !counts[next])
-                continue;
-              seen[next] = 1;
-              stack.push(next);
-            }
-        }
-        regions.push(region);
-      }
-      const encode = async (canvas: OffscreenCanvas) => {
-        const bytes = new Uint8Array(
-          await (await canvas.convertToBlob({ type: 'image/png' })).arrayBuffer(),
-        );
-        let binary = '';
-        for (let i = 0; i < bytes.length; i += 0x8000)
-          binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-        return btoa(binary);
-      };
-      const diff = new OffscreenCanvas(width, height);
-      diff.getContext('2d')!.putImageData(mask, 0, 0);
-      const shade = new OffscreenCanvas(width, height);
-      const context = shade.getContext('2d')!;
-      context.fillStyle = 'rgba(31, 111, 255, 0.45)';
-      counts.forEach((count, at) => {
-        if (count)
-          context.fillRect((at % columns) * cell, Math.floor(at / columns) * cell, cell, cell);
-      });
-      return {
-        sized: true as const,
-        sizes,
-        faint,
-        regions,
-        mask: await encode(diff),
-        shade: await encode(shade),
-      };
-    },
-    [url(before.clean), url(after.clean)],
-  );
-  const regions: Region[] = change.sized
-    ? change.regions.sort((a, b) => a.top - b.top || a.left - b.left)
-    : [];
-  const letter = (i: number) => String.fromCharCode(65 + (i % 26));
-  const outlines =
-    change.sized && regions.length
-      ? `<img src="data:image/png;base64,${change.shade}" style="position:absolute;left:0;top:0;outline:none">${regions
+  const overlay =
+    diff && shade
+      ? `<img src="${url(shade)}" style="position:absolute;left:0;top:0;outline:none">${diff.regions
           .map(
             (r, i) =>
               `<span style="position:absolute;left:${r.left}px;top:${Math.max(0, r.top - 18)}px;font:600 11px system-ui,sans-serif;color:#fff;background:#1f6fff;padding:1px 4px;border-radius:3px">${letter(i)}</span>`,
@@ -428,39 +254,20 @@ async function compare(browser: Browser, before: Shot, after: Shot, labels: [str
       : '';
   const column = (label: string, image: Buffer, extra = '') =>
     `<figure><figcaption>${label}</figcaption><div style="position:relative"><img src="${url(image)}">${extra}</div></figure>`;
+  const page = await browser.newPage({ viewport: { width: 400, height: 300 } });
   await page.setContent(`<style>
       body { margin: 0; background: #fff; display: flex; gap: 24px; padding: 16px; width: max-content; }
       figure { margin: 0; } figcaption { font: 600 16px system-ui, sans-serif; margin-bottom: 8px; color: #111; }
       img { display: block; outline: 1px solid #ccc; }
-    </style>${column(`Before: ${labels[0]}`, before.image)}${column(`After: ${labels[1]}`, after.image, outlines)}`);
+    </style>${column(`Before: ${labels[0]}`, before.image)}${column(`After: ${labels[1]}`, after.image, overlay)}`);
   const image = await page.screenshot({ fullPage: true });
   await page.close();
-  const summary = !change.sized
-    ? [
-        `the shots differ in size, before ${change.sizes[0]} and after ${change.sizes[1]}, so the panel itself changed size; compare them by eye`,
-      ]
-    : !regions.length
-      ? ['no visible change']
-      : [
-          `${plural(regions.length, 'changed region')}, shaded in blue on the after shot:`,
-          ...regions.map(
-            (r, i) =>
-              `   ${letter(i)}. ${r.right - r.left + 1} by ${r.bottom - r.top + 1} px at ${r.left},${r.top}, ${plural(r.pixels, 'pixel')} changed${
-                // A changed border or rule covers a long box with few pixels.
-                r.pixels < 0.05 * (r.right - r.left + 1) * (r.bottom - r.top + 1)
-                  ? ', thinly spread, such as a line or border'
-                  : ''
-              }`,
-          ),
-        ];
-  if (change.sized && change.faint)
-    summary.push(
-      `${plural(change.faint, 'pixel')} differ slightly, as anti-aliased edges vary between runs; not counted, and light orange in the diff image`,
-    );
+  const dimensions = (side: { width: number; height: number }) =>
+    `${side.width} by ${side.height} px`;
   return {
     image,
-    mask: change.sized ? Buffer.from(change.mask, 'base64') : undefined,
-    summary,
+    mask,
+    summary: changeSummary(diff ?? { sizes: [dimensions(a), dimensions(b)] }),
   };
 }
 
@@ -530,20 +337,7 @@ try {
       console.error(
         `${scenario.name}: note ${number} at ${notes[number - 1]!.at} ${problem(number)}`,
       );
-    // Named elements the panel holds, written as selectors a note can use as they are.
-    const candidates = [
-      ...new Set(
-        (shots.after ?? shots.before)!.outline.flatMap((line) => {
-          const match = /^\s*- (\w+) "([^"]{1,40})"/.exec(line);
-          // Data rows are named by their figures, which change and are private.
-          return match &&
-            !['text', 'cell', 'img'].includes(match[1]!) &&
-            !(match[1] === 'row' && /\d/.test(match[2]!))
-            ? [`role=${match[1]}[name="${match[2]}"]`]
-            : [];
-        }),
-      ),
-    ];
+    const candidates = outlineSelectors((shots.after ?? shots.before)!.outline);
     if (lost.length && candidates.length)
       console.error(
         `selectors for named elements in ${scenario.within ?? 'the page'}:\n  ${candidates.slice(0, 30).join('\n  ')}${candidates.length > 30 ? `\n  and ${candidates.length - 30} more` : ''}`,

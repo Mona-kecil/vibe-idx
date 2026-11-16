@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { z } from 'zod';
 import { checkout } from './checkout';
+import { busyStart, noiseLine, side, verdict } from './bench-verdict';
 import { alive, cliErrors, plural } from './cli';
 import { cutBrokerData, fixturePaths, lockHolder, takeLock, fixtureStateSchema } from './local-r2';
 
@@ -88,8 +89,7 @@ console.log(
   `${cpus().length} cores${baseline === undefined ? '' : `, ${(baseline * 100).toFixed(0)}% busy before starting`}, ${plural(runs, 'run')} per side${args.base ? ', alternating' : ''}`,
 );
 // Work already running before the start can slow every run alike, which a comparison against the baseline misses.
-const busyStart = baseline !== undefined && baseline > 0.25;
-if (busyStart)
+if (baseline !== undefined && busyStart(baseline))
   console.warn(
     `The machine was ${(baseline * 100).toFixed(0)}% busy before starting, so every run may be slowed. Close other work for a clean number.`,
   );
@@ -176,12 +176,6 @@ function once(pipeline: string, step: Step): Result {
   return { ...result, others };
 }
 
-const median = (values: number[]) => {
-  const sorted = [...values].sort((a, b) => a - b);
-  const mid = sorted.length >> 1;
-  return sorted.length % 2 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2;
-};
-
 try {
   for (const step of steps) {
     const results = new Map<string, Result[]>(sides.map((side) => [side.label, []]));
@@ -196,21 +190,7 @@ try {
         );
       }
     console.log(`\n${stepTitle[step]}`);
-    const rows = sides.map(({ label }) => {
-      const list = results.get(label)!;
-      const times = list.map((r) => r.seconds);
-      const digests = new Set(list.map((r) => r.digest));
-      return {
-        label,
-        time: median(times),
-        low: Math.min(...times),
-        high: Math.max(...times),
-        peak: Math.max(...list.map((r) => r.peakMB)),
-        files: list[0]!.files,
-        // A run whose output differs from the side's other runs is a bug in itself.
-        digest: digests.size === 1 ? list[0]!.digest : `varies (${digests.size})`,
-      };
-    });
+    const rows = sides.map(({ label }) => side(label, results.get(label)!));
     const width = Math.max(...rows.map((r) => r.label.length));
     console.log(`${''.padEnd(width)}  median    range            peak MB   files  output`);
     for (const r of rows)
@@ -218,45 +198,12 @@ try {
         `${r.label.padEnd(width)}  ${`${r.time.toFixed(1)}s`.padStart(6)}  ${`${r.low.toFixed(1)} to ${r.high.toFixed(1)}s`.padEnd(15)}  ${r.peak.toLocaleString('en').padStart(7)}  ${r.files.toLocaleString('en').padStart(6)}  ${r.digest}`,
       );
     const [before, after] = rows;
-    let differs = false;
-    if (before && after) {
-      const change = (after.time / before.time - 1) * 100;
-      const separate = after.high < before.low || after.low > before.high;
-      differs = runs >= 3 && separate;
-      // With one or two runs a side, a gap between the ranges says little about the code.
-      const verdict =
-        runs < 3
-          ? `${plural(runs, 'run')} per side is too few to tell a difference in time; use --runs 3 or more`
-          : separate
-            ? `${Math.abs(change).toFixed(0)}% ${change < 0 ? 'faster' : 'slower'}`
-            : 'no measurable difference in time: the ranges overlap';
-      console.log(
-        `${verdict}, peak memory ${after.peak - before.peak >= 0 ? '+' : ''}${(after.peak - before.peak).toLocaleString('en')} MB, ${after.digest === before.digest ? 'same output' : 'OUTPUT DIFFERS'}`,
-      );
-    }
+    const result = before && after ? verdict(before, after, runs) : undefined;
+    if (result) console.log(result.line);
     const others = [...results.values()]
       .flat()
       .flatMap((r) => (r.others === undefined ? [] : [r.others]));
-    if (others.length) {
-      const worst = Math.max(...others);
-      const start = `${((baseline ?? 0) * 100).toFixed(0)}% before starting`;
-      const noisy = worst > (baseline ?? 0) + 0.1 || busyStart;
-      // Noise widens the ranges: it can hide a small difference, or make one where the ranges barely separate.
-      const meaning = !noisy
-        ? ''
-        : !before || !after
-          ? ', so the times may run high'
-          : differs
-            ? ', so the difference may come from the other work; rerun on a quiet machine to confirm it'
-            : ', so a difference smaller than the ranges could be hidden';
-      console.log(
-        `${
-          worst > (baseline ?? 0) + 0.1
-            ? `other processes used up to ${(worst * 100).toFixed(0)}% of the machine during a run, against ${start}`
-            : `other processes stayed near the ${start}${busyStart ? ', which is high enough to slow every run' : ''}`
-        }${meaning}`,
-      );
-    }
+    if (others.length) console.log(noiseLine(Math.max(...others), baseline, result?.differs));
   }
 } finally {
   base?.remove();
