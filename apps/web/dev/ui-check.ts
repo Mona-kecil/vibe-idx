@@ -29,8 +29,9 @@ the page's accessibility outline. Exits 1 on errors and failed requests, and wit
 preview sends on purpose, such as the order book before the close, is listed apart and never fails.
 
 path            / by default. The terminal is /terminal?t=<TICKER>&l=<grid|focus|flow>; others include /market.
---clock HH:MM   a time in the as-of session, or close (the default). During the session running trade is cut at
-                that time, and broker data and daily prices end the session before.
+--clock HH:MM   a time in the as-of session, or close (the default). During the session broker data, daily
+                prices and the tick panes end the session before, as in production: the session's running trade
+                and order book are published after the close.
 --signed-out    the site as a visitor sees it
 --size WxH      the window, 1440x900 by default
 --click NAME    presses the tab or button with that accessible name; repeat for more, in order

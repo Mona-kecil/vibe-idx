@@ -16,7 +16,7 @@ export default [
       },
       {
         at: '#preview-panel select[name=clock]',
-        text: 'Clock: after the close, or a time in the session. Running trade is cut at that time.',
+        text: "Clock: after the close, or a time in the session, when the session's own data is not published yet.",
       },
       {
         at: '#preview-panel input[name=signed-in]',
@@ -24,7 +24,7 @@ export default [
       },
       {
         at: 'role=tab[name="DD"]',
-        text: 'Done detail is built from running trade, so its latest trade is before 10:30.',
+        text: 'Done detail shows the session before, since running trade is published after the close.',
       },
     ],
   },

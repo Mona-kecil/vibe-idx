@@ -5,7 +5,6 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
-import { gunzipSync, gzipSync } from 'node:zlib';
 import { createServer } from 'vite-plus';
 import { z } from 'zod';
 import { cliErrors } from '../../pipeline/dev/cli.js';
@@ -66,22 +65,6 @@ async function snapshotPublic(asOf: string, offline: boolean) {
   console.log(`public data copied in ${((performance.now() - started) / 1000).toFixed(1)}s`);
 }
 
-/** Keeps a session's columns up to the clock, as running trade looks while the market is open. */
-function cutAtClock(body: Buffer, seconds: number) {
-  const data = JSON.parse(body.toString()) as Record<string, unknown>;
-  const clock = Array.isArray(data.time)
-    ? data.time
-    : Array.isArray(data.minute)
-      ? data.minute
-      : null;
-  if (!clock) return body;
-  const keep = clock.map((t) => typeof t === 'number' && t <= seconds);
-  for (const [key, column] of Object.entries(data))
-    if (Array.isArray(column) && column.length === keep.length)
-      data[key] = column.filter((_, i) => keep[i]);
-  return Buffer.from(JSON.stringify(data));
-}
-
 function cookies(req: IncomingMessage) {
   return new Map(
     (req.headers.cookie ?? '')
@@ -91,12 +74,10 @@ function cookies(req: IncomingMessage) {
   );
 }
 
-/** Seconds after midnight when the preview clock is set inside the session, undefined after the close. */
-function sessionClock(req: IncomingMessage) {
+/** Whether the preview clock is set to a time inside the session rather than after the close. */
+function duringSession(req: IncomingMessage) {
   const clock = cookies(req).get('preview-clock');
-  return clock && clock !== 'close'
-    ? Number(clock.slice(0, 2)) * 3600 + Number(clock.slice(3, 5)) * 60
-    : undefined;
+  return clock !== undefined && clock !== 'close';
 }
 
 /** A 404 the preview sends on purpose, marked so ui:check can tell it from a missing file. */
@@ -130,16 +111,12 @@ export async function startPreview({
       headers.set('Authorization', `Bearer ${api.token}`);
     const response = await api.handle(new Request(url, { headers }));
     let body: Buffer = Buffer.from(await response.arrayBuffer());
-    const seconds = sessionClock(req);
-    if (seconds !== undefined && response.ok) {
+    if (duringSession(req) && response.ok) {
       const view = url.searchParams.get('view');
-      if (view === 'ticks' && url.searchParams.get('date') === state.asOf) {
-        // The closing order book only exists after the close.
-        if (url.searchParams.get('kind') === 'book') return heldUntilClose(res);
-        const gzip = response.headers.get('Content-Encoding') === 'gzip';
-        const cut = cutAtClock(gzip ? gunzipSync(body) : body, seconds);
-        body = gzip ? gzipSync(cut) : cut;
-      } else if (view === null) {
+      // The collector publishes a session's running trade and closing order book once the session is over.
+      if (view === 'ticks' && url.searchParams.get('date') === state.asOf)
+        return heldUntilClose(res);
+      if (view === null) {
         // Broker data for a session is published in the evening, so during it the history ends the day before.
         const history = JSON.parse(body.toString()) as { days: { date: string }[] };
         history.days = history.days.filter((day) => day.date !== state.asOf);
@@ -165,7 +142,7 @@ export async function startPreview({
     let body = await readFile(file);
     // Daily prices and the broker data for a session are published after the close, so during it they end the
     // session before. Market-wide files keep the as-of close; the snapshot has no earlier copy of them.
-    if (sessionClock(req) !== undefined) {
+    if (duringSession(req)) {
       const previous = state.sessions[state.sessions.indexOf(state.asOf) - 1];
       if (path.startsWith('ticker/')) {
         const ticker = JSON.parse(body.toString()) as { prices?: { date: string }[] };
