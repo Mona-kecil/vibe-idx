@@ -7,12 +7,13 @@ import { parseArgs } from 'node:util';
 import { DuckDBInstance } from '@duckdb/node-api';
 import { z } from 'zod';
 import { publishBrokerActivity } from '../broker-publication';
-import { createR2, type R2 } from '../brokers';
+import { createR2, publishAccumulation, type R2 } from '../brokers';
 import { sqlLiteral as lit } from '../ticks-data';
 import { TickStore } from '../ticks-store';
 import { cliErrors, plural } from './cli';
 import {
   cutBrokerData,
+  cutPrices,
   takeLock,
   fixturePaths,
   fixtureStateSchema,
@@ -156,17 +157,26 @@ const save = () => writeAtomic(paths.state, JSON.stringify(state, null, 2) + '\n
 await save();
 console.log(`as of ${state.asOf}, sessions ${state.sessions[0]} to ${state.sessions.at(-1)}`);
 
-const brokerCode = await codeVersion('../broker-publication.ts', './local-r2.ts');
+const brokerCode = await codeVersion(
+  '../broker-publication.ts',
+  '../brokers.ts',
+  '../sql.ts',
+  './local-r2.ts',
+);
 const brokerKey = `broker@${state.asOf}`;
 if (state.generated[brokerKey] !== brokerCode) {
-  const [activity, coverage] = await step('download broker data', async () => [
+  const [activity, coverage, prices] = await step('download broker data', async () => [
     await source(`parquet/broker_activity/${state.asOf.slice(0, 4)}.parquet`, args.latest),
     await source('parquet/broker-activity-coverage.parquet', args.latest),
+    await source(`parquet/prices/${state.asOf.slice(0, 4)}.parquet`, args.latest),
   ]);
   await step('broker files', () =>
     build(brokerKey, async () => {
       const data = join(paths.work, 'broker');
       await cutBrokerData(activity, coverage, state.asOf, data);
+      await cutPrices(prices, state.asOf, data);
+      // As the collector does: the market accumulation file, then the broker files.
+      await publishAccumulation(data, join(data, 'out'), sandbox);
       await publishBrokerActivity(data, join(data, 'out'), sandbox);
       await rm(data, { recursive: true, force: true });
     }),

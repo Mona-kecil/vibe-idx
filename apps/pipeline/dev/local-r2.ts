@@ -142,3 +142,17 @@ export async function cutBrokerData(
     instance.closeSync();
   }
 }
+
+/** The year's daily prices cut at the as-of date, so the latest session they show is the fixtures' own. */
+export async function cutPrices(prices: string, asOf: string, data: string) {
+  await mkdir(join(data, 'parquet', 'prices'), { recursive: true });
+  const instance = await DuckDBInstance.create(':memory:');
+  const db = await instance.connect();
+  try {
+    await db.run(`COPY (SELECT * FROM read_parquet(${literal(prices)}) WHERE date <= ${literal(asOf)}::DATE)
+      TO ${literal(join(data, 'parquet', 'prices', `${asOf.slice(0, 4)}.parquet`))} (FORMAT PARQUET)`);
+  } finally {
+    db.closeSync();
+    instance.closeSync();
+  }
+}

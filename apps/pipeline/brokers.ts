@@ -318,12 +318,6 @@ export async function brokers({
     const instance = await DuckDBInstance.create(':memory:');
     const db = await instance.connect();
     const query = async (sql: string) => (await db.runAndReadAll(sql)).getRowObjectsJson();
-    async function output(sql: string) {
-      return (await query(`SELECT to_json(r)::VARCHAR AS json FROM (${sql}) r`)).map((r) => {
-        if (typeof r.json !== 'string') throw new Error('Expected JSON from DuckDB');
-        return r.json;
-      });
-    }
     let ticks: Promise<TickSummary> | undefined;
     try {
       await db.run(`CREATE TEMP VIEW prices AS
@@ -370,20 +364,7 @@ export async function brokers({
           });
         },
       });
-      const parquet = join(data, 'parquet', 'broker_activity');
-      await db.run(`CREATE TEMP TABLE broker_activity (
-        date DATE, ticker VARCHAR, board VARCHAR, side VARCHAR, broker VARCHAR, shares DOUBLE, freq DOUBLE
-      )`);
-      if (existsSync(parquet) && (await readdir(parquet)).some((file) => file.endsWith('.parquet')))
-        await db.run(`INSERT INTO broker_activity SELECT date, ticker, board, side, broker, shares, freq
-          FROM read_parquet(${literal(join(parquet, '*.parquet'))})`);
-      await db.run(`CREATE TEMP VIEW broker_activity_coverage AS
-        SELECT * FROM read_parquet(${literal(join(data, 'parquet', 'broker-activity-coverage.parquet'))})`);
-      await mkdir(out, { recursive: true });
-      const accumulationFile = join(out, 'market-accumulation.json');
-      await writeFile(accumulationFile + '.tmp', `${(await output(accumulation))[0]}\n`);
-      await rename(accumulationFile + '.tmp', accumulationFile);
-      await r2.put('site/market-accumulation.json', await readFile(accumulationFile));
+      await publishAccumulation(data, out, r2);
       await publishBrokerActivity(data, out, r2);
       await checkRescales({
         data,
@@ -446,5 +427,40 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     console.error(error);
     await reportError(error, { source: 'brokers' });
     process.exitCode = 1;
+  }
+}
+
+/**
+ * Builds the market accumulation file from the broker activity and daily prices in `data`, writes it to `out` and
+ * publishes it where the broker API reads it.
+ */
+export async function publishAccumulation(data: string, out: string, r2: Pick<R2, 'put'>) {
+  const instance = await DuckDBInstance.create(':memory:');
+  const db = await instance.connect();
+  try {
+    const parquet = join(data, 'parquet', 'broker_activity');
+    await db.run(`CREATE TEMP VIEW prices AS
+        SELECT date, ticker, volume, frequency FROM read_parquet(${literal(join(data, 'parquet', 'prices', '*.parquet'))});
+      ${marketCalendar}
+      CREATE TEMP TABLE broker_activity (
+        date DATE, ticker VARCHAR, board VARCHAR, side VARCHAR, broker VARCHAR, shares DOUBLE, freq DOUBLE
+      );
+      CREATE TEMP VIEW broker_activity_coverage AS
+        SELECT * FROM read_parquet(${literal(join(data, 'parquet', 'broker-activity-coverage.parquet'))})`);
+    if (existsSync(parquet) && (await readdir(parquet)).some((file) => file.endsWith('.parquet')))
+      await db.run(`INSERT INTO broker_activity SELECT date, ticker, board, side, broker, shares, freq
+        FROM read_parquet(${literal(join(parquet, '*.parquet'))})`);
+    const [row] = (
+      await db.runAndReadAll(`SELECT to_json(r)::VARCHAR AS json FROM (${accumulation}) r`)
+    ).getRowObjectsJson();
+    if (typeof row?.json !== 'string') throw new Error('Expected JSON from DuckDB');
+    await mkdir(out, { recursive: true });
+    const file = join(out, 'market-accumulation.json');
+    await writeFile(file + '.tmp', `${row.json}\n`);
+    await rename(file + '.tmp', file);
+    await r2.put('site/market-accumulation.json', await readFile(file));
+  } finally {
+    db.closeSync();
+    instance.closeSync();
   }
 }
