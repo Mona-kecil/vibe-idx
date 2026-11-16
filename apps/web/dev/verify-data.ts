@@ -458,10 +458,12 @@ if (args.json) {
       r.failed,
       r.notes.length,
       r.skipped,
+      // What a PASS covers: the comparisons made out of all there were to make.
+      `${(r.passed + r.failed).toLocaleString('en')} of ${(r.passed + r.failed + r.skipped).toLocaleString('en')}`,
       r.title,
     ]),
-    ['', 'check', 'pass', 'fail', 'note', 'skip', ''],
-    'llrrrrl',
+    ['', 'check', 'pass', 'fail', 'note', 'skip', 'compared', ''],
+    'llrrrrrl',
   );
   for (const r of results) {
     const lines = [
