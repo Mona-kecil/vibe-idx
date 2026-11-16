@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -51,6 +51,7 @@ export async function takeLock(name: 'fixtures' | 'bench') {
   const file = lockFile(name);
   await mkdir(dirname(file), { recursive: true });
   let waiting = false;
+  let announced: number | undefined;
   for (;;) {
     try {
       writeFileSync(file, String(process.pid), { flag: 'wx' });
@@ -66,8 +67,14 @@ export async function takeLock(name: 'fixtures' | 'bench') {
         throw new Error(
           `Another \`pnpm fixtures\` (pid ${holder}) is writing ${fixturePaths().root}. Wait for it to finish.`,
         );
-      if (!waiting)
-        console.warn(`waiting for the benchmark already running (pid ${holder}) to finish`);
+      // Several can queue, so the holder can change while this one waits.
+      if (holder !== announced) {
+        const minutes = Math.round((Date.now() - statSync(file).mtimeMs) / 60000);
+        console.warn(
+          `waiting for the benchmark already running (pid ${holder}, for ${minutes} min; a broker step takes about a minute a run) to finish`,
+        );
+        announced = holder;
+      }
       waiting = true;
       await new Promise((done) => setTimeout(done, 1000));
     }

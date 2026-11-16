@@ -28,12 +28,12 @@ const snapshotFiles = [
 ];
 
 /** Copies the public data once per fixture date, so prices and broker data describe the same session. */
-async function snapshotPublic(asOf: string, offline: boolean) {
+async function snapshotPublic(asOf: string, record: boolean) {
   const marker = join(snapshot, 'snapshot.json');
   if (existsSync(marker) && JSON.parse(await readFile(marker, 'utf8')).asOf === asOf) return;
-  if (offline)
+  if (!record)
     throw new Error(
-      `No public data copied for ${asOf} yet, and --offline leaves the network alone. Run once without --offline.`,
+      `No public data copied for ${asOf} yet. Run once with --record, which copies it from the public bucket.`,
     );
   const started = performance.now();
   // Responses recorded for the previous date would no longer match the data.
@@ -89,17 +89,17 @@ function heldUntilClose(res: ServerResponse) {
 }
 
 /**
- * `web` is the app checkout to serve; the preview's own code always comes from this checkout. `offline` never
- * reaches production: an API response not recorded yet answers 503, marked so ui:check can list it.
+ * `web` is the app checkout to serve; the preview's own code always comes from this checkout. It never reaches
+ * production unless `record` is set: an API response not recorded yet answers 503, marked so ui:check can list it.
  */
 export async function startPreview({
   port = 5173,
   quiet = false,
   web = fileURLToPath(new URL('..', import.meta.url)),
-  offline = false,
-}: { port?: number; quiet?: boolean; web?: string; offline?: boolean } = {}) {
+  record = false,
+}: { port?: number; quiet?: boolean; web?: string; record?: boolean } = {}) {
   const state = await fixtureState();
-  await snapshotPublic(state.asOf, offline);
+  await snapshotPublic(state.asOf, record);
   const api = await localBrokerApi(web);
   /** API responses fetched from production during this preview, to record them. */
   const fetched: string[] = [];
@@ -167,8 +167,8 @@ export async function startPreview({
     const file = join(snapshot, 'api', `${key}.json`);
     let entry: { status: number; type: string; body: string };
     if (existsSync(file)) entry = JSON.parse(await readFile(file, 'utf8')) as typeof entry;
-    else if (offline) {
-      if (!quiet) console.warn(`offline, not recorded: ${req.url}`);
+    else if (!record) {
+      if (!quiet) console.warn(`not recorded yet, --record fetches it: ${req.url}`);
       res.statusCode = 503;
       res.setHeader('X-Preview-Offline', 'not recorded');
       return res.end();
@@ -248,28 +248,29 @@ export async function startPreview({
   };
 }
 
-export const offlineHelp = `--offline     never reach production: API responses not recorded yet answer 503`;
+export const recordHelp = `--record      fetch from production what isn't recorded yet, and record it; without it nothing
+              leaves this machine, and a response not recorded yet answers 503`;
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   cliErrors();
   const { values: args } = parseArgs({
     options: {
       port: { type: 'string', default: '5173' },
-      offline: { type: 'boolean', default: false },
+      record: { type: 'boolean', default: false },
       help: { type: 'boolean', default: false },
     },
   });
   if (args.help) {
-    console.log(`pnpm preview:local [--port N] [--offline]
+    console.log(`pnpm preview:local [--port N] [--record]
 
-Runs the app on the fixtures, signed in, with broker data and running trade read only from them. Public data is
-copied once per fixture date, and other API responses are recorded from production the first time they're asked
-for, then replayed. The panel at the bottom left sets the clock and signs in or out.
+Runs the app on the fixtures, signed in, with broker data and running trade read only from them, and the public
+data and other API responses replayed from recordings. --record copies the public data for a new fixture date and
+records responses the first time they're asked for. The panel at the bottom left sets the clock and signs in or out.
 
 --port N      5173 by default
-${offlineHelp}`);
+${recordHelp}`);
     process.exit(0);
   }
-  const preview = await startPreview({ port: Number(args.port), offline: args.offline });
-  console.log(`${preview.url}  data as of ${preview.asOf}${args.offline ? ', offline' : ''}`);
+  const preview = await startPreview({ port: Number(args.port), record: args.record });
+  console.log(`${preview.url}  data as of ${preview.asOf}${args.record ? ', recording' : ''}`);
 }

@@ -48,7 +48,7 @@ export async function open(browser: Browser, base: string, visit: Visit) {
   const missing: string[] = [];
   /** 404s the preview sends on purpose, such as the order book before the close. */
   const held: string[] = [];
-  /** Production responses that offline previews have no recording of. */
+  /** Production responses the preview has no recording of, and doesn't fetch without --record. */
   const unrecorded: string[] = [];
   page.on('console', (message) => {
     // Chrome logs every HTTP error too; the response handler below already reports those.

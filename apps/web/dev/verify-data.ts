@@ -28,7 +28,8 @@ const usage = `pnpm verify:data [TICKER]... [--dates <date|from..to|all>] [--che
 Checks that views built from different sources agree on the fixtures, through the app's own API and functions.
 The as-of session and every ticker by default. Exits 1 when a check fails or nothing was compared. A note is a
 difference with a known cause, and a skip says why a check didn't apply, such as a session without an order book.
---show N lists up to N failures, notes and skips per check, 5 by default. --json prints only JSON on stdout.`;
+--show N lists up to N failures, notes and skips per check, 5 by default. --json prints only JSON on stdout: the
+tickers, totals, and for each check its scope, counts, counts by ticker, failures, notes and skips.`;
 const { values: args, positionals } = parseArgs({
   allowPositionals: true,
   options: {
@@ -105,13 +106,16 @@ const tally = new Map(
       notes: [] as string[],
       /** Where each reason applied. */
       skips: {} as Record<string, string[]>,
+      byTicker: {} as Record<string, { passed: number; failed: number; skipped: number }>,
     },
   ]),
 );
 const record = (check: Check, where: string, outcome: Outcome) => {
   const t = tally.get(check.name)!;
+  const ticker = (t.byTicker[where.split(' ')[0]!] ??= { passed: 0, failed: 0, skipped: 0 });
   if ('skip' in outcome) {
     t.skipped++;
+    ticker.skipped++;
     (t.skips[outcome.skip] ??= []).push(where);
     return;
   }
@@ -119,8 +123,12 @@ const record = (check: Check, where: string, outcome: Outcome) => {
   t.notes.push(...outcome.flatMap((f) => (typeof f === 'string' ? [] : [`${where} ${f.note}`])));
   if (failures.length) {
     t.failed++;
+    ticker.failed++;
     t.failures.push(...failures.map((line) => `${where} ${line}`));
-  } else t.passed++;
+  } else {
+    t.passed++;
+    ticker.passed++;
+  }
 };
 
 const started = performance.now();
@@ -172,11 +180,25 @@ if (unknownTickers.length)
   throw new Error(
     `No broker data or running trade for ${unknownTickers.join(', ')} in the fixtures.`,
   );
-const results = chosen.map((c) => ({ name: c.name, title: c.title, ...tally.get(c.name)! }));
+const results = chosen.map((c) => ({
+  name: c.name,
+  title: c.title,
+  // A session check runs once per ticker and session, a history check once per ticker over the year.
+  scope: 'session' in c ? ('session' as const) : ('history' as const),
+  ...tally.get(c.name)!,
+}));
 const compared = results.some((r) => r.passed || r.failed);
 process.exitCode = results.some((r) => r.failed) || !compared ? 1 : 0;
 if (args.json) {
-  console.log(JSON.stringify({ dates, tickers: tickers.length, sessions, results }, null, 2));
+  const total = (key: 'passed' | 'failed' | 'skipped') =>
+    results.reduce((sum, r) => sum + r[key], 0);
+  const totals = {
+    passed: total('passed'),
+    failed: total('failed'),
+    skipped: total('skipped'),
+    notes: results.reduce((sum, r) => sum + r.notes.length, 0),
+  };
+  console.log(JSON.stringify({ dates, tickers, sessions, totals, results }, null, 2));
 } else {
   const span = dates.length === 1 ? dates[0] : `${dates[0]} to ${dates.at(-1)}`;
   console.log(

@@ -130,6 +130,30 @@ if (base) {
       : `no pipeline source differs from ${base.label} outside dev tools and tests, so both sides should time the same`,
   );
 }
+{
+  const git = (...args: string[]) =>
+    execFileSync('git', args, { cwd: join(here, '../..') })
+      .toString()
+      .trim();
+  const dirty = git(
+    'status',
+    '--porcelain',
+    '--',
+    ':(glob)apps/pipeline/**/*.ts',
+    ':(exclude)apps/pipeline/dev',
+    ':(exclude)*.test.ts',
+  );
+  console.log(
+    `this checkout is ${git('rev-parse', '--short', 'HEAD')}${
+      dirty
+        ? `, with uncommitted changes to ${dirty
+            .split('\n')
+            .map((line) => line.slice(3))
+            .join(', ')}`
+        : ''
+    }`,
+  );
+}
 const sides = [
   ...(base ? [{ label: base.label, pipeline: join(base.dir, 'apps/pipeline') }] : []),
   { label: 'this checkout', pipeline: here },

@@ -36,7 +36,8 @@ Copies running trade and the year's broker data from the private bucket, read-on
 reads with the pipeline's publication code. Reruns skip finished work and rebuild what changed publication code
 affects. The window ends at the newest session with complete broker data.
 
---latest      check the private bucket for newer sessions and move the window forward
+--latest      check the private bucket for newer sessions and move the window forward; an empty folder starts
+              from the newest window without it
 --sessions N  sessions in the window, 10 by default
 
 The folder is ~/.cache/vibe-idx/local, or VIBE_IDX_FIXTURES for this and every other dev command.`);
@@ -164,7 +165,18 @@ const brokerCode = await codeVersion(
   './local-r2.ts',
 );
 const brokerKey = `broker@${state.asOf}`;
-if (state.generated[brokerKey] !== brokerCode) {
+/** Why a part is built again, or undefined when it is current. */
+const reason = (key: string, code: string) =>
+  state.generated[key] === undefined
+    ? 'not built yet'
+    : state.generated[key] !== code
+      ? 'publication code changed since it was built'
+      : undefined;
+let built = false;
+const brokerReason = reason(brokerKey, brokerCode);
+if (brokerReason) {
+  built = true;
+  console.log(`broker files: ${brokerReason}`);
   const [activity, coverage, prices] = await step('download broker data', async () => [
     await source(`parquet/broker_activity/${state.asOf.slice(0, 4)}.parquet`, args.latest),
     await source('parquet/broker-activity-coverage.parquet', args.latest),
@@ -186,8 +198,11 @@ if (state.generated[brokerKey] !== brokerCode) {
 }
 
 const tickCode = await codeVersion('../ticks-store.ts', '../ticks-data.ts', './local-r2.ts');
-const pending = state.sessions.filter((date) => state.generated[`ticks@${date}`] !== tickCode);
+const pending = state.sessions.filter((date) => reason(`ticks@${date}`, tickCode));
 if (pending.length) {
+  built = true;
+  const why = new Set(pending.map((date) => reason(`ticks@${date}`, tickCode)));
+  console.log(`running trade for ${plural(pending.length, 'session')}: ${[...why].join(', ')}`);
   const books = new Set(
     (
       await rows(`SELECT DISTINCT date::VARCHAR AS date FROM read_parquet(${lit(await source('ticks/ledger.parquet'))})
@@ -240,6 +255,10 @@ if (keys.every((key) => outputs[key])) {
   if (removed) console.log(`removed ${plural(removed, 'file')} that no current build writes`);
 }
 
+if (!built)
+  console.log(
+    `nothing to rebuild: broker files and ${plural(state.sessions.length, 'session')} are current`,
+  );
 console.log(
   `done in ${((performance.now() - started) / 1000).toFixed(1)}s, peak ${Math.round(process.resourceUsage().maxRSS / 1024)} MB, ${reads} reads from the private bucket, data in ${paths.bucket}`,
 );

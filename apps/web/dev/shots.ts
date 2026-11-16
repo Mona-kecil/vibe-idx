@@ -18,11 +18,11 @@ import {
 } from './annotate.js';
 import { hidePreviewPanel, launch, open, scope, shotArea } from './browser.js';
 import type { Box } from './browser.js';
-import { offlineHelp, startPreview } from './preview.js';
+import { recordHelp, startPreview } from './preview.js';
 import type { Scenario } from './scenario.js';
 
 cliErrors();
-const usage = `pnpm shots <scenarios.ts> [--base <git ref>] [--only <name>] [--out <dir>] [--offline]
+const usage = `pnpm shots <scenarios.ts> [--base <git ref>] [--only <name>] [--out <dir>] [--record]
 
 Shoots each scenario on this checkout and, with --base, on that ref too, with the clock frozen. For each scenario it
 writes, outside the repository:
@@ -45,25 +45,26 @@ A scenarios file can live anywhere and default-exports an array of scenarios:
     signedOut: false,
     size: '1440x900',
     click: ['BRK'],                        tabs or buttons by accessible name, in order
-    fill: [['Ticker', 'TLKM']],            fields by accessible name, each then Enter
+    fill: [['Command', 'TLKM']],           fields by accessible name, each then Enter
     steps: async (page) => {},             a Playwright Page, for anything else, after clicks and fills
     within: 'BRK',                         the panel or region to shoot; the window when left out
     notes: [{ at: 'role=tab[name="1D"]', text: 'What the reader should see', on: 'after' }],
   }] satisfies Scenario[];
 
-on is before, after (the default) or both. apps/web/dev/shots/preview-panel.ts is an example.
+on is before, after (the default) or both. apps/web/dev/shots/preview-panel.ts is an example. The clock and CSS
+animations are frozen while shooting, and errors or 404s on either side are listed in notes.md.
 
 --base REF   the ref to compare with, such as origin/master or the PR's base
 --only NAME  one scenario
 --out DIR    where the files go; ~/.cache/vibe-idx/shots/<time> by default
-${offlineHelp}`;
+${recordHelp}`;
 const { values: args, positionals } = parseArgs({
   allowPositionals: true,
   options: {
     base: { type: 'string' },
     only: { type: 'string' },
     out: { type: 'string' },
-    offline: { type: 'boolean', default: false },
+    record: { type: 'boolean', default: false },
     help: { type: 'boolean', default: false },
   },
 });
@@ -98,7 +99,8 @@ async function shoot(page: Page, scenario: Scenario, side: 'before' | 'after') {
   if (!scenario.panel) await hidePreviewPanel(page);
   // The area doesn't depend on the notes, so before and after come out the same size.
   const area = await shotArea(page, scenario.within);
-  const clip = area ? { clip: area.clip } : {};
+  // The clock is frozen too, so an unchanged page shoots the same pixels every time; a blinking cursor would not.
+  const clip = { animations: 'disabled' as const, ...(area && { clip: area.clip }) };
   for (const [i, note] of (scenario.notes ?? []).entries()) {
     const on = note.on ?? 'after';
     if (on !== side && on !== 'both') continue;
@@ -272,13 +274,13 @@ async function compare(browser: Browser, before: Shot, after: Shot, labels: [str
 }
 
 const base = args.base ? await checkout(args.base) : undefined;
-const head = await startPreview({ port: 0, quiet: true, offline: args.offline });
+const head = await startPreview({ port: 0, quiet: true, record: args.record });
 const before = base
   ? await startPreview({
       port: 0,
       quiet: true,
       web: join(base.dir, 'apps/web'),
-      offline: args.offline,
+      record: args.record,
     })
   : undefined;
 const browser = await launch();
@@ -289,6 +291,8 @@ try {
     const shots: Partial<Record<'before' | 'after', Shot>> = {};
     /** Each note's number with the sides it was placed on. */
     const placed = new Map<number, Set<string>>();
+    /** Errors and 404s while shooting, so the notes say when a shot shows a page that didn't fully load. */
+    const trouble: string[] = [];
     const outside = new Map<number, string>();
     const sides = [
       ...(before ? [['before', before.url] as const] : []),
@@ -302,8 +306,15 @@ try {
       await writeFile(join(out, `${scenario.name}-${side}.png`), shot.image);
       await writeFile(join(out, `${scenario.name}-${side}-clean.png`), shot.clean);
       for (const problem of visit.problems) console.warn(`${scenario.name} ${side}: ${problem}`);
-      for (const url of new Set(visit.unrecorded))
-        console.warn(`${scenario.name} ${side}: offline, not recorded yet: ${url}`);
+      for (const url of new Set(visit.missing)) {
+        console.warn(`${scenario.name} ${side}: not found (404): ${url}`);
+        trouble.push(`${side}: not found (404): ${url}`);
+      }
+      for (const problem of visit.problems) trouble.push(`${side}: ${problem}`);
+      for (const url of new Set(visit.unrecorded)) {
+        console.warn(`${scenario.name} ${side}: not recorded yet, --record fetches it: ${url}`);
+        trouble.push(`${side}: not recorded yet, --record fetches it: ${url}`);
+      }
       for (const number of shot.placed)
         placed.set(number, new Set([...(placed.get(number) ?? []), side]));
       for (const [number, why] of shot.outside) outside.set(number, why);
@@ -345,6 +356,9 @@ try {
     report.push(
       `## ${scenario.name}`,
       '',
+      ...(trouble.length
+        ? ['While shooting:', ...[...new Set(trouble)].map((line) => `    ${line}`), '']
+        : []),
       ...(change.length
         ? [
             `Change: ${change.join('\n')}${change[0] === 'no visible change' && outline.length ? ', but the accessibility outline differs, below' : ''}`,
