@@ -320,6 +320,8 @@ if (unknown.length)
   );
 const chosen = checks.filter((c) => !args.check.length || args.check.includes(c.name));
 const show = z.coerce.number().int().nonnegative().parse(args.show);
+/** A short list of skipped places is shown whole; a long one, such as every warrant, up to --show. */
+const listed = (where: string[]) => (where.length <= 12 ? where.length : Math.max(show, 1));
 
 const state = await fixtureState();
 const asOf = state.asOf;
@@ -471,7 +473,7 @@ if (args.json) {
       ...r.notes.map((note) => `note: ${note}`),
       ...Object.entries(r.skips).map(
         ([reason, where]) =>
-          `skip: ${reason}, ${plural(where.length, 'time')}: ${where.slice(0, show).join(', ')}${where.length > show ? `, and ${where.length - show} more` : ''}`,
+          `skip: ${reason}, ${plural(where.length, 'time')}: ${where.slice(0, listed(where)).join(', ')}${where.length > listed(where) ? `, and ${where.length - listed(where)} more` : ''}`,
       ),
     ];
     if (!lines.length || !show) continue;

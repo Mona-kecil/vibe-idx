@@ -102,7 +102,14 @@ async function shoot(page: Page, scenario: Scenario, side: 'before' | 'after') {
       .locator(note.at)
       .first()
       .boundingBox({ timeout: 3000 })
-      .catch(() => null);
+      .catch((error: Error) => {
+        // A selector Playwright can't parse is a mistake in the note, not an element missing from the page.
+        if (error.name !== 'TimeoutError')
+          throw new Error(
+            `${scenario.name}: note ${i + 1} at ${note.at} is not a valid selector: ${error.message.split('\n')[0]}`,
+          );
+        return null;
+      });
     if (!box) continue;
     if (area && !inside(box, area.content))
       outside.set(
