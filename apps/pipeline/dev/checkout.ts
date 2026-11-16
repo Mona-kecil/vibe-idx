@@ -82,7 +82,7 @@ export async function checkout(ref: string) {
       await symlink(join(repoRoot, modules), join(dir, modules));
   const label = `${ref} (${sha.slice(0, 7)})`;
   console.warn(`base ${label}`);
-  return { dir, label, remove };
+  return { dir, sha, label, remove };
 }
 
 /** Fails for a path inside any checkout of the repository: screenshots can show private broker data. */

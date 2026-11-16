@@ -35,7 +35,8 @@ path            / by default. The terminal is /terminal?t=<TICKER>&l=<grid|focus
 --size WxH      the window, 1440x900 by default
 --click NAME    presses the tab or button with that accessible name; repeat for more, in order
 --fill NAME=V   types V into the field with that accessible name and presses Enter; runs after the clicks
---within NAME   keeps the outline to the panel or region with that name, such as a terminal pane's tab
+--within NAME   keeps the outline to the panel or region with that name, such as a terminal pane's tab;
+                a tab that isn't open is opened
 --depth N       keeps the outline to its first N levels
 --urls          keeps link targets in the outline
 --shot FILE     saves a screenshot outside the repository: the --within panel with its tabs, or the window
@@ -68,6 +69,7 @@ try {
     click: args.click,
     fill,
   });
+  const target = await scope(visit.page, args.within);
   console.log(
     `${path} at ${args.clock}, ${args['signed-out'] ? 'signed out' : 'signed in'}, ${args.size}, data as of ${preview.asOf}`,
   );
@@ -76,12 +78,16 @@ try {
   for (const url of new Set(visit.missing)) console.log(`not found (404): ${url}`);
   for (const url of new Set(visit.unrecorded)) console.log(`offline, not recorded yet: ${url}`);
   console.log(
+    preview.fetched.length
+      ? `fetched from production and recorded: ${[...new Set(preview.fetched)].join(', ')}`
+      : 'nothing fetched from production',
+  );
+  console.log(
     visit.problems.length
       ? visit.problems.join('\n')
       : `no errors or failed requests${visit.missing.length ? ' besides the 404s above' : ''}`,
   );
   console.log();
-  const target = await scope(visit.page, args.within);
   // Link targets are long and rarely the point, so they stay out unless asked for.
   const lines = (await target.ariaSnapshot())
     .split('\n')

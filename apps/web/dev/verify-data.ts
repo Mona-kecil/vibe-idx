@@ -284,7 +284,7 @@ const checks: Check[] = [
   },
   {
     name: 'bfl-brk',
-    title: 'BFL end matches BRK net over the year',
+    title: 'BFL end matches BRK net over the year, once per ticker',
     history: (h) =>
       brokerBoards.flatMap((board) => {
         const days = h.brokers.filter((day) => day.board === board);

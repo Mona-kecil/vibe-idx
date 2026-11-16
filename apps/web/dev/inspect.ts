@@ -80,7 +80,15 @@ if (!command) {
     Math.round(b.lots).toLocaleString('en'),
     brokerName(b.code),
   ];
-  const header = (side: string) => [side, 'type', 'buy', 'sell', 'net', 'net lot', 'name'];
+  const header = (side: string) => [
+    side,
+    'type',
+    'buy IDR',
+    'sell IDR',
+    'net IDR',
+    'net lot',
+    'name',
+  ];
   table(
     rows
       .filter((b) => b.net > 0)

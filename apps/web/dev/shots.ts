@@ -118,15 +118,39 @@ async function shoot(page: Page, scenario: Scenario, side: 'before' | 'after') {
   await page.evaluate((list) => {
     const layer = document.createElement('div');
     layer.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:2147483647';
-    for (const { number, box } of list) {
-      const frame = document.createElement('div');
-      frame.style.cssText = `position:fixed;left:${box.x - 4}px;top:${box.y - 4}px;width:${box.width + 8}px;height:${box.height + 8}px;border:3px solid #ff1f1f;border-radius:4px;box-sizing:border-box`;
-      // Just outside the frame's top-left corner, so it never covers what it marks.
+    type Rect = { x: number; y: number; width: number; height: number };
+    const frames = list.map(({ box }) => ({
+      x: box.x - 4,
+      y: box.y - 4,
+      width: box.width + 8,
+      height: box.height + 8,
+    }));
+    const overlaps = (a: Rect, b: Rect) =>
+      a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+    const badges: Rect[] = [];
+    list.forEach(({ number }, i) => {
+      const frame = frames[i]!;
+      const box = document.createElement('div');
+      box.style.cssText = `position:fixed;left:${frame.x}px;top:${frame.y}px;width:${frame.width}px;height:${frame.height}px;border:3px solid #ff1f1f;border-radius:4px;box-sizing:border-box`;
+      // Outside the frame's corners, so it never covers what it marks; the first spot clear of other notes wins.
+      const spots = [
+        [frame.x - 20, frame.y - 20],
+        [frame.x + frame.width - 2, frame.y - 20],
+        [frame.x - 20, frame.y + frame.height - 2],
+        [frame.x + frame.width - 2, frame.y + frame.height - 2],
+      ].map(([x, y]) => ({ x: Math.max(0, x!), y: Math.max(0, y!), width: 22, height: 22 }));
+      const spot =
+        spots.find(
+          (s) =>
+            !badges.some((b) => overlaps(s, b)) &&
+            !frames.some((f, j) => j !== i && overlaps(s, f)),
+        ) ?? spots[0]!;
+      badges.push(spot);
       const badge = document.createElement('div');
       badge.textContent = String(number);
-      badge.style.cssText = `position:fixed;left:${Math.max(0, box.x - 24)}px;top:${Math.max(0, box.y - 24)}px;width:22px;height:22px;border-radius:11px;background:#ff1f1f;color:#fff;font:bold 13px/22px system-ui,sans-serif;text-align:center`;
-      layer.append(frame, badge);
-    }
+      badge.style.cssText = `position:fixed;left:${spot.x}px;top:${spot.y}px;width:22px;height:22px;border-radius:11px;background:#ff1f1f;color:#fff;font:bold 13px/22px system-ui,sans-serif;text-align:center`;
+      layer.append(box, badge);
+    });
     document.body.append(layer);
   }, marks);
   return {
@@ -198,16 +222,50 @@ async function compare(browser: Browser, before: Shot, after: Shot, labels: [str
       const rows = Math.ceil(height / cell);
       const counts = new Uint32Array(columns * rows);
       const changed = new Uint8Array(width * height);
+      const original = q.slice();
+      /**
+       * Whether the pixel at x,y in `a` could be an anti-aliased edge of what `b` shows there: within 32 levels of
+       * the pixel in `b`, and in each channel between the darkest and lightest of `b`'s 3 by 3 neighbourhood, give
+       * or take 12 levels. A recoloured or replaced shape steps further or leaves that range.
+       */
+      const edge = (a: Uint8ClampedArray, b: Uint8ClampedArray, x: number, y: number) => {
+        const at = (y * width + x) * 4;
+        for (let c = 0; c < 3; c++) {
+          if (Math.abs(a[at + c]! - b[at + c]!) > 32) return false;
+          let low = 255,
+            high = 0;
+          for (let dy = -1; dy <= 1; dy++)
+            for (let dx = -1; dx <= 1; dx++) {
+              const nx = x + dx,
+                ny = y + dy;
+              if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+              const value = b[(ny * width + nx) * 4 + c]!;
+              low = Math.min(low, value);
+              high = Math.max(high, value);
+            }
+          if (a[at + c]! < low - 12 || a[at + c]! > high + 12) return false;
+        }
+        return true;
+      };
+      // Text edges come out slightly shaded or shifted from run to run on a busy machine, so they are counted apart.
+      let faint = 0;
+      const faintPixels = new Uint8Array(width * height);
       for (let i = 0; i < p.length; i += 4) {
+        if (p[i] === q[i] && p[i + 1] === q[i + 1] && p[i + 2] === q[i + 2]) continue;
         const x = (i / 4) % width,
           y = Math.floor(i / 4 / width);
-        if (p[i] !== q[i] || p[i + 1] !== q[i + 1] || p[i + 2] !== q[i + 2]) {
+        if (edge(p, original, x, y) && edge(original, p, x, y)) {
+          faint++;
+          faintPixels[i / 4] = 1;
+        } else {
           counts[Math.floor(y / cell) * columns + Math.floor(x / cell)]!++;
           changed[i / 4] = 1;
         }
-        // Faded, so the changed pixels stand out.
+      }
+      for (let i = 0; i < q.length; i += 4) {
+        // Faded, so the changed pixels stand out; faint ones show in light orange.
         const faded = 255 - (255 - (q[i]! + q[i + 1]! + q[i + 2]!) / 3) / 4;
-        q.set([faded, faded, faded], i);
+        q.set(faintPixels[i / 4] ? [255, 190, 120] : [faded, faded, faded], i);
       }
       // Each changed pixel is drawn 3px wide, so a one-pixel line still shows.
       for (let at = 0; at < changed.length; at++) {
@@ -276,6 +334,7 @@ async function compare(browser: Browser, before: Shot, after: Shot, labels: [str
       return {
         sized: true as const,
         sizes,
+        faint,
         regions,
         mask: await encode(diff),
         shade: await encode(shade),
@@ -323,6 +382,10 @@ async function compare(browser: Browser, before: Shot, after: Shot, labels: [str
               }`,
           ),
         ];
+  if (change.sized && change.faint)
+    summary.push(
+      `${plural(change.faint, 'pixel')} differ slightly, as anti-aliased edges vary between runs; not counted, and light orange in the diff image`,
+    );
   return {
     image,
     mask: change.sized ? Buffer.from(change.mask, 'base64') : undefined,
@@ -346,7 +409,8 @@ let failed = 0;
 try {
   for (const scenario of scenarios) {
     const shots: Partial<Record<'before' | 'after', Shot>> = {};
-    const placed = new Set<number>();
+    /** Each note's number with the sides it was placed on. */
+    const placed = new Map<number, Set<string>>();
     const outside = new Map<number, string>();
     const sides = [
       ...(before ? [['before', before.url] as const] : []),
@@ -362,7 +426,8 @@ try {
       for (const problem of visit.problems) console.warn(`${scenario.name} ${side}: ${problem}`);
       for (const url of new Set(visit.unrecorded))
         console.warn(`${scenario.name} ${side}: offline, not recorded yet: ${url}`);
-      for (const number of shot.placed) placed.add(number);
+      for (const number of shot.placed)
+        placed.set(number, new Set([...(placed.get(number) ?? []), side]));
       for (const [number, why] of shot.outside) outside.set(number, why);
     }
     const outline =
@@ -382,10 +447,11 @@ try {
     const problem = (number: number) => {
       if (outside.has(number)) return outside.get(number);
       const on = notes[number - 1]!.on ?? 'after';
-      const applies = on === 'both' || shot.has(on);
-      return applies && !placed.has(number)
-        ? `matched nothing; \`pnpm ui:check '${scenario.path}' --within <panel>\` lists the names on the page`
-        : undefined;
+      const missed = (on === 'both' ? ['before', 'after'] : [on]).filter(
+        (side) => shot.has(side as 'before' | 'after') && !placed.get(number)?.has(side),
+      );
+      if (!missed.length) return undefined;
+      return `matched nothing${shot.size > 1 && missed.length === 1 ? ` on the ${missed[0]} side` : ''}; \`pnpm ui:check '${scenario.path}' --within <panel>\` lists the names on the page`;
     };
     const lost = notes.flatMap((_, i) => (problem(i + 1) ? [i + 1] : []));
     failed += lost.length;
@@ -400,7 +466,7 @@ try {
       ...(shots.before && shots.after
         ? outline.length
           ? [
-              'Accessibility outline, lines only one side has:',
+              'Accessibility outline, lines only one side has (- before, + after):',
               ...outline.slice(0, 40).map((line) => `    ${line}`),
               ...(outline.length > 40 ? [`    ${outline.length - 40} more`] : []),
               '',

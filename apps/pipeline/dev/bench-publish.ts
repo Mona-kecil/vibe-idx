@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { readdir, readFile, rm } from 'node:fs/promises';
 import { cpus } from 'node:os';
@@ -107,6 +107,29 @@ if (steps.includes('broker')) {
 
 const here = join(import.meta.dirname, '..');
 const base = args.base ? await checkout(args.base) : undefined;
+if (base) {
+  // Working-tree changes count too, so an uncommitted edit to publication code is seen.
+  const touched = execFileSync(
+    'git',
+    [
+      'diff',
+      '--name-only',
+      base.sha,
+      '--',
+      ':(glob)apps/pipeline/**/*.ts',
+      ':(exclude)apps/pipeline/dev',
+      ':(exclude)*.test.ts',
+    ],
+    { cwd: join(here, '../..') },
+  )
+    .toString()
+    .trim();
+  console.log(
+    touched
+      ? `pipeline sources that differ from ${base.label}: ${touched.split('\n').join(', ')}`
+      : `no pipeline source differs from ${base.label} outside dev tools and tests, so both sides should time the same`,
+  );
+}
 const sides = [
   ...(base ? [{ label: base.label, pipeline: join(base.dir, 'apps/pipeline') }] : []),
   { label: 'this checkout', pipeline: here },

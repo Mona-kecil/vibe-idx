@@ -120,6 +120,8 @@ export async function startPreview({
   const state = await fixtureState();
   await snapshotPublic(state.asOf, offline);
   const api = await localBrokerApi(web);
+  /** API responses fetched from production during this preview, to record them. */
+  const fetched: string[] = [];
 
   async function brokers(req: IncomingMessage, res: ServerResponse) {
     const url = new URL(req.url!, 'http://localhost');
@@ -200,6 +202,7 @@ export async function startPreview({
         type: response.headers.get('Content-Type') ?? 'application/json',
         body: await response.text(),
       };
+      fetched.push(req.url!);
       if (response.ok) {
         await writeAtomic(file, JSON.stringify(entry));
         console.log(`recorded ${req.url} from production`);
@@ -263,6 +266,7 @@ export async function startPreview({
   return {
     url: `http://localhost:${address.port}`,
     asOf: state.asOf,
+    fetched,
     close: () => server.close(),
   };
 }

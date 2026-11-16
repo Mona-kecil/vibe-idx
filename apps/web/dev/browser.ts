@@ -80,13 +80,7 @@ export async function open(browser: Browser, base: string, visit: Visit) {
     await settle();
   }
   await visit.steps?.(page);
-  // An idle network can still leave the app decoding data, so also wait for its loading messages to go.
-  await page
-    .getByRole('status')
-    .filter({ hasText: /^Loading/ })
-    .first()
-    .waitFor({ state: 'detached', timeout: 15000 })
-    .catch(() => problems.push('still loading after 15s'));
+  if (!(await settled(page))) problems.push('still loading after 15s');
   return { page, problems, missing, held, unrecorded, close: () => context.close() };
 }
 
@@ -128,7 +122,10 @@ async function named(
   );
 }
 
-/** The panel or region with this accessible name, or the whole page. */
+/**
+ * The panel or region with this accessible name, or the whole page. A pane's tab that isn't open is opened first,
+ * as a click on it would.
+ */
 export async function scope(page: Page, name?: string) {
   if (!name) return page.locator('body');
   const area = page
@@ -136,6 +133,13 @@ export async function scope(page: Page, name?: string) {
     .or(page.getByRole('region', { name, exact: true }))
     .first();
   if (await area.count()) return area;
+  const tab = page.getByRole('tab', { name, exact: true }).first();
+  if (await tab.count()) {
+    await tab.click();
+    await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => undefined);
+    await settled(page);
+    if (await area.count()) return area;
+  }
   const names = await page
     .locator('[role=tabpanel], [role=region], section[aria-label], section[aria-labelledby]')
     .evaluateAll((areas) =>
@@ -146,12 +150,8 @@ export async function scope(page: Page, name?: string) {
         return label ? [label.trim()] : [];
       }),
     );
-  // A pane's other tabs exist only as tabs until they are opened.
-  const tab = (await page.getByRole('tab', { name, exact: true }).count())
-    ? ` ${name} is a tab that isn't open: open it first, with --click ${name} in ui:check or click: ['${name}'] in a scenario.`
-    : '';
   throw new Error(
-    `No panel or region named ${name}.${tab} On this page: ${[...new Set(names)].join(', ')}`,
+    `No panel or region named ${name}. On this page: ${[...new Set(names)].join(', ')}`,
   );
 }
 
@@ -226,3 +226,13 @@ export async function shotArea(
 /** Hides the preview's own panel, which is not part of the app. */
 export const hidePreviewPanel = (page: Page) =>
   page.locator('#preview-panel').evaluate((panel: HTMLElement) => (panel.hidden = true));
+
+/** Waits for the app's loading messages to go, since an idle network can still leave it decoding data. */
+const settled = (page: Page) =>
+  page
+    .getByRole('status')
+    .filter({ hasText: /^Loading/ })
+    .first()
+    .waitFor({ state: 'detached', timeout: 15000 })
+    .then(() => true)
+    .catch(() => false);
