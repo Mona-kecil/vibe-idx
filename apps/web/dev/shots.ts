@@ -21,7 +21,8 @@ writes, outside the repository:
   NAME-diff.png                     the after shot faded, with changed pixels in magenta
   NAME-*-clean.png                  both shots without boxes
   notes.md                          the numbered notes, the changed regions, and outline lines that changed
-A note whose selector matches nothing, or matches something reaching outside the scenario's panel, fails the run.
+A note whose selector matches nothing, or only something outside the scenario's panel, fails the run; one that
+runs past the panel is boxed where it shows.
 Blank margins frame the panel, so neighbouring panes stay out of the shot.
 
 A scenarios file can live anywhere and default-exports an array of scenarios:
@@ -111,12 +112,30 @@ async function shoot(page: Page, scenario: Scenario, side: 'before' | 'after') {
         return null;
       });
     if (!box) continue;
-    if (area && !inside(box, area.content))
+    if (!area || inside(box, area.content)) {
+      marks.push({ number: i + 1, box });
+      continue;
+    }
+    // An element that runs past the panel, such as a table that scrolls, is boxed where it shows.
+    const c = area.content;
+    const left = Math.max(box.x, c.x),
+      top = Math.max(box.y, c.y);
+    const right = Math.min(box.x + box.width, c.x + c.width),
+      bottom = Math.min(box.y + box.height, c.y + c.height);
+    if (right - left < 2 || bottom - top < 2)
       outside.set(
         i + 1,
-        `matched an element of ${size(box)}, which reaches outside ${scenario.within} (${size(area.content)}); pick an element within it`,
+        `matched an element of ${size(box)}, which lies outside ${scenario.within} (${size(c)}); pick an element within it`,
       );
-    else marks.push({ number: i + 1, box });
+    else {
+      console.warn(
+        `${scenario.name} ${side}: note ${i + 1} at ${note.at} runs past ${scenario.within}, so its box is cut to the panel`,
+      );
+      marks.push({
+        number: i + 1,
+        box: { x: left, y: top, width: right - left, height: bottom - top },
+      });
+    }
   }
   const outline = (await (await scope(page, scenario.within)).ariaSnapshot())
     .split('\n')
@@ -556,6 +575,12 @@ try {
   await before?.close();
   base?.remove();
 }
+// Failed notes lead the file, so the images beside it aren't taken for a finished set.
+if (failed)
+  report.unshift(
+    `This run failed: ${plural(failed, 'note')} could not be placed, listed below as not shown. Fix the scenario and run again.`,
+    '',
+  );
 await writeFile(join(out, 'notes.md'), report.join('\n'));
 console.log(`${out}\n\n${report.join('\n')}`);
 // A note without its box would describe something the reader can't find.
