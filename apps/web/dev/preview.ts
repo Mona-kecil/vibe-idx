@@ -5,10 +5,20 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
-import { createServer } from 'vite-plus';
+import { gunzipSync, gzipSync } from 'node:zlib';
+import {
+  build as buildApp,
+  createServer,
+  preview as previewApp,
+  type Connect,
+  type InlineConfig,
+  type PreviewServer,
+  type ViteDevServer,
+} from 'vite-plus';
 import { z } from 'zod';
 import { cliErrors } from '../../pipeline/dev/cli.js';
 import { writeAtomic } from '../../pipeline/dev/local-r2.js';
+import { barFileSchema, packBars, sessionStart, unpackBars } from '../src/ticks.js';
 import { fixtureState, fixturesRoot, localBrokerApi } from './local-api.js';
 import { previewClient } from './preview-client.js';
 
@@ -93,13 +103,15 @@ function heldUntilClose(res: ServerResponse) {
 /**
  * `web` is the app checkout to serve; the preview's own code always comes from this checkout. It never reaches
  * production unless `record` is set: an API response not recorded yet answers 503, marked so ui:check can list it.
+ * `build` serves the app as `vp build` bundles it, which is what timings should measure.
  */
 export async function startPreview({
   port = 5173,
   quiet = false,
   web = ownWeb,
   record = false,
-}: { port?: number; quiet?: boolean; web?: string; record?: boolean } = {}) {
+  build = false,
+}: { port?: number; quiet?: boolean; web?: string; record?: boolean; build?: boolean } = {}) {
   const state = await fixtureState();
   await snapshotPublic(state.asOf, record);
   const api = await localBrokerApi(web);
@@ -118,6 +130,18 @@ export async function startPreview({
       // The collector publishes a session's running trade and closing order book once the session is over.
       if (view === 'ticks' && url.searchParams.get('date') === state.asOf)
         return heldUntilClose(res);
+      if (view === 'bars') {
+        const start = sessionStart(state.asOf);
+        const file = barFileSchema.parse(JSON.parse(gunzipSync(body).toString()));
+        body = gzipSync(
+          JSON.stringify(
+            packBars(
+              file.ticker,
+              unpackBars(file).filter((bar) => bar.time < start),
+            ),
+          ),
+        );
+      }
       if (view === null) {
         // Broker data for a session is published in the evening, so during it the history ends the day before.
         const history = JSON.parse(body.toString()) as { days: { date: string }[] };
@@ -192,17 +216,33 @@ export async function startPreview({
     res.end(entry.body);
   }
 
-  const server = await createServer({
+  const routes = (middlewares: Connect.Server) =>
+    middlewares.use((req, res, next) => {
+      const path = req.url ?? '';
+      const route = path.startsWith('/api/brokers')
+        ? brokers
+        : path.startsWith('/data/')
+          ? publicData
+          : path.startsWith('/api/')
+            ? recorded
+            : null;
+      if (!route) return next();
+      route(req, res).catch((error: unknown) => {
+        console.error(path, error);
+        res.statusCode = 500;
+        res.end();
+      });
+    });
+  const hash = createHash('sha256').update(web).digest('hex').slice(0, 12);
+  const config: InlineConfig = {
     root: web,
     configFile: join(web, 'vite.config.ts'),
     logLevel: quiet ? 'silent' : 'info',
     // Checkouts share node_modules through symlinks, so each keeps its own prebundle cache. A temporary base
     // checkout keeps it inside itself, so it goes when the checkout is removed instead of piling up.
-    cacheDir:
-      web === ownWeb
-        ? join(fixturesRoot, 'vite', createHash('sha256').update(web).digest('hex').slice(0, 12))
-        : join(web, '.vite-preview'),
+    cacheDir: web === ownWeb ? join(fixturesRoot, 'vite', hash) : join(web, '.vite-preview'),
     server: { port, strictPort: port !== 0, proxy: {} },
+    preview: { port, strictPort: port !== 0, proxy: {} },
     define: { 'import.meta.env.VITE_WORKOS_CLIENT_ID': JSON.stringify('client_local') },
     resolve: {
       alias: {
@@ -218,28 +258,21 @@ export async function startPreview({
             '<head>',
             `<head><script>var __name = (f) => f; (${previewClient.toString()})(${JSON.stringify(state.asOf)})</script>`,
           ),
-        configureServer(vite) {
-          vite.middlewares.use((req, res, next) => {
-            const path = req.url ?? '';
-            const route = path.startsWith('/api/brokers')
-              ? brokers
-              : path.startsWith('/data/')
-                ? publicData
-                : path.startsWith('/api/')
-                  ? recorded
-                  : null;
-            if (!route) return next();
-            route(req, res).catch((error: unknown) => {
-              console.error(path, error);
-              res.statusCode = 500;
-              res.end();
-            });
-          });
-        },
+        configureServer: (vite) => void routes(vite.middlewares),
+        configurePreviewServer: (vite) => void routes(vite.middlewares),
       },
     ],
-  });
-  await server.listen();
+  };
+  let server: ViteDevServer | PreviewServer;
+  if (build) {
+    const outDir = join(fixturesRoot, 'dist', hash);
+    await buildApp({ ...config, build: { outDir, emptyOutDir: true } });
+    server = await previewApp({ ...config, build: { outDir } });
+  } else {
+    const dev = await createServer(config);
+    await dev.listen();
+    server = dev;
+  }
   const address = server.httpServer?.address();
   if (!address || typeof address === 'string') throw new Error('Preview server has no port');
   return {
@@ -259,20 +292,26 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     options: {
       port: { type: 'string', default: '5173' },
       record: { type: 'boolean', default: false },
+      build: { type: 'boolean', default: false },
       help: { type: 'boolean', default: false },
     },
   });
   if (args.help) {
-    console.log(`pnpm preview:local [--port N] [--record]
+    console.log(`pnpm preview:local [--port N] [--build] [--record]
 
 Runs the app on the fixtures, signed in, with broker data and running trade read only from them, and the public
 data and other API responses replayed from recordings. --record copies the public data for a new fixture date and
 records responses the first time they're asked for. The panel at the bottom left sets the clock and signs in or out.
 
 --port N      5173 by default
+--build       serves the production build instead of the dev server, for timings
 ${recordHelp}`);
     process.exit(0);
   }
-  const preview = await startPreview({ port: Number(args.port), record: args.record });
+  const preview = await startPreview({
+    port: Number(args.port),
+    record: args.record,
+    build: args.build,
+  });
   console.log(`${preview.url}  data as of ${preview.asOf}${args.record ? ', recording' : ''}`);
 }

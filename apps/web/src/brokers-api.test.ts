@@ -201,6 +201,35 @@ describe('private broker API', () => {
       expect((await handle(request({ token: auth, query }))).status).toBe(400);
   });
 
+  it("passes a ticker's bar file through gzipped, behind the same sign-in", async () => {
+    const keys: string[] = [];
+    const stored = gzipSync(JSON.stringify({ ticker: 'BBCA', time: [] }));
+    const handle = createBrokerHandler({
+      env: { WORKOS_CLIENT_ID: clientId },
+      fetcher,
+      store: async (key) => {
+        keys.push(key);
+        return key === 'site/bars/BBCA.json.gz'
+          ? new Response(stored)
+          : new Response('', { status: 404 });
+      },
+    });
+    const query = 'view=bars&ticker=BBCA';
+    expect((await handle(request({ query }))).status).toBe(401);
+    expect(keys).toEqual([]);
+    const auth = await token();
+    const bars = await handle(request({ token: auth, query }));
+    expect(bars.status).toBe(200);
+    expect(bars.headers.get('Content-Encoding')).toBe('gzip');
+    expectPrivate(bars);
+    expect(Buffer.from(await bars.arrayBuffer()).equals(stored)).toBe(true);
+    expect((await handle(request({ token: auth, query: 'view=bars&ticker=TLKM' }))).status).toBe(
+      404,
+    );
+    expect((await handle(request({ token: auth, query: 'view=bars' }))).status).toBe(400);
+    expect(keys).toEqual(['site/bars/BBCA.json.gz', 'site/bars/TLKM.json.gz']);
+  });
+
   it('reads broker history from an injected store without R2 credentials', async () => {
     const keys: string[] = [];
     const handle = createBrokerHandler({

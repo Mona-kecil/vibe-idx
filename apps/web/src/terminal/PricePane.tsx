@@ -19,10 +19,11 @@ import {
   chartDate,
   dailyBars,
   weeklyBars,
-  intradayBars,
+  barSeries,
+  latestSessionBars,
   type PriceBar,
 } from './charts.js';
-import { useTradeSessions } from './tick-data.js';
+import { useBars } from './tick-data.js';
 import { ChartAttribution as Attribution } from '../ChartAttribution.js';
 import './charts.css';
 
@@ -142,11 +143,13 @@ function IntradayHistory({
   minutes: number;
   sessions: number;
 }) {
-  const { state, loadMore } = useTradeSessions(sessions);
+  const state = useBars();
   const series = useMemo(
-    () => (state.kind === 'ready' ? intradayBars(state.data, minutes) : []),
+    () => (state.kind === 'ready' ? barSeries(state.data, minutes) : []),
     [state, minutes],
   );
+  // The chart opens on the latest sessions, and the rest of the history is a scroll away.
+  const visibleBars = useMemo(() => latestSessionBars(series, sessions), [series, sessions]);
   if (state.kind === 'loading') return <Empty>Loading trades…</Empty>;
   if (state.kind === 'error')
     return (
@@ -155,7 +158,7 @@ function IntradayHistory({
       </p>
     );
   return series.length ? (
-    <PriceHistory data={series} chartType={chartType} loadMore={loadMore} />
+    <PriceHistory data={series} chartType={chartType} visibleBars={visibleBars} />
   ) : (
     <Empty>No collected regular-board trades</Empty>
   );
@@ -182,18 +185,16 @@ function PriceHistory({
   data,
   chartType,
   visibleBars = data.length,
-  loadMore,
 }: {
   data: PriceBar[];
   chartType: ChartType;
   visibleBars?: number;
-  loadMore?: () => void;
 }) {
   const { selection, select } = useTerminal();
   const host = useRef<HTMLDivElement>(null),
     chart = useRef<IChartApi | null>(null);
-  const current = useRef({ selection, select, data, visibleBars, loadMore });
-  current.current = { selection, select, data, visibleBars, loadMore };
+  const current = useRef({ selection, select, data, visibleBars });
+  current.current = { selection, select, data, visibleBars };
   const drag = useRef<PriceBar | null>(null);
   const visibleRange = useRef<LogicalRange | null>(null);
   const [hoverTime, setHoverTime] = useState<Time | null>(null);
@@ -263,21 +264,7 @@ function PriceHistory({
       );
     };
     let fitted = false;
-    let updating = false;
-    let previousRange: LogicalRange | null = null;
-    api.timeScale().subscribeVisibleLogicalRangeChange((range) => {
-      redraw.current();
-      if (
-        fitted &&
-        !updating &&
-        range &&
-        previousRange &&
-        range.from < previousRange.from &&
-        range.from <= 5
-      )
-        current.current.loadMore?.();
-      previousRange = range;
-    });
+    api.timeScale().subscribeVisibleLogicalRangeChange(() => redraw.current());
     api.timeScale().subscribeSizeChange(() => redraw.current());
     api.subscribeCrosshairMove((event) => {
       const bar = current.current.data.find((bar) =>
@@ -291,7 +278,6 @@ function PriceHistory({
     updateData.current = (data) => {
       const range = api.timeScale().getVisibleLogicalRange();
       const added = previous.length ? data.findIndex((bar) => bar.time === previous[0]?.time) : 0;
-      updating = true;
       price.setData(
         data.map((bar) => ({
           time: bar.time,
@@ -312,8 +298,6 @@ function PriceHistory({
       if (range && previous.length && added >= 0)
         api.timeScale().setVisibleLogicalRange({ from: range.from + added, to: range.to + added });
       previous = data;
-      previousRange = api.timeScale().getVisibleLogicalRange();
-      updating = false;
       redraw.current();
     };
     // Fit after the first layout, when the chart knows its pane and price-axis widths.

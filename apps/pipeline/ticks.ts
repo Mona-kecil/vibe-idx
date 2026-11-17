@@ -140,7 +140,10 @@ export async function collectTicks({
     } else summary.pending.push(`closing_book/${date}`);
   }
   async function runningTrade(date: string, tickers: string[]) {
-    if (await alreadyPublished(date, 'running_trade')) return;
+    if (await alreadyPublished(date, 'running_trade')) {
+      await store.backfillBars(date);
+      return;
+    }
     let p = await store.progress(date, 'running_trade');
     if (p && p.dataset !== 'running_trade') throw new Error('Invalid trade progress');
     if (!p) {

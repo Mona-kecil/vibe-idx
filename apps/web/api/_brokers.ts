@@ -85,9 +85,11 @@ export function createBrokerHandler({
             ? tick.success
               ? { ticker: ticker.data, ...tick.data }
               : null
-            : view === null
-              ? { ticker: ticker.data }
-              : null;
+            : view === 'bars'
+              ? { ticker: ticker.data, bars: true as const }
+              : view === null
+                ? { ticker: ticker.data }
+                : null;
     if (!target) return json({ error: 'invalid_ticker' }, 400);
 
     const bearer = /^Bearer (\S+)$/i.exec(request.headers.get('Authorization') ?? '');
@@ -138,7 +140,9 @@ export function createBrokerHandler({
           ? 'site/market-accumulation.json'
           : 'kind' in target
             ? `site/ticks/${target.ticker}/${target.date}.${target.kind}.json.gz`
-            : `site/broker/${target.ticker}.json.gz`;
+            : 'bars' in target
+              ? `site/bars/${target.ticker}.json.gz`
+              : `site/broker/${target.ticker}.json.gz`;
       const response = await read(key);
       if (response.status === 404) return json({ error: 'not_found' }, 404);
       if (!response.ok) {
@@ -150,7 +154,7 @@ export function createBrokerHandler({
       }
       if (target === 'market') return json(accumulationSchema.parse(await response.json()), 200);
       // A busy stock's trades are megabytes as JSON, so pass the stored gzip through for the browser to inflate.
-      if ('kind' in target)
+      if ('kind' in target || 'bars' in target)
         return new Response(response.body, {
           status: 200,
           headers: {

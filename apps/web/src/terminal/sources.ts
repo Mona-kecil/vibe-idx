@@ -1,6 +1,8 @@
 import {
+  barFileSchema,
   tickBookSchema,
   tickTradesSchema,
+  type BarFile,
   type TickBook,
   type TickKind,
   type TickTrades,
@@ -152,4 +154,23 @@ export async function fetchTicks<K extends TickKind>(
   const parsed = (kind === 'book' ? tickBookSchema : tickTradesSchema).parse(await response.json());
   if (parsed.ticker !== ticker || parsed.date !== date) throw new Error('Tick data mismatch.');
   return parsed as K extends 'book' ? TickBook : TickTrades;
+}
+
+export async function fetchBars(
+  ticker: string,
+  token: string,
+  signal?: AbortSignal,
+): Promise<BarFile | null> {
+  const query = new URLSearchParams({ view: 'bars', ticker });
+  const response = await fetch(`/api/brokers?${query}`, {
+    headers: { Authorization: `Bearer ${token}` },
+    cache: 'no-store',
+    signal,
+  });
+  if (response.status === 401) throw new Error('Your sign-in expired. Sign in again.');
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error('Tick data is unavailable. Retry.');
+  const parsed = barFileSchema.parse(await response.json());
+  if (parsed.ticker !== ticker) throw new Error('Tick data mismatch.');
+  return parsed;
 }

@@ -197,7 +197,13 @@ if (brokerReason) {
   await save();
 }
 
-const tickCode = await codeVersion('../ticks-store.ts', '../ticks-data.ts', './local-r2.ts');
+const tickCode = await codeVersion(
+  '../ticks-store.ts',
+  '../ticks-data.ts',
+  '../ticks-bars.ts',
+  '../../web/src/ticks.ts',
+  './local-r2.ts',
+);
 const pending = state.sessions.filter((date) => reason(`ticks@${date}`, tickCode));
 if (pending.length) {
   built = true;
