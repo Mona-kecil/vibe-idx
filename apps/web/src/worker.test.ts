@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { describe, expect, it, vi } from 'vite-plus/test';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import worker from '../worker';
 import history from './ticker/fixtures/TPIA-history.json';
 
@@ -11,10 +11,40 @@ function environment() {
     PUBLIC: { get: vi.fn<(key: string) => Promise<null>>(async () => null) },
     PRIVATE: { get: vi.fn<(key: string) => Promise<null>>(async () => null) },
     WORKOS_CLIENT_ID: 'client_test',
+    DEPLOYMENT: 'test',
   };
 }
 const ctx = { waitUntil: vi.fn<(promise: Promise<unknown>) => void>() };
-describe('preview Worker', () => {
+
+function stubEdgeCache() {
+  const store = new Map<string, Response>();
+  vi.stubGlobal('caches', {
+    default: {
+      match: async (request: Request) => {
+        const hit = store.get(request.url)?.clone();
+        hit?.headers.set('Cache-Control', 'public, max-age=14400');
+        return hit;
+      },
+      put: async (request: Request, response: Response) => void store.set(request.url, response),
+    },
+  });
+  return store;
+}
+
+function stored(body: string, cacheControl?: string) {
+  return {
+    body: new Response(body).body!,
+    httpEtag: '"etag"',
+    writeHttpMetadata: (headers: Headers) => {
+      if (cacheControl) headers.set('Cache-Control', cacheControl);
+    },
+  };
+}
+
+beforeEach(() => void stubEdgeCache());
+afterEach(() => vi.unstubAllGlobals());
+
+describe('Worker', () => {
   it('injects ticker metadata from PUBLIC with the request origin', async () => {
     const env = {
       ...environment(),
@@ -75,6 +105,67 @@ describe('preview Worker', () => {
     expect(env.PRIVATE.get).not.toHaveBeenCalled();
     expect(env.ASSETS.fetch).not.toHaveBeenCalled();
   });
+  it('serves a repeated public read from the edge without reading PUBLIC again', async () => {
+    const env = environment();
+    env.PUBLIC.get.mockResolvedValueOnce(stored('{"a":1}', 'public, max-age=300') as never);
+    const pending: Promise<unknown>[] = [];
+    const waiting = { waitUntil: (promise: Promise<unknown>) => void pending.push(promise) };
+    const read = (query = '') =>
+      worker.fetch(new Request(`https://idx.test/data/ticker/BBCA.json${query}`), env, waiting);
+
+    const first = await read();
+    expect(first.headers.get('x-edge-cache')).toBe('MISS');
+    expect(await first.text()).toBe('{"a":1}');
+    await Promise.all(pending);
+
+    const second = await read('?cache-buster=1');
+    expect(second.headers.get('x-edge-cache')).toBe('HIT');
+    expect(second.headers.get('cache-control')).toBe('public, max-age=300');
+    expect(second.headers.get('etag')).toBe('"etag"');
+    expect(await second.text()).toBe('{"a":1}');
+    expect(env.PUBLIC.get).toHaveBeenCalledTimes(1);
+  });
+  it('does not keep missing public objects at the edge', async () => {
+    const env = environment();
+    const pending: Promise<unknown>[] = [];
+    const waiting = { waitUntil: (promise: Promise<unknown>) => void pending.push(promise) };
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const response = await worker.fetch(
+        new Request('https://idx.test/data/ticker/NOPE.json'),
+        env,
+        waiting,
+      );
+      expect(response.status).toBe(404);
+    }
+    expect(pending).toHaveLength(0);
+    expect(env.PUBLIC.get).toHaveBeenCalledTimes(2);
+  });
+  it('never caches broker responses at the edge', async () => {
+    const store = stubEdgeCache();
+    await worker.fetch(new Request('https://idx.test/api/brokers?ticker=BBCA'), environment(), ctx);
+    expect(store.size).toBe(0);
+  });
+  it('reports failures under the deployment name', async () => {
+    const sent: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>(async (_url, init) => {
+        sent.push(init?.body as string);
+        return new Response(null, { status: 200 });
+      }),
+    );
+    const pending: Promise<unknown>[] = [];
+    const env = {
+      ...environment(),
+      DEPLOYMENT: 'production',
+      ASSETS: { fetch: async () => new Response('down', { status: 503 }) },
+    };
+    await worker.fetch(new Request('https://idx.test/terminal'), env, {
+      waitUntil: (promise) => void pending.push(promise),
+    });
+    await Promise.all(pending);
+    expect(sent.join('')).toContain('"environment":"production"');
+  });
   it('authenticates broker requests before reading PRIVATE', async () => {
     const env = environment();
     const response = await worker.fetch(
@@ -108,14 +199,35 @@ describe('preview Worker', () => {
     expect(await probed.json()).toEqual({ error: 'not_found' });
     expect(ctx.waitUntil).not.toHaveBeenCalled();
   });
-  it('binds static assets for the worker fallback', () => {
+  describe('wrangler.jsonc', () => {
+    type Target = {
+      routes: { pattern: string }[];
+      assets: { binding?: string; run_worker_first: string[] };
+      r2_buckets: { binding: string; bucket_name: string }[];
+      vars: { DEPLOYMENT: string; WORKOS_CLIENT_ID: string };
+    };
     const config = JSON.parse(
       readFileSync(new URL('../wrangler.jsonc', import.meta.url), 'utf8').replace(
         /,(\s*[}\]])/g,
         '$1',
       ),
-    ) as { assets: { binding?: string; run_worker_first: string[] } };
-    expect(config.assets.binding).toBe('ASSETS');
-    expect(config.assets.run_worker_first).toEqual(['/api/*', '/data/*', '/t/*']);
+    ) as Target & { env: { preview: Target } };
+
+    it.each([
+      ['production', config, 'idx.monosodiums.com'],
+      ['preview', config.env.preview, 'preview.idx.monosodiums.com'],
+    ])('binds assets, both buckets and its own domain for %s', (name, target, domain) => {
+      expect(target.vars.DEPLOYMENT).toBe(name);
+      expect(target.routes.map((route) => route.pattern)).toEqual([domain]);
+      expect(target.assets.binding).toBe('ASSETS');
+      expect(target.assets.run_worker_first).toEqual(['/api/*', '/data/*', '/t/*']);
+      expect(target.r2_buckets).toEqual([
+        { binding: 'PUBLIC', bucket_name: 'vibe-idx-public' },
+        { binding: 'PRIVATE', bucket_name: 'vibe-idx-private' },
+      ]);
+    });
+    it('keeps a separate WorkOS client for each environment', () => {
+      expect(config.vars.WORKOS_CLIENT_ID).not.toBe(config.env.preview.vars.WORKOS_CLIENT_ID);
+    });
   });
 });

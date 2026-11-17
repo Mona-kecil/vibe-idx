@@ -9,11 +9,57 @@ type Env = {
   PUBLIC: { get(key: string): Promise<R2Object | null> };
   PRIVATE: { get(key: string): Promise<R2Object | null> };
   WORKOS_CLIENT_ID: string;
+  DEPLOYMENT: string;
+};
+type Context = { waitUntil(p: Promise<unknown>): void };
+type EdgeCache = {
+  match(request: Request): Promise<Response | undefined>;
+  put(request: Request, response: Response): Promise<void>;
 };
 
 let brokers: ((request: Request) => Promise<Response>) | undefined;
 
-async function route(request: Request, env: Env): Promise<Response> {
+// The zone's Browser Cache TTL rewrites Cache-Control on cached responses to 4 hours, so the
+// object's own value travels in this header and is restored on a hit.
+const sourceCacheControl = 'X-Source-Cache-Control';
+
+const edgeCache = () => (caches as unknown as { default: EdgeCache }).default;
+
+/**
+ * R2 reads cost 250 to 430 ms, so each data center keeps a copy for the object's own
+ * max-age (60 seconds unless the writer set one), the same bound browsers already apply.
+ */
+async function publicData(request: Request, env: Env, ctx: Context): Promise<Response> {
+  const url = new URL(request.url);
+  const cacheable = request.method === 'GET';
+  const key = new Request(url.origin + url.pathname);
+  if (cacheable) {
+    const hit = await edgeCache().match(key);
+    if (hit) {
+      const response = new Response(hit.body, hit);
+      response.headers.set(
+        'Cache-Control',
+        response.headers.get(sourceCacheControl) ?? 'public, max-age=60',
+      );
+      response.headers.delete(sourceCacheControl);
+      response.headers.set('X-Edge-Cache', 'HIT');
+      return response;
+    }
+  }
+  const object = await env.PUBLIC.get(url.pathname.slice('/data/'.length));
+  if (!object) return new Response('Not found', { status: 404 });
+  const headers = new Headers({ ETag: object.httpEtag, 'Cache-Control': 'public, max-age=60' });
+  object.writeHttpMetadata(headers);
+  const response = new Response(object.body, { headers });
+  if (!cacheable) return response;
+  const copy = response.clone();
+  copy.headers.set(sourceCacheControl, headers.get('Cache-Control') ?? '');
+  ctx.waitUntil(edgeCache().put(key, copy));
+  response.headers.set('X-Edge-Cache', 'MISS');
+  return response;
+}
+
+async function route(request: Request, env: Env, ctx: Context): Promise<Response> {
   const url = new URL(request.url);
   if (url.pathname === '/api/brokers') {
     brokers ??= createBrokerHandler({
@@ -31,13 +77,7 @@ async function route(request: Request, env: Env): Promise<Response> {
   if (url.pathname === '/api/og') return fetch(`https://vibe-idx.vercel.app/api/og${url.search}`);
   if (url.pathname.startsWith('/api/'))
     return Response.json({ error: 'not_found' }, { status: 404 });
-  if (url.pathname.startsWith('/data/')) {
-    const object = await env.PUBLIC.get(url.pathname.slice('/data/'.length));
-    if (!object) return new Response('Not found', { status: 404 });
-    const headers = new Headers({ ETag: object.httpEtag, 'Cache-Control': 'public, max-age=60' });
-    object.writeHttpMetadata(headers);
-    return new Response(object.body, { headers });
-  }
+  if (url.pathname.startsWith('/data/')) return publicData(request, env, ctx);
   if (/^\/t\/[^/]+\/?$/.test(url.pathname)) {
     const index = await env.ASSETS.fetch(new Request(new URL('/', url)));
     if (!index.ok) return new Response('Page unavailable', { status: 502 });
@@ -63,15 +103,15 @@ async function route(request: Request, env: Env): Promise<Response> {
 }
 
 export default {
-  async fetch(request: Request, env: Env, ctx: { waitUntil(p: Promise<unknown>): void }) {
+  async fetch(request: Request, env: Env, ctx: Context) {
     const path = new URL(request.url).pathname;
     try {
-      const response = await route(request, env);
+      const response = await route(request, env, ctx);
       if (response.status >= 500)
-        ctx.waitUntil(report(`${path} returned ${response.status}`, { path }));
+        ctx.waitUntil(report(env.DEPLOYMENT, `${path} returned ${response.status}`, { path }));
       return response;
     } catch (error) {
-      ctx.waitUntil(report(error, { path }));
+      ctx.waitUntil(report(env.DEPLOYMENT, error, { path }));
       return new Response('Internal error', { status: 500 });
     }
   },
