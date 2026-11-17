@@ -1,34 +1,50 @@
-import { readFile } from 'node:fs/promises';
-import { Resvg } from '@resvg/resvg-js';
+import './_workerd-satori.js';
+import { initWasm, Resvg } from '@resvg/resvg-wasm';
 import { createElement as h, type CSSProperties } from 'react';
-import satori, { type Font } from 'satori';
+import satori, { init as initLayout, type Font } from 'satori/standalone';
 import { areaChart, type Pad, type Tone } from '../src/area.js';
 import { brokerTickerSchema } from '../src/brokers.js';
 import { dateText, dayMove, nf } from '../src/ticker/format.js';
 import { markSvg } from './_mark.js';
-import { reportFailure } from './_sentry.js';
-import { loadTickerCard } from './_share-data.js';
 import type { TickerCard } from './_share.js';
 
-let fonts: Promise<Font[]> | undefined;
+type Wasm = WebAssembly.Module | BufferSource;
+type Assets = { fetch(request: Request): Promise<Response> };
 
-export function loadFonts(): Promise<Font[]> {
-  fonts ??= Promise.all([
-    readFile(new URL('../public/fonts/JetBrainsMono-500.ttf', import.meta.url)),
-    readFile(new URL('../public/fonts/JetBrainsMono-700.ttf', import.meta.url)),
-  ])
-    .then(
-      ([medium, bold]) =>
-        [
-          { name: 'JetBrains Mono', data: medium, weight: 500 },
-          { name: 'JetBrains Mono', data: bold, weight: 700 },
-        ] satisfies Font[],
-    )
-    .catch((error: unknown) => {
+const fontFiles = [
+  ['JetBrainsMono-500.ttf', 500],
+  ['JetBrainsMono-700.ttf', 700],
+] as const;
+
+export function assetFonts(assets: Assets): () => Promise<Font[]> {
+  let fonts: Promise<Font[]> | undefined;
+  return () => {
+    fonts ??= Promise.all(
+      fontFiles.map(async ([file, weight]) => {
+        const response = await assets.fetch(new Request(`https://assets.local/fonts/${file}`));
+        if (!response.ok) throw new Error(`Font ${file} returned ${response.status}`);
+        return { name: 'JetBrains Mono', data: await response.arrayBuffer(), weight };
+      }),
+    ).catch((error: unknown) => {
       fonts = undefined;
       throw error;
     });
-  return fonts;
+    return fonts;
+  };
+}
+
+const started = new Map<'layout' | 'resvg', Promise<void>>();
+
+function startOnce(name: 'layout' | 'resvg', start: () => Promise<void>) {
+  let promise = started.get(name);
+  if (!promise) {
+    promise = start().catch((error: unknown) => {
+      started.delete(name);
+      throw error;
+    });
+    started.set(name, promise);
+  }
+  return promise;
 }
 
 const bg = '#0a0c0b',
@@ -272,50 +288,78 @@ export function tickerCard(card: TickerCard) {
   );
 }
 
-export async function renderCard(card: TickerCard | null, fontLoader = loadFonts) {
-  const svg = await satori(card ? tickerCard(card) : brandCard(), {
-    width: 1200,
-    height: 630,
-    fonts: await fontLoader(),
-  });
-  return new Uint8Array(new Resvg(svg).render().asPng());
-}
-
-export async function og(
-  request: Request,
-  {
-    fetcher = fetch,
-    fontLoader = loadFonts,
-  }: { fetcher?: typeof fetch; fontLoader?: typeof loadFonts } = {},
-) {
-  if (request.method !== 'GET')
-    return new Response(null, { status: 405, headers: { Allow: 'GET' } });
-  const search = new URL(request.url).searchParams;
-  const parameters = search.getAll('ticker');
-  const ticker =
-    parameters.length === 0
-      ? null
-      : brokerTickerSchema.safeParse(
-          parameters.length === 1 ? parameters[0]?.toUpperCase() : undefined,
-        );
-  if (ticker && !ticker.success) return Response.json({ error: 'invalid_ticker' }, { status: 400 });
-  try {
-    const card = ticker?.success ? await loadTickerCard(ticker.data, fetcher) : null;
-    const png = await renderCard(card, fontLoader);
-    return new Response(png, {
-      status: ticker && !card ? 404 : 200,
-      headers: {
-        'Content-Type': 'image/png',
-        'Cache-Control':
-          card && search.get('d') === card.date
-            ? 'public, s-maxage=86400, stale-while-revalidate=604800'
-            : 'public, s-maxage=3600',
-      },
+export function createCardRenderer({
+  layout,
+  resvg,
+  fonts,
+}: {
+  layout: Wasm;
+  resvg: Wasm;
+  fonts: () => Promise<Font[]>;
+}) {
+  return async (card: TickerCard | null) => {
+    const [loaded] = await Promise.all([
+      fonts(),
+      startOnce('layout', () => initLayout(layout)),
+      startOnce('resvg', () => initWasm(resvg)),
+    ]);
+    const svg = await satori(card ? tickerCard(card) : brandCard(), {
+      width: 1200,
+      height: 630,
+      fonts: loaded,
     });
-  } catch (error) {
-    await reportFailure('og', error);
-    return Response.json({ error: 'unavailable' }, { status: 502 });
-  }
+    const resvgRender = new Resvg(svg);
+    try {
+      const image = resvgRender.render();
+      try {
+        return new Uint8Array(image.asPng());
+      } finally {
+        image.free();
+      }
+    } finally {
+      resvgRender.free();
+    }
+  };
 }
 
-export default { fetch: (request: Request) => og(request) };
+export function createOgHandler({
+  render,
+  loadCard,
+  reportFailure = async () => {},
+}: {
+  render: (card: TickerCard | null) => Promise<Uint8Array<ArrayBuffer>>;
+  loadCard: (ticker: string) => Promise<TickerCard | null>;
+  reportFailure?: (route: string, failure: unknown) => Promise<void>;
+}) {
+  return async (request: Request) => {
+    if (request.method !== 'GET')
+      return new Response(null, { status: 405, headers: { Allow: 'GET' } });
+    const search = new URL(request.url).searchParams;
+    const parameters = search.getAll('ticker');
+    const ticker =
+      parameters.length === 0
+        ? null
+        : brokerTickerSchema.safeParse(
+            parameters.length === 1 ? parameters[0]?.toUpperCase() : undefined,
+          );
+    if (ticker && !ticker.success)
+      return Response.json({ error: 'invalid_ticker' }, { status: 400 });
+    try {
+      const card = ticker?.success ? await loadCard(ticker.data) : null;
+      const png = await render(card);
+      return new Response(png, {
+        status: ticker && !card ? 404 : 200,
+        headers: {
+          'Content-Type': 'image/png',
+          'Cache-Control':
+            card && search.get('d') === card.date
+              ? 'public, s-maxage=86400, stale-while-revalidate=604800'
+              : 'public, s-maxage=3600',
+        },
+      });
+    } catch (error) {
+      await reportFailure('og', error);
+      return Response.json({ error: 'unavailable' }, { status: 502 });
+    }
+  };
+}

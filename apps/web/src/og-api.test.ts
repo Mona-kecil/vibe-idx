@@ -1,13 +1,33 @@
+import { createRequire } from 'node:module';
+import { readFile } from 'node:fs/promises';
+import resvg from '@resvg/resvg-wasm/index_bg.wasm';
+import layout from 'satori/layout.wasm';
 import { describe, expect, it, vi } from 'vite-plus/test';
 import type { ReactNode } from 'react';
-import { loadFonts, markerLayout, og, renderCard, tickerCard, windowLabel } from '../api/og';
+import {
+  assetFonts,
+  createCardRenderer,
+  createOgHandler,
+  markerLayout,
+  tickerCard,
+  windowLabel,
+} from '../api/_og';
+import { harfbuzzBytes } from '../api/_workerd-satori';
 import type { TickerCard } from '../api/_share';
-import { reportFailure } from '../api/_sentry';
+import { parseTickerCard } from '../api/_share';
 import history from './ticker/fixtures/TPIA-history.json';
 
-vi.mock('../api/_sentry', () => ({ reportFailure: vi.fn<typeof reportFailure>() }));
+const fontAssets = {
+  fetch: async (request: Request) =>
+    new Response(
+      await readFile(new URL(`../public${new URL(request.url).pathname}`, import.meta.url)),
+    ),
+};
 
-const fontLoader = loadFonts;
+const render = createCardRenderer({ layout, resvg, fonts: assetFonts(fontAssets) });
+const loaded = parseTickerCard(history);
+const loadCard = vi.fn<(ticker: string) => Promise<TickerCard | null>>(async () => loaded);
+const og = createOgHandler({ render, loadCard });
 
 async function expectPng(response: Response) {
   expect(response.headers.get('content-type')).toBe('image/png');
@@ -21,12 +41,12 @@ async function expectPng(response: Response) {
 
 describe('share card PNGs', () => {
   it('renders the brand without a ticker lookup', async () => {
-    const fetcher = vi.fn<typeof fetch>();
-    const response = await og(new Request('https://idx.test/api/og'), { fetcher, fontLoader });
+    loadCard.mockClear();
+    const response = await og(new Request('https://idx.test/api/og'));
     expect(response.status).toBe(200);
     expect(response.headers.get('cache-control')).toBe('public, s-maxage=3600');
     await expectPng(response);
-    expect(fetcher).not.toHaveBeenCalled();
+    expect(loadCard).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -34,27 +54,19 @@ describe('share card PNGs', () => {
     ['2020-01-01', 'public, s-maxage=3600'],
     ['', 'public, s-maxage=3600'],
   ])('renders a ticker with the date cache policy for %s', async (date, cache) => {
-    const fetcher = vi.fn<typeof fetch>(async () => Response.json(history));
-    const response = await og(new Request(`https://idx.test/api/og?ticker=tpia&d=${date}`), {
-      fetcher,
-      fontLoader,
-    });
+    loadCard.mockClear();
+    const response = await og(new Request(`https://idx.test/api/og?ticker=tpia&d=${date}`));
     expect(response.status).toBe(200);
     expect(response.headers.get('cache-control')).toBe(cache);
     await expectPng(response);
-    expect(fetcher).toHaveBeenCalledWith(
-      'https://pub-7982bfb066694e6e8615750132283eba.r2.dev/ticker/TPIA.json',
-      expect.any(Object),
-    );
+    expect(loadCard).toHaveBeenCalledWith('TPIA');
   });
 
   it('renders the brand with 404 for an unknown ticker', async () => {
-    const fetcher = vi.fn<typeof fetch>(async () => new Response(null, { status: 404 }));
-    const unknown = await og(new Request('https://idx.test/api/og?ticker=NOPE'), {
-      fetcher,
-      fontLoader,
-    });
-    const brand = await og(new Request('https://idx.test/api/og'), { fetcher, fontLoader });
+    const unknown = await createOgHandler({ render, loadCard: async () => null })(
+      new Request('https://idx.test/api/og?ticker=NOPE'),
+    );
+    const brand = await og(new Request('https://idx.test/api/og'));
     expect(unknown.status).toBe(404);
     expect(await expectPng(unknown)).toEqual(await expectPng(brand));
   });
@@ -62,33 +74,54 @@ describe('share card PNGs', () => {
   it.each(['?ticker=', '?ticker=..%2Fprivate', '?ticker=TPIA&ticker=BBCA'])(
     'rejects bad ticker parameters %s',
     async (query) => {
-      const fetcher = vi.fn<typeof fetch>();
-      const loader = vi.fn<typeof fontLoader>();
-      const response = await og(new Request(`https://idx.test/api/og${query}`), {
-        fetcher,
-        fontLoader: loader,
-      });
+      const renderer = vi.fn<typeof render>();
+      const lookup = vi.fn<typeof loadCard>();
+      const response = await createOgHandler({ render: renderer, loadCard: lookup })(
+        new Request(`https://idx.test/api/og${query}`),
+      );
       expect(response.status).toBe(400);
-      expect(fetcher).not.toHaveBeenCalled();
-      expect(loader).not.toHaveBeenCalled();
+      expect(lookup).not.toHaveBeenCalled();
+      expect(renderer).not.toHaveBeenCalled();
     },
   );
 
   it('reports rendering failures with 502', async () => {
-    const response = await og(new Request('https://idx.test/api/og'), {
-      fontLoader: () => Promise.reject(new Error('Fonts unavailable')),
+    const reportFailure = vi.fn<(route: string, failure: unknown) => Promise<void>>(async () => {});
+    const failing = createOgHandler({
+      render: createCardRenderer({
+        layout,
+        resvg,
+        fonts: () => Promise.reject(new Error('Fonts unavailable')),
+      }),
+      loadCard,
+      reportFailure,
     });
+    const response = await failing(new Request('https://idx.test/api/og'));
     expect(response.status).toBe(502);
     expect(reportFailure).toHaveBeenCalledWith('og', expect.any(Error));
   });
 
   it('reports data outages with 502 instead of caching an unknown ticker', async () => {
-    const response = await og(new Request('https://idx.test/api/og?ticker=TPIA'), {
-      fetcher: async () => new Response(null, { status: 503 }),
-      fontLoader,
-    });
+    const response = await createOgHandler({
+      render,
+      loadCard: () => Promise.reject(new Error('Ticker data returned 503')),
+    })(new Request('https://idx.test/api/og?ticker=TPIA'));
     expect(response.status).toBe(502);
     expect(response.headers.get('cache-control')).toBeNull();
+  });
+});
+
+describe('workerd HarfBuzz', () => {
+  it("is the HarfBuzz module satori bundles, so the Worker can instantiate it in satori's place", async () => {
+    const require = createRequire(import.meta.url);
+    const bundled = await readFile(
+      require.resolve('satori/standalone').replace(/\.cjs$/, '.js'),
+      'utf8',
+    );
+    const base64 = bundled.match(/"(AGFzbQ[A-Za-z0-9+/=]{1000,})"/)?.[1] ?? '';
+    const bytes = Buffer.from(base64, 'base64');
+    expect(bytes.length).toBe(harfbuzzBytes);
+    expect(bytes.equals(await readFile(require.resolve('harfbuzzjs/hb.wasm')))).toBe(true);
   });
 });
 
@@ -134,7 +167,7 @@ describe('share card area chart', () => {
       expect(found.text).not.toContain(change);
       expect(found.text).toContain('Up 0.50% today');
       expect(found.strokes).toContain(stroke);
-      const png = await renderCard(card(closes), loadFonts);
+      const png = await render(card(closes));
       expect([...png.slice(0, 4)]).toEqual([137, 80, 78, 71]);
     },
   );
@@ -149,7 +182,7 @@ describe('share card area chart', () => {
     expect(inspect(card([50, 50, 50])).circles).toBe(0);
     const single = card([50], { start: '2026-11-12' });
     expect(inspect(single).text).toContain('12 Nov 2026');
-    expect((await renderCard(single, loadFonts)).length).toBeGreaterThan(0);
+    expect((await render(single)).length).toBeGreaterThan(0);
   });
 
   it('shows the start year only when the window crosses a year', () => {
