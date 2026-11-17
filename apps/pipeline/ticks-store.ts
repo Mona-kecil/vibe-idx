@@ -140,8 +140,18 @@ export class TickStore {
   private prefix(p: Progress) {
     return `staging/ticks/${p.dataset}/${p.date}`;
   }
+  // DELETE retains the old session's allocations in DuckDB; dropping the table releases them.
+  private async reset(dataset: Dataset) {
+    await this.db.run(
+      `DROP TABLE ${dataset}; CREATE TABLE ${dataset} (${dataset === 'running_trade' ? tradeColumns : bookColumns})`,
+    );
+  }
+  private async load(dataset: Dataset, file: string) {
+    await this.reset(dataset);
+    await this.db.run(`INSERT INTO ${dataset} SELECT * FROM read_parquet(${lit(file)})`);
+  }
   async restore(p: Progress) {
-    await this.db.run(`DELETE FROM ${p.dataset}`);
+    await this.reset(p.dataset);
     for (const chunk of p.chunks) {
       const file = await this.download(`${this.prefix(p)}/${chunk}`);
       if (!file) throw new Error(`Missing tick chunk: ${chunk}`);
@@ -216,11 +226,21 @@ export class TickStore {
       ticker: tickerCode.parse(r.ticker),
       json: z.string().parse(r.json),
     }));
+    // A failure stops new uploads but waits for the ones in flight: the caller releases the run marker as soon as
+    // this settles, and an upload still running then could overwrite the next run's bar file.
+    let failure: { error: unknown } | undefined;
     await Promise.all(
       Array.from({ length: 16 }, async () => {
-        for (let file = files.pop(); file; file = files.pop()) await upload(file);
+        for (let file = files.pop(); file && !failure; file = files.pop()) {
+          try {
+            await upload(file);
+          } catch (error) {
+            failure ??= { error };
+          }
+        }
       }),
     );
+    if (failure) throw failure.error;
   }
   private async publishSite(date: string, dataset: Dataset) {
     if (dataset === 'closing_book') {
@@ -241,9 +261,7 @@ export class TickStore {
     if ((await publishedBarSessions(this.r2)).has(date)) return;
     const file = await this.download(`ticks/running_trade/${date}.parquet`);
     if (!file) return;
-    await this.db.run(
-      `DELETE FROM running_trade; INSERT INTO running_trade SELECT * FROM read_parquet(${lit(file)})`,
-    );
+    await this.load('running_trade', file);
     await this.eachSiteFile('running_trade', (site) => publishTickerBars(this.r2, date, site.json));
     await markBarSession(this.r2, date);
   }
@@ -268,9 +286,7 @@ export class TickStore {
   async recoverPublished(date: string, dataset: Dataset) {
     const file = await this.download(`ticks/${dataset}/${date}.parquet`);
     if (!file) return false;
-    await this.db.run(
-      `DELETE FROM ${dataset}; INSERT INTO ${dataset} SELECT * FROM read_parquet(${lit(file)})`,
-    );
+    await this.load(dataset, file);
     await this.finish(date, dataset);
     const progress = await this.progress(date, dataset);
     if (progress) await this.cleanup(progress);
