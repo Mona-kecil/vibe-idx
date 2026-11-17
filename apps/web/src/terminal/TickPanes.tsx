@@ -52,13 +52,15 @@ function TickPane<K extends TickKind>({
   controls?: ReactNode;
   children: (data: Loaded<K>) => ReactNode;
 }) {
-  const { authState } = useTerminal();
+  const { authState, detail } = useTerminal();
   const { date } = useSession();
   const state = useTicks(kind, date);
   if (authState !== 'signed-in') return <SignInPrompt />;
   let body: ReactNode;
   if (!date) body = <Empty>No 2026 sessions for this ticker</Empty>;
-  else if (state.kind === 'loading') body = <Empty>Loading {dateText(date)}…</Empty>;
+  // The data may arrive first, but prices set each session's open, so the pane waits for them.
+  else if (state.kind === 'loading' || detail.kind === 'loading')
+    body = <Empty>Loading {dateText(date)}…</Empty>;
   else if (state.kind === 'missing') body = <Empty>Not collected for {dateText(date)}</Empty>;
   else if (state.kind === 'error')
     body = (
