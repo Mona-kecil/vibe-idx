@@ -1,5 +1,15 @@
-export const nf = (v: number, d = 0) =>
-  new Intl.NumberFormat('en-US', { minimumFractionDigits: d, maximumFractionDigits: d }).format(v);
+const numbers = new Map<number, Intl.NumberFormat>();
+export function nf(v: number, d = 0) {
+  let formatter = numbers.get(d);
+  if (!formatter) {
+    formatter = new Intl.NumberFormat('en-US', {
+      minimumFractionDigits: d,
+      maximumFractionDigits: d,
+    });
+    numbers.set(d, formatter);
+  }
+  return formatter.format(v);
+}
 export function short(v: number) {
   const a = Math.abs(v);
   return a >= 1e12
@@ -18,15 +28,17 @@ export const signed = (v: number, format = short) =>
   (v > 0 ? '+' : v < 0 ? '−' : '') + format(Math.abs(v));
 export const itemDate = (s: string) =>
   /^\d{4}-\d{2}-\d{2}/.test(s) ? s.slice(0, 10) : new Date(s).toISOString().slice(0, 10);
-export const dateText = (s: string, year = true) =>
-  new Date(itemDate(s) + 'T00:00:00Z')
-    .toLocaleDateString('en-GB', {
+const dates = [false, true].map(
+  (year) =>
+    new Intl.DateTimeFormat('en-GB', {
       day: 'numeric',
       month: 'short',
       ...(year ? { year: 'numeric' } : {}),
       timeZone: 'UTC',
-    })
-    .replace('Sept', 'Sep');
+    }),
+);
+export const dateText = (s: string, year = true) =>
+  dates[year ? 1 : 0]!.format(new Date(itemDate(s) + 'T00:00:00Z')).replace('Sept', 'Sep');
 export function rangeText(start: string, end: string, year = false) {
   if (start === end) return dateText(start, year);
   if (start.slice(0, 7) === end.slice(0, 7))

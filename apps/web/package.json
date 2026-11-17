@@ -16,7 +16,8 @@
     "preview:local": "tsx dev/preview.ts",
     "ui:check": "tsx dev/ui-check.ts",
     "shots": "tsx dev/shots.ts",
-    "verify:data": "tsx dev/verify-data.ts"
+    "verify:data": "tsx dev/verify-data.ts",
+    "perf:terminal": "tsx dev/terminal-perf.ts"
   },
   "dependencies": {
     "@resvg/resvg-js": "2.6.2",
