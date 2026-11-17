@@ -77,7 +77,7 @@ async function get(path: string) {
   });
   const bytes = new Uint8Array(await response.arrayBuffer());
   const ms = Math.round(performance.now() - started);
-  const cache = response.headers.get('x-cache');
+  const cache = response.headers.get('x-edge-cache');
   console.log(`${response.status} ${cache ?? '-'} ${ms}ms ${path}`);
   return { response, bytes, cache };
 }
@@ -109,10 +109,12 @@ try {
   expectCard(first, ticker);
   const again = await get(ticker);
   expectCard(again, ticker);
+  const junk = await get(`${ticker}&utm_source=check&cb=${Date.now()}`);
+  expectCard(junk, ticker);
   const brand = await get('/api/og');
   expectCard(brand, '/api/og');
-  if (first.cache !== 'MISS' || again.cache !== 'HIT')
-    throw new Error(`Expected MISS then HIT, got ${first.cache} then ${again.cache}`);
+  if (first.cache !== 'MISS' || again.cache !== 'HIT' || junk.cache !== 'HIT')
+    throw new Error(`Expected MISS, HIT, HIT, got ${first.cache}, ${again.cache}, ${junk.cache}`);
   if (Buffer.compare(first.bytes, again.bytes) !== 0)
     throw new Error('The cached card differs from the rendered one');
   if (/ERROR|Not reported to Sentry/.test(output))

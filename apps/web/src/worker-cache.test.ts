@@ -24,7 +24,11 @@ function setup() {
   const cache = memoryCache();
   const pending: Promise<unknown>[] = [];
   const fail = vi.fn<(error: unknown) => void>();
-  const edge = createEdgeCache(() => cache, (promise) => pending.push(promise), fail);
+  const edge = createEdgeCache(
+    () => cache,
+    (promise) => pending.push(promise),
+    fail,
+  );
   const run = (url: string, produce: () => Promise<Response>) =>
     edgeCachedCard(new Request(url), edge, produce);
   return { cache, edge, fail, run, settle: () => Promise.all(pending) };
@@ -54,7 +58,11 @@ describe('edge cache', () => {
   it('renders another ticker or date as its own card', async () => {
     const { run, settle } = setup();
     const produce = vi.fn<() => Promise<Response>>(card(policy));
-    const queries = ['ticker=BBCA&d=2026-11-12', 'ticker=BBRI&d=2026-11-12', 'ticker=BBCA&d=2026-11-13'];
+    const queries = [
+      'ticker=BBCA&d=2026-11-12',
+      'ticker=BBRI&d=2026-11-12',
+      'ticker=BBCA&d=2026-11-13',
+    ];
     for (const query of queries) await run(`https://idx.test/api/og?${query}`, produce);
     await settle();
     for (const query of queries)
