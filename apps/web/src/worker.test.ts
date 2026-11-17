@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import worker from '../worker';
 import history from './ticker/fixtures/TPIA-history.json';
@@ -74,25 +75,38 @@ describe('Worker', () => {
     expect(response.status).toBe(200);
     expect(await response.text()).toContain('content="https://preview.test/api/og"');
   });
-  it('proxies OG requests and preserves their query and PNG response', async () => {
-    const proxy = vi.fn<typeof fetch>(
-      async () => new Response('png', { headers: { 'Content-Type': 'image/png' } }),
+  it('renders the Ticker card from PUBLIC with fonts from ASSETS', async () => {
+    const env = {
+      ...environment(),
+      ASSETS: {
+        fetch: vi.fn<(request: Request) => Promise<Response>>(
+          async (request) =>
+            new Response(
+              await readFile(new URL(`../public${new URL(request.url).pathname}`, import.meta.url)),
+            ),
+        ),
+      },
+      PUBLIC: {
+        get: vi.fn<Parameters<typeof worker.fetch>[1]['PUBLIC']['get']>(async () => ({
+          body: Response.json({ ...history, ticker: 'BBCA', name: 'PT Bank Central Asia Tbk.' })
+            .body!,
+          httpEtag: 'etag',
+          writeHttpMetadata: () => {},
+        })),
+      },
+    };
+    const date = history.prices.at(-1)?.date;
+    const response = await worker.fetch(
+      new Request(`https://preview.test/api/og?ticker=BBCA&d=${date}`),
+      env,
+      ctx,
     );
-    vi.stubGlobal('fetch', proxy);
-    try {
-      const response = await worker.fetch(
-        new Request('https://preview.test/api/og?ticker=BBCA&d=2026-11-10'),
-        environment(),
-        ctx,
-      );
-      expect(proxy).toHaveBeenCalledWith(
-        'https://vibe-idx.vercel.app/api/og?ticker=BBCA&d=2026-11-10',
-      );
-      expect(response.headers.get('content-type')).toBe('image/png');
-      expect(await response.text()).toBe('png');
-    } finally {
-      vi.unstubAllGlobals();
-    }
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-type')).toBe('image/png');
+    expect(response.headers.get('cache-control')).toContain('s-maxage=86400');
+    const png = new DataView(await response.arrayBuffer());
+    expect([png.getUint32(16), png.getUint32(20)]).toEqual([1200, 630]);
+    expect(env.PUBLIC.get).toHaveBeenCalledWith('ticker/BBCA.json');
   });
   it('serves public data only from PUBLIC and leaves missing objects unavailable', async () => {
     const env = environment();

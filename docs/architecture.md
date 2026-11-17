@@ -6,7 +6,7 @@ The [README](../README.md) covers running, checking and operating the system. Th
 
 GitHub Actions runs Ingest and the Collector as separate workflows with separate queues. DuckDB reads private Parquet history and writes the public JSON that the Site and the Terminal read. Vercel serves the React app and its functions. Dispatch starts Ingest daily at 17:17 Jakarta and starts a Collector run every ten minutes when none is active. A manual Ingest refuses to start before 17:17 unless it only backfills Registry reports. Feeds publishes market news and the economic calendar on its own schedule; see [its README](../apps/feeds/README.md).
 
-Ticker links get server-rendered metadata with the company name, latest close, daily change and reporting date. `/api/og` renders the Ticker card from public ticker data, and its dated URL makes chat apps fetch a fresh card each session. The app Worker injects the same metadata from the public bucket and proxies the image to Vercel. Missing ticker data falls back to the default preview.
+Ticker links get server-rendered metadata with the company name, latest close, daily change and reporting date. The app Worker renders the Ticker card at `/api/og` from public ticker data, with satori and the WebAssembly build of resvg, and its dated URL makes chat apps fetch a fresh card each session. It injects the same metadata from the public bucket. Missing ticker data falls back to the default preview.
 
 ## Ingest
 

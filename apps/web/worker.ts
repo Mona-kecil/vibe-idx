@@ -1,5 +1,9 @@
+import layoutWasm from 'satori/layout.wasm';
+import resvgWasm from '@resvg/resvg-wasm/index_bg.wasm';
 import { createBrokerHandler } from './api/_brokers.js';
-import { defaultMeta, parseTickerCard, tickerMeta, withShareMeta } from './api/_share.js';
+import { assetFonts, createCardRenderer, createOgHandler } from './api/_og.js';
+import { defaultMeta, tickerMeta, withShareMeta } from './api/_share.js';
+import { loadBucketTickerCard } from './api/_share-data.js';
 import { brokerTickerSchema } from './src/brokers.js';
 import { report } from './worker-sentry.js';
 
@@ -24,6 +28,7 @@ type EdgeCache = {
 };
 
 let brokers: ((request: Request) => Promise<Response>) | undefined;
+let og: ((request: Request) => Promise<Response>) | undefined;
 
 // The zone's Browser Cache TTL rewrites Cache-Control on cached responses to 4 hours, so the
 // object's own value travels in this header and is restored on a hit.
@@ -146,7 +151,18 @@ async function route(request: Request, env: Env, ctx: Context): Promise<Response
   // Google News returns 503 to Workers, so ticker news comes from the Vercel handler.
   if (url.pathname === '/api/news')
     return fetch(`https://vibe-idx.vercel.app/api/news${url.search}`);
-  if (url.pathname === '/api/og') return fetch(`https://vibe-idx.vercel.app/api/og${url.search}`);
+  if (url.pathname === '/api/og') {
+    og ??= createOgHandler({
+      render: createCardRenderer({
+        layout: layoutWasm,
+        resvg: resvgWasm,
+        fonts: assetFonts(env.ASSETS),
+      }),
+      loadCard: (ticker) => loadBucketTickerCard(env.PUBLIC, ticker),
+      reportFailure: (route, failure) => report(failure, { route }),
+    });
+    return og(request);
+  }
   if (url.pathname.startsWith('/api/'))
     return Response.json({ error: 'not_found' }, { status: 404 });
   if (url.pathname.startsWith('/data/')) return publicData(request, env, ctx);
@@ -157,9 +173,8 @@ async function route(request: Request, env: Env, ctx: Context): Promise<Response
     let meta = defaultMeta(url.origin);
     if (ticker.success) {
       try {
-        const object = await env.PUBLIC.get(`ticker/${ticker.data}.json`);
-        const card = object ? parseTickerCard(await new Response(object.body).json()) : null;
-        if (card?.ticker === ticker.data) meta = tickerMeta(card, url.origin);
+        const card = await loadBucketTickerCard(env.PUBLIC, ticker.data);
+        if (card) meta = tickerMeta(card, url.origin);
       } catch {
         // Public data outages must not prevent the SPA from loading.
       }
