@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vite-plus/test';
-import { cardKey, createEdgeCache, edgeCachedCard } from '../worker-cache';
+import { cardKey, createEdgeCache, edgeCachedResponse } from '../worker-cache';
 
 // Expires entries by max-age alone, as workerd's Cache API does.
 function memoryCache() {
@@ -30,7 +30,7 @@ function setup() {
     fail,
   );
   const run = (url: string, produce: () => Promise<Response>) =>
-    edgeCachedCard(new Request(url), edge, produce);
+    edgeCachedResponse(cardKey(new URL(url)), edge, produce);
   return { cache, edge, fail, run, settle: () => Promise.all(pending) };
 }
 
@@ -83,6 +83,22 @@ describe('edge cache', () => {
     expect((await run('https://idx.test/api/og', produce)).headers.get('X-Edge-Cache')).toBe(
       'MISS',
     );
+  });
+
+  it('refreshes backfilled news after a minute even when its historical policy is longer', async () => {
+    const { cache, edge, settle } = setup();
+    const key = new Request('https://idx.test/api/news?ticker=BBCA');
+    let body = '[]';
+    const produce = async () => new Response(body, { headers: { 'Cache-Control': policy } });
+    await edgeCachedResponse(key, edge, produce, 60);
+    await settle();
+    body = '["backfilled"]';
+    cache.advance(59);
+    expect(await (await edgeCachedResponse(key, edge, produce, 60)).text()).toBe('[]');
+    cache.advance(2);
+    const refreshed = await edgeCachedResponse(key, edge, produce, 60);
+    expect(refreshed.headers.get('X-Edge-Cache')).toBe('MISS');
+    expect(await refreshed.text()).toBe('["backfilled"]');
   });
 
   it.each([400, 404, 500, 502])('never stores a %i response', async (status) => {

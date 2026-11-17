@@ -117,6 +117,14 @@ try {
     throw new Error(`Expected MISS, HIT, HIT, got ${first.cache}, ${again.cache}, ${junk.cache}`);
   if (Buffer.compare(first.bytes, again.bytes) !== 0)
     throw new Error('The cached card differs from the rendered one');
+  for (const path of ['/t/TPIA', '/api/news?ticker=TPIA&from=2026-01-01&to=2026-01-02']) {
+    const first = await get(path);
+    const again = await get(path);
+    if (first.response.status !== 200 || first.cache !== 'MISS' || again.cache !== 'HIT')
+      throw new Error(`${path}: expected 200 MISS then HIT`);
+    if (Buffer.compare(first.bytes, again.bytes) !== 0)
+      throw new Error(`${path}: cached body differs`);
+  }
   if (/ERROR|Not reported to Sentry/.test(output))
     throw new Error('wrangler dev logged an error while rendering');
 } catch (error) {

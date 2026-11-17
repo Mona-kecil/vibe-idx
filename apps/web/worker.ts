@@ -8,7 +8,9 @@ import { loadBucketTickerCard } from './api/_share-data.js';
 import { brokerTickerSchema } from './src/brokers.js';
 import {
   createEdgeCache,
-  edgeCachedCard,
+  edgeCachedResponse,
+  cardKey,
+  newsKey,
   type CacheStore,
   type EdgeCache,
 } from './worker-cache.js';
@@ -27,6 +29,7 @@ type Env = {
   PRIVATE: R2Bucket;
   WORKOS_CLIENT_ID: string;
   DEPLOYMENT: string;
+  WORKER_VERSION: { id: string };
   SENTRY_DSN?: string;
 };
 type Ctx = { waitUntil(promise: Promise<unknown>): void };
@@ -132,7 +135,11 @@ async function route(request: Request, env: Env, ctx: Ctx, fail: Fail): Promise<
         return object ? new Response(object.body) : new Response(null, { status: 404 });
       },
     });
-    return news(request, (cause) => fail(cause, { path: url.pathname }));
+    const produce = () => news(request, (cause) => fail(cause, { path: url.pathname }));
+    // Annual indexes can change during archive backfills, including historical or empty answers.
+    return request.method === 'GET'
+      ? edgeCachedResponse(newsKey(url), edge, produce, 60)
+      : produce();
   }
   if (url.pathname === '/api/og') {
     const handler = (og ??= createOgHandler({
@@ -143,30 +150,34 @@ async function route(request: Request, env: Env, ctx: Ctx, fail: Fail): Promise<
       }),
       loadCard: (ticker) => loadBucketTickerCard(env.PUBLIC, ticker),
     }));
-    return edgeCachedCard(request, edge, () => handler(request, fail));
+    return edgeCachedResponse(cardKey(url), edge, () => handler(request, fail));
   }
   if (url.pathname.startsWith('/api/'))
     return Response.json({ error: 'not_found' }, { status: 404 });
   if (url.pathname.startsWith('/data/')) return publicData(request, env, edge);
   if (/^\/t\/[^/]+\/?$/.test(url.pathname)) {
-    const index = await env.ASSETS.fetch(new Request(new URL('/', url)));
-    if (!index.ok) return new Response('Page unavailable', { status: 502 });
     const ticker = brokerTickerSchema.safeParse(url.pathname.split('/')[2]?.toUpperCase());
-    let meta = defaultMeta(url.origin);
-    if (ticker.success) {
-      try {
-        const card = await loadBucketTickerCard(env.PUBLIC, ticker.data);
-        if (card) meta = tickerMeta(card, url.origin);
-      } catch {
-        // Public data outages must not prevent the SPA from loading.
-      }
-    }
-    return new Response(withShareMeta(await index.text(), meta), {
-      headers: {
-        'Content-Type': 'text/html; charset=utf-8',
-        'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=3600',
-      },
-    });
+    const produce = async () => {
+      // Neither read depends on the other. A data outage must still allow the SPA to load.
+      const [index, card] = await Promise.all([
+        env.ASSETS.fetch(new Request(new URL('/', url))),
+        ticker.success ? loadBucketTickerCard(env.PUBLIC, ticker.data).catch(() => null) : null,
+      ]);
+      if (!index.ok) return new Response('Page unavailable', { status: 502 });
+      const meta = card ? tickerMeta(card, url.origin) : defaultMeta(url.origin);
+      return new Response(withShareMeta(await index.text(), meta), {
+        headers: {
+          'Content-Type': 'text/html; charset=utf-8',
+          'Cache-Control': card ? 'public, s-maxage=300' : 'no-store',
+        },
+      });
+    };
+    // A deployment changes the HTML's asset URLs; a cached page must never outlive that version.
+    const key = new URL(`/t/${ticker.success ? ticker.data : ''}`, url);
+    key.searchParams.set('__version', env.WORKER_VERSION.id);
+    return request.method === 'GET' && ticker.success
+      ? edgeCachedResponse(new Request(key), edge, produce)
+      : produce();
   }
   return env.ASSETS.fetch(request);
 }
