@@ -6,7 +6,7 @@ The [README](../README.md) covers running, checking and operating the system. Th
 
 GitHub Actions runs Ingest and the Collector as separate workflows with separate queues. DuckDB reads private Parquet history and writes the public JSON that the Site and the Terminal read. Vercel serves the React app and its functions. Dispatch starts Ingest daily at 17:17 Jakarta and starts a Collector run every ten minutes when none is active. A manual Ingest refuses to start before 17:17 unless it only backfills Registry reports. Feeds publishes market news and the economic calendar on its own schedule; see [its README](../apps/feeds/README.md).
 
-Ticker links get server-rendered metadata with the company name, latest close, daily change and reporting date. `/api/og` renders the Ticker card from public ticker data, and its dated URL makes chat apps fetch a fresh card each session. The app Worker injects the same metadata from the public bucket and proxies the image to Vercel. Missing ticker data falls back to the default preview.
+Ticker links get server-rendered metadata with the company name, latest close, daily change and reporting date. The app Worker renders the Ticker card at `/api/og` from public ticker data, with satori and the WebAssembly build of resvg, and its dated URL makes chat apps fetch a fresh card each session. The app Worker keeps each rendered card in its data center's cache for the card's `s-maxage`, keyed on the upper-cased ticker and the date alone so other query parameters cannot force a render, and never keeps a 404 or a failure. It injects the same metadata from the public bucket. Missing ticker data falls back to the default preview.
 
 ## Ingest
 
@@ -31,6 +31,7 @@ Ticker links get server-rendered metadata with the company name, latest close, d
 
 - `GET /api/brokers?ticker=BBCA` returns `{ticker, days}`. Each day has `date`, `board`, `buy` and `sell`. Each broker row has `broker`, `investor` (domestic or foreign clients), `broker_type`, `shares`, `value`, `avg_price` and `freq`.
 - `view=ticks&date=…&kind=trades|book` returns one session's running trades or closing order book.
+- `view=bars&ticker=…` returns every collected session of one ticker as 15-minute regular-board bars. GP combines them into 1H and 4H.
 - `view=market` returns Accumulation.
 
 The browser sums gross shares and values over the selection and computes average prices as value divided by shares. Broker data does not show beneficial ownership or current inventory.
@@ -49,6 +50,7 @@ The private bucket, `vibe-idx-private`:
 - `auth/stockbit.json`: the current Stockbit token pair.
 - `site/broker/<TICKER>.json.gz` and `site/broker-activity-publication.json`: published broker data and its manifest.
 - `site/ticks/<TICKER>/<date>.<trades|book>.json.gz`: published running trades and order books.
+- `site/bars/<TICKER>.json.gz`: 15-minute regular-board bars of every collected session, in columns (`time` as Unix seconds, open, high, low, close, shares, value, foreignBuy, foreignSell). The Collector rewrites a session's bars whenever it publishes that session's running trade, and `site/bars/sessions.json` lists the sessions whose bars exist, so a session published before bars existed is filled in on the next run.
 - `site/market-accumulation.json`: Accumulation windows.
 - `parquet/brokers/` and `parquet/broker-coverage.parquet`: unused.
 

@@ -12,6 +12,7 @@ import { collectTicks } from './ticks';
 import { parseBook, parseTradePage } from './ticks-data';
 import { progressSchema, TickStore, tradeLanes } from './ticks-store';
 import { nextPreOpen, tradingSessions } from './lib/idx-calendar';
+import { barFileSchema, packBars, sessionBars } from '../web/src/ticks';
 
 vi.mock('./lib/sentry', () => ({ reportError: vi.fn(), startSentry: vi.fn() }));
 vi.mock('node:timers/promises', () => ({
@@ -188,9 +189,9 @@ it('deduplicates non-monotonic market pages and re-reads skipped seconds before 
     { ticker: 'SINI', n: 205, status: 'complete' },
     { ticker: 'ZERO', n: 0, status: 'no_trades' },
   ]);
-  expect([...f.objects.keys()].every((k) => /^(ticks|staging\/ticks|site\/ticks)\//.test(k))).toBe(
-    true,
-  );
+  expect(
+    [...f.objects.keys()].every((k) => /^(ticks|staging\/ticks|site\/ticks|site\/bars)\//.test(k)),
+  ).toBe(true);
   const site = JSON.parse(
     gunzipSync(f.objects.get(`site/ticks/SINI/${day}.trades.json.gz`)!).toString(),
   );
@@ -199,6 +200,9 @@ it('deduplicates non-monotonic market pages and re-reads skipped seconds before 
   expect(site.shares[0]).toBe(100);
   expect(site.buyer_foreign[0]).toBe(false);
   expect(site.seller_foreign[0]).toBe(true);
+  expect(barFile(f)).toEqual(packBars('SINI', sessionBars(site)));
+  expect(barSessions(f)).toEqual([day]);
+  expect(f.objects.has('site/bars/ZERO.json.gz')).toBe(false);
 });
 it('resumes a budgeted market crawl on a fresh runner without refreshing its closing sequence', async () => {
   const f = await fixture();
@@ -230,6 +234,123 @@ it('resumes a budgeted market crawl on a fresh runner without refreshing its clo
   expect(calls.length).toBeGreaterThan(0);
   expect(calls.every((call) => call.startsWith('ASC:'))).toBe(true);
   expect(await rows(resumed, 'running_trade')).toHaveLength(205);
+});
+/** A published session: `count` regular-board fills of 100 shares at 7,675 per ticker, all at `time`. */
+async function publishedSession(
+  f: Awaited<ReturnType<typeof fixture>>,
+  date: string,
+  count: number,
+  time: string,
+  tickers = ['SINI'],
+) {
+  const file = join(f.data, `${date}.parquet`);
+  const listed = tickers.map((t, k) => `('${t}', ${k * 1000000})`).join(',');
+  await sql(`COPY (SELECT DATE '${date}' AS date, k.ticker AS ticker, n + k.shift AS trade_number, n AS id,
+    '${time}' AS time, 'continuous' AS session, 'buy' AS action, 7675 AS price, 100 AS shares,
+    'XL' AS buyer, 'D' AS buyer_domicile, 'BROKER_TYPE_LOCAL' AS buyer_type, 'YP' AS seller,
+    'F' AS seller_domicile, 'BROKER_TYPE_FOREIGN' AS seller_type, 'RG' AS board, n AS buy_order_number,
+    1 AS sell_order_number, 1 AS group_order_number, 767500 AS value
+    FROM range(1, ${count + 1}) t(n), (VALUES ${listed}) k(ticker, shift)) TO '${file}' (FORMAT PARQUET)`);
+  f.objects.set(`ticks/running_trade/${date}.parquet`, await readFile(file));
+}
+const barFileFor = (f: Awaited<ReturnType<typeof fixture>>, ticker: string) =>
+  barFileSchema.parse(
+    JSON.parse(gunzipSync(f.objects.get(`site/bars/${ticker}.json.gz`)!).toString()),
+  );
+const barFile = (f: Awaited<ReturnType<typeof fixture>>) => barFileFor(f, 'SINI');
+const barSessions = (f: Awaited<ReturnType<typeof fixture>>) =>
+  JSON.parse(f.objects.get('site/bars/sessions.json')!.toString()).sessions;
+
+it("adds each session to the ticker's bar file, replaces a republished session and keeps the others", async () => {
+  const f = await fixture();
+  await publishedSession(f, '2026-11-06', 3, '10:00:00');
+  await publishedSession(f, day, 2, '11:20:00');
+  const store = await TickStore.open(f.data, f.r2);
+  try {
+    await store.recoverPublished('2026-11-06', 'running_trade');
+    await store.recoverPublished(day, 'running_trade');
+    const midnight = (date: string) => Date.parse(`${date}T00:00:00+07:00`) / 1000;
+    expect(barFile(f)).toMatchObject({
+      time: [midnight('2026-11-06') + 36000, midnight(day) + 40500],
+      shares: [300, 200],
+      value: [3 * 767500, 2 * 767500],
+    });
+    expect(barSessions(f)).toEqual(['2026-11-06', day]);
+    // A re-crawl republishes the first session with trades it had missed.
+    await publishedSession(f, '2026-11-06', 5, '10:00:00');
+    await store.recoverPublished('2026-11-06', 'running_trade');
+    await store.recoverPublished('2026-11-06', 'running_trade');
+    expect(barFile(f)).toMatchObject({ shares: [500, 200], close: [7675, 7675] });
+    expect(barSessions(f)).toEqual(['2026-11-06', day]);
+  } finally {
+    store.close();
+  }
+});
+it('builds the bars of a session that was published before bars existed, once', async () => {
+  const f = await fixture();
+  await publishedSession(f, day, 2, '09:20:00');
+  const store = await TickStore.open(f.data, f.r2);
+  try {
+    await store.backfillBars(day);
+    expect(barFile(f)).toMatchObject({ shares: [200] });
+    expect(barSessions(f)).toEqual([day]);
+    const writes = f.puts.length;
+    await store.backfillBars(day);
+    expect(f.puts).toHaveLength(writes);
+  } finally {
+    store.close();
+  }
+});
+it('does not end a failed backfill while another ticker is still writing its bars', async () => {
+  const f = await fixture();
+  const [newer, older] = ['2026-11-12', '2026-11-11'];
+  await publishedSession(f, newer, 1, '09:00:00', ['AAAA', 'BBBB']);
+  await publishedSession(f, older, 1, '09:00:00', ['BBBB']);
+  let readStarted = () => {};
+  const reading = new Promise<void>((resolve) => (readStarted = resolve));
+  let release = () => {};
+  const resume = new Promise<void>((resolve) => (release = resolve));
+  let failing = true;
+  const r2: R2 = {
+    ...f.r2,
+    async get(key) {
+      const stored = await f.r2.get(key);
+      if (failing && key === 'site/bars/AAAA.json.gz') {
+        await reading;
+        throw new Error('injected read failure');
+      }
+      if (failing && key === 'site/bars/BBBB.json.gz') {
+        readStarted();
+        await resume;
+      }
+      return stored;
+    },
+  };
+  const failed = await TickStore.open(f.data, r2);
+  const next = await TickStore.open(f.data, f.r2);
+  let ended = false;
+  const backfill = failed.backfillBars(newer).finally(() => (ended = true));
+  const rejection = expect(backfill).rejects.toThrow('injected read failure');
+  try {
+    await reading;
+    for (let turn = 0; turn < 5; turn++) await new Promise((done) => setImmediate(done));
+    expect(ended).toBe(false);
+    failing = false;
+    release();
+    await rejection;
+    expect(f.objects.has('site/bars/sessions.json')).toBe(false);
+    // The next run repairs the newer session and carries on to the older one, as the collector does.
+    await next.backfillBars(newer);
+    await next.backfillBars(older);
+    const bars = barFileFor(f, 'BBBB');
+    expect(bars.time).toHaveLength(2);
+    expect(barSessions(f)).toEqual([older, newer]);
+  } finally {
+    release();
+    await Promise.allSettled([backfill, rejection]);
+    failed.close();
+    next.close();
+  }
 });
 it('converts old cursor progress into lanes and resumes the complete day', async () => {
   const f = await fixture();

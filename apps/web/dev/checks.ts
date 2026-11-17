@@ -16,7 +16,16 @@ import { corporateActionSchema, type Ticker } from '../src/data.js';
 import { canonicalLink } from '../../feeds/src/archive.js';
 import { tickerNewsSchema, type ArchiveArticle } from '../../feeds/src/contracts.js';
 import { cumulativeFlows, foreignFlow } from '../src/terminal/BrokerPanes.js';
-import { bars, type TickBook, type TickTrades } from '../src/ticks.js';
+import {
+  bars,
+  clock,
+  sessionBars,
+  sessionStart,
+  unpackBars,
+  type BarFile,
+  type TickBook,
+  type TickTrades,
+} from '../src/ticks.js';
 import { plural } from '../../pipeline/dev/cli.js';
 import { money } from './format.js';
 
@@ -28,6 +37,8 @@ export type Session = {
   /** The last fixture session, which broker data is restated up to. */
   asOf: string;
   trades: TickTrades;
+  /** The ticker's published bar file, covering every collected session. */
+  bars: BarFile | undefined;
   book: TickBook | undefined;
   brokers: BrokerDay[];
   /** Undefined when the ticker has no price history, such as a warrant. */
@@ -245,6 +256,56 @@ export const checks: Check[] = [
         ],
         ['prices', 'RT'],
       );
+    },
+  },
+  {
+    name: 'bars-rt',
+    title: 'Published 15-minute bars match RT on the regular board',
+    session: (s) => {
+      const expected = sessionBars(s.trades);
+      const start = sessionStart(s.date);
+      const published = (s.bars ? unpackBars(s.bars) : []).filter(
+        (bar) => bar.time >= start && bar.time < start + 86400,
+      );
+      if (!expected.length && !published.length) return { skip: 'no regular-board trades' };
+      const fields = [
+        'open',
+        'high',
+        'low',
+        'close',
+        'shares',
+        'value',
+        'foreignBuy',
+        'foreignSell',
+      ] as const;
+      const at = (time: number) => clock(time - start).slice(0, 5);
+      const times = (rows: typeof expected) => new Set(rows.map((bar) => bar.time));
+      const absent = (from: Set<number>, rows: typeof expected) =>
+        rows.filter((bar) => !from.has(bar.time)).map((bar) => at(bar.time));
+      const missing = absent(times(published), expected);
+      const extra = absent(times(expected), published);
+      const list = (label: string, found: string[]) =>
+        found.length
+          ? [`bars: ${plural(found.length, 'bar')} ${label}: ${found.slice(0, 3).join(', ')}`]
+          : [];
+      return [
+        ...list('missing from the file', missing),
+        ...list('in the file without RT', extra),
+        ...differences(
+          'bars',
+          expected.flatMap((b) => {
+            const a = published.find((bar) => bar.time === b.time);
+            return a
+              ? fields.map((field): [string, number, number] => [
+                  `${at(b.time)} ${field}`,
+                  a[field],
+                  b[field],
+                ])
+              : [];
+          }),
+          ['published', 'RT'],
+        ),
+      ];
     },
   },
   {

@@ -225,6 +225,7 @@ export type Bar = {
   low: number;
   close: number;
   shares: number;
+  value: number;
   foreignBuy: number;
   foreignSell: number;
 };
@@ -243,6 +244,7 @@ export function bars(trades: TickTrades, minutes: number): Bar[] {
       low: price,
       close: price,
       shares: 0,
+      value: 0,
       foreignBuy: 0,
       foreignSell: 0,
     };
@@ -250,9 +252,96 @@ export function bars(trades: TickTrades, minutes: number): Bar[] {
     bar.low = Math.min(bar.low, price);
     bar.close = price;
     bar.shares += shares;
+    bar.value += price * shares;
     if (trades.buyer_foreign[i]) bar.foreignBuy += shares;
     if (trades.seller_foreign[i]) bar.foreignSell += shares;
     result.set(start, bar);
   });
   return [...result.values()].sort((a, b) => a.time - b.time);
+}
+
+/** Jakarta is UTC+7 all year, so midnight there is 17:00 UTC the day before. */
+const jakartaOffset = 7 * 3600;
+const barMinutes = 15;
+/** The Unix second a session's day starts, in Jakarta time. */
+export const sessionStart = (date: string) => Date.parse(`${date}T00:00:00+07:00`) / 1000;
+
+/**
+ * Every collected session of one ticker as 15-minute regular-board bars, columnar like the trade files. `time` is
+ * the bar's start in Unix seconds, so the file needs no dates.
+ */
+export const barFileSchema = z
+  .object({
+    ticker: z.string(),
+    time: numbers,
+    open: numbers,
+    high: numbers,
+    low: numbers,
+    close: numbers,
+    shares: numbers,
+    value: numbers,
+    foreignBuy: numbers,
+    foreignSell: numbers,
+  })
+  .refine(
+    ({ ticker: _ticker, ...columns }) =>
+      Object.values(columns).every((column) => column.length === columns.time.length),
+    'Bar columns differ in length',
+  );
+export type BarFile = z.infer<typeof barFileSchema>;
+
+/** One session's 15-minute bars with absolute times, as the bar file stores them. */
+export function sessionBars(trades: TickTrades): Bar[] {
+  const midnight = sessionStart(trades.date);
+  return bars(trades, barMinutes).map((bar) => ({ ...bar, time: midnight + bar.time }));
+}
+
+export function packBars(ticker: string, rows: Bar[]): BarFile {
+  const sorted = [...rows].sort((a, b) => a.time - b.time);
+  const column = (key: keyof Bar) => sorted.map((row) => row[key]);
+  return {
+    ticker,
+    time: column('time'),
+    open: column('open'),
+    high: column('high'),
+    low: column('low'),
+    close: column('close'),
+    shares: column('shares'),
+    value: column('value'),
+    foreignBuy: column('foreignBuy'),
+    foreignSell: column('foreignSell'),
+  };
+}
+
+export const unpackBars = (file: BarFile): Bar[] =>
+  file.time.map((time, i) => ({
+    time,
+    open: file.open[i]!,
+    high: file.high[i]!,
+    low: file.low[i]!,
+    close: file.close[i]!,
+    shares: file.shares[i]!,
+    value: file.value[i]!,
+    foreignBuy: file.foreignBuy[i]!,
+    foreignSell: file.foreignSell[i]!,
+  }));
+
+/** Combines sorted 15-minute bars into bars of `minutes`, which must be a multiple of 15 that divides a day. */
+export function combineBars(rows: Bar[], minutes: number): Bar[] {
+  const size = minutes * 60;
+  const result: Bar[] = [];
+  for (const row of rows) {
+    const start = row.time - ((row.time + jakartaOffset) % size);
+    const last = result.at(-1);
+    if (last?.time === start) {
+      last.high = Math.max(last.high, row.high);
+      last.low = Math.min(last.low, row.low);
+      last.close = row.close;
+      last.shares += row.shares;
+      last.value += row.value;
+      last.foreignBuy += row.foreignBuy;
+      last.foreignSell += row.foreignSell;
+    } else result.push({ ...row, time: start });
+  }
+  return result;
 }

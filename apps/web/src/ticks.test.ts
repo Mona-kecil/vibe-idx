@@ -4,10 +4,15 @@ import {
   sessionOpen,
   isBlockTrade,
   bars,
+  barFileSchema,
   clock,
+  combineBars,
   doneDetail,
+  packBars,
+  sessionBars,
   tickTradesSchema,
   tradeBook,
+  unpackBars,
 } from './ticks';
 import { seconds, tradeSession, type Fill } from './test-builders';
 
@@ -114,6 +119,44 @@ it('builds regular-board bars of any size from trade times', () => {
   ]);
   const [hour] = bars(day, 60).filter((b) => b.time === seconds('09:00:00'));
   expect(hour).toMatchObject({ shares: 147500, foreignBuy: 107000, foreignSell: 0 });
+});
+
+describe('15-minute bar files', () => {
+  const fills: Fill[] = [
+    { time: '08:58:00', price: 100, shares: 300, auction: true, buyerForeign: true },
+    { time: '09:00:01', price: 101, shares: 100, side: 's', sellerForeign: true },
+    { time: '09:14:59', price: 99, shares: 200 },
+    { time: '09:15:00', price: 105, shares: 400, buyerForeign: true, sellerForeign: true },
+    { time: '10:59:59', price: 97, shares: 100 },
+    { time: '11:00:00', price: 98, shares: 500 },
+    { time: '12:44:00', price: 110, shares: 100, board: 'NG' },
+    { time: '13:30:00', price: 96, shares: 700, sellerForeign: true },
+    { time: '15:59:59', price: 102, shares: 100, side: 's' },
+    { time: '16:00:00', price: 103, shares: 900, auction: true },
+  ];
+  const trades = session(fills);
+  const midnight = Date.parse('2026-11-10T00:00:00+07:00') / 1000;
+
+  it.each([60, 240])('combines into %i-minute bars exactly as fills would', (minutes) => {
+    const direct = bars(trades, minutes).map((bar) => ({ ...bar, time: midnight + bar.time }));
+    expect(combineBars(sessionBars(trades), minutes)).toEqual(direct);
+    expect(direct.length).toBeGreaterThan(1);
+  });
+
+  it('keeps 15-minute bars as they are and counts only the regular board', () => {
+    const rows = sessionBars(trades);
+    expect(combineBars(rows, 15)).toEqual(rows);
+    expect(rows.reduce((sum, bar) => sum + bar.shares, 0)).toBe(3300);
+    expect(rows[0]).toMatchObject({ time: midnight + seconds('08:45:00'), value: 30000 });
+  });
+
+  it('packs rows into columns and back, and rejects ragged columns', () => {
+    const rows = [...sessionBars(trades)].reverse();
+    const file = packBars('SINI', rows);
+    expect(barFileSchema.parse(file)).toEqual(file);
+    expect(unpackBars(file)).toEqual(sessionBars(trades));
+    expect(barFileSchema.safeParse({ ...file, close: file.close.slice(1) }).success).toBe(false);
+  });
 });
 
 it('rejects trade columns of different lengths', () => {

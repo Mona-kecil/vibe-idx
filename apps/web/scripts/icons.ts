@@ -1,7 +1,11 @@
-import { mkdir, writeFile } from 'node:fs/promises';
-import { Resvg } from '@resvg/resvg-js';
-import { markSvg } from '../api/_mark.ts';
+import { createRequire } from 'node:module';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { initWasm, Resvg } from '@resvg/resvg-wasm';
+import { markSvg } from '../api/_mark.js';
 
+await initWasm(
+  await readFile(createRequire(import.meta.url).resolve('@resvg/resvg-wasm/index_bg.wasm')),
+);
 const publicDir = new URL('../public/', import.meta.url);
 await mkdir(publicDir, { recursive: true });
 await writeFile(new URL('favicon.svg', publicDir), markSvg + '\n');
