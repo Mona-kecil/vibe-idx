@@ -63,6 +63,35 @@ describe('preview Worker', () => {
       vi.unstubAllGlobals();
     }
   });
+  it('answers ticker news from the PUBLIC archive without calling any news site', async () => {
+    const network = vi.fn<typeof fetch>(async () => new Response('unexpected', { status: 500 }));
+    vi.stubGlobal('fetch', network);
+    try {
+      const published_at = new Date().toISOString();
+      const rows = [
+        { title: 'Saham BBCA Menguat', url: 'https://news.test/a', published_at, source: 'Kontan' },
+      ];
+      const env = {
+        ...environment(),
+        PUBLIC: {
+          get: vi.fn<(key: string) => Promise<unknown>>(async () => ({
+            body: Response.json({ ticker: 'BBCA', as_of: published_at, news: rows }).body!,
+          })),
+        },
+      };
+      const response = await worker.fetch(
+        new Request('https://preview.test/api/news?ticker=BBCA'),
+        env as never,
+        ctx,
+      );
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual(rows);
+      expect(env.PUBLIC.get).toHaveBeenCalledWith('news/ticker/BBCA.json');
+      expect(network).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
   it('serves public data only from PUBLIC and leaves missing objects unavailable', async () => {
     const env = environment();
     const response = await worker.fetch(
