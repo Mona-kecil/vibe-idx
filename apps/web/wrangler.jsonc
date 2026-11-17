@@ -1,10 +1,10 @@
 {
-  "name": "vibe-idx-preview",
+  "name": "vibe-idx",
   "main": "worker.ts",
   "compatibility_date": "2026-10-01",
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": false,
-  "routes": [{ "pattern": "preview.idx.monosodiums.com", "custom_domain": true }],
+  "routes": [{ "pattern": "idx.monosodiums.com", "custom_domain": true }],
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",
@@ -15,5 +15,27 @@
     { "binding": "PUBLIC", "bucket_name": "vibe-idx-public" },
     { "binding": "PRIVATE", "bucket_name": "vibe-idx-private" },
   ],
-  "vars": { "WORKOS_CLIENT_ID": "client_01M5KP5949040A7VK88Q06D64E" },
+  "vars": {
+    "DEPLOYMENT": "production",
+    "WORKOS_CLIENT_ID": "client_01M5KP59DT9VA1NXR1KG8WBMS0",
+  },
+  "env": {
+    "preview": {
+      "routes": [{ "pattern": "preview.idx.monosodiums.com", "custom_domain": true }],
+      "assets": {
+        "directory": "./dist",
+        "binding": "ASSETS",
+        "not_found_handling": "single-page-application",
+        "run_worker_first": ["/api/*", "/data/*", "/t/*"],
+      },
+      "r2_buckets": [
+        { "binding": "PUBLIC", "bucket_name": "vibe-idx-public" },
+        { "binding": "PRIVATE", "bucket_name": "vibe-idx-private" },
+      ],
+      "vars": {
+        "DEPLOYMENT": "preview",
+        "WORKOS_CLIENT_ID": "client_01M5KP5949040A7VK88Q06D64E",
+      },
+    },
+  },
 }
