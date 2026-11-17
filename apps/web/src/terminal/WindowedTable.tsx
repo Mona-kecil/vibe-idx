@@ -7,6 +7,7 @@ export function WindowedTable({
   target,
   className,
   header,
+  footer,
   row,
   children,
 }: {
@@ -15,6 +16,8 @@ export function WindowedTable({
   target?: number;
   className: string;
   header: ReactNode;
+  /** Rows outside the window, such as one that holds each column's widest value. */
+  footer?: ReactNode;
   row: (index: number) => ReactElement;
   children?: ReactNode;
 }) {
@@ -125,6 +128,7 @@ export function WindowedTable({
           ])}
           {spacer((indices.at(-1) ?? -1) + 1, count)}
         </tbody>
+        {footer}
       </table>
       {children}
     </div>

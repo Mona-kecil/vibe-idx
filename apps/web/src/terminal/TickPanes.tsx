@@ -81,6 +81,53 @@ function TickPane<K extends TickKind>({
 
 const fillCount = (fills: number) => `${nf(fills)} ${fills === 1 ? 'fill' : 'fills'}`;
 const lots = (shares: number) => nf(shares / 100, shares % 100 ? 2 : 0);
+/** The longest text `format` gives over `values`, formatting only the largest value per magnitude and odd lot. */
+function widest(values: number[], format: (value: number) => string) {
+  const largest = new Map<number, number>();
+  for (const value of values) {
+    const key = Math.floor(Math.log10(Math.abs(value) || 1)) * 2 + (value % 100 ? 1 : 0);
+    if (!(value <= (largest.get(key) ?? -Infinity))) largest.set(key, value);
+  }
+  return [...largest.values()].map(format).reduce((a, b) => (b.length > a.length ? b : a), '');
+}
+/**
+ * A windowed table sizes its columns from the rows on screen, so this hidden row holds the widest price, lot and
+ * value of every row, and the columns keep one width while scrolling.
+ */
+function SizingRow({
+  prices,
+  shares,
+  values,
+  open,
+  decimals = 0,
+}: {
+  prices: number[];
+  shares: number[];
+  values: number[];
+  open: SessionOpen | null;
+  decimals?: number;
+}) {
+  return (
+    <tfoot className="tick-sizer" aria-hidden="true">
+      <tr>
+        <td />
+        <td>
+          <Price
+            value={prices.reduce((a, b) => Math.max(a, b), 0)}
+            open={open}
+            decimals={decimals}
+          />
+        </td>
+        <td />
+        <td>{widest(shares, lots)}</td>
+        <td>{widest(values, short)}</td>
+        <td />
+        <td />
+        <td />
+      </tr>
+    </tfoot>
+  );
+}
 function Broker({ code, foreign }: { code: string; foreign: boolean }) {
   return (
     <span className={foreign ? 'tick-foreign' : undefined}>
@@ -441,6 +488,16 @@ function TradeTape({
         target={firstMatch === undefined ? undefined : rows.indexOf(firstMatch)}
         className="tick-table tick-tape tick-orders"
         header={<TradeHeader />}
+        footer={
+          rows.length > 0 && (
+            <SizingRow
+              prices={rows.map((i) => trades.price[i]!)}
+              shares={rows.map((i) => trades.shares[i]!)}
+              values={rows.map((i) => trades.price[i]! * trades.shares[i]!)}
+              open={open}
+            />
+          )
+        }
         row={(index) => {
           const i = rows[index]!;
           const highlighted = tickBlock !== null && isBlockTrade(trades, i, tickBlock);
@@ -579,6 +636,15 @@ function Blocks({
       count={Math.min(shown.length, limit)}
       className="tick-table tick-blocks tick-orders"
       header={<TradeHeader />}
+      footer={
+        <SizingRow
+          prices={shown.map((block) => block.value / block.shares)}
+          shares={shown.map((block) => block.shares)}
+          values={shown.map((block) => block.value)}
+          open={open}
+          decimals={1}
+        />
+      }
       row={(index) => {
         const block = shown[index]!;
         const selected =

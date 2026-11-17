@@ -213,3 +213,6 @@
   margin: 6px auto;
   font-size: 10px;
 }
+.terminal-page .tick-sizer {
+  visibility: collapse;
+}
