@@ -225,13 +225,13 @@ describe('private broker API', () => {
       );
     }
 
-    it('keeps a session before the latest one for a year, whichever token asks', async () => {
+    it('keeps a session before the latest one in a private, token-specific browser cache', async () => {
       published = sessions('2026-11-09', '2026-11-10', '2026-11-11');
       for (const kind of ['trades', 'book']) {
         const response = await ticks('2026-11-10', kind);
         expect(response.status).toBe(200);
         expect(response.headers.get('Cache-Control')).toBe('private, max-age=31536000, immutable');
-        expect(response.headers.has('Vary')).toBe(false);
+        expect(response.headers.get('Vary')).toBe('Authorization');
         expect(response.headers.has('Access-Control-Allow-Origin')).toBe(false);
         expect(Buffer.from(await response.arrayBuffer()).equals(stored)).toBe(true);
       }

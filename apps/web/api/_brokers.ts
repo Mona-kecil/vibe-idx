@@ -15,10 +15,8 @@ const sourceSchema = z.array(brokerDaySchema);
 const sessionsSchema = z.object({ sessions: z.array(z.iso.date()) });
 
 const noStore = { 'Cache-Control': 'private, no-store', Vary: 'Authorization' };
-// A published session is never rewritten. The response leaves out `Vary: Authorization` because WorkOS renews the
-// access token every few minutes, and a cached variant for one token would never match the next request. The
-// browser's cache is private, and every signed-in member may read the same session.
-const settled = { 'Cache-Control': 'private, max-age=31536000, immutable' };
+// Published sessions are immutable; token-specific variants keep signed-out requests out of the browser cache.
+const settled = { 'Cache-Control': 'private, max-age=31536000, immutable', Vary: 'Authorization' };
 
 function json(body: unknown, status: number, headers?: Record<string, string>) {
   return Response.json(body, { status, headers: { ...noStore, ...headers } });
