@@ -5,6 +5,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
+import { gunzipSync, gzipSync } from 'node:zlib';
 import {
   build as buildApp,
   createServer,
@@ -17,6 +18,7 @@ import {
 import { z } from 'zod';
 import { cliErrors } from '../../pipeline/dev/cli.js';
 import { writeAtomic } from '../../pipeline/dev/local-r2.js';
+import { barFileSchema, packBars, sessionStart, unpackBars } from '../src/ticks.js';
 import { fixtureState, fixturesRoot, localBrokerApi } from './local-api.js';
 import { previewClient } from './preview-client.js';
 
@@ -128,6 +130,18 @@ export async function startPreview({
       // The collector publishes a session's running trade and closing order book once the session is over.
       if (view === 'ticks' && url.searchParams.get('date') === state.asOf)
         return heldUntilClose(res);
+      if (view === 'bars') {
+        const start = sessionStart(state.asOf);
+        const file = barFileSchema.parse(JSON.parse(gunzipSync(body).toString()));
+        body = gzipSync(
+          JSON.stringify(
+            packBars(
+              file.ticker,
+              unpackBars(file).filter((bar) => bar.time < start),
+            ),
+          ),
+        );
+      }
       if (view === null) {
         // Broker data for a session is published in the evening, so during it the history ends the day before.
         const history = JSON.parse(body.toString()) as { days: { date: string }[] };
