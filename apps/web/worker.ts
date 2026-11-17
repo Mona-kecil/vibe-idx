@@ -13,9 +13,12 @@ type Env = {
 };
 
 let brokers: ((request: Request) => Promise<Response>) | undefined;
-let news: ((request: Request) => Promise<Response>) | undefined;
 
-async function route(request: Request, env: Env): Promise<Response> {
+async function route(
+  request: Request,
+  env: Env,
+  failed: (cause: Error, tags: Record<string, string>) => void,
+): Promise<Response> {
   const url = new URL(request.url);
   if (url.pathname === '/api/brokers') {
     brokers ??= createBrokerHandler({
@@ -28,13 +31,13 @@ async function route(request: Request, env: Env): Promise<Response> {
     return brokers(request);
   }
   if (url.pathname === '/api/news') {
-    news ??= createNewsHandler({
+    const news = createNewsHandler({
       store: async (key) => {
         const object = await env.PUBLIC.get(key);
         return object ? new Response(object.body) : new Response(null, { status: 404 });
       },
     });
-    return news(request);
+    return news(request, (cause) => failed(cause, { path: url.pathname }));
   }
   if (url.pathname === '/api/og') return fetch(`https://vibe-idx.vercel.app/api/og${url.search}`);
   if (url.pathname.startsWith('/api/'))
@@ -73,9 +76,13 @@ async function route(request: Request, env: Env): Promise<Response> {
 export default {
   async fetch(request: Request, env: Env, ctx: { waitUntil(p: Promise<unknown>): void }) {
     const path = new URL(request.url).pathname;
+    let reported = false;
     try {
-      const response = await route(request, env);
-      if (response.status >= 500)
+      const response = await route(request, env, (cause, tags) => {
+        reported = true;
+        ctx.waitUntil(report(cause, tags));
+      });
+      if (response.status >= 500 && !reported)
         ctx.waitUntil(report(`${path} returned ${response.status}`, { path }));
       return response;
     } catch (error) {

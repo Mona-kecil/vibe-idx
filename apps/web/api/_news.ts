@@ -5,7 +5,7 @@ const dayMs = 24 * 60 * 60 * 1000;
 const rangeSchema = z
   .object({ from: z.iso.date(), to: z.iso.date() })
   .refine(({ from, to }) => from <= to && Date.parse(to) - Date.parse(from) < 366 * dayMs);
-// The Feeds job writes this file, newest article first.
+// The Feeds job writes one file per ticker and Jakarta year, newest article first.
 const indexSchema = z.object({
   news: z.array(
     z.object({
@@ -16,6 +16,41 @@ const indexSchema = z.object({
     }),
   ),
 });
+type Row = z.infer<typeof indexSchema>['news'][number];
+
+const jakartaYear = (ms: number) =>
+  new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta', year: 'numeric' }).format(ms);
+
+const reason = (failure: unknown) => (failure instanceof Error ? failure.message : String(failure));
+
+/** One ticker year: its rows, none when the file does not exist, or the reason it cannot be used. */
+async function readYear(store: NewsStore, key: string): Promise<Row[]> {
+  let response: Response;
+  try {
+    response = await store(key);
+  } catch (failure) {
+    throw new Error(`${key}: read failed: ${reason(failure)}`);
+  }
+  if (response.status === 404) {
+    await response.body?.cancel();
+    return [];
+  }
+  if (!response.ok) {
+    await response.body?.cancel();
+    throw new Error(`${key}: read failed: HTTP ${response.status}`);
+  }
+  const body: unknown = await response.json().catch((failure: unknown) => {
+    throw new Error(`${key}: not JSON: ${reason(failure)}`);
+  });
+  const parsed = indexSchema.safeParse(body);
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0];
+    throw new Error(
+      `${key}: unexpected shape at ${issue?.path.join('.') || 'root'}: ${issue?.message}`,
+    );
+  }
+  return parsed.data.news;
+}
 
 export type NewsStore = (key: string) => Promise<Response>;
 
@@ -26,7 +61,11 @@ export function createNewsHandler({
   store: NewsStore;
   now?: () => number;
 }) {
-  return async function handle(request: Request): Promise<Response> {
+  /** `failed` hears of the read or parse error behind a 502, once per request. */
+  return async function handle(
+    request: Request,
+    failed: (cause: Error) => void = () => {},
+  ): Promise<Response> {
     if (request.method !== 'GET')
       return Response.json(
         { error: 'method_not_allowed' },
@@ -50,22 +89,24 @@ export function createNewsHandler({
       range = parsed.data;
     }
 
-    const response = await store(`news/ticker/${ticker.data}.json`).catch(() => null);
-    if (!response || (!response.ok && response.status !== 404)) {
-      await response?.body?.cancel();
-      return Response.json({ error: 'unavailable' }, { status: 502 });
-    }
-    let rows: z.infer<typeof indexSchema>['news'] = [];
-    if (response.ok) {
-      const index = indexSchema.safeParse(await response.json().catch(() => null));
-      if (!index.success) return Response.json({ error: 'unavailable' }, { status: 502 });
-      rows = index.data.news;
-    } else await response.body?.cancel();
-
     const start = range ? Date.parse(`${range.from}T00:00:00+07:00`) : now() - 30 * dayMs;
     const end = range ? Date.parse(`${range.to}T00:00:00+07:00`) + dayMs : Infinity;
+    // A request spans at most two Jakarta years, so it reads at most two files, each bounded to a year of one ticker.
+    const years = [...new Set([jakartaYear(range ? end - 1 : now()), jakartaYear(start)])];
+    let rows: Row[];
+    try {
+      rows = (
+        await Promise.all(
+          years.map((year) => readYear(store, `news/ticker/${ticker.data}/${year}.json`)),
+        )
+      ).flat();
+    } catch (failure) {
+      failed(failure instanceof Error ? failure : new Error(String(failure)));
+      return Response.json({ error: 'unavailable' }, { status: 502 });
+    }
     const items = rows
       .filter((row) => Date.parse(row.published_at) >= start && Date.parse(row.published_at) < end)
+      .sort((a, b) => b.published_at.localeCompare(a.published_at))
       .slice(0, range ? 200 : 20);
     const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(now());
     return Response.json(items, {

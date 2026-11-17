@@ -41,7 +41,7 @@ describe('ticker news from the archive', () => {
         source: 'Kontan',
       },
     ]);
-    expect(calls).toEqual(['news/ticker/BBCA.json']);
+    expect(calls).toEqual(['news/ticker/BBCA/2026.json']);
     expect(response.headers.get('Cache-Control')).toContain('s-maxage=900');
   });
 
@@ -96,14 +96,62 @@ describe('ticker news from the archive', () => {
     expect(calls).toEqual([]);
   });
 
+  it('reads each year a request touches and merges them newest first', async () => {
+    const calls: string[] = [];
+    const files: Record<string, ReturnType<typeof row>[]> = {
+      '2026': [row(1, '2026-01-03T03:00:00.000Z')],
+      '2025': [row(2, '2025-12-30T03:00:00.000Z'), row(3, '2025-06-01T03:00:00.000Z')],
+    };
+    const handle = createNewsHandler({
+      now: () => Date.parse('2026-01-10T05:00:00Z'),
+      store: async (key) => {
+        calls.push(key);
+        const rows = files[/(\d{4})\.json$/.exec(key)?.[1] ?? ''];
+        return rows
+          ? Response.json({ ticker: 'BBCA', as_of: '2026-01-10T00:00:00.000Z', news: rows })
+          : new Response(null, { status: 404 });
+      },
+    });
+    const items: { title: string }[] = await handle(get('ticker=BBCA')).then((r) => r.json());
+    expect(items.map((item) => item.title)).toEqual(['Berita rekaan 1', 'Berita rekaan 2']);
+    expect(calls.sort()).toEqual(['news/ticker/BBCA/2025.json', 'news/ticker/BBCA/2026.json']);
+    calls.length = 0;
+    await handle(get('ticker=BBCA&from=2026-01-02&to=2026-01-09'));
+    expect(calls).toEqual(['news/ticker/BBCA/2026.json']);
+    calls.length = 0;
+    const wide = await handle(get('ticker=BBCA&from=2025-01-10&to=2026-01-10'));
+    expect(calls.sort()).toEqual(['news/ticker/BBCA/2025.json', 'news/ticker/BBCA/2026.json']);
+    expect((await wide.json()).length).toBe(3);
+  });
+
   it.each([
-    ['a failed read', () => Promise.reject(new Error('R2 down'))],
-    ['a server error', async () => new Response('no', { status: 500 })],
-    ['text that is not JSON', async () => new Response('<html>')],
-    ['a file of another shape', async () => Response.json({ news: [{ title: 'x' }] })],
-  ])('answers 502 for %s', async (_, store) => {
-    const response = await createNewsHandler({ store, now: () => now })(get('ticker=BBCA'));
+    [
+      'a failed read',
+      () => Promise.reject(new Error('R2 down')),
+      'news/ticker/BBCA/2026.json: read failed: R2 down',
+    ],
+    [
+      'a server error',
+      async () => new Response('no', { status: 500 }),
+      'news/ticker/BBCA/2026.json: read failed: HTTP 500',
+    ],
+    [
+      'text that is not JSON',
+      async () => new Response('<html>'),
+      'news/ticker/BBCA/2026.json: not JSON',
+    ],
+    [
+      'a file of another shape',
+      async () => Response.json({ news: [{ title: 'x' }] }),
+      'news/ticker/BBCA/2026.json: unexpected shape at news.0.url',
+    ],
+  ])('answers 502 for %s and reports its cause once', async (_, store, cause) => {
+    const heard: Error[] = [];
+    const response = await createNewsHandler({ store, now: () => now })(get('ticker=BBCA'), (c) =>
+      heard.push(c),
+    );
     expect(response.status).toBe(502);
     expect(await response.json()).toEqual({ error: 'unavailable' });
+    expect(heard.map((c) => c.message)).toEqual([expect.stringContaining(cause)]);
   });
 });

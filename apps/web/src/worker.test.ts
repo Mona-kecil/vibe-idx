@@ -74,9 +74,11 @@ describe('preview Worker', () => {
       const env = {
         ...environment(),
         PUBLIC: {
-          get: vi.fn<(key: string) => Promise<unknown>>(async () => ({
-            body: Response.json({ ticker: 'BBCA', as_of: published_at, news: rows }).body!,
-          })),
+          get: vi.fn<(key: string) => Promise<unknown>>(async (key) =>
+            key.endsWith(`/${published_at.slice(0, 4)}.json`)
+              ? { body: Response.json({ ticker: 'BBCA', as_of: published_at, news: rows }).body! }
+              : null,
+          ),
         },
       };
       const response = await worker.fetch(
@@ -86,8 +88,36 @@ describe('preview Worker', () => {
       );
       expect(response.status).toBe(200);
       expect(await response.json()).toEqual(rows);
-      expect(env.PUBLIC.get).toHaveBeenCalledWith('news/ticker/BBCA.json');
+      expect(env.PUBLIC.get).toHaveBeenCalledWith(
+        `news/ticker/BBCA/${published_at.slice(0, 4)}.json`,
+      );
       expect(network).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+  it('reports the read error behind a failed news answer once', async () => {
+    const network = vi.fn<typeof fetch>(async () => new Response(null, { status: 200 }));
+    vi.stubGlobal('fetch', network);
+    const waiting: Promise<unknown>[] = [];
+    try {
+      const env = {
+        ...environment(),
+        PUBLIC: {
+          get: vi.fn<(key: string) => Promise<unknown>>(async () => {
+            throw new Error('R2 down');
+          }),
+        },
+      };
+      const response = await worker.fetch(
+        new Request('https://preview.test/api/news?ticker=BBCA'),
+        env as never,
+        { waitUntil: (promise) => void waiting.push(promise) },
+      );
+      expect(response.status).toBe(502);
+      await Promise.all(waiting);
+      expect(network).toHaveBeenCalledTimes(1);
+      expect(JSON.stringify(network.mock.calls[0]?.[1]?.body)).toContain('R2 down');
     } finally {
       vi.unstubAllGlobals();
     }
