@@ -201,6 +201,10 @@ describe('Worker', () => {
     expect((await read({ 'If-Modified-Since': 'not a date' })).status).toBe(200);
     expect((await read({ 'If-Modified-Since': '2099' })).status).toBe(200);
     expect((await read({ 'If-Modified-Since': '2099-01-01' })).status).toBe(200);
+    expect((await read({ 'If-Modified-Since': 'Tue, 31 Nov 2099 00:00:00 GMT' })).status).toBe(200);
+    expect((await read({ 'If-Modified-Since': 'Sun, 29 Feb 2099 00:00:00 GMT' })).status).toBe(200);
+    expect((await read({ 'If-Modified-Since': 'Mon, 01 Jan 2099 00:00:00 GMT' })).status).toBe(200);
+    expect((await read({ 'If-Modified-Since': 'Thu, 01 Jan 2099 00:00:00 GMT' })).status).toBe(304);
     expect((await read({ 'If-None-Match': '"other"', 'If-Modified-Since': uploaded })).status).toBe(
       200,
     );

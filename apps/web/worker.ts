@@ -67,14 +67,13 @@ function unchanged(request: Request, headers: Headers) {
   return modified <= since;
 }
 
-/** An IMF-fixdate in milliseconds, or NaN, so a malformed date is ignored as RFC 9110 requires. */
+/**
+ * An IMF-fixdate in milliseconds, or NaN, so a malformed date is ignored as RFC 9110 requires. It is exactly the
+ * form toUTCString prints, so a value that does not survive the round trip, such as 31 Nov, is not a date.
+ */
 function httpDate(value: string | null) {
-  return value &&
-    /^(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun), \d{2} (?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{4} \d{2}:\d{2}:\d{2} GMT$/.test(
-      value,
-    )
-    ? Date.parse(value)
-    : NaN;
+  const time = Date.parse(value ?? '');
+  return Number.isFinite(time) && new Date(time).toUTCString() === value ? time : NaN;
 }
 
 const notModified = (headers: Headers) => {
