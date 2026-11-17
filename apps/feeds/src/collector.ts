@@ -1,4 +1,5 @@
-import { publishArchive } from './archive';
+import { publishArchive, recentMonths } from './archive';
+import type { Bucket } from './bucket';
 import { calendarSchema, newsSchema, type SourceStatus } from './contracts';
 import { calendarSources, newsSources, request, type Request } from './sources';
 
@@ -57,14 +58,6 @@ export async function refresh<T extends { source_id: string; ts: string }>(
     items: results.flatMap((r) => r.items).sort((a, b) => b.ts.localeCompare(a.ts)),
   };
 }
-export type Bucket = {
-  get(key: string): Promise<{ json(): Promise<unknown> } | null>;
-  put(
-    key: string,
-    value: string,
-    options: { httpMetadata: { contentType: string; cacheControl: string } },
-  ): Promise<unknown>;
-};
 export async function collect({
   bucket,
   bpsKey,
@@ -117,6 +110,7 @@ export async function collect({
           region === 'ID' ? [{ ts, src, title, link, tags, source_id }] : [],
         ),
         now,
+        recentMonths(now),
       ).catch((failure: unknown) => report('news-archive', failure));
   };
   const calendar = async () => {

@@ -1,9 +1,10 @@
 import { XMLParser } from 'fast-xml-parser';
 import { z } from 'zod';
 import { GOOGLE_SOURCE, publishArchive } from './archive';
-import type { Bucket } from './collector';
+import type { Bucket } from './bucket';
 import { archiveSchema, type ArchiveArticle, type Ticker } from './contracts';
 import { cleanHTML } from './parsers';
+import { gaps, type Progress, type Window } from './progress';
 
 const dayMs = 24 * 3600e3;
 const itemSchema = z.object({
@@ -53,7 +54,6 @@ export function parseGoogle(xml: string, tag: (text: string) => string[]) {
   return { articles };
 }
 
-export type Window = { from: string; to: string };
 const day = (ms: number) => new Date(ms).toISOString().slice(0, 10);
 
 export function queryFor(ticker: Ticker, window: Window) {
@@ -156,8 +156,9 @@ export function politeGoogle({
 
 /**
  * Fills the archive back over `window` for each ticker, a batch at a time through the same merge the Feeds job
- * uses. `done` tickers are skipped and `finished` hears of each batch once it is published, so a run that dies
- * resumes where it stopped.
+ * uses. Of each ticker only the dates `covered` does not span are asked about, so a longer window or a later day
+ * adds only what is new. `finished` hears of the dates each batch covered once the batch is published, so a run
+ * that dies resumes where it stopped.
  */
 export async function backfill({
   bucket,
@@ -166,9 +167,9 @@ export async function backfill({
   fetchPage,
   tag,
   now,
-  done = [],
+  covered = {},
   days = 30,
-  batch = 25,
+  batch = 50,
   finished = async () => {},
   log = () => {},
 }: {
@@ -178,29 +179,39 @@ export async function backfill({
   fetchPage: Fetcher;
   tag: (text: string) => string[];
   now: Date;
-  done?: string[];
+  covered?: Progress;
   days?: number;
   batch?: number;
-  finished?: (tickers: string[]) => Promise<void>;
+  finished?: (done: Progress) => Promise<void>;
   log?: (line: string) => void;
 }) {
-  const todo = tickers.filter((t) => !done.includes(t.ticker));
+  const todo = tickers.flatMap((ticker) => {
+    const missing = gaps(window, covered[ticker.ticker] ?? []);
+    return missing.length ? [{ ticker, missing }] : [];
+  });
   const totals = { tickers: 0, articles: 0 };
-  const start = Date.parse(`${window.from}T00:00:00+07:00`);
-  const end = Date.parse(`${window.to}T00:00:00+07:00`) + dayMs;
   for (let at = 0; at < todo.length; at += batch) {
     const group = todo.slice(at, at + batch);
     const articles: ArchiveArticle[] = [];
-    for (const ticker of group) {
-      const found = await collectTicker(ticker, window, days, fetchPage, tag);
-      const kept = found.filter((a) => Date.parse(a.ts) >= start && Date.parse(a.ts) < end);
-      log(`${ticker.ticker} ${kept.length}`);
-      articles.push(...kept);
+    for (const { ticker, missing } of group) {
+      let kept = 0;
+      for (const gap of missing) {
+        const start = Date.parse(`${gap.from}T00:00:00+07:00`);
+        const end = Date.parse(`${gap.to}T00:00:00+07:00`) + dayMs;
+        const found = (await collectTicker(ticker, gap, days, fetchPage, tag)).filter(
+          (a) => Date.parse(a.ts) >= start && Date.parse(a.ts) < end,
+        );
+        kept += found.length;
+        articles.push(...found);
+      }
+      log(`${ticker.ticker} ${kept}`);
     }
     const published = await publishArchive(bucket, articles, now);
     totals.tickers += group.length;
     totals.articles += published.articles;
-    await finished(group.map((t) => t.ticker));
+    await finished(
+      Object.fromEntries(group.map(({ ticker, missing }) => [ticker.ticker, missing])),
+    );
   }
   return totals;
 }

@@ -1,7 +1,8 @@
 import { readFile, mkdir, writeFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
-import { collect, type Bucket } from './src/collector';
+import { dirname, resolve } from 'node:path';
+import { collect } from './src/collector';
 import { calendarSchema, newsSchema, tickerSchema } from './src/contracts';
+import { memoryBucket } from './src/memory-bucket';
 import { request } from './src/sources';
 
 const [keyFile, output] = process.argv.slice(2);
@@ -14,17 +15,9 @@ await mkdir(directory, { recursive: true });
 const tickers = tickerSchema.parse(
   await (await request('https://pub-7982bfb066694e6e8615750132283eba.r2.dev/tickers.json')).json(),
 );
-const memory = new Map<string, string>([['tickers.json', JSON.stringify(tickers)]]);
-const bucket: Bucket = {
-  async get(key) {
-    const value = memory.get(key);
-    return value ? { json: async (): Promise<unknown> => JSON.parse(value) } : null;
-  },
-  async put(key, value) {
-    memory.set(key, value);
-    await writeFile(resolve(directory, key), value);
-  },
-};
+const memory = memoryBucket();
+memory.set('tickers.json', JSON.stringify(tickers));
+const bucket = memory.bucket;
 const failures: string[] = [],
   requests: { url: string; status: number }[] = [];
 const key = (await readFile(keyFile, 'utf8')).trim();
@@ -46,8 +39,12 @@ await collect({
     }
   },
 });
-const news = newsSchema.parse(JSON.parse(memory.get('news.json') ?? 'null'));
-const calendar = calendarSchema.parse(JSON.parse(memory.get('calendar.json') ?? 'null'));
+for (const [name, file] of memory.files) {
+  await mkdir(dirname(resolve(directory, name)), { recursive: true });
+  await writeFile(resolve(directory, name), file.text);
+}
+const news = newsSchema.parse(JSON.parse(memory.text('news.json') ?? 'null'));
+const calendar = calendarSchema.parse(JSON.parse(memory.text('calendar.json') ?? 'null'));
 const month = new Intl.DateTimeFormat('en-CA', {
   timeZone: 'Asia/Jakarta',
   year: 'numeric',

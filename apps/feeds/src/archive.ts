@@ -1,24 +1,31 @@
+import { retrying, WriteConflict, type Bucket } from './bucket';
 import {
   archiveSchema,
   tickerNewsSchema,
   type ArchiveArticle,
   type TickerNewsRow,
 } from './contracts';
-import type { Bucket } from './collector';
 
 /** The backfill's source. Its links are Google redirects, so the same story also arrives under its own link. */
 export const GOOGLE_SOURCE = 'google-news';
 
-const trackingParameter = /^(?:utm_.*|fbclid|gclid|igshid|mc_[a-z]+|ref|source)$/i;
+const trackingParameter = /^(?:utm_.*|fbclid|gclid|igshid|mc_[a-z]+|ref|source|amp|amp_js_v)$/i;
 
-/** One article under any spelling of its link: https, no `www.`, tracking, fragment or trailing slash. */
+/**
+ * One article under any spelling of its link: https, no `www.`, tracking, fragment, trailing slash, and the AMP
+ * forms of a page (`amp.` host, `/amp` path segment at either end, `?amp=1`, `?outputType=amp`).
+ */
 export function canonicalLink(link: string): string {
   const url = new URL(link);
-  for (const key of [...url.searchParams.keys()])
-    if (trackingParameter.test(key)) url.searchParams.delete(key);
+  for (const [key, value] of [...url.searchParams])
+    if (trackingParameter.test(key) || (/^output_?type$/i.test(key) && /^amp$/i.test(value)))
+      url.searchParams.delete(key);
   url.searchParams.sort();
-  const path = url.pathname.replace(/\/+$/, '');
-  return `${url.hostname.replace(/^www\./i, '').toLowerCase()}${path}${url.search}`;
+  const segments = url.pathname.split('/').filter(Boolean);
+  if (segments.length > 1 && segments.at(-1)?.toLowerCase() === 'amp') segments.pop();
+  if (segments.length > 1 && segments[0]?.toLowerCase() === 'amp') segments.shift();
+  const host = url.hostname.toLowerCase().replace(/^(?:(?:www|amp)\.)+/, '');
+  return `${host}${segments.map((s) => `/${s}`).join('')}${url.search}`;
 }
 
 const headlineKey = (title: string) =>
@@ -27,15 +34,37 @@ const headlineKey = (title: string) =>
     .toLowerCase()
     .replace(/[^\p{L}\p{N}]+/gu, ' ')
     .trim();
+const publisherKey = (src: string) =>
+  src
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, '');
+
+/** Google names a publisher more fully or more briefly than its feed does: "Antara News" and "Antara". */
+const samePublisher = (a: string, b: string) => {
+  const [x, y] = [publisherKey(a), publisherKey(b)];
+  return x.length >= 4 && y.length >= 4 && (x.startsWith(y) || y.startsWith(x));
+};
+
+/** Google dates a story to within minutes of its publisher, so a day-old repeat of a headline is another story. */
+const twinWindow = 6 * 3600e3;
+
+/** Whether a Google article is the same story as a feed article: same publisher, same headline, near in time. */
+const isTwin = (google: ArchiveArticle, native: ArchiveArticle) =>
+  samePublisher(google.src, native.src) &&
+  headlineKey(google.title) === headlineKey(native.title) &&
+  Math.abs(Date.parse(google.ts) - Date.parse(native.ts)) <= twinWindow;
 
 /** The Jakarta month an article belongs to, as `YYYY-MM`. */
 export const monthOf = (ts: string) =>
   new Date(Date.parse(ts) + 7 * 3600e3).toISOString().slice(0, 7);
 
 export const archiveKey = (month: string) => `news/archive/${month}.json`;
-export const tickerKey = (ticker: string) => `news/ticker/${ticker}.json`;
+/** A ticker's file for the Jakarta year of `month`. */
+export const tickerKey = (ticker: string, month: string) =>
+  `news/ticker/${ticker}/${month.slice(0, 4)}.json`;
 
-/** An article that entered, left or changed its tags. A ticker's index follows from the changes alone. */
+/** An article that entered, left or changed its tags. */
 export type Change = { article: ArchiveArticle; before: string[]; after: string[] };
 
 const newest = (a: { ts: string; link: string }, b: { ts: string; link: string }) =>
@@ -44,21 +73,29 @@ const sameTags = (a: string[], b: string[]) => a.join() === b.join();
 
 /**
  * Merges articles into one month. A link already archived keeps its record and takes the new tags, so a better
- * tagger reaches articles a feed still lists. A Google link whose headline already has an article from a feed is
- * dropped, and a feed article replaces the Google one it duplicates.
+ * tagger reaches articles a feed still lists. A Google article whose twin a feed carries (same publisher, same
+ * headline, within hours) is dropped, and a feed article replaces the Google twin it duplicates. The result does
+ * not depend on which arrived first.
  */
 export function mergeMonth(existing: ArchiveArticle[], incoming: ArchiveArticle[]) {
   const byLink = new Map(existing.map((article) => [canonicalLink(article.link), article]));
+  const byHeadline = new Map<string, Set<string>>();
+  const index = (key: string, article: ArchiveArticle) => {
+    const headline = headlineKey(article.title);
+    byHeadline.set(headline, (byHeadline.get(headline) ?? new Set()).add(key));
+  };
+  for (const [key, article] of byLink) index(key, article);
   const changes: Change[] = [];
-  const nativeHeadlines = new Set(
-    existing.filter((a) => a.source_id !== GOOGLE_SOURCE).map((a) => headlineKey(a.title)),
-  );
+  const twins = (article: ArchiveArticle) =>
+    [...(byHeadline.get(headlineKey(article.title)) ?? [])].flatMap((key) => {
+      const other = byLink.get(key);
+      return other ? [{ key, other }] : [];
+    });
   const ordered = [...incoming].sort(
     (a, b) => Number(a.source_id === GOOGLE_SOURCE) - Number(b.source_id === GOOGLE_SOURCE),
   );
   for (const article of ordered) {
     const key = canonicalLink(article.link);
-    const headline = headlineKey(article.title);
     const kept = byLink.get(key);
     if (kept) {
       if (!sameTags(kept.tags, article.tags)) {
@@ -72,16 +109,20 @@ export function mergeMonth(existing: ArchiveArticle[], incoming: ArchiveArticle[
       continue;
     }
     if (article.source_id === GOOGLE_SOURCE) {
-      if (nativeHeadlines.has(headline)) continue;
-    } else if (!nativeHeadlines.has(headline)) {
-      nativeHeadlines.add(headline);
-      for (const [other, twin] of byLink)
-        if (twin.source_id === GOOGLE_SOURCE && headlineKey(twin.title) === headline) {
-          byLink.delete(other);
-          changes.push({ article: twin, before: twin.tags, after: [] });
+      if (
+        twins(article).some(
+          ({ other }) => other.source_id !== GOOGLE_SOURCE && isTwin(article, other),
+        )
+      )
+        continue;
+    } else
+      for (const { key: otherKey, other } of twins(article))
+        if (other.source_id === GOOGLE_SOURCE && isTwin(other, article)) {
+          byLink.delete(otherKey);
+          changes.push({ article: other, before: other.tags, after: [] });
         }
-    }
     byLink.set(key, article);
+    index(key, article);
     changes.push({ article, before: [], after: article.tags });
   }
   return { articles: [...byLink.values()].sort(newest), changes };
@@ -96,22 +137,6 @@ const toRow = (article: ArchiveArticle): TickerNewsRow => ({
 const newestRow = (a: TickerNewsRow, b: TickerNewsRow) =>
   b.published_at.localeCompare(a.published_at) || a.url.localeCompare(b.url);
 
-/** One ticker's index after the changes, or null when they leave it as it is. */
-function updateIndex(existing: TickerNewsRow[], ticker: string, changes: Change[]) {
-  const byLink = new Map(existing.map((row) => [canonicalLink(row.url), row]));
-  let changed = false;
-  for (const { article, before, after } of changes) {
-    const key = canonicalLink(article.link);
-    if (after.includes(ticker)) {
-      const row = toRow(article);
-      if (JSON.stringify(byLink.get(key)) === JSON.stringify(row)) continue;
-      byLink.set(key, row);
-      changed = true;
-    } else if (before.includes(ticker) && byLink.delete(key)) changed = true;
-  }
-  return changed ? [...byLink.values()].sort(newestRow) : null;
-}
-
 const options = {
   httpMetadata: {
     contentType: 'application/json; charset=utf-8',
@@ -119,9 +144,9 @@ const options = {
   },
 };
 
-async function read<T>(bucket: Bucket, key: string, parse: (raw: unknown) => T): Promise<T | null> {
-  const object = await bucket.get(key);
-  return object ? parse(await object.json()) : null;
+async function readArchive(bucket: Bucket, month: string) {
+  const object = await bucket.get(archiveKey(month));
+  return object ? { etag: object.etag, archive: archiveSchema.parse(await object.json()) } : null;
 }
 
 /** Runs `work` over `items`, a few at a time. */
@@ -135,38 +160,133 @@ async function pool<T>(items: T[], work: (item: T) => Promise<void>, size = 8) {
 }
 
 /**
- * Merges articles into the monthly archive and the ticker indexes. Rerunning with the same articles writes
- * nothing. The indexes are written before the archive: an article counts as new until the archive holds it, so
- * a run that dies between the two writes is repeated by the next run, while the other order would leave an
- * article in the archive that no index ever receives.
+ * Makes each ticker's file for the year of `month` carry the rows of that month's archive, and leaves the rows of
+ * other months alone. Each file is read before the archive, and written only if it is still the version read, so a
+ * concurrent writer's articles are never overwritten with an older view: the one that writes last read last.
  */
-export async function publishArchive(bucket: Bucket, articles: ArchiveArticle[], now: Date) {
-  const months = new Map<string, ArchiveArticle[]>();
-  for (const article of articles)
-    months.set(monthOf(article.ts), [...(months.get(monthOf(article.ts)) ?? []), article]);
-  const merged = new Map<string, ReturnType<typeof mergeMonth>>();
-  for (const [month, incoming] of months) {
-    const archive = await read(bucket, archiveKey(month), (raw) => archiveSchema.parse(raw));
-    const result = mergeMonth(archive?.articles ?? [], incoming);
-    if (result.changes.length) merged.set(month, result);
+async function derive(bucket: Bucket, month: string, tickers: string[], now: Date) {
+  let todo = tickers;
+  let written = 0;
+  for (let round = 1; todo.length; round++) {
+    if (round > 12) throw new WriteConflict(tickerKey(todo[0]!, month));
+    const files = new Map<string, Awaited<ReturnType<Bucket['get']>>>();
+    await pool(todo, async (ticker) => {
+      files.set(ticker, await bucket.get(tickerKey(ticker, month)));
+    });
+    const articles = (await readArchive(bucket, month))?.archive.articles ?? [];
+    const conflicted: string[] = [];
+    await pool(todo, async (ticker) => {
+      const file = files.get(ticker) ?? null;
+      const current = file ? tickerNewsSchema.parse(await file.json()).news : [];
+      const news = [
+        ...current.filter((row) => monthOf(row.published_at) !== month),
+        ...articles.filter((article) => article.tags.includes(ticker)).map(toRow),
+      ].sort(newestRow);
+      if (JSON.stringify(news) === JSON.stringify(current) && (file || !news.length)) return;
+      try {
+        await bucket.put(
+          tickerKey(ticker, month),
+          JSON.stringify({ ticker, as_of: now.toISOString(), news }),
+          { ...options, only: file ? { match: file.etag } : { absent: true } },
+        );
+        written++;
+      } catch (failure) {
+        if (!(failure instanceof WriteConflict)) throw failure;
+        conflicted.push(ticker);
+      }
+    });
+    todo = conflicted;
   }
-  const changes = [...merged.values()].flatMap((result) => result.changes);
-  const tickers = [...new Set(changes.flatMap((c) => [...c.before, ...c.after]))].sort();
-  await pool(tickers, async (ticker) => {
-    const index = await read(bucket, tickerKey(ticker), (raw) => tickerNewsSchema.parse(raw));
-    const news = updateIndex(index?.news ?? [], ticker, changes);
-    if (news)
-      await bucket.put(
-        tickerKey(ticker),
-        JSON.stringify({ ticker, as_of: now.toISOString(), news }),
-        options,
-      );
+  return written;
+}
+
+/**
+ * Brings one month to rest: merges `incoming`, and makes the ticker files agree with the archive. The archive
+ * write comes first and marks the month dirty. The ticker files follow, and a last write clears the mark, but only
+ * if nobody has written the month since. So a run that dies at any write leaves either nothing changed or a dirty
+ * month, and the next run to find a dirty month rebuilds every ticker file of it from the archive alone, without
+ * needing the articles again. A writer that finds the month dirty rebuilds all of it rather than only its own
+ * changes, which is what lets it clear a mark another writer set.
+ */
+async function settleMonth(bucket: Bucket, month: string, incoming: ArchiveArticle[], now: Date) {
+  const written = await retrying(async () => {
+    const stored = await readArchive(bucket, month);
+    const merged = mergeMonth(stored?.archive.articles ?? [], incoming);
+    const dirty = stored?.archive.dirty ?? false;
+    if (!merged.changes.length) return stored && dirty ? { ...stored, merged, dirty } : null;
+    const tickers = [
+      ...new Set([
+        ...(stored?.archive.tickers ?? []),
+        ...merged.changes.flatMap((c) => [...c.before, ...c.after]),
+        ...merged.articles.flatMap((a) => a.tags),
+      ]),
+    ].sort();
+    const archive = {
+      month,
+      as_of: now.toISOString(),
+      dirty: true,
+      tickers,
+      articles: merged.articles,
+    };
+    const { etag } = await bucket.put(archiveKey(month), JSON.stringify(archive), {
+      ...options,
+      only: stored ? { match: stored.etag } : { absent: true },
+    });
+    return { etag, archive, merged, dirty };
   });
-  for (const [month, result] of merged)
-    await bucket.put(
-      archiveKey(month),
-      JSON.stringify({ month, as_of: now.toISOString(), articles: result.articles }),
-      options,
-    );
-  return { articles: changes.length, months: merged.size, tickers: tickers.length };
+  if (!written) return { changes: 0, files: 0 };
+  const affected = written.dirty
+    ? written.archive.tickers
+    : [...new Set(written.merged.changes.flatMap((c) => [...c.before, ...c.after]))].sort();
+  const files = await derive(bucket, month, affected, now);
+  await bucket
+    .put(archiveKey(month), JSON.stringify({ ...written.archive, dirty: false }), {
+      ...options,
+      only: { match: written.etag },
+    })
+    .catch((failure: unknown) => {
+      // Someone wrote the month after us. They saw it dirty, or are about to, and will finish the job.
+      if (!(failure instanceof WriteConflict)) throw failure;
+    });
+  return { changes: written.merged.changes.length, files };
+}
+
+/** The Jakarta month of `now` and the one before it, the months a run looks at for a failure to repair. */
+export function recentMonths(now: Date) {
+  const month = monthOf(now.toISOString());
+  const before = new Date(Date.parse(`${month}-01T00:00:00+07:00`) - 1);
+  return [monthOf(before.toISOString()), month];
+}
+
+/**
+ * Merges articles into the monthly archive and brings the ticker files up to date with it. Rerunning with the same
+ * articles writes nothing. `watch` names months to look at although no article belongs to them, so a month left
+ * dirty by a failed run is repaired by the next run whether or not a feed still carries its articles. A month
+ * that fails does not stop the others; the first failure is thrown once all have run.
+ */
+export async function publishArchive(
+  bucket: Bucket,
+  articles: ArchiveArticle[],
+  now: Date,
+  watch: string[] = [],
+) {
+  const months = new Map<string, ArchiveArticle[]>(watch.map((month) => [month, []]));
+  for (const article of articles) {
+    const month = monthOf(article.ts);
+    months.set(month, [...(months.get(month) ?? []), article]);
+  }
+  const totals = { articles: 0, months: 0, tickers: 0 };
+  const failures: unknown[] = [];
+  for (const [month, incoming] of [...months].sort(([a], [b]) => a.localeCompare(b))) {
+    try {
+      const settled = await settleMonth(bucket, month, incoming, now);
+      totals.articles += settled.changes;
+      totals.months += settled.changes ? 1 : 0;
+      totals.tickers += settled.files;
+    } catch (failure) {
+      failures.push(failure);
+    }
+  }
+  if (failures.length) throw failures[0];
+  return totals;
 }

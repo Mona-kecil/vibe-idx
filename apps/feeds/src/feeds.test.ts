@@ -2,7 +2,8 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vite-plus/test';
 import { cleanHTML, parseRSS, parseForexFactory, parseBI, parseBPSReleases } from './parsers';
 import { tickerTagger } from './tagging';
-import { collect, refresh, type Bucket, type Source } from './collector';
+import { collect, refresh, type Source } from './collector';
+import { memoryBucket } from './memory-bucket';
 import { newsSources, request } from './sources';
 import { report as sentryReport } from './sentry';
 import { newsSchema } from './contracts';
@@ -231,16 +232,9 @@ describe('publication failure isolation', () => {
     expect(result?.sources.antara?.status).toBe('unavailable');
   });
   it('runs the collector with the real parsers, writes public shapes, and isolates calendar failure', async () => {
-    const memory = new Map<string, string>([['tickers.json', JSON.stringify(tickers)]]);
-    const bucket: Bucket = {
-      async get(key) {
-        const s = memory.get(key);
-        return s ? { json: async (): Promise<unknown> => JSON.parse(s) } : null;
-      },
-      async put(key, value) {
-        memory.set(key, value);
-      },
-    };
+    const memory = memoryBucket();
+    memory.set('tickers.json', JSON.stringify(tickers));
+    const bucket = memory.bucket;
     const failures: string[] = [];
     await collect({
       bucket,
@@ -255,12 +249,12 @@ describe('publication failure isolation', () => {
         return new Response(fixture('rss.xml'));
       },
     });
-    expect(newsSchema.parse(JSON.parse(memory.get('news.json') ?? 'null')).news).toHaveLength(16);
-    expect(memory.has('calendar.json')).toBe(true);
+    expect(newsSchema.parse(JSON.parse(memory.text('news.json') ?? 'null')).news).toHaveLength(16);
+    expect(memory.text('calendar.json')).toBeDefined();
     expect(failures).toEqual(['bps']);
-    const archive = JSON.parse(memory.get('news/archive/2026-11.json') ?? 'null');
+    const archive = JSON.parse(memory.text('news/archive/2026-11.json') ?? 'null');
     expect(archive.articles).toHaveLength(2);
-    expect(JSON.parse(memory.get('news/ticker/BBCA.json') ?? 'null').news).toHaveLength(2);
+    expect(JSON.parse(memory.text('news/ticker/BBCA/2026.json') ?? 'null').news).toHaveLength(2);
   });
 });
 

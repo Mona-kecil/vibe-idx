@@ -22,7 +22,10 @@ export const newsArticleSchema = z.object({
 });
 /**
  * One Indonesian market article in the news archive, kept for good. `news/archive/YYYY-MM.json` holds a Jakarta
- * month of them, newest first, deduplicated by canonical link.
+ * month of them, newest first, deduplicated by canonical link. The archive is the source of truth: the ticker
+ * files derive from it. `dirty` is true from the write that changes the articles until the ticker files have
+ * caught up, and `tickers` lists every ticker any article of the month has ever been tagged with, so a run that
+ * finds the month dirty knows which ticker files to rebuild.
  */
 const archiveArticleSchema = newsArticleSchema.pick({
   ts: true,
@@ -36,11 +39,14 @@ export type ArchiveArticle = z.infer<typeof archiveArticleSchema>;
 export const archiveSchema = z.object({
   month: z.string().regex(/^\d{4}-(?:0[1-9]|1[0-2])$/),
   as_of: z.iso.datetime(),
+  dirty: z.boolean().default(false),
+  tickers: z.array(z.string()).default([]),
   articles: z.array(archiveArticleSchema),
 });
 /**
  * A ticker's archived news in the shape `/api/news` answers with, so the Worker only filters and cuts.
- * `news/ticker/CODE.json` holds every archived article tagged with the code, newest first.
+ * `news/ticker/CODE/YYYY.json` holds the archived articles of one Jakarta year tagged with the code, newest first,
+ * so no file outgrows a year of one ticker's news and a request reads at most two.
  */
 const tickerNewsRowSchema = z.object({
   title: z.string().min(1),

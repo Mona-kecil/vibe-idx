@@ -11,9 +11,13 @@ import {
   queryFor,
   retag,
 } from './backfill';
-import type { Bucket } from './collector';
+import { memoryBucket } from './memory-bucket';
 import { archiveSchema, tickerNewsSchema } from './contracts';
+import { cover, type Progress } from './progress';
 import { tickerTagger } from './tagging';
+
+const settledFiles = (files: Map<string, { text: string }>) =>
+  [...files].map(([key, { text }]) => [key, text.replace(/"as_of":"[^"]*"/, '')]);
 
 const fixture = (name: string) =>
   readFileSync(new URL(`../fixtures/${name}`, import.meta.url), 'utf8');
@@ -21,19 +25,6 @@ const bbca = { ticker: 'BBCA', name: 'PT Bank Central Asia Tbk.' };
 const tickers = [bbca, { ticker: 'DATA', name: 'Remala Abadi Tbk' }];
 const tag = tickerTagger(tickers);
 
-function memoryBucket() {
-  const files = new Map<string, string>();
-  const bucket: Bucket = {
-    async get(key) {
-      const text = files.get(key);
-      return text ? { json: async (): Promise<unknown> => JSON.parse(text) } : null;
-    },
-    async put(key, value) {
-      files.set(key, value);
-    },
-  };
-  return { bucket, files };
-}
 const now = new Date('2026-11-17T05:00:00Z');
 
 describe('Google News pages', () => {
@@ -123,8 +114,8 @@ describe('backfilling the archive', () => {
   const window = { from: '2026-10-01', to: '2026-11-17' };
   const fetchPage = async () => fixture('google-news.xml');
   it('writes through the shared merge and writes nothing the second time', async () => {
-    const { bucket, files } = memoryBucket();
-    const finished: string[][] = [];
+    const { bucket, files, text } = memoryBucket();
+    const finished: Progress[] = [];
     const first = await backfill({
       bucket,
       tickers,
@@ -132,22 +123,20 @@ describe('backfilling the archive', () => {
       fetchPage,
       tag,
       now,
-      finished: async (c) => void finished.push(c),
+      finished: async (done) => void finished.push(done),
     });
     expect(first).toEqual({ tickers: 2, articles: 2 });
-    expect(finished).toEqual([['BBCA', 'DATA']]);
+    expect(finished).toEqual([{ BBCA: [window], DATA: [window] }]);
     expect(
-      archiveSchema.parse(JSON.parse(files.get(archiveKey('2026-11')) ?? '')).articles,
+      archiveSchema.parse(JSON.parse(text(archiveKey('2026-11')) ?? '')).articles,
     ).toHaveLength(2);
     expect(
-      tickerNewsSchema.parse(JSON.parse(files.get(tickerKey('BBCA')) ?? '')).news,
+      tickerNewsSchema.parse(JSON.parse(text(tickerKey('BBCA', '2026-11')) ?? '')).news,
     ).toHaveLength(2);
     const before = new Map(files);
-    expect(await backfill({ bucket, tickers, window, fetchPage, tag, now })).toEqual({
-      tickers: 2,
-      articles: 0,
-    });
-    expect(files).toEqual(before);
+    const again = await backfill({ bucket, tickers, window, fetchPage, tag, now });
+    expect(again).toEqual({ tickers: 2, articles: 0 });
+    expect(settledFiles(files)).toEqual(settledFiles(before));
   });
   it('skips tickers already done and keeps only articles inside the window', async () => {
     const { bucket } = memoryBucket();
@@ -159,14 +148,46 @@ describe('backfilling the archive', () => {
       fetchPage: async (q) => (asked.push(q), fixture('google-news.xml')),
       tag,
       now,
-      done: ['BBCA'],
+      covered: { BBCA: [{ from: '2026-11-04', to: '2026-11-04' }] },
     });
     expect(asked).toHaveLength(1);
     expect(asked[0]).toContain('Remala Abadi');
     expect(totals).toEqual({ tickers: 1, articles: 1 });
   });
+  it('resumes against the window asked for: a longer window adds only the older dates', async () => {
+    const { bucket } = memoryBucket();
+    const covered: Progress = {};
+    const asked: string[] = [];
+    const run = (from: string, to: string) =>
+      backfill({
+        bucket,
+        tickers: [bbca],
+        window: { from, to },
+        fetchPage: async (q) => (asked.push(q), fixture('google-news.xml')),
+        tag,
+        now,
+        covered,
+        finished: async (done) => {
+          for (const [code, windows] of Object.entries(done))
+            covered[code] = windows.reduce(cover, covered[code] ?? []);
+        },
+      });
+    await run('2026-10-18', '2026-11-17');
+    expect(asked).toHaveLength(2);
+    asked.length = 0;
+    await run('2026-10-18', '2026-11-17');
+    expect(asked).toEqual([]);
+    await run('2025-11-17', '2026-11-17');
+    expect(asked).toHaveLength(Math.ceil(335 / 30));
+    expect(asked.every((q) => q.slice(-10) <= '2026-10-19')).toBe(true);
+    expect(covered.BBCA).toEqual([{ from: '2025-11-17', to: '2026-11-17' }]);
+    asked.length = 0;
+    await run('2026-11-10', '2026-11-18');
+    expect(asked).toHaveLength(1);
+    expect(asked[0]).toContain('after:2026-11-17');
+  });
   it('retags Google articles fully and feed articles only upward', async () => {
-    const { bucket, files } = memoryBucket();
+    const { bucket, text, set } = memoryBucket();
     const article = (source_id: string, link: string, tags: string[]) => ({
       ts: '2026-11-04T03:00:00.000Z',
       src: 'Kontan',
@@ -175,7 +196,7 @@ describe('backfilling the archive', () => {
       tags,
       source_id,
     });
-    files.set(
+    set(
       archiveKey('2026-11'),
       JSON.stringify({
         month: '2026-11',
@@ -187,7 +208,7 @@ describe('backfilling the archive', () => {
       }),
     );
     expect(await retag(bucket, ['2026-11'], tag, now)).toBe(2);
-    const stored = archiveSchema.parse(JSON.parse(files.get(archiveKey('2026-11')) ?? '')).articles;
+    const stored = archiveSchema.parse(JSON.parse(text(archiveKey('2026-11')) ?? '')).articles;
     expect(Object.fromEntries(stored.map((a) => [a.source_id, a.tags]))).toEqual({
       'google-news': ['BBCA'],
       kontan: ['BBCA', 'DATA'],
