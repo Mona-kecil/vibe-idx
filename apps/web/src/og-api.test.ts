@@ -2,7 +2,7 @@ import { createRequire } from 'node:module';
 import { readFile } from 'node:fs/promises';
 import resvg from '@resvg/resvg-wasm/index_bg.wasm';
 import layout from 'satori/layout.wasm';
-import { describe, expect, it, vi } from 'vite-plus/test';
+import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 import type { ReactNode } from 'react';
 import {
   assetFonts,
@@ -111,6 +111,31 @@ describe('share card PNGs', () => {
   });
 });
 
+describe('card fonts', () => {
+  const html = '<!doctype html><title>Vibe IDX</title>';
+
+  it('rejects a missing font that the SPA fallback answers with index.html and status 200', async () => {
+    const fonts = assetFonts({
+      fetch: async () => new Response(html, { headers: { 'Content-Type': 'text/html' } }),
+    });
+    await expect(fonts()).rejects.toThrow(
+      'Font JetBrainsMono-500.ttf is not a TrueType font (text/html, 38 bytes)',
+    );
+  });
+
+  it('rejects an error status and tries again on the next request', async () => {
+    const assets = {
+      fetch: vi
+        .fn<(request: Request) => Promise<Response>>()
+        .mockResolvedValueOnce(new Response(null, { status: 404 }))
+        .mockImplementation(fontAssets.fetch),
+    };
+    const fonts = assetFonts(assets);
+    await expect(fonts()).rejects.toThrow('Font JetBrainsMono-500.ttf returned 404');
+    expect(await fonts()).toHaveLength(2);
+  });
+});
+
 describe('workerd HarfBuzz', () => {
   it("is the HarfBuzz module satori bundles, so the Worker can instantiate it in satori's place", async () => {
     const require = createRequire(import.meta.url);
@@ -122,6 +147,43 @@ describe('workerd HarfBuzz', () => {
     const bytes = Buffer.from(base64, 'base64');
     expect(bytes.length).toBe(harfbuzzBytes);
     expect(bytes.equals(await readFile(require.resolve('harfbuzzjs/hb.wasm')))).toBe(true);
+  });
+
+  describe('as workerd runs it', () => {
+    const original = Object.getOwnPropertyDescriptor(WebAssembly, 'instantiate');
+    afterEach(() => {
+      Object.defineProperty(WebAssembly, 'instantiate', original ?? {});
+      vi.unstubAllGlobals();
+    });
+
+    async function inWorkerd() {
+      vi.stubGlobal('WorkerGlobalScope', class {});
+      vi.stubGlobal('self', {});
+      vi.resetModules();
+      await import('../api/_workerd-satori');
+      return WebAssembly.instantiate.bind(WebAssembly) as (
+        source: BufferSource,
+        imports?: WebAssembly.Imports,
+      ) => Promise<unknown>;
+    }
+
+    it("gives satori's HarfBuzz bytes the precompiled module", async () => {
+      const instantiate = await inWorkerd();
+      const imports = new Proxy({}, { get: () => () => 0 });
+      const result = (await instantiate(new Uint8Array(harfbuzzBytes), {
+        env: imports,
+        wasi_snapshot_preview1: imports,
+      })) as { module: WebAssembly.Module; instance: WebAssembly.Instance };
+      expect(result.module).toBeInstanceOf(WebAssembly.Module);
+      expect(result.instance.exports).toHaveProperty('memory');
+    });
+
+    it('rejects any other bytes at once, because workerd would hang compiling them', async () => {
+      const instantiate = await inWorkerd();
+      await expect(instantiate(new Uint8Array(harfbuzzBytes + 1))).rejects.toThrow(
+        `${harfbuzzBytes + 1} bytes of WebAssembly`,
+      );
+    });
   });
 });
 

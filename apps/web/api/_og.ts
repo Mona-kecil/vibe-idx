@@ -16,6 +16,9 @@ const fontFiles = [
   ['JetBrainsMono-700.ttf', 700],
 ] as const;
 
+const isTrueType = (data: ArrayBuffer) =>
+  data.byteLength >= 4 && new DataView(data).getUint32(0) === 0x00010000;
+
 export function assetFonts(assets: Assets): () => Promise<Font[]> {
   let fonts: Promise<Font[]> | undefined;
   return () => {
@@ -23,7 +26,13 @@ export function assetFonts(assets: Assets): () => Promise<Font[]> {
       fontFiles.map(async ([file, weight]) => {
         const response = await assets.fetch(new Request(`https://assets.local/fonts/${file}`));
         if (!response.ok) throw new Error(`Font ${file} returned ${response.status}`);
-        return { name: 'JetBrains Mono', data: await response.arrayBuffer(), weight };
+        // A missing file falls back to index.html with status 200, so check what arrived.
+        const data = await response.arrayBuffer();
+        if (!isTrueType(data))
+          throw new Error(
+            `Font ${file} is not a TrueType font (${response.headers.get('content-type') ?? 'no content type'}, ${data.byteLength} bytes)`,
+          );
+        return { name: 'JetBrains Mono', data, weight };
       }),
     ).catch((error: unknown) => {
       fonts = undefined;
