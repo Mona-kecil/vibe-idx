@@ -9,6 +9,7 @@
     "deploy:preview": "pnpm run build:preview && wrangler deploy",
     "deploy:production": "pnpm run build && wrangler deploy --env production",
     "check": "CI=true vp check",
+    "check:workerd": "tsx dev/workerd-check.ts",
     "dev": "CI=true vp dev",
     "dev:web": "CI=true vp dev",
     "hillclimb": "tsx hillclimb/run.ts",
