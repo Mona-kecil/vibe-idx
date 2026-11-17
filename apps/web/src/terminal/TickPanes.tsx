@@ -17,6 +17,7 @@ import {
 import { useSession, useTicks, type Loaded } from './tick-data.js';
 import { useTerminal } from './state.js';
 import { Empty, Scroll, Segments, SignInPrompt } from './ui.js';
+import { WindowedTable } from './WindowedTable.js';
 import './tick-panes.css';
 
 function SessionPicker() {
@@ -82,6 +83,74 @@ function TickPane<K extends TickKind>({
 
 const fillCount = (fills: number) => `${nf(fills)} ${fills === 1 ? 'fill' : 'fills'}`;
 const lots = (shares: number) => nf(shares / 100, shares % 100 ? 2 : 0);
+const longest = (texts: string[]) => texts.reduce((a, b) => (b.length > a.length ? b : a), '');
+/** The widest lot text: the largest whole lot, or the largest odd lot with its decimals. */
+function lotText(count: number, shares: (index: number) => number) {
+  let all = 0,
+    odd = -1;
+  for (let index = 0; index < count; index++) {
+    const value = shares(index);
+    if (value > all) all = value;
+    if (value % 100 && value > odd) odd = value;
+  }
+  return longest(odd < 0 ? [lots(all)] : [lots(all), lots(odd)]);
+}
+/** The widest `short` text: the largest value in each of its units. */
+function valueText(count: number, values: (index: number) => number) {
+  const top = [-1, -1, -1, -1, -1];
+  for (let index = 0; index < count; index++) {
+    const value = Math.abs(values(index));
+    const unit = value >= 1e12 ? 4 : value >= 1e9 ? 3 : value >= 1e6 ? 2 : value >= 1e3 ? 1 : 0;
+    if (value > top[unit]!) top[unit] = value;
+  }
+  return longest(top.filter((value) => value >= 0).map(short));
+}
+/**
+ * A windowed table sizes its columns from the rows on screen, so these hidden rows hold the widest price, lot and
+ * value of every row, and for DD the widest Buy and Sell cells, so the columns keep one width while scrolling.
+ */
+function SizingRow({
+  price,
+  lot,
+  value,
+  open,
+  decimals = 0,
+  buy = [],
+  sell = [],
+}: {
+  price: number;
+  lot: string;
+  value: string;
+  open: SessionOpen | null;
+  decimals?: number;
+  buy?: Block[];
+  sell?: Block[];
+}) {
+  return (
+    <tfoot className="tick-sizer" aria-hidden="true">
+      <tr>
+        <td />
+        <td>
+          <Price value={price} open={open} decimals={decimals} />
+        </td>
+        <td />
+        <td>{lot}</td>
+        <td>{value}</td>
+        <td />
+        <td />
+        <td />
+      </tr>
+      {Array.from({ length: Math.max(buy.length, sell.length) }, (_, i) => (
+        <tr key={i}>
+          <td colSpan={5} />
+          <td>{buy[i] && <BlockSide block={buy[i]} side="buy" />}</td>
+          <td>{sell[i] && <BlockSide block={sell[i]} side="sell" />}</td>
+          <td />
+        </tr>
+      ))}
+    </tfoot>
+  );
+}
 function Broker({ code, foreign }: { code: string; foreign: boolean }) {
   return (
     <span className={foreign ? 'tick-foreign' : undefined}>
@@ -416,94 +485,113 @@ function TradeTape({
       block?.matching === 'continuous' && block.side === 'sell' ? b - a : a - b,
     );
   }, [trades, tickBlock, block]);
-  const firstFill = useRef<HTMLTableRowElement>(null);
-  const rows: number[] = [];
+  const rows = useMemo(() => {
+    const rows: number[] = [];
+    for (let i = trades.time.length - 1; i >= 0; i--) {
+      if (
+        side !== 'ALL' &&
+        (trades.board[i] !== 'RG' || trades.side[i] !== (side === 'BUY' ? 'b' : 's'))
+      )
+        continue;
+      if (broker && trades.buyer[i] !== broker && trades.seller[i] !== broker) continue;
+      rows.push(i);
+    }
+    return rows;
+  }, [trades, side, broker]);
   let lastFill = -1;
-  for (let i = trades.time.length - 1; i >= 0; i--) {
-    if (
-      side !== 'ALL' &&
-      (trades.board[i] !== 'RG' || trades.side[i] !== (side === 'BUY' ? 'b' : 's'))
-    )
-      continue;
-    if (broker && trades.buyer[i] !== broker && trades.seller[i] !== broker) continue;
-    rows.push(i);
-    if (tickBlock && isBlockTrade(trades, i, tickBlock)) lastFill = rows.length - 1;
-  }
+  if (tickBlock)
+    for (let index = rows.length - 1; index >= 0 && lastFill < 0; index--)
+      if (isBlockTrade(trades, rows[index]!, tickBlock)) lastFill = index;
+  const footer = useMemo(
+    () =>
+      rows.length > 0 && (
+        <SizingRow
+          price={rows.reduce((max, i) => Math.max(max, trades.price[i]!), 0)}
+          lot={lotText(rows.length, (index) => trades.shares[rows[index]!]!)}
+          value={valueText(
+            rows.length,
+            (index) => trades.price[rows[index]!]! * trades.shares[rows[index]!]!,
+          )}
+          open={open}
+        />
+      ),
+    [rows, trades, open],
+  );
   // Keep every fill in RT, including orders older than the initial page.
   const loaded = Math.max(limit, lastFill + 51);
   const firstMatch = tickBlock ? rows.find((i) => isBlockTrade(trades, i, tickBlock)) : undefined;
   useEffect(() => {
     setLimit((previous) => Math.max(previous, lastFill + 51));
-    firstFill.current?.scrollIntoView({ block: 'start' });
   }, [tickBlock, trades, lastFill]);
   return (
     <>
-      <Scroll reset={`${trades.ticker}${trades.date}${broker}${side}`}>
+      <WindowedTable
+        reset={`${trades.ticker}${trades.date}${broker}${side}`}
+        count={Math.min(rows.length, loaded)}
+        target={firstMatch === undefined ? undefined : rows.indexOf(firstMatch)}
+        className="tick-table tick-tape tick-orders"
+        header={<TradeHeader />}
+        footer={footer}
+        row={(index) => {
+          const i = rows[index]!;
+          const highlighted = tickBlock !== null && isBlockTrade(trades, i, tickBlock);
+          const counterparty =
+            block?.side === 'buy'
+              ? { broker: trades.seller[i], foreign: trades.seller_foreign[i] }
+              : { broker: trades.buyer[i], foreign: trades.buyer_foreign[i] };
+          const dimmed =
+            highlighted &&
+            isolated &&
+            (counterparty.broker !== isolated.broker || counterparty.foreign !== isolated.foreign);
+          return (
+            <tr
+              key={i}
+              data-rowindex={index}
+              aria-rowindex={index + 2}
+              className={highlighted ? `tick-highlight${dimmed ? ' tick-dimmed' : ''}` : undefined}
+              data-highlighted={highlighted || undefined}
+            >
+              <td className="mut">{clock(trades.time[i]!)}</td>
+              <td>
+                <Price value={trades.price[i]!} open={open} />
+              </td>
+              <td
+                className={
+                  trades.auction[i] || trades.board[i] !== 'RG'
+                    ? 'mut'
+                    : trades.side[i] === 'b'
+                      ? 'up'
+                      : 'dn'
+                }
+              >
+                {action(
+                  trades.side[i] === 'b' ? 'buy' : 'sell',
+                  trades.auction[i]!,
+                  trades.board[i]!,
+                )}
+              </td>
+              <td>{lots(trades.shares[i]!)}</td>
+              <td title={`${nf(trades.price[i]! * trades.shares[i]!)} IDR`}>
+                {short(trades.price[i]! * trades.shares[i]!)}
+              </td>
+              <td>
+                <Broker code={trades.buyer[i]!} foreign={trades.buyer_foreign[i]!} />
+              </td>
+              <td>
+                <Broker code={trades.seller[i]!} foreign={trades.seller_foreign[i]!} />
+              </td>
+              <td>{trades.board[i]}</td>
+            </tr>
+          );
+        }}
+      >
         {!rows.length && <Empty>No trades in this view</Empty>}
-        <table className="tick-table tick-tape tick-orders">
-          <TradeHeader />
-          <tbody>
-            {rows.slice(0, loaded).map((i) => {
-              const highlighted = tickBlock !== null && isBlockTrade(trades, i, tickBlock);
-              const counterparty =
-                block?.side === 'buy'
-                  ? { broker: trades.seller[i], foreign: trades.seller_foreign[i] }
-                  : { broker: trades.buyer[i], foreign: trades.buyer_foreign[i] };
-              const dimmed =
-                highlighted &&
-                isolated &&
-                (counterparty.broker !== isolated.broker ||
-                  counterparty.foreign !== isolated.foreign);
-              return (
-                <tr
-                  key={i}
-                  ref={i === firstMatch ? firstFill : undefined}
-                  className={
-                    highlighted ? `tick-highlight${dimmed ? ' tick-dimmed' : ''}` : undefined
-                  }
-                  data-highlighted={highlighted || undefined}
-                >
-                  <td className="mut">{clock(trades.time[i]!)}</td>
-                  <td>
-                    <Price value={trades.price[i]!} open={open} />
-                  </td>
-                  <td
-                    className={
-                      trades.auction[i] || trades.board[i] !== 'RG'
-                        ? 'mut'
-                        : trades.side[i] === 'b'
-                          ? 'up'
-                          : 'dn'
-                    }
-                  >
-                    {action(
-                      trades.side[i] === 'b' ? 'buy' : 'sell',
-                      trades.auction[i]!,
-                      trades.board[i]!,
-                    )}
-                  </td>
-                  <td>{lots(trades.shares[i]!)}</td>
-                  <td title={`${nf(trades.price[i]! * trades.shares[i]!)} IDR`}>
-                    {short(trades.price[i]! * trades.shares[i]!)}
-                  </td>
-                  <td>
-                    <Broker code={trades.buyer[i]!} foreign={trades.buyer_foreign[i]!} />
-                  </td>
-                  <td>
-                    <Broker code={trades.seller[i]!} foreign={trades.seller_foreign[i]!} />
-                  </td>
-                  <td>{trades.board[i]}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
         {rows.length > loaded && (
           <button className="tick-more" onClick={() => setLimit(loaded + 500)}>
             {nf(rows.length - loaded)} more
           </button>
         )}
-      </Scroll>
+      </WindowedTable>
       <div className="tick-summary-dock">
         {block && (
           <BlockSummary
@@ -564,96 +652,146 @@ function Blocks({
   const [limit, setLimit] = useState(300);
   const open = useSessionOpen(trades);
   const { tickBlock, selectTickBlock } = useTerminal();
-  const shown = all
-    .filter(
-      (block) =>
-        (side === 'ALL' || block.side === side.toLowerCase()) &&
-        (!broker ||
-          block.broker === broker ||
-          block.counterparties.some((party) => party.broker === broker)),
-    )
-    .sort((a, b) =>
-      sort === 'LOT' ? b.shares - a.shares || a.start - b.start : a.start - b.start,
-    );
+  const shown = useMemo(
+    () =>
+      all
+        .filter(
+          (block) =>
+            (side === 'ALL' || block.side === side.toLowerCase()) &&
+            (!broker ||
+              block.broker === broker ||
+              block.counterparties.some((party) => party.broker === broker)),
+        )
+        .sort((a, b) =>
+          sort === 'LOT' ? b.shares - a.shares || a.start - b.start : a.start - b.start,
+        ),
+    [all, side, broker, sort],
+  );
+  const footer = useMemo(
+    () => (
+      <SizingRow
+        price={shown.reduce((max, block) => Math.max(max, block.value / block.shares), 0)}
+        lot={lotText(shown.length, (index) => shown[index]!.shares)}
+        value={valueText(shown.length, (index) => shown[index]!.value)}
+        open={open}
+        decimals={1}
+        buy={sideSamples(shown, 'buy')}
+        sell={sideSamples(shown, 'sell')}
+      />
+    ),
+    [shown, open],
+  );
   if (!shown.length) return <Empty>No blocks in this view</Empty>;
   return (
-    <Scroll reset={`${trades.ticker}${trades.date}${sort}${side}${broker}`}>
-      <table className="tick-table tick-blocks tick-orders">
-        <TradeHeader />
-        <tbody>
-          {shown.slice(0, limit).map((block) => {
-            const selected =
-              tickBlock?.ticker === trades.ticker &&
-              tickBlock.date === trades.date &&
-              blockId(tickBlock) === blockId(block);
-            const select = () =>
-              selectTickBlock(
-                selected
-                  ? null
-                  : {
-                      ticker: trades.ticker,
-                      date: trades.date,
-                      ...block,
-                    },
-              );
-            return (
-              <tr
-                key={blockId(block)}
-                className={selected ? 'tick-highlight' : undefined}
-                onClick={(event) => {
-                  event.currentTarget.querySelector('button')?.focus({ preventScroll: true });
-                  select();
-                }}
+    <WindowedTable
+      reset={`${trades.ticker}${trades.date}${sort}${side}${broker}`}
+      count={Math.min(shown.length, limit)}
+      className="tick-table tick-blocks tick-orders"
+      header={<TradeHeader />}
+      footer={footer}
+      row={(index) => {
+        const block = shown[index]!;
+        const selected =
+          tickBlock?.ticker === trades.ticker &&
+          tickBlock.date === trades.date &&
+          blockId(tickBlock) === blockId(block);
+        const select = () =>
+          selectTickBlock(
+            selected
+              ? null
+              : {
+                  ticker: trades.ticker,
+                  date: trades.date,
+                  ...block,
+                },
+          );
+        return (
+          <tr
+            key={blockId(block)}
+            data-rowindex={index}
+            aria-rowindex={index + 2}
+            className={selected ? 'tick-highlight' : undefined}
+            onClick={(event) => {
+              event.currentTarget.querySelector('button')?.focus({ preventScroll: true });
+              select();
+            }}
+          >
+            <td className="mut">
+              <button
+                className="tick-block-select"
+                aria-pressed={selected}
+                aria-label={`${clock(block.start)} ${action(block.side, block.matching === 'auction', block.board)} ${lots(block.shares)} lot ${block.broker} ${block.foreign ? 'F' : 'D'}, show fills`}
+                title={fillCount(block.fills)}
               >
-                <td className="mut">
-                  <button
-                    className="tick-block-select"
-                    aria-pressed={selected}
-                    aria-label={`${clock(block.start)} ${action(block.side, block.matching === 'auction', block.board)} ${lots(block.shares)} lot ${block.broker} ${block.foreign ? 'F' : 'D'}, show fills`}
-                    title={fillCount(block.fills)}
-                  >
-                    {clock(block.start)}
-                  </button>
-                </td>
-                <td>
-                  <Price value={block.value / block.shares} open={open} decimals={1} />
-                </td>
-                <td
-                  className={
-                    block.matching !== 'continuous' ? 'mut' : block.side === 'buy' ? 'up' : 'dn'
-                  }
-                >
-                  {action(block.side, block.matching === 'auction', block.board)}
-                </td>
-                <td title={fillCount(block.fills)}>{lots(block.shares)}</td>
-                <td title={`${nf(block.value)} IDR`}>{short(block.value)}</td>
-                <td className="tick-buy up">
-                  <BlockSide block={block} side="buy" />
-                </td>
-                <td className="tick-sell dn">
-                  <BlockSide block={block} side="sell" />
-                </td>
-                <td>{block.board}</td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+                {clock(block.start)}
+              </button>
+            </td>
+            <td>
+              <Price value={block.value / block.shares} open={open} decimals={1} />
+            </td>
+            <td
+              className={
+                block.matching !== 'continuous' ? 'mut' : block.side === 'buy' ? 'up' : 'dn'
+              }
+            >
+              {action(block.side, block.matching === 'auction', block.board)}
+            </td>
+            <td title={fillCount(block.fills)}>{lots(block.shares)}</td>
+            <td title={`${nf(block.value)} IDR`}>{short(block.value)}</td>
+            <td className="tick-buy up">
+              <BlockSide block={block} side="buy" />
+            </td>
+            <td className="tick-sell dn">
+              <BlockSide block={block} side="sell" />
+            </td>
+            <td>{block.board}</td>
+          </tr>
+        );
+      }}
+    >
       {shown.length > limit && (
         <button className="tick-more" onClick={() => setLimit(limit + 300)}>
           {nf(shown.length - limit)} more
         </button>
       )}
-    </Scroll>
+    </WindowedTable>
   );
 }
 
-function BlockSide({ block, side }: { block: Block; side: 'buy' | 'sell' }) {
+function sideParties(block: Block, side: 'buy' | 'sell') {
   const parties =
     side === (block.side === 'none' ? 'sell' : block.side) ? [block] : block.counterparties;
-  const brokers = [...new Set(parties.map((party) => party.broker))];
+  return {
+    brokers: [...new Set(parties.map((party) => party.broker))],
+    foreign: parties.some((party) => party.foreign),
+  };
+}
+/** The block with the most brokers on this side, whose stack is wider than any broker code, or else one block per code. */
+function sideSamples(blocks: Block[], side: 'buy' | 'sell') {
+  let most: Block | undefined;
+  let mostBrokers = 1;
+  for (const block of blocks) {
+    if (side === (block.side === 'none' ? 'sell' : block.side)) continue;
+    if (block.counterparties.length <= mostBrokers) continue;
+    const brokers = sideParties(block, side).brokers.length;
+    if (brokers > mostBrokers) {
+      mostBrokers = brokers;
+      most = block;
+    }
+  }
+  if (most) return [most];
+  const samples = new Map<string, Block>();
+  for (const block of blocks) {
+    const { brokers, foreign } = sideParties(block, side);
+    const key = `${brokers[0]} ${foreign}`;
+    if (!samples.has(key)) samples.set(key, block);
+  }
+  return [...samples.values()];
+}
+function BlockSide({ block, side }: { block: Block; side: 'buy' | 'sell' }) {
+  const { brokers, foreign } = sideParties(block, side);
   return brokers.length === 1 ? (
-    <Broker code={brokers[0]!} foreign={parties.some((party) => party.foreign)} />
+    <Broker code={brokers[0]!} foreign={foreign} />
   ) : (
     <span className="tick-stack" aria-label={`${nf(brokers.length)} brokers`}>
       <svg

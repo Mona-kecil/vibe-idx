@@ -9,7 +9,7 @@ type Entry = { file: string; status: number; contentType: string };
 type Index = Record<string, Entry>;
 
 const publicData = 'https://pub-7982bfb066694e6e8615750132283eba.r2.dev';
-const liveApi = 'https://vibe-idx.vercel.app';
+const liveApi = 'https://idx.monosodiums.com';
 
 async function brokerHandler(privateSite: string) {
   const clientId = 'client_hillclimb';

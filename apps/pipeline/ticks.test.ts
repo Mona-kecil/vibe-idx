@@ -235,24 +235,29 @@ it('resumes a budgeted market crawl on a fresh runner without refreshing its clo
   expect(calls.every((call) => call.startsWith('ASC:'))).toBe(true);
   expect(await rows(resumed, 'running_trade')).toHaveLength(205);
 });
-/** A published session of one ticker: `count` regular-board fills of 100 shares at 7,675, all at `time`. */
+/** A published session: `count` regular-board fills of 100 shares at 7,675 per ticker, all at `time`. */
 async function publishedSession(
   f: Awaited<ReturnType<typeof fixture>>,
   date: string,
   count: number,
   time: string,
+  tickers = ['SINI'],
 ) {
   const file = join(f.data, `${date}.parquet`);
-  await sql(`COPY (SELECT DATE '${date}' AS date, 'SINI' AS ticker, n AS trade_number, n AS id,
+  const listed = tickers.map((t, k) => `('${t}', ${k * 1000000})`).join(',');
+  await sql(`COPY (SELECT DATE '${date}' AS date, k.ticker AS ticker, n + k.shift AS trade_number, n AS id,
     '${time}' AS time, 'continuous' AS session, 'buy' AS action, 7675 AS price, 100 AS shares,
     'XL' AS buyer, 'D' AS buyer_domicile, 'BROKER_TYPE_LOCAL' AS buyer_type, 'YP' AS seller,
     'F' AS seller_domicile, 'BROKER_TYPE_FOREIGN' AS seller_type, 'RG' AS board, n AS buy_order_number,
     1 AS sell_order_number, 1 AS group_order_number, 767500 AS value
-    FROM range(1, ${count + 1}) t(n)) TO '${file}' (FORMAT PARQUET)`);
+    FROM range(1, ${count + 1}) t(n), (VALUES ${listed}) k(ticker, shift)) TO '${file}' (FORMAT PARQUET)`);
   f.objects.set(`ticks/running_trade/${date}.parquet`, await readFile(file));
 }
-const barFile = (f: Awaited<ReturnType<typeof fixture>>) =>
-  barFileSchema.parse(JSON.parse(gunzipSync(f.objects.get('site/bars/SINI.json.gz')!).toString()));
+const barFileFor = (f: Awaited<ReturnType<typeof fixture>>, ticker: string) =>
+  barFileSchema.parse(
+    JSON.parse(gunzipSync(f.objects.get(`site/bars/${ticker}.json.gz`)!).toString()),
+  );
+const barFile = (f: Awaited<ReturnType<typeof fixture>>) => barFileFor(f, 'SINI');
 const barSessions = (f: Awaited<ReturnType<typeof fixture>>) =>
   JSON.parse(f.objects.get('site/bars/sessions.json')!.toString()).sessions;
 
@@ -294,6 +299,57 @@ it('builds the bars of a session that was published before bars existed, once', 
     expect(f.puts).toHaveLength(writes);
   } finally {
     store.close();
+  }
+});
+it('does not end a failed backfill while another ticker is still writing its bars', async () => {
+  const f = await fixture();
+  const [newer, older] = ['2026-11-12', '2026-11-11'];
+  await publishedSession(f, newer, 1, '09:00:00', ['AAAA', 'BBBB']);
+  await publishedSession(f, older, 1, '09:00:00', ['BBBB']);
+  let readStarted = () => {};
+  const reading = new Promise<void>((resolve) => (readStarted = resolve));
+  let release = () => {};
+  const resume = new Promise<void>((resolve) => (release = resolve));
+  let failing = true;
+  const r2: R2 = {
+    ...f.r2,
+    async get(key) {
+      const stored = await f.r2.get(key);
+      if (failing && key === 'site/bars/AAAA.json.gz') {
+        await reading;
+        throw new Error('injected read failure');
+      }
+      if (failing && key === 'site/bars/BBBB.json.gz') {
+        readStarted();
+        await resume;
+      }
+      return stored;
+    },
+  };
+  const failed = await TickStore.open(f.data, r2);
+  const next = await TickStore.open(f.data, f.r2);
+  let ended = false;
+  const backfill = failed.backfillBars(newer).finally(() => (ended = true));
+  const rejection = expect(backfill).rejects.toThrow('injected read failure');
+  try {
+    await reading;
+    for (let turn = 0; turn < 5; turn++) await new Promise((done) => setImmediate(done));
+    expect(ended).toBe(false);
+    failing = false;
+    release();
+    await rejection;
+    expect(f.objects.has('site/bars/sessions.json')).toBe(false);
+    // The next run repairs the newer session and carries on to the older one, as the collector does.
+    await next.backfillBars(newer);
+    await next.backfillBars(older);
+    const bars = barFileFor(f, 'BBBB');
+    expect(bars.time).toHaveLength(2);
+    expect(barSessions(f)).toEqual([older, newer]);
+  } finally {
+    release();
+    await Promise.allSettled([backfill, rejection]);
+    failed.close();
+    next.close();
   }
 });
 it('converts old cursor progress into lanes and resumes the complete day', async () => {
