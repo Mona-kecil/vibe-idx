@@ -90,6 +90,31 @@ describe('conditional writes', () => {
     expect(sent(fetcher, 1).headers.get('if-none-match')).toBe('*');
     expect(sent(fetcher, 2).headers.get('if-match')).toBeNull();
   });
+  it('uses the object ETag rather than a compressed representation for a conditional update', async () => {
+    const fetcher: typeof fetch = async (input) => {
+      if (!(input instanceof Request)) throw new Error('Expected a signed request');
+      if (input.method === 'GET')
+        return Response.json(
+          {},
+          {
+            headers: {
+              etag: input.headers.get('accept-encoding') === 'identity' ? '"object"' : 'W/"object"',
+            },
+          },
+        );
+      return input.headers.get('if-match') === '"object"'
+        ? new Response(null, { headers: { etag: '"updated"' } })
+        : new Response(null, { status: 412 });
+    };
+    const bucket = r2Bucket({ ...config, fetcher });
+    const read = await bucket.get('news/archive/2026-11.json');
+    expect(
+      await bucket.put('news/archive/2026-11.json', '{}', {
+        ...metadata,
+        only: { match: read!.etag },
+      }),
+    ).toEqual({ etag: '"updated"' });
+  });
   it('reports a failed condition, and R2 refusing one while another write is under way, as a conflict', async () => {
     for (const status of [412, 409]) {
       const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status }));

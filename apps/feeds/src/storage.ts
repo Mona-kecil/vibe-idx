@@ -26,7 +26,11 @@ export function r2Bucket({
   }
   const bucket: Bucket = {
     async get(key) {
-      const response = await request(key, { method: 'GET' });
+      // R2 weakens the ETag when compressing JSON; If-Match needs the stored object's strong ETag.
+      const response = await request(key, {
+        method: 'GET',
+        headers: { 'Accept-Encoding': 'identity' },
+      });
       if (response.status === 404) return null;
       if (!response.ok) throw new Error(`R2 read HTTP ${response.status}`);
       const etag = response.headers.get('etag');
