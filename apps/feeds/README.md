@@ -4,7 +4,15 @@
 
 The news items match the terminal `newsArticleSchema`. `sum` contains the feed's own summary with HTML removed. The collector never requests article pages or stores article bodies. The Google News and Vercel ticker-news paths remain separate.
 
-Tagging uses the company names in `tickers.json` in the public bucket, with `PT`, `Persero`, and `Tbk` normalized. Longer names match first. A single-word company name requires `PT` or `Tbk`. A four-letter ticker requires a stock marker such as `saham` or `emiten` immediately before it, or `Tbk` immediately after it. Bare codes, bank abbreviations, and group nicknames do not qualify by themselves.
+Tagging uses the company names in `tickers.json` in the public bucket, with `PT`, `Persero`, and `Tbk` normalized. Longer names match first. A single-word company name requires `PT` or `Tbk`. Group nicknames and bank abbreviations never tag.
+
+A code of four or five capitals tags in three ways:
+
+- A stock marker (`saham`, `emiten`, `ticker`, `kode saham`, `sandi`) immediately before it, or `Tbk` immediately after it. The marker also covers the codes that follow in a list (`Saham BBCA, BBRI dan BMRI`).
+- A capitalized name before its parenthesised code (`Pan Brothers (PBRX)`).
+- Bare, in a headline that is not all capitals, unless the code is in `wordCodes`. Those codes are also an ordinary word or an organisation's abbreviation (`DATA`, `AUTO`, `NASA`, `META`) and tag only the first two ways.
+
+A new listing whose code reads as a word must be added to `wordCodes`. The `news-tags` check of `pnpm verify:data` finds the ones the archive already shows.
 
 `calendar.json` uses the terminal `calendarEventSchema`. ForexFactory supplies its weekly high-impact events and medium-impact events for USD, CNY, EUR, and JPY.
 

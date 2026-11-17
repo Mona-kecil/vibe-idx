@@ -12,6 +12,31 @@ const companyName = (s: string) =>
       .replace(/\s*\(Persero\)/gi, '')
       .replace(/[,\s]+Tbk\.?$/i, ''),
   );
+
+/**
+ * Codes that are also an Indonesian or English word, or an organisation's abbreviation, so a bare uppercase
+ * occurrence proves nothing. They tag only with a company name, a stock marker or a `Name (CODE)` pair.
+ */
+export const wordCodes = new Set(
+  `ABBA ACES ACRO AGAR AGRO AIMS AKSI ALTO AMAN AMAR AMIN AMOR ANDI APEX AREA ARGO ARMY ARTA ARTI ARTO ASRI
+   ATAP AUTO AVIA AWAN AYAM BABY BACA BACH BAIK BAJA BALI BANK BAPA BATA BAUT BAYU BEEF BEER BELI BELL BEST
+   BIKE BIMA BINA BIRD BLOG BLUE BOAT BOBA BOLA BOLT BOSS BUAH BUDI BUKA BULL BUMI CAMP CARE CARS CASA CASH
+   CBRE CENT CHEM CHIP CITY CLAY COAL COIN CRAB CUAN CYBR DADA DART DATA DAYA DEAL DEFI DEPO DEWA DEWI DIGI
+   DIVA EAST EDGE ELIT EMAS ENAK EURO FAST FILM FIRE FISH FOLK FOOD FORE FUJI GAMA GEMA GEMS GLOB GOLD GOLF
+   GOOD GULA GUNA HAJJ HALO HEAL HERO HILL HITS HOKI HOME HOPE IATA ICON IDEA IKAN INDO INET INOV IPTV JATI
+   JAWA JAYA KAYU KEEN KEJU KING KIOS KOIN KOPI KOTA KRYA KUAS LABA LABS LAJU LAND LEAD LIFE LINK LION LIVE
+   LUCK LUCY MAHA MAIN MARI MARK MAXI MAYA MDRN MEGA MEJA MERK META MICE MIDI MINE NAIK NANO NASA NASI NATO
+   NEST NICE NICK NINE NUSA OBAT OILS PACK PADA PADI PALM PART PIPA PLAN POLA POLI POLL POLY POOL PORT POWR
+   PRAY PRIM PSSI PURA PURE PURI RAJA RANS RATU REAL RELI RIGS RISE ROCK RODA ROTI RUNS SAFE SAGE SAME SATU
+   SHIP SILO SINI SMAR SOFA SOHO SOLA SOUL STAR SUPR SURE SWAT TAMA TAMU TAXI TECH TOOL TOPS TOTO TRAM TRIM
+   TRIO TRON TRUE TRUK TUGU TYRE UANG UNIC UNIQ URBN VAST VICI VISI VIVA WIFI WINE WINS WOOD WOWS ZINC ZONE`.split(
+    /\s+/,
+  ),
+);
+
+const marker = /\b(?:saham|emiten|ticker|kode(?: saham)?|sandi)[\s:(]+(?:berkode[\s:(]+)?$/iu;
+const listJoin = /^\s*(?:,\s*dan|,|&|\/|dan|serta|atau)\s*(?:saham\s+)?$/iu;
+
 export function tickerTagger(tickers: Ticker[]) {
   const patterns = new Map<string, { ticker: string; tokens: string[]; rank: number }[]>();
   tickers
@@ -47,16 +72,23 @@ export function tickerTagger(tickers: Ticker[]) {
       tags.add(ticker);
       for (const i of span) used.add(i);
     }
-    for (const match of text.matchAll(/\b[A-Z]{4}\b/g)) {
+    // An all-capitals headline shouts ordinary words, so a bare code in it proves nothing.
+    const shouting = !/\p{Ll}/u.test(text);
+    let previousEnd = -1;
+    for (const match of text.matchAll(/(?<![\p{L}\p{N}])[A-Z]{4,5}(?![\p{L}\p{N}])/gu)) {
       const code = match[0];
       if (!codes.has(code)) continue;
+      const end = match.index + code.length;
       const before = text.slice(Math.max(0, match.index - 45), match.index);
-      const after = text.slice(match.index + 4, match.index + 45);
-      if (
-        /\b(?:saham|emiten|ticker|kode saham)\s+(?:berkode\s+)?[(:]?\s*$/iu.test(before) ||
-        /^\s*[):,]?\s+Tbk\b/i.test(after)
-      )
-        tags.add(code);
+      const after = text.slice(end, end + 45);
+      const marked =
+        marker.test(before) ||
+        /^\s*[):,]?\s+Tbk\b/i.test(after) ||
+        (previousEnd >= 0 && listJoin.test(text.slice(previousEnd, match.index)));
+      const named = /\p{Lu}[\p{L}.]*\s*\($/u.test(before) && after.startsWith(')');
+      const bare = !wordCodes.has(code) && !shouting;
+      if (marked || named || bare) tags.add(code);
+      if (marked || named) previousEnd = end;
     }
     return [...tags].sort();
   };

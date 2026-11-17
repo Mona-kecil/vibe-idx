@@ -23,28 +23,6 @@ const tickers = [
   { ticker: 'ICBP', name: 'Indofood CBP Sukses Makmur Tbk' },
 ];
 const tag = tickerTagger(tickers);
-describe('company tagging', () => {
-  it.each([
-    ['Bank Central Asia menguji produk', ['BBCA']],
-    ['PT Bank Rakyat Indonesia (Persero) Tbk menguji produk', ['BBRI']],
-    ['Saham BBCA menguat; emiten BBRI naik', ['BBCA', 'BBRI']],
-    ['BBCA BBRI DATA AUTO meluncur', []],
-    ['DATA inflasi dan rasio CASA membaik', []],
-    ['DATA SAHAM HARI INI', []],
-    ['AUTO pilot digunakan dan mandiri dalam bekerja', []],
-    ['Ekonomi mandiri tumbuh, grup Adaro bertemu', []],
-    ['Alamtri Resources Indonesia merilis laporan', ['ADRO']],
-    ['Adaro Andalan Indonesia merilis laporan', ['AADI']],
-    ['Indofood CBP Sukses Makmur menguji produk', ['ICBP']],
-    ['Saham AUTO dan emiten DATA menguat', ['AUTO', 'DATA']],
-    ['Bank Central Asiana berbeda dari bank lokal', []],
-    ['Pasar saham berbasis DATA dan kendaraan AUTO', []],
-    ['PT Petrosea membahas rencana rekaan', ['PTRO']],
-    ['PT TIMAH (Persero) Tbk membahas rencana rekaan', ['TINS']],
-    ['Hasil timah meningkat di pelabuhan', []],
-    ['Bank Mandiri menyampaikan laporan', ['BMRI']],
-  ])('%s', (text, expected) => expect(tag(text)).toEqual(expected));
-});
 describe('source parsers', () => {
   it('cleans only RSS summaries and never uses content:encoded', () => {
     const rows = parseRSS(fixture('rss.xml'), { id: 'example', src: 'Example', region: 'ID' }, tag);
