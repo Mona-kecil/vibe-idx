@@ -1,10 +1,10 @@
 {
-  "name": "vibe-idx",
+  "name": "vibe-idx-preview",
   "main": "worker.ts",
   "compatibility_date": "2026-10-01",
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": false,
-  "routes": [{ "pattern": "idx.monosodiums.com", "custom_domain": true }],
+  "routes": [{ "pattern": "preview.idx.monosodiums.com", "custom_domain": true }],
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",
@@ -16,12 +16,13 @@
     { "binding": "PRIVATE", "bucket_name": "vibe-idx-private" },
   ],
   "vars": {
-    "DEPLOYMENT": "production",
-    "WORKOS_CLIENT_ID": "client_01M5KP59DT9VA1NXR1KG8WBMS0",
+    "DEPLOYMENT": "preview",
+    "WORKOS_CLIENT_ID": "client_01M5KP5949040A7VK88Q06D64E",
   },
   "env": {
-    "preview": {
-      "routes": [{ "pattern": "preview.idx.monosodiums.com", "custom_domain": true }],
+    "production": {
+      "name": "vibe-idx",
+      "routes": [{ "pattern": "idx.monosodiums.com", "custom_domain": true }],
       "assets": {
         "directory": "./dist",
         "binding": "ASSETS",
@@ -33,8 +34,8 @@
         { "binding": "PRIVATE", "bucket_name": "vibe-idx-private" },
       ],
       "vars": {
-        "DEPLOYMENT": "preview",
-        "WORKOS_CLIENT_ID": "client_01M5KP5949040A7VK88Q06D64E",
+        "DEPLOYMENT": "production",
+        "WORKOS_CLIENT_ID": "client_01M5KP59DT9VA1NXR1KG8WBMS0",
       },
     },
   },

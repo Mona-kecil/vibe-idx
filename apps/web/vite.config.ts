@@ -5,7 +5,10 @@ import type { PluginOption } from 'vite-plus';
 
 type WranglerVars = { vars: { WORKOS_CLIENT_ID: string } };
 
-/** The WorkOS client ID the Worker verifies against, so the client bundle signs in against the same one. */
+/**
+ * The WorkOS client ID the Worker verifies against, so the client bundle signs in against the same one.
+ * The top level of wrangler.jsonc is preview, so a bare `wrangler deploy` cannot reach production.
+ */
 function deployedClientId(mode: string) {
   const config = JSON.parse(
     readFileSync(new URL('./wrangler.jsonc', import.meta.url), 'utf8').replace(
@@ -13,7 +16,7 @@ function deployedClientId(mode: string) {
       '$1',
     ),
   ) as WranglerVars & { env: Record<string, WranglerVars> };
-  const target = mode === 'production' ? config : config.env[mode];
+  const target = mode === 'preview' ? config : config.env[mode];
   if (!target) throw new Error(`wrangler.jsonc has no environment named ${mode}`);
   return target.vars.WORKOS_CLIENT_ID;
 }
