@@ -6,7 +6,8 @@
     "check": "CI=true vp check",
     "test": "CI=true vp test --configLoader runner",
     "verify:live": "tsx verify-live.ts",
-    "collect": "tsx src/index.ts"
+    "collect": "tsx src/index.ts",
+    "backfill": "tsx backfill.ts"
   },
   "dependencies": {
     "aws4fetch": "^1.0.20",

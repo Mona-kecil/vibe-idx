@@ -1,4 +1,6 @@
 import { AwsClient } from 'aws4fetch';
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
 import type { Bucket } from './collector';
 
 export function r2Bucket({
@@ -39,6 +41,26 @@ export function r2Bucket({
       });
       if (!response.ok) throw new Error(`R2 write HTTP ${response.status}`);
       await response.body?.cancel();
+    },
+  };
+}
+
+/** A folder standing in for the public bucket, for runs that must not reach the real one. */
+export function directoryBucket(root: string): Bucket {
+  return {
+    async get(key) {
+      const text = await readFile(join(root, key), 'utf8').catch((error: NodeJS.ErrnoException) => {
+        if (error.code === 'ENOENT') return null;
+        throw error;
+      });
+      return text === null ? null : { json: async (): Promise<unknown> => JSON.parse(text) };
+    },
+    async put(key, value) {
+      const file = join(root, key);
+      await mkdir(dirname(file), { recursive: true });
+      const partial = `${file}.${process.pid}.tmp`;
+      await writeFile(partial, value);
+      await rename(partial, file);
     },
   };
 }
