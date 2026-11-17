@@ -21,8 +21,18 @@ function deployedClientId(mode: string) {
   return target.vars.WORKOS_CLIENT_ID;
 }
 
+// Wrangler bundles .wasm imports as compiled modules; tests load them the same way.
+const wasmModule: PluginOption = {
+  name: 'wasm-module',
+  enforce: 'pre',
+  load(id) {
+    if (!id.endsWith('.wasm')) return null;
+    return `import { readFileSync } from 'node:fs';\nexport default new WebAssembly.Module(readFileSync(${JSON.stringify(id)}));`;
+  },
+};
+
 export default defineConfig(({ command, mode }) => ({
-  plugins: lazyPlugins(() => react() as unknown as PluginOption[]),
+  plugins: lazyPlugins(() => [wasmModule, react() as unknown as PluginOption]),
   // Vercel keeps the client ID from its own environment variables until it is retired.
   define:
     command === 'build' && mode !== 'development' && !process.env.VERCEL
@@ -41,5 +51,6 @@ export default defineConfig(({ command, mode }) => ({
   test: {
     include: ['src/**/*.test.{ts,tsx}', 'dev/**/*.test.ts'],
     execArgv: ['--no-experimental-webstorage'],
+    server: { deps: { inline: [/\.wasm$/] } },
   },
 }));
