@@ -63,7 +63,7 @@ describe('Worker', () => {
     const response = await worker.fetch(new Request('https://preview.test/t/bbca'), env, ctx);
     expect(response.status).toBe(200);
     expect(await response.text()).toContain('<title>BBCA Bank Central Asia</title>');
-    expect(env.PUBLIC.get).toHaveBeenCalledWith('ticker/BBCA.json');
+    expect(env.PUBLIC.get.mock.calls[0]?.[0]).toBe('ticker/BBCA.json');
     expect(env.ASSETS.fetch.mock.calls[0]?.[0]?.url).toBe('https://preview.test/');
     expect(response.headers.get('cache-control')).toContain('s-maxage=300');
   });
@@ -101,7 +101,7 @@ describe('Worker', () => {
       ctx,
     );
     expect(response.status).toBe(404);
-    expect(env.PUBLIC.get).toHaveBeenCalledWith('news.json');
+    expect(env.PUBLIC.get.mock.calls[0]?.[0]).toBe('news.json');
     expect(env.PRIVATE.get).not.toHaveBeenCalled();
     expect(env.ASSETS.fetch).not.toHaveBeenCalled();
   });
@@ -139,6 +139,66 @@ describe('Worker', () => {
     }
     expect(pending).toHaveLength(0);
     expect(env.PUBLIC.get).toHaveBeenCalledTimes(2);
+  });
+  it('answers a matching If-None-Match from the edge with 304 and the object headers', async () => {
+    const env = environment();
+    env.PUBLIC.get.mockResolvedValueOnce(stored('{"a":1}', 'public, max-age=300') as never);
+    const pending: Promise<unknown>[] = [];
+    const waiting = { waitUntil: (promise: Promise<unknown>) => void pending.push(promise) };
+    const read = (headers: HeadersInit) =>
+      worker.fetch(new Request('https://idx.test/data/market.json', { headers }), env, waiting);
+    await (await read({})).text();
+    await Promise.all(pending);
+
+    const same = await read({ 'If-None-Match': '"etag"' });
+    expect(same.status).toBe(304);
+    expect(await same.text()).toBe('');
+    expect(same.headers.get('etag')).toBe('"etag"');
+    expect(same.headers.get('cache-control')).toBe('public, max-age=300');
+    expect(same.headers.get('x-edge-cache')).toBe('HIT');
+    expect((await read({ 'If-None-Match': 'W/"etag", "other"' })).status).toBe(304);
+    expect((await read({ 'If-None-Match': '"other"' })).status).toBe(200);
+    expect(env.PUBLIC.get).toHaveBeenCalledTimes(1);
+  });
+  it('passes the conditional headers to R2 and answers 304 when the object is unchanged', async () => {
+    const env = environment();
+    env.PUBLIC.get.mockResolvedValueOnce({
+      httpEtag: '"etag"',
+      writeHttpMetadata: (headers: Headers) => headers.set('Cache-Control', 'public, max-age=300'),
+    } as never);
+    const pending: Promise<unknown>[] = [];
+    const response = await worker.fetch(
+      new Request('https://idx.test/data/market.json', {
+        headers: { 'If-None-Match': '"etag"', Authorization: 'secret' },
+      }),
+      env,
+      { waitUntil: (promise) => void pending.push(promise) },
+    );
+    const onlyIf = (env.PUBLIC.get.mock.calls[0] as unknown as [string, { onlyIf: Headers }])[1]
+      .onlyIf;
+    expect(onlyIf.get('if-none-match')).toBe('"etag"');
+    expect(onlyIf.has('authorization')).toBe(false);
+    expect(response.status).toBe(304);
+    expect(response.headers.get('etag')).toBe('"etag"');
+    expect(response.headers.get('cache-control')).toBe('public, max-age=300');
+    expect(pending).toHaveLength(0);
+  });
+  it('reads from PUBLIC when the edge cache throws', async () => {
+    const failing = () => Promise.reject(new Error('cache down'));
+    vi.stubGlobal('caches', { default: { match: failing, put: failing } });
+    const env = environment();
+    env.PUBLIC.get.mockResolvedValueOnce(stored('{"a":1}') as never);
+    const pending: Promise<unknown>[] = [];
+    const response = await worker.fetch(new Request('https://idx.test/data/market.json'), env, {
+      waitUntil: (promise) => void pending.push(promise),
+    });
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe('{"a":1}');
+    await expect(Promise.all(pending)).resolves.toBeDefined();
+    vi.stubGlobal('caches', undefined);
+    env.PUBLIC.get.mockResolvedValueOnce(stored('{"a":2}') as never);
+    const noCache = await worker.fetch(new Request('https://idx.test/data/market.json'), env, ctx);
+    expect(await noCache.text()).toBe('{"a":2}');
   });
   it('never caches broker responses at the edge', async () => {
     const store = stubEdgeCache();
@@ -211,11 +271,11 @@ describe('Worker', () => {
         /,(\s*[}\]])/g,
         '$1',
       ),
-    ) as Target & { env: { preview: Target } };
+    ) as Target & { name: string; env: { production: Target & { name: string } } };
 
     it.each([
-      ['production', config, 'idx.monosodiums.com'],
-      ['preview', config.env.preview, 'preview.idx.monosodiums.com'],
+      ['production', config.env.production, 'idx.monosodiums.com'],
+      ['preview', config, 'preview.idx.monosodiums.com'],
     ])('binds assets, both buckets and its own domain for %s', (name, target, domain) => {
       expect(target.vars.DEPLOYMENT).toBe(name);
       expect(target.routes.map((route) => route.pattern)).toEqual([domain]);
@@ -227,7 +287,11 @@ describe('Worker', () => {
       ]);
     });
     it('keeps a separate WorkOS client for each environment', () => {
-      expect(config.vars.WORKOS_CLIENT_ID).not.toBe(config.env.preview.vars.WORKOS_CLIENT_ID);
+      expect(config.vars.WORKOS_CLIENT_ID).not.toBe(config.env.production.vars.WORKOS_CLIENT_ID);
+    });
+    it('makes the top level preview so a bare deploy cannot reach production', () => {
+      expect(config.name).toBe('vibe-idx-preview');
+      expect(config.env.production.name).toBe('vibe-idx');
     });
   });
 });

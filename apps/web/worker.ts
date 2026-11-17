@@ -3,11 +3,12 @@ import { defaultMeta, parseTickerCard, tickerMeta, withShareMeta } from './api/_
 import { brokerTickerSchema } from './src/brokers.js';
 import { report } from './worker-sentry.js';
 
-type R2Object = { body: ReadableStream; httpEtag: string; writeHttpMetadata(h: Headers): void };
+type R2Object = { httpEtag: string; writeHttpMetadata(h: Headers): void; body?: ReadableStream };
+type R2Bucket = { get(key: string, options?: { onlyIf?: Headers }): Promise<R2Object | null> };
 type Env = {
   ASSETS: { fetch(request: Request): Promise<Response> };
-  PUBLIC: { get(key: string): Promise<R2Object | null> };
-  PRIVATE: { get(key: string): Promise<R2Object | null> };
+  PUBLIC: R2Bucket;
+  PRIVATE: R2Bucket;
   WORKOS_CLIENT_ID: string;
   DEPLOYMENT: string;
 };
@@ -25,6 +26,42 @@ const sourceCacheControl = 'X-Source-Cache-Control';
 
 const edgeCache = () => (caches as unknown as { default: EdgeCache }).default;
 
+// A failing edge cache must cost a read from R2, not the request.
+const cached = async (key: Request) => {
+  try {
+    return await edgeCache().match(key);
+  } catch {
+    return undefined;
+  }
+};
+const store = async (key: Request, response: Response) => {
+  try {
+    await edgeCache().put(key, response);
+  } catch {
+    // The next read finds nothing and tries again.
+  }
+};
+
+const validators = ['ETag', 'Cache-Control', 'Last-Modified', 'Age', 'X-Edge-Cache'];
+
+/** True when If-None-Match names this ETag, comparing weakly as RFC 9110 requires. */
+function matches(ifNoneMatch: string | null, etag: string) {
+  if (!ifNoneMatch) return false;
+  const bare = (tag: string) => tag.trim().replace(/^W\//, '');
+  return (
+    ifNoneMatch.trim() === '*' || ifNoneMatch.split(',').some((tag) => bare(tag) === bare(etag))
+  );
+}
+
+const notModified = (headers: Headers) => {
+  const kept = new Headers();
+  for (const name of validators) {
+    const value = headers.get(name);
+    if (value) kept.set(name, value);
+  }
+  return new Response(null, { status: 304, headers: kept });
+};
+
 /**
  * R2 reads cost 250 to 430 ms, so each data center keeps a copy for the object's own
  * max-age (60 seconds unless the writer set one), the same bound browsers already apply.
@@ -33,8 +70,9 @@ async function publicData(request: Request, env: Env, ctx: Context): Promise<Res
   const url = new URL(request.url);
   const cacheable = request.method === 'GET';
   const key = new Request(url.origin + url.pathname);
+  const ifNoneMatch = request.headers.get('If-None-Match');
   if (cacheable) {
-    const hit = await edgeCache().match(key);
+    const hit = await cached(key);
     if (hit) {
       const response = new Response(hit.body, hit);
       response.headers.set(
@@ -43,18 +81,25 @@ async function publicData(request: Request, env: Env, ctx: Context): Promise<Res
       );
       response.headers.delete(sourceCacheControl);
       response.headers.set('X-Edge-Cache', 'HIT');
-      return response;
+      const etag = response.headers.get('ETag');
+      return etag && matches(ifNoneMatch, etag) ? notModified(response.headers) : response;
     }
   }
-  const object = await env.PUBLIC.get(url.pathname.slice('/data/'.length));
+  const onlyIf = new Headers();
+  for (const name of ['If-None-Match', 'If-Modified-Since']) {
+    const value = request.headers.get(name);
+    if (value) onlyIf.set(name, value);
+  }
+  const object = await env.PUBLIC.get(url.pathname.slice('/data/'.length), { onlyIf });
   if (!object) return new Response('Not found', { status: 404 });
   const headers = new Headers({ ETag: object.httpEtag, 'Cache-Control': 'public, max-age=60' });
   object.writeHttpMetadata(headers);
+  if (!object.body) return notModified(headers);
   const response = new Response(object.body, { headers });
   if (!cacheable) return response;
   const copy = response.clone();
   copy.headers.set(sourceCacheControl, headers.get('Cache-Control') ?? '');
-  ctx.waitUntil(edgeCache().put(key, copy));
+  ctx.waitUntil(store(key, copy));
   response.headers.set('X-Edge-Cache', 'MISS');
   return response;
 }
