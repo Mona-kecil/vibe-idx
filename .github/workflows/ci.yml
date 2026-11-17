@@ -25,3 +25,4 @@ jobs:
       - run: pnpm --filter @vibe-idx/feeds test
       - run: pnpm --filter @vibe-idx/web test
       - run: pnpm --filter @vibe-idx/web build
+      - run: pnpm --filter @vibe-idx/web check:workerd

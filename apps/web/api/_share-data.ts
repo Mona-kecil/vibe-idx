@@ -10,3 +10,12 @@ export async function loadTickerCard(ticker: string, fetcher: typeof fetch = fet
   const card = parseTickerCard(await response.json());
   return card?.ticker === ticker ? card : null;
 }
+
+export async function loadBucketTickerCard(
+  bucket: { get(key: string): Promise<{ body: ReadableStream } | null> },
+  ticker: string,
+) {
+  const object = await bucket.get(`ticker/${ticker}.json`);
+  const card = object ? parseTickerCard(await new Response(object.body).json()) : null;
+  return card?.ticker === ticker ? card : null;
+}

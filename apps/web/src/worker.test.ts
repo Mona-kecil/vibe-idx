@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import worker from '../worker';
 import history from './ticker/fixtures/TPIA-history.json';
@@ -14,7 +15,36 @@ function environment() {
     DEPLOYMENT: 'test',
   };
 }
-const ctx = { waitUntil: vi.fn<(promise: Promise<unknown>) => void>() };
+const dsn = 'https://publickey@o1.ingest.example.io/42';
+// Sentry never answers, so a test that passes shows the Worker does not wait for it.
+const sentry = vi.fn<typeof fetch>(() => new Promise<Response>(() => {}));
+function event(call: number) {
+  const body = sentry.mock.calls[call]?.[1]?.body as string | undefined;
+  return JSON.parse((body ?? '').split('\n')[2] ?? '');
+}
+const pending: Promise<unknown>[] = [];
+const ctx = { waitUntil: vi.fn<(promise: Promise<unknown>) => void>((p) => void pending.push(p)) };
+const settle = () => Promise.all(pending.splice(0));
+const fontAssets = {
+  fetch: vi.fn<(request: Request) => Promise<Response>>(
+    async (request) =>
+      new Response(
+        await readFile(new URL(`../public${new URL(request.url).pathname}`, import.meta.url)),
+      ),
+  ),
+};
+const bucketCard = async () => ({
+  body: Response.json({ ...history, ticker: 'BBCA', name: 'PT Bank Central Asia Tbk.' }).body!,
+  httpEtag: 'etag',
+  writeHttpMetadata: () => {},
+});
+// The Worker keeps its Ticker card handler for the life of the isolate, so these bindings are
+// the same objects in every card test and only their behavior changes.
+const cardEnv = {
+  ...environment(),
+  ASSETS: fontAssets,
+  PUBLIC: { get: vi.fn<Parameters<typeof worker.fetch>[1]['PUBLIC']['get']>() },
+};
 
 function stubEdgeCache() {
   const store = new Map<string, Response>();
@@ -43,7 +73,10 @@ function stored(body: string, cacheControl?: string) {
 }
 
 beforeEach(() => void stubEdgeCache());
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  ctx.waitUntil.mockClear();
+});
 
 describe('Worker', () => {
   it('injects ticker metadata from PUBLIC with the request origin', async () => {
@@ -74,25 +107,147 @@ describe('Worker', () => {
     expect(response.status).toBe(200);
     expect(await response.text()).toContain('content="https://preview.test/api/og"');
   });
-  it('proxies OG requests and preserves their query and PNG response', async () => {
-    const proxy = vi.fn<typeof fetch>(
-      async () => new Response('png', { headers: { 'Content-Type': 'image/png' } }),
-    );
-    vi.stubGlobal('fetch', proxy);
-    try {
+  describe('Ticker cards', () => {
+    const date = history.prices.at(-1)?.date;
+    beforeEach(() => {
+      cardEnv.PUBLIC.get.mockReset().mockImplementation(bucketCard);
+      sentry.mockClear();
+      vi.stubGlobal('fetch', sentry);
+    });
+
+    it('renders from PUBLIC with fonts from ASSETS', async () => {
       const response = await worker.fetch(
-        new Request('https://preview.test/api/og?ticker=BBCA&d=2026-11-10'),
-        environment(),
+        new Request(`https://preview.test/api/og?ticker=BBCA&d=${date}`),
+        cardEnv,
         ctx,
       );
-      expect(proxy).toHaveBeenCalledWith(
-        'https://vibe-idx.vercel.app/api/og?ticker=BBCA&d=2026-11-10',
-      );
+      expect(response.status).toBe(200);
       expect(response.headers.get('content-type')).toBe('image/png');
-      expect(await response.text()).toBe('png');
-    } finally {
-      vi.unstubAllGlobals();
-    }
+      expect(response.headers.get('cache-control')).toBe(
+        'public, s-maxage=86400, stale-while-revalidate=604800',
+      );
+      const png = new DataView(await response.arrayBuffer());
+      expect([png.getUint32(16), png.getUint32(20)]).toEqual([1200, 630]);
+      expect(cardEnv.PUBLIC.get).toHaveBeenCalledWith('ticker/BBCA.json');
+    });
+    it('renders once per card and then serves from the edge cache', async () => {
+      const url = `https://preview.test/api/og?ticker=BBCA&d=${date}`;
+      const first = await worker.fetch(new Request(url), cardEnv, ctx);
+      await settle();
+      const second = await worker.fetch(new Request(url), cardEnv, ctx);
+      const other = await worker.fetch(
+        new Request('https://preview.test/api/og?ticker=BBCA&d=2000-01-01'),
+        cardEnv,
+        ctx,
+      );
+      expect([first, second, other].map((r) => r.headers.get('x-edge-cache'))).toEqual([
+        'MISS',
+        'HIT',
+        'MISS',
+      ]);
+      expect(second.headers.get('cache-control')).toBe(first.headers.get('cache-control'));
+      expect(await second.arrayBuffer()).toEqual(await first.arrayBuffer());
+      expect(cardEnv.PUBLIC.get).toHaveBeenCalledTimes(2);
+    });
+    it('serves a card from the edge whatever other query parameters the URL carries', async () => {
+      await worker.fetch(
+        new Request(`https://preview.test/api/og?ticker=BBCA&d=${date}`),
+        cardEnv,
+        ctx,
+      );
+      await settle();
+      const variants = [
+        `ticker=bbca&d=${date}`,
+        `d=${date}&ticker=BBCA`,
+        `ticker=BBCA&d=${date}&utm_source=chat&cb=${Math.random()}`,
+        `ticker=BBCA&d=${date}&d2=1&`,
+      ];
+      for (const query of variants) {
+        const response = await worker.fetch(
+          new Request(`https://preview.test/api/og?${query}`),
+          cardEnv,
+          ctx,
+        );
+        expect([query, response.headers.get('x-edge-cache')]).toEqual([query, 'HIT']);
+      }
+      expect(cardEnv.PUBLIC.get).toHaveBeenCalledOnce();
+    });
+    it('does not cache the brand card for an unknown ticker', async () => {
+      cardEnv.PUBLIC.get.mockResolvedValue(null);
+      for (let i = 0; i < 2; i++) {
+        const response = await worker.fetch(
+          new Request('https://preview.test/api/og?ticker=NOPE'),
+          cardEnv,
+          ctx,
+        );
+        await settle();
+        expect(response.status).toBe(404);
+      }
+      expect(cardEnv.PUBLIC.get).toHaveBeenCalledTimes(2);
+    });
+    it('reports a failed render once, with its stack, and does not wait for Sentry', async () => {
+      cardEnv.PUBLIC.get.mockRejectedValue(new Error('Ticker data returned 503'));
+      const response = await worker.fetch(
+        new Request('https://preview.test/api/og?ticker=BBCA'),
+        { ...cardEnv, SENTRY_DSN: dsn },
+        ctx,
+      );
+      expect(response.status).toBe(502);
+      expect(response.headers.get('x-edge-cache')).toBe('BYPASS');
+      expect(sentry).toHaveBeenCalledOnce();
+      expect(ctx.waitUntil).toHaveBeenCalledOnce();
+      expect(event(0).tags).toEqual({ path: '/api/og', route: 'og' });
+      expect(event(0).extra.stack).toContain('Ticker data returned 503');
+    });
+    it('does not report to Sentry without a DSN, as under wrangler dev', async () => {
+      const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const failure = new Error('Ticker data returned 503');
+      cardEnv.PUBLIC.get.mockRejectedValue(failure);
+      const response = await worker.fetch(
+        new Request('https://preview.test/api/og?ticker=BBCA'),
+        { ...cardEnv, SENTRY_DSN: '' },
+        ctx,
+      );
+      expect(response.status).toBe(502);
+      expect(sentry).not.toHaveBeenCalled();
+      expect(log).toHaveBeenCalledOnce();
+      expect(log).toHaveBeenCalledWith('Not reported to Sentry:', failure);
+      log.mockRestore();
+    });
+  });
+  describe('errors', () => {
+    beforeEach(() => {
+      sentry.mockClear();
+      vi.stubGlobal('fetch', sentry);
+    });
+
+    it('reports an error thrown by a route once, with its stack', async () => {
+      const env = {
+        ...environment(),
+        SENTRY_DSN: dsn,
+        PUBLIC: { get: vi.fn<() => Promise<never>>(() => Promise.reject(new Error('R2 down'))) },
+      };
+      const response = await worker.fetch(
+        new Request('https://preview.test/data/a.json'),
+        env,
+        ctx,
+      );
+      expect(response.status).toBe(500);
+      expect(sentry).toHaveBeenCalledOnce();
+      expect(event(0).tags).toEqual({ path: '/data/a.json' });
+      expect(event(0).extra.stack).toContain('R2 down');
+    });
+    it('reports a bare 5xx response by its path', async () => {
+      const env = {
+        ...environment(),
+        SENTRY_DSN: dsn,
+        ASSETS: { fetch: async () => new Response('', { status: 503 }) },
+      };
+      const response = await worker.fetch(new Request('https://preview.test/t/BBCA'), env, ctx);
+      expect(response.status).toBe(502);
+      expect(sentry).toHaveBeenCalledOnce();
+      expect(event(0).message.formatted).toBe('/t/BBCA returned 502');
+    });
   });
   it('serves public data only from PUBLIC and leaves missing objects unavailable', async () => {
     const env = environment();
@@ -291,6 +446,7 @@ describe('Worker', () => {
     const env = {
       ...environment(),
       DEPLOYMENT: 'production',
+      SENTRY_DSN: dsn,
       ASSETS: { fetch: async () => new Response('down', { status: 503 }) },
     };
     await worker.fetch(new Request('https://idx.test/terminal'), env, {
@@ -337,7 +493,7 @@ describe('Worker', () => {
       routes: { pattern: string }[];
       assets: { binding?: string; run_worker_first: string[] };
       r2_buckets: { binding: string; bucket_name: string }[];
-      vars: { DEPLOYMENT: string; WORKOS_CLIENT_ID: string };
+      vars: { DEPLOYMENT: string; SENTRY_DSN: string; WORKOS_CLIENT_ID: string };
     };
     const config = JSON.parse(
       readFileSync(new URL('../wrangler.jsonc', import.meta.url), 'utf8').replace(
@@ -351,6 +507,7 @@ describe('Worker', () => {
       ['preview', config, 'preview.idx.monosodiums.com'],
     ])('binds assets, both buckets and its own domain for %s', (name, target, domain) => {
       expect(target.vars.DEPLOYMENT).toBe(name);
+      expect(target.vars.SENTRY_DSN).toMatch(/^https:\/\/[^@]+@[^/]+\.sentry\.io\/\d+$/);
       expect(target.routes.map((route) => route.pattern)).toEqual([domain]);
       expect(target.assets.binding).toBe('ASSETS');
       expect(target.assets.run_worker_first).toEqual(['/api/*', '/data/*', '/t/*']);

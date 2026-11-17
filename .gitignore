@@ -12,3 +12,4 @@ apps/**/build/
 *.sqlite-shm
 *.sqlite-wal
 apps/web/hillclimb/decision.tsv
+.wrangler/
