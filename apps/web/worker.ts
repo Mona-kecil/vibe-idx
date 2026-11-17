@@ -62,9 +62,19 @@ function unchanged(request: Request, headers: Headers) {
   const ifNoneMatch = request.headers.get('If-None-Match');
   const etag = headers.get('ETag');
   if (ifNoneMatch !== null) return etag !== null && matches(ifNoneMatch, etag);
-  const since = Date.parse(request.headers.get('If-Modified-Since') ?? '');
-  const modified = Date.parse(headers.get('Last-Modified') ?? '');
+  const since = httpDate(request.headers.get('If-Modified-Since'));
+  const modified = httpDate(headers.get('Last-Modified'));
   return modified <= since;
+}
+
+/** An IMF-fixdate in milliseconds, or NaN, so a malformed date is ignored as RFC 9110 requires. */
+function httpDate(value: string | null) {
+  return value &&
+    /^(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun), \d{2} (?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{4} \d{2}:\d{2}:\d{2} GMT$/.test(
+      value,
+    )
+    ? Date.parse(value)
+    : NaN;
 }
 
 const notModified = (headers: Headers) => {
@@ -81,6 +91,8 @@ const notModified = (headers: Headers) => {
  * max-age (60 seconds unless the writer set one), the same bound browsers already apply.
  */
 async function publicData(request: Request, env: Env, ctx: Context): Promise<Response> {
+  if (request.method !== 'GET' && request.method !== 'HEAD')
+    return new Response('Method not allowed', { status: 405, headers: { Allow: 'GET, HEAD' } });
   const url = new URL(request.url);
   const cacheable = request.method === 'GET';
   const key = new Request(url.origin + url.pathname);

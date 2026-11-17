@@ -199,10 +199,28 @@ describe('Worker', () => {
     expect((await read({ 'If-Modified-Since': uploaded })).status).toBe(304);
     expect((await read({ 'If-Modified-Since': 'Tue, 17 Nov 2026 09:59:59 GMT' })).status).toBe(200);
     expect((await read({ 'If-Modified-Since': 'not a date' })).status).toBe(200);
+    expect((await read({ 'If-Modified-Since': '2099' })).status).toBe(200);
+    expect((await read({ 'If-Modified-Since': '2099-01-01' })).status).toBe(200);
     expect((await read({ 'If-None-Match': '"other"', 'If-Modified-Since': uploaded })).status).toBe(
       200,
     );
     expect(env.PUBLIC.get).toHaveBeenCalledTimes(1);
+  });
+  it('answers only GET and HEAD for public data', async () => {
+    const env = environment();
+    for (const method of ['POST', 'OPTIONS', 'PUT']) {
+      const response = await worker.fetch(
+        new Request('https://idx.test/data/market.json', {
+          method,
+          headers: { 'If-None-Match': '"etag"' },
+        }),
+        env,
+        ctx,
+      );
+      expect(response.status).toBe(405);
+      expect(response.headers.get('allow')).toBe('GET, HEAD');
+    }
+    expect(env.PUBLIC.get).not.toHaveBeenCalled();
   });
   it('reads from PUBLIC when the edge cache throws', async () => {
     const failing = () => Promise.reject(new Error('cache down'));
