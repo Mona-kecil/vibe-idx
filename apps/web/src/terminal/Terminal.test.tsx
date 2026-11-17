@@ -5,7 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 import { Terminal } from './Terminal';
 import { cumulativeFlows, foreignFlow } from './BrokerPanes';
 import type { BrokerDay } from '../brokers';
-import { tickTradesSchema, type TickTrades } from '../ticks';
+import { brokerRow, tradeSession, type Fill } from '../test-builders';
+import type { TickTrades } from '../ticks';
 
 const crosshair = vi.hoisted(() => ({ move: (_event: { time?: number }) => {} }));
 
@@ -34,38 +35,25 @@ const auth = vi.hoisted(() => ({
   signIn: vi.fn<() => Promise<void>>(async () => {}),
 }));
 vi.mock('@workos-inc/authkit-react', () => ({ useAuth: () => auth }));
-const row = (
-  broker: string,
-  shares: number,
-  value: number,
-  investor: 'domestic' | 'foreign' = 'domestic',
-) => ({
-  broker,
-  shares,
-  value,
-  investor,
-  broker_type: 'local' as const,
-  avg_price: value / shares,
-  freq: 1,
-});
+const foreign = { investor: 'foreign' } as const;
 const days: BrokerDay[] = [
   {
     date: '2026-11-06',
     board: 'regular',
-    buy: [row('AA', 1000, 100000), row('BB', 2000, 400000, 'foreign')],
-    sell: [row('AA', 500, 75000), row('CC', 2000, 500000)],
+    buy: [brokerRow('AA', 1000, 100000), brokerRow('BB', 2000, 400000, foreign)],
+    sell: [brokerRow('AA', 500, 75000), brokerRow('CC', 2000, 500000)],
   },
   {
     date: '2026-11-09',
     board: 'regular',
-    buy: [row('AA', 500, 50000)],
-    sell: [row('BB', 1000, 200000, 'foreign')],
+    buy: [brokerRow('AA', 500, 50000)],
+    sell: [brokerRow('BB', 1000, 200000, foreign)],
   },
   {
     date: '2026-11-09',
     board: 'negotiation',
-    buy: [row('CC', 5000, 500000)],
-    sell: [row('AA', 5000, 500000)],
+    buy: [brokerRow('CC', 5000, 500000)],
+    sell: [brokerRow('AA', 5000, 500000)],
   },
 ];
 let root: Root, host: HTMLDivElement;
@@ -145,22 +133,32 @@ const fetcher = vi.fn<typeof fetch>(async (input) => {
             bid: [[7650, 2, 6000]],
             offer: [[7675, 3, 9000]],
           }
-        : {
-            date: '2026-11-09',
-            ticker: 'BREN',
-            time: [32729, 32731],
-            price: [7650, 7675],
-            shares: [145000, 2000],
-            side: ['s', 'b'],
-            auction: [false, false],
-            board: ['RG', 'RG'],
-            buyer: ['YP', 'AK'],
-            buyer_foreign: [true, true],
-            seller: ['XL', 'CC'],
-            seller_foreign: [false, false],
-            buy_order: [11, 120],
-            sell_order: [99, 12],
-          },
+        : tradeSession(
+            [
+              {
+                time: '09:05:29',
+                price: 7650,
+                shares: 145000,
+                side: 's',
+                buyer: 'YP',
+                seller: 'XL',
+                buyOrder: 11,
+                sellOrder: 99,
+                buyerForeign: true,
+              },
+              {
+                time: '09:05:31',
+                price: 7675,
+                shares: 2000,
+                buyer: 'AK',
+                seller: 'CC',
+                buyOrder: 120,
+                sellOrder: 12,
+                buyerForeign: true,
+              },
+            ],
+            { date: '2026-11-09', ticker: 'BREN' },
+          ),
     );
   }
   if (path.includes('/api/brokers'))
@@ -575,22 +573,20 @@ describe('React terminal', () => {
     const serve = fetcher.getMockImplementation();
     if (!serve) throw new Error('Missing fixture fetcher');
     auth.user = { id: 'test-user' };
-    const trades = {
-      date: '2026-11-10',
-      ticker: 'BBCA',
-      time: [32700, 43200, 58200],
-      price: [100, 120, 90],
-      shares: [100, 200, 300],
-      side: ['b', 'b', 's'],
-      auction: [false, false, true],
-      board: ['RG', 'RG', 'RG'],
-      buyer: ['AA', 'AA', 'BB'],
-      buyer_foreign: [false, false, true],
-      seller: ['CC', 'CC', 'AA'],
-      seller_foreign: [true, false, false],
-      buy_order: [1, 2, 3],
-      sell_order: [4, 5, 6],
-    };
+    const trades = tradeSession([
+      { time: '09:05:00', price: 100, shares: 100, seller: 'CC', sellerForeign: true },
+      { time: '12:00:00', price: 120, shares: 200, seller: 'CC' },
+      {
+        time: '16:10:00',
+        price: 90,
+        shares: 300,
+        side: 's',
+        auction: true,
+        buyer: 'BB',
+        seller: 'AA',
+        buyerForeign: true,
+      },
+    ]);
     await fetcher.withImplementation(
       async (input, init) => {
         const path = requestUrl(input);
@@ -930,22 +926,9 @@ it.each([
         if (path.includes('view=ticks') && path.includes('ticker=BBCA')) {
           const date = new URL(path, 'http://localhost').searchParams.get('date');
           if (date !== latest && date !== previous) return new Response('', { status: 404 });
-          return Response.json({
-            date,
-            ticker: 'BBCA',
-            time: [32700],
-            price: [100],
-            shares: [100],
-            side: ['b'],
-            auction: [false],
-            board: ['RG'],
-            buyer: ['AA'],
-            seller: ['BB'],
-            buyer_foreign: [true],
-            seller_foreign: [false],
-            buy_order: [1],
-            sell_order: [2],
-          });
+          return Response.json(
+            tradeSession([{ time: '09:05:00', buyerForeign: true }], { date, ticker: 'BBCA' }),
+          );
         }
         return serve(input, init);
       },
@@ -978,66 +961,34 @@ let drilldownSession = 0;
 // Enough trades to push morning fills past RT's first 500 rows and DD's first 300 blocks.
 const pagedSession = 510;
 function blockSession(filler: number) {
-  const trade = (
-    buy: number,
-    sell: number,
-    buyer: string,
-    seller: string,
-    shares = 100,
-    auction = false,
-    board = 'RG',
-    foreign = false,
-  ) => ({
-    time: auction ? 57600 : 32400,
-    price: 100,
-    shares,
-    side: 's',
-    auction,
-    board,
-    buyer,
-    seller,
-    buyer_foreign: foreign,
-    seller_foreign: false,
-    buy_order: buy,
-    sell_order: sell,
-  });
-  const rows = [
-    trade(1, 99, 'AA', 'XL', 10000, false, 'RG', true),
-    trade(2, 99, 'BB', 'XL', 20000),
-    trade(5, 99, 'AA', 'XL', 5000, false, 'RG', true),
-    { ...trade(120, 121, 'CC', 'DD', 5000), side: 'b' },
-    trade(3, 505, 'AA', 'KK', 100),
-    trade(4, 505, 'AA', 'KK', 100, false, 'RG', true),
+  // XL's sell order 99 sweeps three bids, then joins the closing auction against several buyers.
+  const sweep = { seller: 'XL', sellOrder: 99 };
+  const closing = { time: '16:00:00', auction: true };
+  const fills: Fill[] = [
+    { ...sweep, buyer: 'AA', buyOrder: 1, shares: 10000, buyerForeign: true },
+    { ...sweep, buyer: 'BB', buyOrder: 2, shares: 20000 },
+    { ...sweep, buyer: 'AA', buyOrder: 5, shares: 5000, buyerForeign: true },
+    { buyer: 'CC', seller: 'DD', buyOrder: 120, sellOrder: 121, shares: 5000, side: 'b' },
+    { buyer: 'AA', seller: 'KK', buyOrder: 3, sellOrder: 505 },
+    { buyer: 'AA', seller: 'KK', buyOrder: 4, sellOrder: 505, buyerForeign: true },
     ...Array.from({ length: filler }, (_, i) => ({
-      ...trade(1000 + i, 2000 + i, 'EE', 'FF'),
       time: 36000 + i,
+      buyer: 'EE',
+      seller: 'FF',
+      buyOrder: 1000 + i,
+      sellOrder: 2000 + i,
     })),
-    trade(700, 99, 'PA', 'XL', 400, true),
-    trade(701, 8800, 'ZZ', 'YY', 100, true),
-    trade(702, 99, 'QB', 'XL', 500, true),
-    trade(99, 8801, 'XX', 'YY', 100, true),
-    trade(703, 99, 'RC', 'XL', 600, true),
-    trade(704, 99, 'NG', 'XL', 100, true, 'NG'),
+    { ...closing, ...sweep, buyer: 'PA', buyOrder: 700, shares: 400 },
+    { ...closing, buyer: 'ZZ', seller: 'YY', buyOrder: 701, sellOrder: 8800 },
+    { ...closing, ...sweep, buyer: 'QB', buyOrder: 702, shares: 500 },
+    { ...closing, buyer: 'XX', seller: 'YY', buyOrder: 99, sellOrder: 8801 },
+    { ...closing, ...sweep, buyer: 'RC', buyOrder: 703, shares: 600 },
+    { ...closing, ...sweep, buyer: 'NG', buyOrder: 704, board: 'NG' },
   ];
-  const columns = {
-    time: rows.map((r) => r.time),
-    price: rows.map((r) => r.price),
-    shares: rows.map((r) => r.shares),
-    side: rows.map((r) => r.side),
-    auction: rows.map((r) => r.auction),
-    board: rows.map((r) => r.board),
-    buyer: rows.map((r) => r.buyer),
-    seller: rows.map((r) => r.seller),
-    buyer_foreign: rows.map((r) => r.buyer_foreign),
-    seller_foreign: rows.map((r) => r.seller_foreign),
-    buy_order: rows.map((r) => r.buy_order),
-    sell_order: rows.map((r) => r.sell_order),
-  };
-  return tickTradesSchema.parse({
-    ticker: 'BREN',
-    date: `2026-07-${String(++drilldownSession).padStart(2, '0')}`,
-    ...columns,
-  });
+  return tradeSession(
+    fills.map((fill) => ({ side: 's', ...fill })),
+    { ticker: 'BREN', date: `2026-07-${String(++drilldownSession).padStart(2, '0')}` },
+  );
 }
 function prepareBlocks(filler = 10) {
   dailyOpen = null;

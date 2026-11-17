@@ -5,6 +5,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import { App } from './App';
 import { arrivalMs } from './Void';
 import { tickerSchema, type SignalFeed, type Ticker } from './data';
+import { brokerRow } from './test-builders';
 import { HoldingsChart } from './ticker/Ownership';
 import { holdingSeries } from './ticker/logic';
 import tpiaFixture from './ticker/fixtures/TPIA-history.json';
@@ -29,15 +30,7 @@ vi.mock('./terminal/charts', async (importOriginal) => {
   return { ...actual, terminalChart: () => chart, publicChart: () => chart };
 });
 const dates = ['2026-10-19', '2026-10-20', '2026-10-21', '2026-10-22'];
-const row = (broker: string, shares: number) => ({
-  broker,
-  investor: 'domestic',
-  broker_type: 'local',
-  shares,
-  value: shares * 100,
-  avg_price: 100,
-  freq: 1,
-});
+const row = (broker: string, shares: number) => brokerRow(broker, shares, shares * 100);
 const days = [
   ...dates.map((date) => ({
     date,

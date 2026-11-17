@@ -3,7 +3,8 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vite-plus/test';
 import { tickerSchema } from '../data';
-import { tickTradesSchema, type TickTrades } from '../ticks';
+import type { TickTrades } from '../ticks';
+import { tradeSession } from '../test-builders';
 import { loadTicks, useTradeSessions } from './tick-data';
 
 const context = vi.hoisted(() => ({
@@ -23,24 +24,8 @@ vi.mock('./sources', () => ({ fetchTicks }));
 let root: Root, host: HTMLDivElement;
 let tickerNumber = 0;
 const dates = Array.from({ length: 8 }, (_, i) => `2026-10-${String(i + 1).padStart(2, '0')}`);
-function trades(date: string) {
-  return tickTradesSchema.parse({
-    ticker: context.ticker,
-    date,
-    time: [32400],
-    price: [100],
-    shares: [100],
-    side: ['b'],
-    auction: [false],
-    board: ['RG'],
-    buyer: ['AA'],
-    seller: ['BB'],
-    buyer_foreign: [true],
-    seller_foreign: [false],
-    buy_order: [1],
-    sell_order: [2],
-  });
-}
+const trades = (date: string) =>
+  tradeSession([{ buyerForeign: true }], { date, ticker: context.ticker });
 function History({ batchSize = 2 }: { batchSize?: number }) {
   const { state, loadMore } = useTradeSessions(batchSize);
   return (

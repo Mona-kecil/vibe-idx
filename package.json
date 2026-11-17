@@ -8,7 +8,14 @@
   "scripts": {
     "prepare": "vp config --no-agent",
     "test": "vp run --filter \"./apps/*\" --cache --concurrency-limit 1 test",
-    "knip": "knip"
+    "knip": "knip",
+    "fixtures": "pnpm --filter @vibe-idx/pipeline -s fixtures",
+    "inspect": "pnpm --filter @vibe-idx/web -s inspect",
+    "preview:local": "pnpm --filter @vibe-idx/web -s preview:local",
+    "ui:check": "pnpm --filter @vibe-idx/web -s ui:check",
+    "shots": "pnpm --filter @vibe-idx/web -s shots",
+    "verify:data": "pnpm --filter @vibe-idx/web -s verify:data",
+    "bench:publish": "pnpm --filter @vibe-idx/pipeline -s bench:publish"
   },
   "devDependencies": {
     "knip": "6.44.0",

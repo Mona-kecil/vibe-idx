@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vite-plus/test';
 import { tickerSchema } from '../data';
-import { tickTradesSchema } from '../ticks';
+import { tradeSession } from '../test-builders';
 import { chartDate, dailyBars, intradayBars, weeklyBars } from './charts';
 
 const prices = tickerSchema.parse({
@@ -69,22 +69,12 @@ describe('price chart bars', () => {
   });
 
   it('reuses regular-board aggregation and omits empty intervals', () => {
-    const trades = tickTradesSchema.parse({
-      date: '2026-11-10',
-      ticker: 'TEST',
-      time: [32400, 32500, 48600, 48601],
-      price: [100, 110, 90, 999],
-      shares: [100, 200, 300, 1000],
-      side: ['b', 's', 'b', 'b'],
-      auction: [false, false, false, false],
-      board: ['RG', 'RG', 'RG', 'NG'],
-      buyer: ['AA', 'BB', 'CC', 'DD'],
-      seller: ['DD', 'CC', 'BB', 'AA'],
-      buyer_foreign: [true, false, true, true],
-      seller_foreign: [false, true, true, false],
-      buy_order: [1, 2, 3, 4],
-      sell_order: [5, 6, 7, 8],
-    });
+    const trades = tradeSession([
+      { time: '09:00:00', price: 100, shares: 100, buyerForeign: true },
+      { time: '09:01:40', price: 110, shares: 200, side: 's', sellerForeign: true },
+      { time: '13:30:00', price: 90, shares: 300, buyerForeign: true, sellerForeign: true },
+      { time: '13:30:01', price: 999, shares: 1000, board: 'NG', buyerForeign: true },
+    ]);
     const result = intradayBars([trades, { ...trades, date: '2026-11-11' }], 15);
     expect(result).toHaveLength(4);
     expect(result[0]).toMatchObject({
