@@ -6,13 +6,6 @@ import { archiveSchema, type ArchiveArticle, type Ticker } from './contracts';
 import { cleanHTML } from './parsers';
 
 const dayMs = 24 * 3600e3;
-/**
- * Google answers a query with a ranked sample of its hits, never all of them, and a wider window returns a smaller
- * share (measured for one ticker: 12 months 40 items, 1 month 25). A page of this many items or more may be cut off,
- * so its window is halved until every part comes back smaller.
- */
-export const PAGE = 15;
-
 const itemSchema = z.object({
   title: z.string(),
   link: z.url(),
@@ -29,7 +22,7 @@ function withoutPublisher(title: string, publisher: string) {
   return title.endsWith(suffix) ? title.slice(0, -suffix.length) : title;
 }
 
-/** The articles of one Google News result page, tagged by `tag`, and how many items the page held. */
+/** The articles of one Google News result page that `tag` tags. */
 export function parseGoogle(xml: string, tag: (text: string) => string[]) {
   const parsed: unknown = new XMLParser({
     ignoreAttributes: true,
@@ -57,7 +50,7 @@ export function parseGoogle(xml: string, tag: (text: string) => string[]) {
       },
     ];
   });
-  return { articles, size: items.length };
+  return { articles };
 }
 
 export type Window = { from: string; to: string };
@@ -82,25 +75,33 @@ export function queryFor(ticker: Ticker, window: Window) {
 export type Fetcher = (query: string) => Promise<string>;
 
 /**
- * One ticker's articles over a window. A page that came back full was cut off, so its window is halved until
- * every part fits or is a single day.
+ * `window` cut into parts of `days` days. Google answers a query with a ranked sample of its hits, so narrower
+ * parts return more in all. Measured for four tickers over 12 months, one window kept 24 to 61 articles, 12 parts
+ * 73 to 269 and 26 parts 111 to 341. Halving a full page until it fit took 153 requests for one ticker, so the
+ * parts are fixed.
  */
-export async function collectWindow(
+export function parts(window: Window, days: number): Window[] {
+  const out: Window[] = [];
+  for (let from = Date.parse(window.from); from <= Date.parse(window.to); from += days * dayMs)
+    out.push({
+      from: day(from),
+      to: day(Math.min(from + (days - 1) * dayMs, Date.parse(window.to))),
+    });
+  return out;
+}
+
+/** One ticker's articles over a window, a request per part. */
+export async function collectTicker(
   ticker: Ticker,
   window: Window,
+  days: number,
   fetchPage: Fetcher,
   tag: (text: string) => string[],
 ): Promise<ArchiveArticle[]> {
-  const { articles, size } = parseGoogle(await fetchPage(queryFor(ticker, window)), tag);
-  const days = (Date.parse(window.to) - Date.parse(window.from)) / dayMs;
-  if (size < PAGE || days < 1) return articles;
-  const middle = day(Date.parse(window.from) + Math.floor(days / 2) * dayMs);
-  const next = day(Date.parse(middle) + dayMs);
-  return [
-    ...articles,
-    ...(await collectWindow(ticker, { from: window.from, to: middle }, fetchPage, tag)),
-    ...(await collectWindow(ticker, { from: next, to: window.to }, fetchPage, tag)),
-  ];
+  const found: ArchiveArticle[] = [];
+  for (const part of parts(window, days))
+    found.push(...parseGoogle(await fetchPage(queryFor(ticker, part)), tag).articles);
+  return found;
 }
 
 /** The Jakarta dates from `months` back to `now`. */
@@ -166,6 +167,7 @@ export async function backfill({
   tag,
   now,
   done = [],
+  days = 30,
   batch = 25,
   finished = async () => {},
   log = () => {},
@@ -177,6 +179,7 @@ export async function backfill({
   tag: (text: string) => string[];
   now: Date;
   done?: string[];
+  days?: number;
   batch?: number;
   finished?: (tickers: string[]) => Promise<void>;
   log?: (line: string) => void;
@@ -189,7 +192,7 @@ export async function backfill({
     const group = todo.slice(at, at + batch);
     const articles: ArchiveArticle[] = [];
     for (const ticker of group) {
-      const found = await collectWindow(ticker, window, fetchPage, tag);
+      const found = await collectTicker(ticker, window, days, fetchPage, tag);
       const kept = found.filter((a) => Date.parse(a.ts) >= start && Date.parse(a.ts) < end);
       log(`${ticker.ticker} ${kept.length}`);
       articles.push(...kept);

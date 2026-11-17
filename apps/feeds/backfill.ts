@@ -8,7 +8,7 @@ import { directoryBucket, r2Bucket } from './src/storage';
 import { tickerSchema } from './src/contracts';
 import { tickerTagger } from './src/tagging';
 
-const usage = `pnpm --filter @vibe-idx/feeds backfill --local [--dir DIR] | --r2 [--months 12] [--tickers BBCA,TLKM | --top 100] [--delay 3000] [--retag]
+const usage = `pnpm --filter @vibe-idx/feeds backfill --local [--dir DIR] | --r2 [--months 12] [--tickers BBCA,TLKM | --top 100] [--delay 3000] [--window-days 30] [--retag]
 
 Fills the news archive back from Google News, one ticker at a time, through the merge the Feeds job uses, so a
 rerun adds nothing. Run it from a machine Google News answers, not from a Cloudflare Worker.
@@ -19,6 +19,7 @@ rerun adds nothing. Run it from a machine Google News answers, not from a Cloudf
 --months N    how far back, 12 by default
 --tickers     only these codes
 --top N       only the N tickers with the highest value traded; they come first in any run
+--window-days N  one request per ticker per N days, 30 by default: 13 requests per ticker for 12 months
 --delay MS    between Google requests, 3000 by default; it backs off by itself on 429 and 503
 --retag       with --local, tag the archive again with the current tagger and stop, without asking Google
 A run that stops resumes where it stopped: finished tickers are listed in the state file next to DIR.`;
@@ -32,6 +33,7 @@ const { values: args } = parseArgs({
     tickers: { type: 'string' },
     top: { type: 'string' },
     delay: { type: 'string', default: '3000' },
+    'window-days': { type: 'string', default: '30' },
     retag: { type: 'boolean', default: false },
     help: { type: 'boolean', default: false },
   },
@@ -118,6 +120,7 @@ const totals = await backfill({
   tag,
   now,
   done,
+  days: z.coerce.number().int().min(1).max(366).parse(args['window-days']),
   finished: async (codes) => {
     done.push(...codes);
     await mkdir(dirname(stateFile), { recursive: true });

@@ -2,10 +2,10 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vite-plus/test';
 import { archiveKey, tickerKey } from './archive';
 import {
-  PAGE,
   backfill,
-  collectWindow,
+  collectTicker,
   lookback,
+  parts,
   parseGoogle,
   politeGoogle,
   queryFor,
@@ -38,8 +38,7 @@ const now = new Date('2026-11-17T05:00:00Z');
 
 describe('Google News pages', () => {
   it('drops the publisher suffix and the headlines no ticker names', () => {
-    const { articles, size } = parseGoogle(fixture('google-news.xml'), tag);
-    expect(size).toBe(3);
+    const { articles } = parseGoogle(fixture('google-news.xml'), tag);
     expect(articles.map((a) => [a.title, a.src, a.tags, a.source_id])).toEqual([
       ['Saham BBCA Menguat Jelang Rilis Laba', 'Kontan.co.id', ['BBCA'], 'google-news'],
       ['Bank Central Asia Siapkan Dividen', 'Bisnis.com', ['BBCA'], 'google-news'],
@@ -47,7 +46,7 @@ describe('Google News pages', () => {
     expect(articles[0]?.link).toBe('https://news.google.test/rss/articles/AAA111?oc=5');
   });
   it('reads a page without items as empty', () => {
-    expect(parseGoogle(fixture('google-empty.xml'), tag)).toEqual({ articles: [], size: 0 });
+    expect(parseGoogle(fixture('google-empty.xml'), tag)).toEqual({ articles: [] });
   });
   it('asks for the ticker, its code with saham, and its company, one day wider on each side', () => {
     expect(queryFor(bbca, { from: '2026-10-01', to: '2026-10-31' })).toBe(
@@ -57,34 +56,29 @@ describe('Google News pages', () => {
 });
 
 describe('windows', () => {
-  const page = (n: number) =>
-    `<rss><channel>${Array.from({ length: n }, (_, i) => `<item><title>Saham BBCA ${i} - Kontan</title><link>https://news.google.test/${n}-${i}</link><pubDate>Tue, 04 Nov 2026 03:00:00 GMT</pubDate><source>Kontan</source></item>`).join('')}</channel></rss>`;
-  it('halves a full page until each part fits', async () => {
+  it('cuts a window into fixed parts that cover every day once', () => {
+    expect(parts({ from: '2026-10-01', to: '2026-10-31' }, 10)).toEqual([
+      { from: '2026-10-01', to: '2026-10-10' },
+      { from: '2026-10-11', to: '2026-10-20' },
+      { from: '2026-10-21', to: '2026-10-30' },
+      { from: '2026-10-31', to: '2026-10-31' },
+    ]);
+    expect(parts({ from: '2026-10-01', to: '2026-10-01' }, 30)).toHaveLength(1);
+  });
+  it('asks once per part', async () => {
     const queries: string[] = [];
-    const found = await collectWindow(
+    await collectTicker(
       bbca,
-      { from: '2026-10-01', to: '2026-10-08' },
+      { from: '2026-09-01', to: '2026-11-17' },
+      30,
       async (q) => {
         queries.push(q);
-        return page(q.includes('after:2026-09-30 before:2026-10-10') ? PAGE : 2);
+        return fixture('google-empty.xml');
       },
       tag,
     );
     expect(queries).toHaveLength(3);
-    expect(found).toHaveLength(PAGE + 4);
-  });
-  it('stops at a single day however full the page is', async () => {
-    const queries: string[] = [];
-    await collectWindow(
-      bbca,
-      { from: '2026-10-01', to: '2026-10-01' },
-      async (q) => {
-        queries.push(q);
-        return page(PAGE);
-      },
-      tag,
-    );
-    expect(queries).toHaveLength(1);
+    expect(queries[0]).toContain('after:2026-08-31');
   });
   it('looks back a number of Jakarta months', () => {
     expect(lookback(new Date('2026-11-17T20:00:00Z'), 12)).toEqual({
