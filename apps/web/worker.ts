@@ -3,8 +3,13 @@ import { defaultMeta, parseTickerCard, tickerMeta, withShareMeta } from './api/_
 import { brokerTickerSchema } from './src/brokers.js';
 import { report } from './worker-sentry.js';
 
-type R2Object = { httpEtag: string; writeHttpMetadata(h: Headers): void; body?: ReadableStream };
-type R2Bucket = { get(key: string, options?: { onlyIf?: Headers }): Promise<R2Object | null> };
+type R2Object = {
+  httpEtag: string;
+  uploaded?: Date;
+  writeHttpMetadata(h: Headers): void;
+  body: ReadableStream;
+};
+type R2Bucket = { get(key: string): Promise<R2Object | null> };
 type Env = {
   ASSETS: { fetch(request: Request): Promise<Response> };
   PUBLIC: R2Bucket;
@@ -45,12 +50,21 @@ const store = async (key: Request, response: Response) => {
 const validators = ['ETag', 'Cache-Control', 'Last-Modified', 'Age', 'X-Edge-Cache'];
 
 /** True when If-None-Match names this ETag, comparing weakly as RFC 9110 requires. */
-function matches(ifNoneMatch: string | null, etag: string) {
-  if (!ifNoneMatch) return false;
+function matches(ifNoneMatch: string, etag: string) {
   const bare = (tag: string) => tag.trim().replace(/^W\//, '');
   return (
     ifNoneMatch.trim() === '*' || ifNoneMatch.split(',').some((tag) => bare(tag) === bare(etag))
   );
+}
+
+/** RFC 9110: If-None-Match decides when present; otherwise If-Modified-Since against Last-Modified. */
+function unchanged(request: Request, headers: Headers) {
+  const ifNoneMatch = request.headers.get('If-None-Match');
+  const etag = headers.get('ETag');
+  if (ifNoneMatch !== null) return etag !== null && matches(ifNoneMatch, etag);
+  const since = Date.parse(request.headers.get('If-Modified-Since') ?? '');
+  const modified = Date.parse(headers.get('Last-Modified') ?? '');
+  return modified <= since;
 }
 
 const notModified = (headers: Headers) => {
@@ -70,7 +84,6 @@ async function publicData(request: Request, env: Env, ctx: Context): Promise<Res
   const url = new URL(request.url);
   const cacheable = request.method === 'GET';
   const key = new Request(url.origin + url.pathname);
-  const ifNoneMatch = request.headers.get('If-None-Match');
   if (cacheable) {
     const hit = await cached(key);
     if (hit) {
@@ -81,27 +94,25 @@ async function publicData(request: Request, env: Env, ctx: Context): Promise<Res
       );
       response.headers.delete(sourceCacheControl);
       response.headers.set('X-Edge-Cache', 'HIT');
-      const etag = response.headers.get('ETag');
-      return etag && matches(ifNoneMatch, etag) ? notModified(response.headers) : response;
+      return unchanged(request, response.headers) ? notModified(response.headers) : response;
     }
   }
-  const onlyIf = new Headers();
-  for (const name of ['If-None-Match', 'If-Modified-Since']) {
-    const value = request.headers.get(name);
-    if (value) onlyIf.set(name, value);
-  }
-  const object = await env.PUBLIC.get(url.pathname.slice('/data/'.length), { onlyIf });
+  // A conditional miss still reads the whole object, so the next revalidation here is a hit.
+  const object = await env.PUBLIC.get(url.pathname.slice('/data/'.length));
   if (!object) return new Response('Not found', { status: 404 });
   const headers = new Headers({ ETag: object.httpEtag, 'Cache-Control': 'public, max-age=60' });
+  if (object.uploaded) headers.set('Last-Modified', object.uploaded.toUTCString());
   object.writeHttpMetadata(headers);
-  if (!object.body) return notModified(headers);
   const response = new Response(object.body, { headers });
-  if (!cacheable) return response;
-  const copy = response.clone();
-  copy.headers.set(sourceCacheControl, headers.get('Cache-Control') ?? '');
-  ctx.waitUntil(store(key, copy));
-  response.headers.set('X-Edge-Cache', 'MISS');
-  return response;
+  if (cacheable) {
+    const copy = response.clone();
+    copy.headers.set(sourceCacheControl, headers.get('Cache-Control') ?? '');
+    ctx.waitUntil(store(key, copy));
+    response.headers.set('X-Edge-Cache', 'MISS');
+  }
+  if (!unchanged(request, response.headers)) return response;
+  void response.body?.cancel();
+  return notModified(response.headers);
 }
 
 async function route(request: Request, env: Env, ctx: Context): Promise<Response> {

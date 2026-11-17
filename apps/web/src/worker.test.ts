@@ -35,6 +35,7 @@ function stored(body: string, cacheControl?: string) {
   return {
     body: new Response(body).body!,
     httpEtag: '"etag"',
+    uploaded: new Date('2026-11-17T10:00:00Z'),
     writeHttpMetadata: (headers: Headers) => {
       if (cacheControl) headers.set('Cache-Control', cacheControl);
     },
@@ -160,28 +161,48 @@ describe('Worker', () => {
     expect((await read({ 'If-None-Match': '"other"' })).status).toBe(200);
     expect(env.PUBLIC.get).toHaveBeenCalledTimes(1);
   });
-  it('passes the conditional headers to R2 and answers 304 when the object is unchanged', async () => {
+  it('answers a conditional miss with 304 and keeps the object at the edge for the next one', async () => {
     const env = environment();
-    env.PUBLIC.get.mockResolvedValueOnce({
-      httpEtag: '"etag"',
-      writeHttpMetadata: (headers: Headers) => headers.set('Cache-Control', 'public, max-age=300'),
-    } as never);
+    env.PUBLIC.get.mockResolvedValueOnce(stored('{"a":1}', 'public, max-age=300') as never);
     const pending: Promise<unknown>[] = [];
-    const response = await worker.fetch(
-      new Request('https://idx.test/data/market.json', {
-        headers: { 'If-None-Match': '"etag"', Authorization: 'secret' },
-      }),
-      env,
-      { waitUntil: (promise) => void pending.push(promise) },
+    const waiting = { waitUntil: (promise: Promise<unknown>) => void pending.push(promise) };
+    const read = (headers: HeadersInit) =>
+      worker.fetch(new Request('https://idx.test/data/market.json', { headers }), env, waiting);
+
+    const miss = await read({ 'If-None-Match': '"etag"', Authorization: 'secret' });
+    expect(env.PUBLIC.get.mock.calls[0]).toEqual(['market.json']);
+    expect(miss.status).toBe(304);
+    expect(miss.headers.get('etag')).toBe('"etag"');
+    expect(miss.headers.get('cache-control')).toBe('public, max-age=300');
+    expect(miss.headers.get('x-edge-cache')).toBe('MISS');
+    await Promise.all(pending);
+
+    const hit = await read({ 'If-None-Match': '"etag"' });
+    expect(hit.status).toBe(304);
+    expect(hit.headers.get('x-edge-cache')).toBe('HIT');
+    expect(env.PUBLIC.get).toHaveBeenCalledTimes(1);
+  });
+  it('answers If-Modified-Since from Last-Modified on a miss and on a hit', async () => {
+    const env = environment();
+    env.PUBLIC.get.mockResolvedValueOnce(stored('{"a":1}') as never);
+    const pending: Promise<unknown>[] = [];
+    const waiting = { waitUntil: (promise: Promise<unknown>) => void pending.push(promise) };
+    const read = (headers: HeadersInit) =>
+      worker.fetch(new Request('https://idx.test/data/market.json', { headers }), env, waiting);
+    const uploaded = 'Tue, 17 Nov 2026 10:00:00 GMT';
+
+    const miss = await read({ 'If-Modified-Since': uploaded });
+    expect(miss.status).toBe(304);
+    expect(miss.headers.get('last-modified')).toBe(uploaded);
+    await Promise.all(pending);
+
+    expect((await read({ 'If-Modified-Since': uploaded })).status).toBe(304);
+    expect((await read({ 'If-Modified-Since': 'Tue, 17 Nov 2026 09:59:59 GMT' })).status).toBe(200);
+    expect((await read({ 'If-Modified-Since': 'not a date' })).status).toBe(200);
+    expect((await read({ 'If-None-Match': '"other"', 'If-Modified-Since': uploaded })).status).toBe(
+      200,
     );
-    const onlyIf = (env.PUBLIC.get.mock.calls[0] as unknown as [string, { onlyIf: Headers }])[1]
-      .onlyIf;
-    expect(onlyIf.get('if-none-match')).toBe('"etag"');
-    expect(onlyIf.has('authorization')).toBe(false);
-    expect(response.status).toBe(304);
-    expect(response.headers.get('etag')).toBe('"etag"');
-    expect(response.headers.get('cache-control')).toBe('public, max-age=300');
-    expect(pending).toHaveLength(0);
+    expect(env.PUBLIC.get).toHaveBeenCalledTimes(1);
   });
   it('reads from PUBLIC when the edge cache throws', async () => {
     const failing = () => Promise.reject(new Error('cache down'));
