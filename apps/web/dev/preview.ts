@@ -12,6 +12,8 @@ import { writeAtomic } from '../../pipeline/dev/local-r2.js';
 import { fixtureState, fixturesRoot, localBrokerApi } from './local-api.js';
 import { previewClient } from './preview-client.js';
 
+/** This checkout's app, which the preview serves unless asked for another, such as a base checkout. */
+const ownWeb = fileURLToPath(new URL('..', import.meta.url));
 const publicBucket = 'https://pub-7982bfb066694e6e8615750132283eba.r2.dev';
 const liveApi = 'https://vibe-idx.vercel.app';
 const snapshot = join(fixturesRoot, 'public');
@@ -95,7 +97,7 @@ function heldUntilClose(res: ServerResponse) {
 export async function startPreview({
   port = 5173,
   quiet = false,
-  web = fileURLToPath(new URL('..', import.meta.url)),
+  web = ownWeb,
   record = false,
 }: { port?: number; quiet?: boolean; web?: string; record?: boolean } = {}) {
   const state = await fixtureState();
@@ -194,12 +196,12 @@ export async function startPreview({
     root: web,
     configFile: join(web, 'vite.config.ts'),
     logLevel: quiet ? 'silent' : 'info',
-    // Checkouts share node_modules through symlinks, so each keeps its own prebundle cache.
-    cacheDir: join(
-      fixturesRoot,
-      'vite',
-      createHash('sha256').update(web).digest('hex').slice(0, 12),
-    ),
+    // Checkouts share node_modules through symlinks, so each keeps its own prebundle cache. A temporary base
+    // checkout keeps it inside itself, so it goes when the checkout is removed instead of piling up.
+    cacheDir:
+      web === ownWeb
+        ? join(fixturesRoot, 'vite', createHash('sha256').update(web).digest('hex').slice(0, 12))
+        : join(web, '.vite-preview'),
     server: { port, strictPort: port !== 0, proxy: {} },
     define: { 'import.meta.env.VITE_WORKOS_CLIENT_ID': JSON.stringify('client_local') },
     resolve: {
