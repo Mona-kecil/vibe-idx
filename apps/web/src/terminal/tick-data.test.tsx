@@ -2,69 +2,38 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vite-plus/test';
-import { tickerSchema } from '../data';
-import type { TickTrades } from '../ticks';
+import { packBars, sessionBars, type BarFile, type TickTrades } from '../ticks';
 import { tradeSession } from '../test-builders';
-import { loadTicks, useTradeSessions } from './tick-data';
+import { loadTicks, useBars } from './tick-data';
 
 const context = vi.hoisted(() => ({
   ticker: '',
   authState: 'signed-in',
   getToken: async () => 'test',
-  detail: { kind: 'ready', data: { prices: [] as { date: string }[] } },
-  tickDate: null,
-  setTickDate: () => {},
 }));
 vi.mock('./state', () => ({ useTerminal: () => context }));
 const fetchTicks = vi.hoisted(() =>
   vi.fn<(ticker: string, date: string) => Promise<TickTrades | null>>(),
 );
-vi.mock('./sources', () => ({ fetchTicks }));
+const fetchBars = vi.hoisted(() => vi.fn<(ticker: string) => Promise<BarFile | null>>());
+vi.mock('./sources', () => ({ fetchTicks, fetchBars }));
 
 let root: Root, host: HTMLDivElement;
 let tickerNumber = 0;
-const dates = Array.from({ length: 8 }, (_, i) => `2026-10-${String(i + 1).padStart(2, '0')}`);
-const trades = (date: string) =>
-  tradeSession([{ buyerForeign: true }], { date, ticker: context.ticker });
-function History({ batchSize = 2 }: { batchSize?: number }) {
-  const { state, loadMore } = useTradeSessions(batchSize);
-  return (
-    <>
-      <output>
-        {state.kind === 'ready' ? state.data.map((s) => s.date).join(',') : state.kind}
-      </output>
-      <button onClick={loadMore}>Older</button>
-    </>
-  );
+const barsOf = (ticker: string, date: string) =>
+  packBars(ticker, sessionBars(tradeSession([{ buyerForeign: true }], { date, ticker })));
+function Bars() {
+  const state = useBars();
+  return <output>{state.kind === 'ready' ? state.data.time.length : state.kind}</output>;
 }
-async function render(batchSize = 2) {
-  await act(async () => root.render(<History batchSize={batchSize} />));
-}
-async function older() {
-  await act(async () => host.querySelector('button')?.click());
-}
+const render = () => act(async () => root.render(<Bars />));
 const shown = () => host.querySelector('output')?.textContent;
 beforeEach(() => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
-  context.ticker = `HISTORY${++tickerNumber}`;
-  context.detail = {
-    kind: 'ready',
-    data: tickerSchema.parse({
-      ticker: context.ticker,
-      name: 'History',
-      holders: [],
-      changes: [],
-      prices: ['2025-12-31', ...dates].map((date) => ({
-        date,
-        close: 100,
-        volume: 100,
-        value: 10000,
-        net_foreign: 0,
-      })),
-    }),
-  };
+  context.ticker = `BARS${++tickerNumber}`;
   context.authState = 'signed-in';
   fetchTicks.mockReset();
+  fetchBars.mockReset();
   host = document.createElement('div');
   document.body.append(host);
   root = createRoot(host);
@@ -75,82 +44,57 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-it('prepends older batches, skips isolated missing sessions and shares the request cache', async () => {
-  fetchTicks.mockResolvedValueOnce(trades(dates[6]!)).mockResolvedValueOnce(trades(dates[7]!));
+it('loads a ticker once for every timeframe and reloads it for another ticker', async () => {
+  fetchBars.mockImplementation(async (ticker) => barsOf(ticker, '2026-11-10'));
   await render();
-  expect(shown()).toBe(dates.slice(6).join(','));
-  fetchTicks.mockResolvedValueOnce(null).mockResolvedValueOnce(trades(dates[5]!));
-  await older();
-  expect(shown()).toBe([dates[5], ...dates.slice(6)].join(','));
-  fetchTicks.mockResolvedValueOnce(trades(dates[2]!)).mockResolvedValueOnce(trades(dates[3]!));
-  await older();
-  expect(shown()).toBe([...dates.slice(2, 4), dates[5], ...dates.slice(6)].join(','));
-  await loadTicks(context.ticker, dates[7]!, 'trades', context.getToken);
-  await loadTicks(context.ticker, dates[4]!, 'trades', context.getToken);
-  expect(fetchTicks).toHaveBeenCalledTimes(6);
+  expect(shown()).toBe('1');
+  await act(async () => root.unmount());
+  root = createRoot(host);
+  await render();
+  expect(fetchBars).toHaveBeenCalledTimes(1);
+  context.ticker += 'NEW';
+  await render();
+  expect(fetchBars).toHaveBeenCalledTimes(2);
 });
 
-it('stops after a whole older batch is missing and keeps the collected session', async () => {
-  fetchTicks
-    .mockResolvedValueOnce(null)
-    .mockResolvedValueOnce(trades(dates[7]!))
-    .mockResolvedValue(null);
+it('waits for sign-in and shows a ticker without collected bars as missing', async () => {
+  context.authState = 'signed-out';
   await render();
-  await older();
-  await older();
-  await older();
-  expect(fetchTicks).toHaveBeenCalledTimes(4);
-  expect(shown()).toBe(dates[7]);
+  expect(shown()).toBe('loading');
+  expect(fetchBars).not.toHaveBeenCalled();
+  context.authState = 'signed-in';
+  fetchBars.mockResolvedValue(null);
+  await render();
+  expect(shown()).toBe('missing');
 });
 
-it('stops immediately when the initial batch is entirely missing', async () => {
-  fetchTicks.mockResolvedValue(null);
+it('shows the failure and asks again on the next visit', async () => {
+  fetchBars.mockRejectedValueOnce(new Error('Tick data is unavailable. Retry.'));
   await render();
-  await older();
-  expect(fetchTicks).toHaveBeenCalledTimes(2);
-  expect(shown()).toBe('');
-});
-
-it('requests the remaining short batch once and never asks for pre-2026 dates', async () => {
-  fetchTicks.mockImplementation(async (_ticker, date) => trades(date));
-  await render(5);
-  await older();
-  await older();
-  expect(fetchTicks).toHaveBeenCalledTimes(8);
-  expect(fetchTicks.mock.calls.map((call) => call[1])).toEqual([
-    ...dates.slice(3),
-    ...dates.slice(0, 3),
-  ]);
-});
-
-it('coalesces repeated left-edge notifications while a batch is pending', async () => {
-  fetchTicks.mockResolvedValueOnce(trades(dates[6]!)).mockResolvedValueOnce(trades(dates[7]!));
+  expect(shown()).toBe('error');
+  await act(async () => root.unmount());
+  root = createRoot(host);
+  fetchBars.mockImplementation(async (ticker) => barsOf(ticker, '2026-11-10'));
   await render();
-  let resolve!: (value: TickTrades | null) => void;
-  const pending = new Promise<TickTrades | null>((done) => {
-    resolve = done;
-  });
-  fetchTicks.mockReturnValue(pending);
-  await older();
-  await older();
-  expect(fetchTicks).toHaveBeenCalledTimes(4);
-  await act(async () => resolve(null));
-  await older();
-  expect(fetchTicks).toHaveBeenCalledTimes(4);
-  expect(shown()).toBe(dates.slice(6).join(','));
+  expect(fetchBars).toHaveBeenCalledTimes(2);
+  expect(shown()).toBe('1');
 });
 
 it('ignores an old ticker response after the viewer changes ticker', async () => {
-  let resolve!: (value: TickTrades | null) => void;
-  const pending = new Promise<TickTrades | null>((done) => {
-    resolve = done;
-  });
-  fetchTicks.mockReturnValue(pending);
+  let resolve!: (value: BarFile | null) => void;
+  fetchBars.mockReturnValueOnce(new Promise((done) => (resolve = done)));
   await render();
+  const old = context.ticker;
   context.ticker += 'NEW';
-  fetchTicks.mockResolvedValue(trades(dates[7]!));
+  fetchBars.mockImplementation(async (ticker) => barsOf(ticker, '2026-11-10'));
   await render();
-  const latest = shown();
-  await act(async () => resolve(trades(dates[0]!)));
-  expect(shown()).toBe(latest);
+  await act(async () => resolve(barsOf(old, '2026-11-09')));
+  expect(shown()).toBe('1');
+});
+
+it('shares one request for the same ticker, day and kind', async () => {
+  fetchTicks.mockImplementation(async (ticker, date) => tradeSession([{}], { date, ticker }));
+  await loadTicks(context.ticker, '2026-11-10', 'trades', context.getToken);
+  await loadTicks(context.ticker, '2026-11-10', 'trades', context.getToken);
+  expect(fetchTicks).toHaveBeenCalledTimes(1);
 });

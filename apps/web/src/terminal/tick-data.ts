@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { TickBook, TickKind, TickTrades } from '../ticks';
-import { fetchTicks } from './sources.js';
+import { useEffect, useMemo, useState } from 'react';
+import type { BarFile, TickBook, TickKind, TickTrades } from '../ticks';
+import { fetchBars, fetchTicks } from './sources.js';
 import { useTerminal } from './state.js';
 
 export type Loaded<K extends TickKind> = K extends 'book' ? TickBook : TickTrades;
@@ -75,56 +75,55 @@ export function useTicks<K extends TickKind>(kind: K, date: string | undefined):
   return state;
 }
 
-export function useTradeSessions(batchSize: number) {
+export type BarState =
+  | { kind: 'loading' }
+  | { kind: 'missing' }
+  | { kind: 'error'; message: string }
+  | { kind: 'ready'; data: BarFile };
+
+// One file holds every collected session of a ticker, so each timeframe on GP shares one request.
+const barCache = new Map<string, Promise<BarFile | null>>();
+export const clearBars = () => barCache.clear();
+
+function loadBars(
+  ticker: string,
+  getToken: () => Promise<string | undefined>,
+): Promise<BarFile | null> {
+  let request = barCache.get(ticker);
+  if (!request) {
+    request = getToken().then((token) => {
+      if (!token) throw new Error('Your sign-in expired. Sign in again.');
+      return fetchBars(ticker, token);
+    });
+    barCache.set(ticker, request);
+    void request.catch(() => barCache.delete(ticker));
+  }
+  return request;
+}
+
+export function useBars(): BarState {
   const { ticker, authState, getToken } = useTerminal();
-  const { dates } = useSession();
-  const [state, setState] = useState<
-    { kind: 'loading' } | { kind: 'error'; message: string } | { kind: 'ready'; data: TickTrades[] }
-  >({ kind: 'loading' });
-  const requestMore = useRef<() => void>(() => {});
-  const loadMore = useCallback(() => requestMore.current(), []);
+  const signedIn = authState === 'signed-in';
+  const [state, setState] = useState<BarState>({ kind: 'loading' });
   useEffect(() => {
-    if (authState !== 'signed-in') return;
+    if (!signedIn) return;
     let current = true;
-    let loading = false;
-    let exhausted = false;
-    let cursor = dates.length;
-    function load() {
-      if (!current || loading || exhausted) return;
-      loading = true;
-      const start = Math.max(0, cursor - batchSize);
-      void Promise.all(
-        dates.slice(start, cursor).map((date) => loadTicks(ticker, date, 'trades', getToken)),
-      )
-        .then((sessions) => {
-          if (!current) return;
-          cursor = start;
-          // A whole missing batch marks the end of collected history, even if daily prices go further back.
-          exhausted = start === 0 || sessions.every((data) => data === null);
-          const older = sessions.filter((data) => data !== null);
-          setState((previous) => ({
-            kind: 'ready',
-            data: [...older, ...(previous.kind === 'ready' ? previous.data : [])],
-          }));
-        })
-        .catch((error: unknown) => {
-          if (current)
-            setState({
-              kind: 'error',
-              message: error instanceof Error ? error.message : 'Tick data is unavailable. Retry.',
-            });
-        })
-        .finally(() => {
-          loading = false;
-        });
-    }
-    requestMore.current = load;
     setState({ kind: 'loading' });
-    load();
+    loadBars(ticker, getToken).then(
+      (data) => {
+        if (current) setState(data ? { kind: 'ready', data } : { kind: 'missing' });
+      },
+      (error: unknown) => {
+        if (current)
+          setState({
+            kind: 'error',
+            message: error instanceof Error ? error.message : 'Tick data is unavailable. Retry.',
+          });
+      },
+    );
     return () => {
       current = false;
-      requestMore.current = () => {};
     };
-  }, [ticker, authState, getToken, dates, batchSize]);
-  return { state, loadMore };
+  }, [ticker, signedIn, getToken]);
+  return state;
 }

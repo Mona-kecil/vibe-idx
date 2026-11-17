@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vite-plus/test';
 import { tickerSchema } from '../data';
 import { tradeSession } from '../test-builders';
-import { chartDate, dailyBars, intradayBars, weeklyBars } from './charts';
+import { packBars, sessionBars } from '../ticks';
+import { barSeries, chartDate, dailyBars, latestSessionBars, weeklyBars } from './charts';
 
 const prices = tickerSchema.parse({
   ticker: 'TEST',
@@ -68,14 +69,18 @@ describe('price chart bars', () => {
     expect(prices[0]?.volume).toBe(100);
   });
 
-  it('reuses regular-board aggregation and omits empty intervals', () => {
+  it('combines the bar file for any timeframe, across sessions, and omits empty intervals', () => {
     const trades = tradeSession([
       { time: '09:00:00', price: 100, shares: 100, buyerForeign: true },
       { time: '09:01:40', price: 110, shares: 200, side: 's', sellerForeign: true },
       { time: '13:30:00', price: 90, shares: 300, buyerForeign: true, sellerForeign: true },
       { time: '13:30:01', price: 999, shares: 1000, board: 'NG', buyerForeign: true },
     ]);
-    const result = intradayBars([trades, { ...trades, date: '2026-11-11' }], 15);
+    const file = packBars('BBCA', [
+      ...sessionBars(trades),
+      ...sessionBars({ ...trades, date: '2026-11-11' }),
+    ]);
+    const result = barSeries(file, 15);
     expect(result).toHaveLength(4);
     expect(result[0]).toMatchObject({
       open: 100,
@@ -88,7 +93,24 @@ describe('price chart bars', () => {
     expect(result[1]).toMatchObject({ volume: 300 });
     expect(result[0]?.time).toBe(Date.parse('2026-11-10T09:00:00+07:00') / 1000);
     expect(chartDate(result[2]?.time)).toBe('2026-11-11');
-    expect(intradayBars([trades], 60)).toHaveLength(2);
-    expect(intradayBars([trades], 240)).toHaveLength(2);
+    expect(result.map((bar) => [bar.date, bar.endDate])).toEqual(
+      ['2026-11-10', '2026-11-10', '2026-11-11', '2026-11-11'].map((date) => [date, date]),
+    );
+    expect(barSeries(file, 60)).toHaveLength(4);
+    expect(barSeries(file, 240)).toHaveLength(4);
+    expect(barSeries(packBars('BBCA', sessionBars(trades)), 240)).toHaveLength(2);
+    expect(barSeries(file, 240)[0]).toMatchObject({ open: 100, close: 110, volume: 300 });
+    expect(barSeries(file, 240)[1]).toMatchObject({ open: 90, close: 90, volume: 300 });
+  });
+
+  it('opens on the latest sessions and shows all of them when there are fewer', () => {
+    const day = (date: string) =>
+      sessionBars(tradeSession([{ time: '09:05:00' }, { time: '13:30:00' }], { date }));
+    const file = packBars('BBCA', ['2026-11-09', '2026-11-10', '2026-11-11'].flatMap(day));
+    const series = barSeries(file, 15);
+    expect(series).toHaveLength(6);
+    expect(latestSessionBars(series, 2)).toBe(4);
+    expect(latestSessionBars(series, 20)).toBe(6);
+    expect(latestSessionBars([], 5)).toBe(0);
   });
 });

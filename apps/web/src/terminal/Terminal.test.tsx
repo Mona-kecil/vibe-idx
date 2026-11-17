@@ -3,10 +3,11 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { Terminal } from './Terminal';
+import { clearBars } from './tick-data';
 import { cumulativeFlows, foreignFlow } from './BrokerPanes';
 import type { BrokerDay } from '../brokers';
 import { brokerRow, tradeSession, type Fill } from '../test-builders';
-import type { TickTrades } from '../ticks';
+import { packBars, sessionBars, type TickTrades } from '../ticks';
 
 const crosshair = vi.hoisted(() => ({ move: (_event: { time?: number }) => {} }));
 
@@ -204,6 +205,7 @@ async function command(text: string) {
   );
 }
 beforeEach(() => {
+  clearBars();
   tickSessions = false;
   drilldown = null;
   sourceFailed = false;
@@ -598,8 +600,8 @@ describe('React terminal', () => {
             holders: [],
             changes: [],
           });
-        if (path.includes('view=ticks') && path.includes('ticker=BBCA'))
-          return Response.json(trades);
+        if (path.includes('view=bars') && path.includes('ticker=BBCA'))
+          return Response.json(packBars('BBCA', sessionBars(trades)));
         return serve(input, init);
       },
       async () => {
@@ -828,7 +830,9 @@ it('keeps daily and weekly public and gates 4H without requesting ticks', async 
     'Sign in to see broker and trade data',
   );
   expect(host.querySelector('.chart-host')).toBeNull();
-  expect(fetcher.mock.calls.every(([path]) => !requestUrl(path).includes('view=ticks'))).toBe(true);
+  expect(fetcher.mock.calls.every(([path]) => !/view=(ticks|bars)/.test(requestUrl(path)))).toBe(
+    true,
+  );
   expect(host.querySelector('[role="tab"][title="Intraday chart"]')).toBeNull();
   await click('[aria-label="Chart timeframe"] button:nth-child(2)');
   expect(host.querySelector('.chart-host')?.getAttribute('data-bars')).toBe('2');
@@ -890,72 +894,98 @@ it('ignores invalid chart type preferences and still works when localStorage is 
   }
 });
 
-it.each([
-  { timeframe: '15M', count: 5, month: '03' },
-  { timeframe: '1H', count: 10, month: '04' },
-  { timeframe: '4H', count: 20, month: '05' },
-])(
-  'loads an initial $count sessions for $timeframe, skips 404s, and shares the trade cache',
-  async ({ timeframe, count, month }) => {
+describe('intraday timeframes', () => {
+  const dates = Array.from({ length: 25 }, (_, i) => `2026-03-${String(i + 1).padStart(2, '0')}`);
+  const barsOf = (ticker: string) =>
+    packBars(
+      ticker,
+      dates.flatMap((date) =>
+        sessionBars(tradeSession([{ time: '09:05:00', buyerForeign: true }], { date, ticker })),
+      ),
+    );
+  /** GP of `ticker`, whose bar request answers `bars`. */
+  async function withBars(ticker: string, bars: () => Response, body: () => Promise<void>) {
     const serve = fetcher.getMockImplementation();
     if (!serve) throw new Error('Missing fixture fetcher');
     auth.user = { id: 'test-user' };
-    const dates = Array.from(
-      { length: 25 },
-      (_, i) => `2026-${month}-${String(i + 1).padStart(2, '0')}`,
+    await fetcher.withImplementation(async (input, init) => {
+      const path = requestUrl(input);
+      if (path.includes(`ticker/${ticker}`))
+        return Response.json({
+          ticker,
+          name: ticker,
+          holders: [],
+          changes: [],
+          prices: dates.map((date) => ({
+            date,
+            close: 100,
+            volume: 100,
+            value: 10000,
+            net_foreign: 0,
+          })),
+        });
+      if (path.includes('view=bars') && path.includes(`ticker=${ticker}`)) return bars();
+      return serve(input, init);
+    }, body);
+  }
+  const requests = (kind: string) =>
+    fetcher.mock.calls.map(([input]) => requestUrl(input)).filter((path) => path.includes(kind));
+  const choose = (timeframe: string) =>
+    act(async () =>
+      [...host.querySelectorAll<HTMLButtonElement>('[aria-label="Chart timeframe"] button')]
+        .find((el) => el.textContent === timeframe)
+        ?.click(),
     );
-    const latest = dates.at(-1);
-    const previous = dates.at(-2);
-    await fetcher.withImplementation(
-      async (input, init) => {
-        const path = requestUrl(input);
-        if (path.includes('ticker/BBCA'))
-          return Response.json({
-            ticker: 'BBCA',
-            name: 'BBCA',
-            holders: [],
-            changes: [],
-            prices: dates.map((date) => ({
-              date,
-              close: 100,
-              volume: 100,
-              value: 10000,
-              net_foreign: 0,
-            })),
-          });
-        if (path.includes('view=ticks') && path.includes('ticker=BBCA')) {
-          const date = new URL(path, 'http://localhost').searchParams.get('date');
-          if (date !== latest && date !== previous) return new Response('', { status: 404 });
-          return Response.json(
-            tradeSession([{ time: '09:05:00', buyerForeign: true }], { date, ticker: 'BBCA' }),
-          );
-        }
-        return serve(input, init);
-      },
+
+  it('reads one bar file for 15M, 1H and 4H and keeps all of its history', async () => {
+    await withBars(
+      'BBCA',
+      () => Response.json(barsOf('BBCA')),
       async () => {
         await render();
         await command('FOCUS BBCA GP');
-        await act(async () =>
-          [...host.querySelectorAll<HTMLButtonElement>('[aria-label="Chart timeframe"] button')]
-            .find((el) => el.textContent === timeframe)
-            ?.click(),
-        );
-        const requests = () =>
-          fetcher.mock.calls
-            .map(([input]) => requestUrl(input))
-            .filter((path) => path.includes('view=ticks') && path.includes('ticker=BBCA'));
-        expect(requests()).toHaveLength(count);
-        expect(
-          requests().map((path) => new URL(path, 'http://localhost').searchParams.get('date')),
-        ).toEqual(dates.slice(-count));
-        expect(host.querySelector('.chart-host')?.getAttribute('data-bars')).toBe('2');
-        await command('RT');
-        expect(requests()).toHaveLength(count);
-        expect(host.querySelectorAll('.tick-table tbody tr')).toHaveLength(1);
+        for (const timeframe of ['15M', '1H', '4H']) {
+          await choose(timeframe);
+          expect(host.querySelector('.chart-host')?.getAttribute('data-bars')).toBe('25');
+        }
+        await choose('15M');
+        await choose('D');
+        expect(requests('view=bars')).toHaveLength(1);
+        expect(requests('view=bars')[0]).toContain('ticker=BBCA');
+        expect(requests('view=ticks')).toEqual([]);
       },
     );
-  },
-);
+  });
+
+  it('says so when the ticker has no collected bars', async () => {
+    await withBars(
+      'BREN',
+      () => new Response('', { status: 404 }),
+      async () => {
+        await render();
+        await command('FOCUS BREN GP');
+        await choose('1H');
+        expect(host.querySelector('.chart-host')).toBeNull();
+        expect(host.textContent).toContain('No collected regular-board trades');
+      },
+    );
+  });
+
+  it('shows a failed load as an alert', async () => {
+    await withBars(
+      'BREN',
+      () => new Response('', { status: 503 }),
+      async () => {
+        await render();
+        await command('FOCUS BREN GP');
+        await choose('4H');
+        expect(host.querySelector('[role="alert"]')?.textContent).toBe(
+          'Tick data is unavailable. Retry.',
+        );
+      },
+    );
+  });
+});
 
 let drilldownSession = 0;
 // Enough trades to push morning fills past RT's first 500 rows and DD's first 300 blocks.

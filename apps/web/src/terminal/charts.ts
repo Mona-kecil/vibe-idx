@@ -1,7 +1,7 @@
 import type { Ticker } from '../data';
 import { chartTheme } from '../ticker/chartTheme.js';
 import { dateText } from '../ticker/format.js';
-import { bars, type TickTrades } from '../ticks.js';
+import { combineBars, unpackBars, type BarFile } from '../ticks.js';
 import {
   ColorType,
   CrosshairMode,
@@ -129,29 +129,28 @@ export function weeklyBars(prices: Ticker['prices']): PriceBar[] {
   return [...weeks.values()];
 }
 
-export function intradayBars(sessions: TickTrades[], minutes: number): PriceBar[] {
-  return sessions
-    .flatMap((trades) => {
-      const values = new Map<number, number>();
-      trades.time.forEach((time, i) => {
-        if (trades.board[i] !== 'RG') return;
-        const start = time - (time % (minutes * 60));
-        const value = trades.price[i]! * trades.shares[i]!;
-        values.set(start, (values.get(start) ?? 0) + value);
-      });
-      const midnight = Date.parse(`${trades.date}T00:00:00+07:00`) / 1000;
-      return bars(trades, minutes).map((bar) => ({
-        time: (midnight + bar.time) as UTCTimestamp,
-        date: trades.date,
-        endDate: trades.date,
-        open: bar.open,
-        high: bar.high,
-        low: bar.low,
-        close: bar.close,
-        volume: bar.shares,
-        value: values.get(bar.time) ?? 0,
-        estimated: false,
-      }));
-    })
-    .sort((a, b) => Number(a.time) - Number(b.time));
+/** The ticker's 15-minute bars combined into `minutes`, across every collected session. */
+export function barSeries(file: BarFile, minutes: number): PriceBar[] {
+  return combineBars(unpackBars(file), minutes).map((bar) => {
+    const time = bar.time as UTCTimestamp;
+    const date = chartDate(time)!;
+    return {
+      time,
+      date,
+      endDate: date,
+      open: bar.open,
+      high: bar.high,
+      low: bar.low,
+      close: bar.close,
+      volume: bar.shares,
+      value: bar.value,
+      estimated: false,
+    };
+  });
+}
+
+/** How many of the last bars fall in the latest `sessions` sessions, which is where the chart opens. */
+export function latestSessionBars(series: PriceBar[], sessions: number) {
+  const first = [...new Set(series.map((bar) => bar.date))].at(-sessions);
+  return series.filter((bar) => first === undefined || bar.date >= first).length;
 }
