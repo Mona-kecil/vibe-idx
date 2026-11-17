@@ -28,8 +28,14 @@ describe('R2 publications', () => {
         cacheControl: 'public, max-age=300',
       },
     };
+    await bucket.put('news/ticker/BBCA.json', '{}', metadata);
+    const nested = fetcher.mock.calls[0]?.[0];
+    if (!(nested instanceof Request)) throw new Error('Expected a signed request');
+    expect(nested.url).toBe(
+      `https://${config.accountId}.r2.cloudflarestorage.com/vibe-idx-public/news/ticker/BBCA.json`,
+    );
     await bucket.put('calendar.json', '{"cal":[]}', metadata);
-    const request = fetcher.mock.calls[0]?.[0];
+    const request = fetcher.mock.calls[1]?.[0];
     expect(request).toBeInstanceOf(Request);
     if (!(request instanceof Request)) throw new Error('Expected a signed request');
     expect(request.url).toBe(

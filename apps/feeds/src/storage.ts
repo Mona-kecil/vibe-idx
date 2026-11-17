@@ -16,7 +16,7 @@ export function r2Bucket({
   async function request(key: string, init: RequestInit) {
     return fetcher(
       await signer.sign(
-        `https://${accountId}.r2.cloudflarestorage.com/vibe-idx-public/${encodeURIComponent(key)}`,
+        `https://${accountId}.r2.cloudflarestorage.com/vibe-idx-public/${key.split('/').map(encodeURIComponent).join('/')}`,
         { ...init, redirect: 'error', signal: AbortSignal.timeout(30000) },
       ),
     );

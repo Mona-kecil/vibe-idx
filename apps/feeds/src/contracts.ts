@@ -14,6 +14,40 @@ export const newsArticleSchema = z.object({
   tags: z.array(z.string()),
   source_id: z.string(),
 });
+/**
+ * One Indonesian market article in the news archive, kept for good. `news/archive/YYYY-MM.json` holds a Jakarta
+ * month of them, newest first, deduplicated by canonical link.
+ */
+export const archiveArticleSchema = newsArticleSchema.pick({
+  ts: true,
+  src: true,
+  title: true,
+  link: true,
+  tags: true,
+  source_id: true,
+});
+export type ArchiveArticle = z.infer<typeof archiveArticleSchema>;
+export const archiveSchema = z.object({
+  month: z.string().regex(/^\d{4}-(?:0[1-9]|1[0-2])$/),
+  as_of: z.iso.datetime(),
+  articles: z.array(archiveArticleSchema),
+});
+/**
+ * A ticker's archived news in the shape `/api/news` answers with, so the Worker only filters and cuts.
+ * `news/ticker/CODE.json` holds every archived article tagged with the code, newest first.
+ */
+export const tickerNewsRowSchema = z.object({
+  title: z.string().min(1),
+  url: z.url(),
+  published_at: z.iso.datetime(),
+  source: z.string(),
+});
+export type TickerNewsRow = z.infer<typeof tickerNewsRowSchema>;
+export const tickerNewsSchema = z.object({
+  ticker: z.string().regex(/^[A-Z0-9-]{1,12}$/),
+  as_of: z.iso.datetime(),
+  news: z.array(tickerNewsRowSchema),
+});
 export const calendarEventSchema = z.object({
   ts: z.iso.datetime(),
   c: z.string(),

@@ -1,3 +1,4 @@
+import { publishArchive } from './archive';
 import { calendarSchema, newsSchema, type SourceStatus } from './contracts';
 import { calendarSources, newsSources, request, type Request } from './sources';
 
@@ -109,6 +110,14 @@ export async function collect({
         }),
         options,
       );
+    if (result)
+      await publishArchive(
+        bucket,
+        result.items.flatMap(({ region, ts, src, title, link, tags, source_id }) =>
+          region === 'ID' ? [{ ts, src, title, link, tags, source_id }] : [],
+        ),
+        now,
+      ).catch((failure: unknown) => report('news-archive', failure));
   };
   const calendar = async () => {
     const object = await bucket.get('calendar.json');

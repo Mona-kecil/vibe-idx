@@ -258,6 +258,9 @@ describe('publication failure isolation', () => {
     expect(newsSchema.parse(JSON.parse(memory.get('news.json') ?? 'null')).news).toHaveLength(16);
     expect(memory.has('calendar.json')).toBe(true);
     expect(failures).toEqual(['bps']);
+    const archive = JSON.parse(memory.get('news/archive/2026-11.json') ?? 'null');
+    expect(archive.articles).toHaveLength(2);
+    expect(JSON.parse(memory.get('news/ticker/BBCA.json') ?? 'null').news).toHaveLength(2);
   });
 });
 
