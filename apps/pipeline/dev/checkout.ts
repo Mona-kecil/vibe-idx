@@ -29,19 +29,21 @@ function removeOrphans() {
   }
 }
 
-/** Warns when `ref` is a local branch behind its upstream, which compares against code that isn't merged yet. */
-function warnIfBehind(ref: string) {
+/**
+ * A warning when `ref` is a local branch behind its upstream: a comparison with it counts merged work as this
+ * checkout's change.
+ */
+function behindUpstream(ref: string) {
   let upstream: string;
   try {
     upstream = git('rev-parse', '--abbrev-ref', `${ref}@{upstream}`).trim();
   } catch {
-    return;
+    return undefined;
   }
   const count = Number(git('rev-list', '--count', `${ref}..${upstream}`));
-  if (count)
-    console.warn(
-      `${ref} is ${plural(count, 'commit')} behind ${upstream}. Use --base ${upstream} to compare with what is merged.`,
-    );
+  return count
+    ? `${ref} is ${plural(count, 'commit')} behind ${upstream}, so differences may come from work already merged there. Use --base ${upstream} to compare with what is merged.`
+    : undefined;
 }
 
 /**
@@ -62,7 +64,8 @@ const timer = setInterval(() => {
  */
 export async function checkout(ref: string) {
   const sha = git('rev-parse', '--verify', `${ref}^{commit}`).trim();
-  warnIfBehind(ref);
+  const behind = behindUpstream(ref);
+  if (behind) console.warn(behind);
   removeOrphans();
   const dir = `${prefix}${sha.slice(0, 12)}-${process.pid}`;
   let removed = false;
@@ -82,7 +85,7 @@ export async function checkout(ref: string) {
       await symlink(join(repoRoot, modules), join(dir, modules));
   const label = `${ref} (${sha.slice(0, 7)})`;
   console.warn(`base ${label}`);
-  return { dir, sha, label, remove };
+  return { dir, sha, label, behind, remove };
 }
 
 /** Fails for a path inside any checkout of the repository: screenshots can show private broker data. */

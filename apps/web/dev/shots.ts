@@ -284,7 +284,9 @@ const before = base
     })
   : undefined;
 const browser = await launch();
-const report: string[] = base ? [`Before is ${base.label}, after is this checkout.`, ''] : [];
+const report: string[] = base
+  ? [`Before is ${base.label}, after is this checkout.`, ...(base.behind ? [base.behind] : []), '']
+  : [];
 let failed = 0;
 try {
   for (const scenario of scenarios) {
