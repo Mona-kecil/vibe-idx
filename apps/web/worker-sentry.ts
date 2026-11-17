@@ -1,9 +1,15 @@
 // The Node Sentry SDK does not run on Workers, so this posts envelopes directly.
-const DSN = new URL(
-  'https://03fc55665713ed6fef277fe74ebe5ada@o4507632166961152.ingest.us.sentry.io/4512400217735168',
-);
-
-export async function report(environment: string, failure: unknown, tags: Record<string, string>) {
+// Without a DSN, as under `wrangler dev` where .dev.vars blanks it, the failure goes to the console.
+export async function report(
+  env: { DEPLOYMENT: string; SENTRY_DSN?: string },
+  failure: unknown,
+  tags: Record<string, string>,
+) {
+  if (!env.SENTRY_DSN) {
+    console.error('Not reported to Sentry:', failure);
+    return;
+  }
+  const DSN = new URL(env.SENTRY_DSN);
   const event_id = crypto.randomUUID().replaceAll('-', '');
   const error = failure instanceof Error ? failure : null;
   const event = {
@@ -11,7 +17,7 @@ export async function report(environment: string, failure: unknown, tags: Record
     timestamp: Date.now() / 1000,
     platform: 'javascript',
     level: 'error',
-    environment,
+    environment: env.DEPLOYMENT,
     logger: 'vibe-idx-worker',
     tags,
     ...(error

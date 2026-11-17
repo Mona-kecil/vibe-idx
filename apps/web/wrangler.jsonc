@@ -17,6 +17,7 @@
   ],
   "vars": {
     "DEPLOYMENT": "preview",
+    "SENTRY_DSN": "https://03fc55665713ed6fef277fe74ebe5ada@o4507632166961152.ingest.us.sentry.io/4512400217735168",
     "WORKOS_CLIENT_ID": "client_01M5KP5949040A7VK88Q06D64E",
   },
   "env": {
@@ -35,6 +36,7 @@
       ],
       "vars": {
         "DEPLOYMENT": "production",
+        "SENTRY_DSN": "https://03fc55665713ed6fef277fe74ebe5ada@o4507632166961152.ingest.us.sentry.io/4512400217735168",
         "WORKOS_CLIENT_ID": "client_01M5KP59DT9VA1NXR1KG8WBMS0",
       },
     },

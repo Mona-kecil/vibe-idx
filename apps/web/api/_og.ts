@@ -334,13 +334,11 @@ export function createCardRenderer({
 export function createOgHandler({
   render,
   loadCard,
-  reportFailure = async () => {},
 }: {
   render: (card: TickerCard | null) => Promise<Uint8Array<ArrayBuffer>>;
   loadCard: (ticker: string) => Promise<TickerCard | null>;
-  reportFailure?: (route: string, failure: unknown) => Promise<void>;
 }) {
-  return async (request: Request) => {
+  return async (request: Request, fail: (error: unknown, tags: { route: string }) => void) => {
     if (request.method !== 'GET')
       return new Response(null, { status: 405, headers: { Allow: 'GET' } });
     const search = new URL(request.url).searchParams;
@@ -367,7 +365,7 @@ export function createOgHandler({
         },
       });
     } catch (error) {
-      await reportFailure('og', error);
+      fail(error, { route: 'og' });
       return Response.json({ error: 'unavailable' }, { status: 502 });
     }
   };

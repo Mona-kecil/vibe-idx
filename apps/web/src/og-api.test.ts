@@ -27,7 +27,9 @@ const fontAssets = {
 const render = createCardRenderer({ layout, resvg, fonts: assetFonts(fontAssets) });
 const loaded = parseTickerCard(history);
 const loadCard = vi.fn<(ticker: string) => Promise<TickerCard | null>>(async () => loaded);
-const og = createOgHandler({ render, loadCard });
+const handler = createOgHandler({ render, loadCard });
+const fail = vi.fn<(error: unknown, tags: { route: string }) => void>();
+const og = (request: Request) => handler(request, fail);
 
 async function expectPng(response: Response) {
   expect(response.headers.get('content-type')).toBe('image/png');
@@ -65,6 +67,7 @@ describe('share card PNGs', () => {
   it('renders the brand with 404 for an unknown ticker', async () => {
     const unknown = await createOgHandler({ render, loadCard: async () => null })(
       new Request('https://idx.test/api/og?ticker=NOPE'),
+      fail,
     );
     const brand = await og(new Request('https://idx.test/api/og'));
     expect(unknown.status).toBe(404);
@@ -78,6 +81,7 @@ describe('share card PNGs', () => {
       const lookup = vi.fn<typeof loadCard>();
       const response = await createOgHandler({ render: renderer, loadCard: lookup })(
         new Request(`https://idx.test/api/og${query}`),
+        fail,
       );
       expect(response.status).toBe(400);
       expect(lookup).not.toHaveBeenCalled();
@@ -85,8 +89,8 @@ describe('share card PNGs', () => {
     },
   );
 
-  it('reports rendering failures with 502', async () => {
-    const reportFailure = vi.fn<(route: string, failure: unknown) => Promise<void>>(async () => {});
+  it('reports a rendering failure once, with its error, and answers 502', async () => {
+    fail.mockClear();
     const failing = createOgHandler({
       render: createCardRenderer({
         layout,
@@ -94,18 +98,18 @@ describe('share card PNGs', () => {
         fonts: () => Promise.reject(new Error('Fonts unavailable')),
       }),
       loadCard,
-      reportFailure,
     });
-    const response = await failing(new Request('https://idx.test/api/og'));
+    const response = await failing(new Request('https://idx.test/api/og'), fail);
     expect(response.status).toBe(502);
-    expect(reportFailure).toHaveBeenCalledWith('og', expect.any(Error));
+    expect(fail).toHaveBeenCalledOnce();
+    expect(fail).toHaveBeenCalledWith(new Error('Fonts unavailable'), { route: 'og' });
   });
 
   it('reports data outages with 502 instead of caching an unknown ticker', async () => {
     const response = await createOgHandler({
       render,
       loadCard: () => Promise.reject(new Error('Ticker data returned 503')),
-    })(new Request('https://idx.test/api/og?ticker=TPIA'));
+    })(new Request('https://idx.test/api/og?ticker=TPIA'), fail);
     expect(response.status).toBe(502);
     expect(response.headers.get('cache-control')).toBeNull();
   });

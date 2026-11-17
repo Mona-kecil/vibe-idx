@@ -27,6 +27,7 @@
     "scripts",
     "vite.config.ts",
     "worker.ts",
+    "worker-cache.ts",
     "worker-sentry.ts",
     "wasm.d.ts"
   ]
