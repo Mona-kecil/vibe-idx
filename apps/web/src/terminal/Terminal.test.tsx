@@ -1,8 +1,9 @@
 // @vitest-environment happy-dom
-import { act } from 'react';
+import { act, StrictMode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { Terminal } from './Terminal';
+import { clearBrokerHistory } from './broker-history';
 import { clearTickData } from './tick-data';
 import { cumulativeFlows, foreignFlow } from './BrokerPanes';
 import type { BrokerDay } from '../brokers';
@@ -206,6 +207,7 @@ async function command(text: string) {
 }
 beforeEach(() => {
   clearTickData();
+  clearBrokerHistory();
   tickSessions = false;
   drilldown = null;
   sourceFailed = false;
@@ -779,6 +781,44 @@ describe('React terminal', () => {
           'No 2026 sessions for this ticker',
         );
       });
+    });
+  });
+  describe('broker history', () => {
+    const histories = () =>
+      fetcher.mock.calls
+        .map(([input]) => requestUrl(input))
+        .filter((path) => path.includes('/api/brokers?ticker='));
+    beforeEach(() => {
+      window.history.replaceState(null, '', '/terminal?t=BREN&l=flow');
+      auth.user = { id: 'test-user' };
+    });
+
+    it('is requested once when the terminal opens, even if it mounts twice', async () => {
+      await act(async () =>
+        root.render(
+          <StrictMode>
+            <Terminal />
+          </StrictMode>,
+        ),
+      );
+      expect(histories()).toEqual(['/api/brokers?ticker=BREN']);
+    });
+
+    it('is not requested again when returning to a ticker', async () => {
+      await render();
+      await command('BBCA');
+      await command('BREN');
+      expect(histories()).toEqual(['/api/brokers?ticker=BREN', '/api/brokers?ticker=BBCA']);
+      expect(host.querySelector('[role="alert"]')).toBeNull();
+    });
+
+    it('is requested again after signing out and back in', async () => {
+      await render();
+      auth.user = null;
+      await render();
+      auth.user = { id: 'test-user' };
+      await render();
+      expect(histories()).toHaveLength(2);
     });
   });
 });
