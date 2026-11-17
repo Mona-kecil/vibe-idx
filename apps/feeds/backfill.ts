@@ -121,6 +121,7 @@ const totals = await backfill({
   tag,
   now,
   covered,
+  batch: 1,
   days: z.coerce.number().int().min(1).max(366).parse(args['window-days']),
   finished: async (done) => {
     for (const [code, windows] of Object.entries(done))

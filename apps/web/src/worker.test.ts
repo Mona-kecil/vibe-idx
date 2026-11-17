@@ -289,6 +289,7 @@ describe('Worker', () => {
     try {
       const env = {
         ...environment(),
+        SENTRY_DSN: dsn,
         PUBLIC: {
           get: vi.fn<(key: string) => Promise<unknown>>(async () => {
             throw new Error('R2 down');
