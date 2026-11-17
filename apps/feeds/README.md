@@ -8,28 +8,26 @@ The Indonesian sources are CNBC Indonesia, Antara, Kontan and IDX Channel. Bisni
 
 Tagging uses the company names in `tickers.json` in the public bucket, with `PT`, `Persero`, and `Tbk` normalized. Longer names match first. A single-word company name requires `PT` or `Tbk`. Group nicknames and bank abbreviations never tag.
 
-A code of four or five capitals tags in three ways:
+Codes of four or five capitals tag after a stock marker, in a stock list, after `$` for an unambiguous code, with `Tbk`, or with a capitalized name before their parenthesised code. A bare code also needs company-name or business context. Codes that read as English or Indonesian words need explicit stock context or a distinctive word from the company's name. This favors precision and misses some headlines that name only a code.
 
-- A stock marker (`saham`, `emiten`, `ticker`, `kode saham`, `sandi`) immediately before it, or `Tbk` immediately after it. The marker also covers the codes that follow in a list (`Saham BBCA, BBRI dan BMRI`).
-- A capitalized name before its parenthesised code (`Pan Brothers (PBRX)`).
-- Bare, in a headline that is not all capitals, unless the code is in `wordCodes`. Those codes are also an ordinary word or an organisation's abbreviation (`DATA`, `AUTO`, `NASA`, `META`) and tag only the first two ways.
-
-A new listing whose code reads as a word must be added to `wordCodes`. The `news-tags` check of `pnpm verify:data` finds the ones the archive already shows.
+`src/common-words.ts` bundles four- and five-letter dictionary words rather than a hand-maintained list of ticker codes. Rebuild it with `pnpm --filter @vibe-idx/feeds words ENGLISH_WORDS.txt INDONESIAN_WORDS_DIR`. The source versions and licenses are in `WORD-LISTS-LICENSE`.
 
 ## News archive
 
-Every run also merges its Indonesian articles into the public bucket, which is how ticker news survives the move off Vercel and Google News:
+Every run also merges its Indonesian articles into the public bucket:
 
-- `news/archive/YYYY-MM.json` holds `{ month, as_of, articles }` for one Jakarta month. An article is `{ ts, src, title, link, tags, source_id }`, newest first, one per canonical link. Titles and links only, never summaries or bodies.
-- `news/ticker/CODE.json` holds `{ ticker, as_of, news }` with every archived article tagged with the code, newest first. A row is `{ title, url, published_at, source }`, the shape `/api/news` answers with, so the Worker only filters and cuts. A Worker read of 12 monthly files took 47 ms against 5 to 11 ms for one ticker file, so the index stays.
+- `news/archive/YYYY-MM.json` is the source of truth for one Jakarta month. It holds `{ month, as_of, articles, tickers, dirty }`. Articles contain titles, dates, links, publishers and tags, never article bodies.
+- `news/ticker/CODE/YYYY.json` holds `{ ticker, as_of, news }` for one Jakarta year, newest first. `/api/news` reads at most two annual files for its date range.
 
-A repeat run writes nothing. The ticker files are written before the archive, so a run that dies between them is repeated by the next run. Only a feed's own window can be re-read, so an article that left every feed before the archive held it is lost. A link already archived takes the new tags, which carries tagger changes to articles a feed still lists. `pnpm --filter @vibe-idx/feeds backfill --local --retag` applies the current tagger to the rest of a local copy.
+Archive writes require the ETag read, or a missing object. A conflict retries from a fresh read. A changed month is marked dirty in the same write; its ticker files are then derived with conditional writes, and the mark is cleared only if the archive has not changed. A later run repairs dirty months without needing their articles again. Feeds checks the current and previous months even when no current source returns those articles. An interrupted historical backfill retries its uncompleted batch.
 
-A Google News article whose headline a feed already carries is dropped, and a feed article replaces the Google one it duplicates.
+A repeat run writes nothing. AMP forms and tracking parameters identify the same link. A Google redirect and a publisher link are one story only when publisher, normalized headline and publication time agree. Distinct publishers and later repeats survive.
+
+Retag a local copy with `pnpm --filter @vibe-idx/feeds backfill --local --retag`.
 
 ## Backfill
 
-`pnpm --filter @vibe-idx/feeds backfill --help` lists the options. The backfill asks Google News about each ticker over the last 12 months, one request per 30 days, and writes through the same merge, so a rerun adds nothing and a stopped run resumes from a state file. Google answers Cloudflare with 503, so run it from a normal machine. It spaces requests 3 seconds apart and backs off on 429 and 503. Do not run the Feeds workflow's collector against the archive at the same moment: both read and rewrite the same month files.
+`pnpm --filter @vibe-idx/feeds backfill --help` lists the options. The backfill asks Google News about each ticker over the last 12 months, one request per 30 days, and writes through the same merge, so a rerun adds nothing and a stopped run resumes from a state file. Google answers Cloudflare with 503, so run it from a normal machine. It spaces requests 3 seconds apart and backs off on 429 and 503. Conditional writes allow the backfill and Feeds to update the archive together. Progress is saved atomically per destination, ticker and completed date range; increasing the lookback only requests the missing dates. A damaged progress file fails with an actionable error; `--restart` starts over.
 
 - `--local` writes to a copy of the public bucket in the fixtures folder instead of R2, for trying it.
 - `--r2` writes to the real bucket with the `R2_*` variables of the Feeds job.

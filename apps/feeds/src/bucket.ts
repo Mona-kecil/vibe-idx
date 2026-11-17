@@ -1,7 +1,7 @@
 /** What a write requires of the object it replaces: the version read before, or no object at all. */
-export type Condition = { match: string } | { absent: true };
+type Condition = { match: string } | { absent: true };
 
-export type PutOptions = {
+type PutOptions = {
   httpMetadata: { contentType: string; cacheControl: string };
   only?: Condition;
 };

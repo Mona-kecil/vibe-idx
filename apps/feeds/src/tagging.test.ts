@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vite-plus/test';
-import { tickerTagger, wordCodes } from './tagging';
+import { tickerTagger } from './tagging';
 
 const tickers = [
   { ticker: 'BBCA', name: 'Bank Central Asia Tbk' },
@@ -24,6 +24,12 @@ const tickers = [
   { ticker: 'GOTO', name: 'GoTo Gojek Tokopedia Tbk' },
   { ticker: 'GOTOM', name: 'GoTo Gojek Tokopedia Tbk Seri M' },
   { ticker: 'MEGA', name: 'Bank Mega Tbk' },
+  { ticker: 'ASLI', name: 'Asri Karya Lestari Tbk' },
+  { ticker: 'MUTU', name: 'Mutuagung Lestari Tbk' },
+  { ticker: 'KONI', name: 'Perdana Bangun Pusaka Tbk' },
+  { ticker: 'CSIS', name: 'Cahayasakti Investindo Sukses Tbk' },
+  { ticker: 'LAPD', name: 'Leyand International Tbk' },
+  { ticker: 'META', name: 'Nusantara Infrastructure Tbk' },
 ];
 const tag = tickerTagger(tickers);
 
@@ -73,7 +79,9 @@ describe('codes with a stock marker', () => {
       'VIVA',
     ]);
     expect(tag('Saham BBCA turun, DATA center Bekasi dibuka')).toEqual(['BBCA']);
-    expect(tag('BBCA dan AUTO pilot Tesla')).toEqual(['BBCA']);
+    expect(tag('BBCA dan AUTO pilot Tesla')).toEqual([]);
+    expect(tag('Saham BBCA, BUMI menguat')).toEqual(['BBCA', 'BUMI']);
+    expect(tag('SAHAM BBCA, BBRI TURUN')).toEqual(['BBCA', 'BBRI']);
   });
 });
 
@@ -98,10 +106,16 @@ describe('bare codes', () => {
     ['BBCAX bukan kode', []],
   ])('%s', (text, expected) => expect(tag(text)).toEqual(expected));
 
-  it('keeps every word-like code out of the bare rule', () => {
-    for (const code of ['DATA', 'AUTO', 'DART', 'VIVA', 'NASA', 'BUMI', 'MEGA'])
-      expect(wordCodes.has(code)).toBe(true);
-    for (const code of ['BBCA', 'BBRI', 'BMRI', 'TLKM', 'ASII', 'ADRO', 'GOTO', 'PBRX'])
-      expect(wordCodes.has(code)).toBe(false);
-  });
+  it.each([
+    ['Produk ASLI Indonesia memiliki MUTU tinggi', []],
+    ['KONI Siapkan Atlet untuk Kompetisi Nasional', []],
+    ['CSIS Bahas Hubungan Indonesia dan Amerika', []],
+    ['LAPD Tangkap Pelaku Kejahatan di Los Angeles', []],
+    ['Meta Platforms ($META) Rilis Laporan Keuangan', []],
+    ['Meta Platforms (META) Rilis Laporan Keuangan', []],
+    ['Nusantara Infrastructure (META) Rilis Laporan Keuangan', ['META']],
+    ['Saham ASLI, MUTU, KONI, CSIS dan LAPD menguat', ['ASLI', 'CSIS', 'KONI', 'LAPD', 'MUTU']],
+    ['Cahayasakti Investindo Sukses Perluas Usaha', ['CSIS']],
+    ['MUTU (Mutuagung Lestari) Perluas Layanan', ['MUTU']],
+  ])('%s', (text, expected) => expect(tag(text)).toEqual(expected));
 });

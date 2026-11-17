@@ -65,7 +65,7 @@ export const tickerKey = (ticker: string, month: string) =>
   `news/ticker/${ticker}/${month.slice(0, 4)}.json`;
 
 /** An article that entered, left or changed its tags. */
-export type Change = { article: ArchiveArticle; before: string[]; after: string[] };
+type Change = { article: ArchiveArticle; before: string[]; after: string[] };
 
 const newest = (a: { ts: string; link: string }, b: { ts: string; link: string }) =>
   b.ts.localeCompare(a.ts) || a.link.localeCompare(b.link);

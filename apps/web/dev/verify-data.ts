@@ -10,7 +10,7 @@ import { tickBookSchema, tickTradesSchema } from '../src/ticks.js';
 import { cliErrors, plural } from '../../pipeline/dev/cli.js';
 import { table } from './format.js';
 import { fixtureState, fixturesRoot, localBrokerApi } from './local-api.js';
-import { archiveSchema, tickerNewsSchema } from '../../feeds/src/contracts.js';
+import { archiveSchema } from '../../feeds/src/contracts.js';
 import { tickerTagger } from '../../feeds/src/tagging.js';
 
 // The terminal's panes import their CSS, which only the bundler can load.
@@ -20,7 +20,7 @@ registerHooks({
       ? { format: 'module', source: '', shortCircuit: true }
       : next(url, context),
 });
-const { checks, noTrades, skipLine } = await import('./checks.js');
+const { checks, noTrades, skipLine, readNewsIndex } = await import('./checks.js');
 type Check = (typeof checks)[number];
 type Outcome = ReturnType<Extract<Check, { session: unknown }>['session']>;
 
@@ -115,12 +115,7 @@ for (const article of archive) {
   for (const code of new Set([...article.tags, ...expected]))
     archivedByTicker.set(code, [...(archivedByTicker.get(code) ?? []), { article, expected }]);
 }
-const newsIndex = async (ticker: string) => {
-  const file = join(newsRoot, 'ticker', `${ticker}.json`);
-  return existsSync(file)
-    ? tickerNewsSchema.parse(JSON.parse(await readFile(file, 'utf8'))).news
-    : undefined;
-};
+const newsIndex = (ticker: string) => readNewsIndex(newsRoot, ticker);
 const publicTicker = async (ticker: string) => {
   const file = join(fixturesRoot, 'public/ticker', `${ticker}.json`);
   return existsSync(file)

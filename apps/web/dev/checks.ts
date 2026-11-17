@@ -3,6 +3,8 @@
  * take plain data, so a test can feed them a session built by hand.
  */
 import { z } from 'zod';
+import { readFile, readdir } from 'node:fs/promises';
+import { join } from 'node:path';
 import { aggregateBrokers } from '../src/broker-data.js';
 import {
   brokerBoards,
@@ -12,7 +14,7 @@ import {
 } from '../src/brokers.js';
 import { corporateActionSchema, type Ticker } from '../src/data.js';
 import { canonicalLink } from '../../feeds/src/archive.js';
-import type { ArchiveArticle } from '../../feeds/src/contracts.js';
+import { tickerNewsSchema, type ArchiveArticle } from '../../feeds/src/contracts.js';
 import { cumulativeFlows, foreignFlow } from '../src/terminal/BrokerPanes.js';
 import { bars, type TickBook, type TickTrades } from '../src/ticks.js';
 import { plural } from '../../pipeline/dev/cli.js';
@@ -340,4 +342,23 @@ export const checks: Check[] = [
 export function skipLine(reason: string, where: string[], show: number) {
   const listed = where.length <= 12 ? where.length : Math.max(show, 1);
   return `skip: ${reason}, ${plural(where.length, 'time')}: ${where.slice(0, listed).join(', ')}${where.length > listed ? `, and ${where.length - listed} more` : ''}`;
+}
+
+/** All annual ticker files, matching the monthly archive's full history. */
+export async function readNewsIndex(newsRoot: string, ticker: string) {
+  const directory = join(newsRoot, 'ticker', ticker);
+  const files = await readdir(directory).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === 'ENOENT') return [];
+    throw error;
+  });
+  return (
+    await Promise.all(
+      files
+        .filter((file) => /^\d{4}\.json$/.test(file))
+        .map(
+          async (file) =>
+            tickerNewsSchema.parse(JSON.parse(await readFile(join(directory, file), 'utf8'))).news,
+        ),
+    )
+  ).flat();
 }

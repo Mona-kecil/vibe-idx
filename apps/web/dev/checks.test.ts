@@ -1,4 +1,7 @@
 import { describe, expect, it } from 'vite-plus/test';
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { BrokerDay } from '../src/brokers';
 import type { Ticker } from '../src/data';
 import { brokerRow, tradeSession, type Fill } from '../src/test-builders';
@@ -7,6 +10,7 @@ import {
   checks,
   noTrades,
   skipLine,
+  readNewsIndex,
   type CorporateAction,
   type NewsView,
   type Session,
@@ -258,4 +262,35 @@ describe('skipLine', () => {
       'skip: no daily prices, 20 times: t0, t1, t2, and 17 more',
     );
   });
+});
+
+it('verifies every annual ticker news file and tolerates an uncollected ticker', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'news-index-'));
+  try {
+    const directory = join(root, 'ticker', 'BBCA');
+    await mkdir(directory, { recursive: true });
+    for (const year of ['2025', '2026'])
+      await writeFile(
+        join(directory, `${year}.json`),
+        JSON.stringify({
+          ticker: 'BBCA',
+          as_of: '2026-11-17T00:00:00Z',
+          news: [
+            {
+              title: `Saham BBCA ${year}`,
+              url: `https://example.test/${year}`,
+              published_at: `${year}-11-10T00:00:00Z`,
+              source: 'Test',
+            },
+          ],
+        }),
+      );
+    const rows = await readNewsIndex(root, 'BBCA');
+    expect(rows.map((row) => row.title).sort()).toEqual(['Saham BBCA 2025', 'Saham BBCA 2026']);
+    expect(await readNewsIndex(root, 'BBRI')).toEqual([]);
+    await writeFile(join(directory, '2026.json'), '{');
+    await expect(readNewsIndex(root, 'BBCA')).rejects.toThrow(SyntaxError);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
