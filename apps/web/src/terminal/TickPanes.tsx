@@ -81,50 +81,71 @@ function TickPane<K extends TickKind>({
 
 const fillCount = (fills: number) => `${nf(fills)} ${fills === 1 ? 'fill' : 'fills'}`;
 const lots = (shares: number) => nf(shares / 100, shares % 100 ? 2 : 0);
-/** The longest text `format` gives over `values`, formatting only the largest value per magnitude and odd lot. */
-function widest(values: number[], format: (value: number) => string) {
-  const largest = new Map<number, number>();
-  for (const value of values) {
-    const key = Math.floor(Math.log10(Math.abs(value) || 1)) * 2 + (value % 100 ? 1 : 0);
-    if (!(value <= (largest.get(key) ?? -Infinity))) largest.set(key, value);
+const longest = (texts: string[]) => texts.reduce((a, b) => (b.length > a.length ? b : a), '');
+/** The widest lot text: the largest whole lot, or the largest odd lot with its decimals. */
+function lotText(count: number, shares: (index: number) => number) {
+  let all = 0,
+    odd = -1;
+  for (let index = 0; index < count; index++) {
+    const value = shares(index);
+    if (value > all) all = value;
+    if (value % 100 && value > odd) odd = value;
   }
-  return [...largest.values()].map(format).reduce((a, b) => (b.length > a.length ? b : a), '');
+  return longest(odd < 0 ? [lots(all)] : [lots(all), lots(odd)]);
+}
+/** The widest `short` text: the largest value in each of its units. */
+function valueText(count: number, values: (index: number) => number) {
+  const top = [-1, -1, -1, -1, -1];
+  for (let index = 0; index < count; index++) {
+    const value = Math.abs(values(index));
+    const unit = value >= 1e12 ? 4 : value >= 1e9 ? 3 : value >= 1e6 ? 2 : value >= 1e3 ? 1 : 0;
+    if (value > top[unit]!) top[unit] = value;
+  }
+  return longest(top.filter((value) => value >= 0).map(short));
 }
 /**
- * A windowed table sizes its columns from the rows on screen, so this hidden row holds the widest price, lot and
- * value of every row, and the columns keep one width while scrolling.
+ * A windowed table sizes its columns from the rows on screen, so these hidden rows hold the widest price, lot and
+ * value of every row, and for DD the widest Buy and Sell cells, so the columns keep one width while scrolling.
  */
 function SizingRow({
-  prices,
-  shares,
-  values,
+  price,
+  lot,
+  value,
   open,
   decimals = 0,
+  buy = [],
+  sell = [],
 }: {
-  prices: number[];
-  shares: number[];
-  values: number[];
+  price: number;
+  lot: string;
+  value: string;
   open: SessionOpen | null;
   decimals?: number;
+  buy?: Block[];
+  sell?: Block[];
 }) {
   return (
     <tfoot className="tick-sizer" aria-hidden="true">
       <tr>
         <td />
         <td>
-          <Price
-            value={prices.reduce((a, b) => Math.max(a, b), 0)}
-            open={open}
-            decimals={decimals}
-          />
+          <Price value={price} open={open} decimals={decimals} />
         </td>
         <td />
-        <td>{widest(shares, lots)}</td>
-        <td>{widest(values, short)}</td>
+        <td>{lot}</td>
+        <td>{value}</td>
         <td />
         <td />
         <td />
       </tr>
+      {Array.from({ length: Math.max(buy.length, sell.length) }, (_, i) => (
+        <tr key={i}>
+          <td colSpan={5} />
+          <td>{buy[i] && <BlockSide block={buy[i]} side="buy" />}</td>
+          <td>{sell[i] && <BlockSide block={sell[i]} side="sell" />}</td>
+          <td />
+        </tr>
+      ))}
     </tfoot>
   );
 }
@@ -462,18 +483,38 @@ function TradeTape({
       block?.matching === 'continuous' && block.side === 'sell' ? b - a : a - b,
     );
   }, [trades, tickBlock, block]);
-  const rows: number[] = [];
+  const rows = useMemo(() => {
+    const rows: number[] = [];
+    for (let i = trades.time.length - 1; i >= 0; i--) {
+      if (
+        side !== 'ALL' &&
+        (trades.board[i] !== 'RG' || trades.side[i] !== (side === 'BUY' ? 'b' : 's'))
+      )
+        continue;
+      if (broker && trades.buyer[i] !== broker && trades.seller[i] !== broker) continue;
+      rows.push(i);
+    }
+    return rows;
+  }, [trades, side, broker]);
   let lastFill = -1;
-  for (let i = trades.time.length - 1; i >= 0; i--) {
-    if (
-      side !== 'ALL' &&
-      (trades.board[i] !== 'RG' || trades.side[i] !== (side === 'BUY' ? 'b' : 's'))
-    )
-      continue;
-    if (broker && trades.buyer[i] !== broker && trades.seller[i] !== broker) continue;
-    rows.push(i);
-    if (tickBlock && isBlockTrade(trades, i, tickBlock)) lastFill = rows.length - 1;
-  }
+  if (tickBlock)
+    for (let index = rows.length - 1; index >= 0 && lastFill < 0; index--)
+      if (isBlockTrade(trades, rows[index]!, tickBlock)) lastFill = index;
+  const footer = useMemo(
+    () =>
+      rows.length > 0 && (
+        <SizingRow
+          price={rows.reduce((max, i) => Math.max(max, trades.price[i]!), 0)}
+          lot={lotText(rows.length, (index) => trades.shares[rows[index]!]!)}
+          value={valueText(
+            rows.length,
+            (index) => trades.price[rows[index]!]! * trades.shares[rows[index]!]!,
+          )}
+          open={open}
+        />
+      ),
+    [rows, trades, open],
+  );
   // Keep every fill in RT, including orders older than the initial page.
   const loaded = Math.max(limit, lastFill + 51);
   const firstMatch = tickBlock ? rows.find((i) => isBlockTrade(trades, i, tickBlock)) : undefined;
@@ -488,16 +529,7 @@ function TradeTape({
         target={firstMatch === undefined ? undefined : rows.indexOf(firstMatch)}
         className="tick-table tick-tape tick-orders"
         header={<TradeHeader />}
-        footer={
-          rows.length > 0 && (
-            <SizingRow
-              prices={rows.map((i) => trades.price[i]!)}
-              shares={rows.map((i) => trades.shares[i]!)}
-              values={rows.map((i) => trades.price[i]! * trades.shares[i]!)}
-              open={open}
-            />
-          )
-        }
+        footer={footer}
         row={(index) => {
           const i = rows[index]!;
           const highlighted = tickBlock !== null && isBlockTrade(trades, i, tickBlock);
@@ -618,17 +650,35 @@ function Blocks({
   const [limit, setLimit] = useState(300);
   const open = useSessionOpen(trades);
   const { tickBlock, selectTickBlock } = useTerminal();
-  const shown = all
-    .filter(
-      (block) =>
-        (side === 'ALL' || block.side === side.toLowerCase()) &&
-        (!broker ||
-          block.broker === broker ||
-          block.counterparties.some((party) => party.broker === broker)),
-    )
-    .sort((a, b) =>
-      sort === 'LOT' ? b.shares - a.shares || a.start - b.start : a.start - b.start,
-    );
+  const shown = useMemo(
+    () =>
+      all
+        .filter(
+          (block) =>
+            (side === 'ALL' || block.side === side.toLowerCase()) &&
+            (!broker ||
+              block.broker === broker ||
+              block.counterparties.some((party) => party.broker === broker)),
+        )
+        .sort((a, b) =>
+          sort === 'LOT' ? b.shares - a.shares || a.start - b.start : a.start - b.start,
+        ),
+    [all, side, broker, sort],
+  );
+  const footer = useMemo(
+    () => (
+      <SizingRow
+        price={shown.reduce((max, block) => Math.max(max, block.value / block.shares), 0)}
+        lot={lotText(shown.length, (index) => shown[index]!.shares)}
+        value={valueText(shown.length, (index) => shown[index]!.value)}
+        open={open}
+        decimals={1}
+        buy={sideSamples(shown, 'buy')}
+        sell={sideSamples(shown, 'sell')}
+      />
+    ),
+    [shown, open],
+  );
   if (!shown.length) return <Empty>No blocks in this view</Empty>;
   return (
     <WindowedTable
@@ -636,15 +686,7 @@ function Blocks({
       count={Math.min(shown.length, limit)}
       className="tick-table tick-blocks tick-orders"
       header={<TradeHeader />}
-      footer={
-        <SizingRow
-          prices={shown.map((block) => block.value / block.shares)}
-          shares={shown.map((block) => block.shares)}
-          values={shown.map((block) => block.value)}
-          open={open}
-          decimals={1}
-        />
-      }
+      footer={footer}
       row={(index) => {
         const block = shown[index]!;
         const selected =
@@ -714,12 +756,40 @@ function Blocks({
   );
 }
 
-function BlockSide({ block, side }: { block: Block; side: 'buy' | 'sell' }) {
+function sideParties(block: Block, side: 'buy' | 'sell') {
   const parties =
     side === (block.side === 'none' ? 'sell' : block.side) ? [block] : block.counterparties;
-  const brokers = [...new Set(parties.map((party) => party.broker))];
+  return {
+    brokers: [...new Set(parties.map((party) => party.broker))],
+    foreign: parties.some((party) => party.foreign),
+  };
+}
+/** The block with the most brokers on this side, whose stack is wider than any broker code, or else one block per code. */
+function sideSamples(blocks: Block[], side: 'buy' | 'sell') {
+  let most: Block | undefined;
+  let mostBrokers = 1;
+  for (const block of blocks) {
+    if (side === (block.side === 'none' ? 'sell' : block.side)) continue;
+    if (block.counterparties.length <= mostBrokers) continue;
+    const brokers = sideParties(block, side).brokers.length;
+    if (brokers > mostBrokers) {
+      mostBrokers = brokers;
+      most = block;
+    }
+  }
+  if (most) return [most];
+  const samples = new Map<string, Block>();
+  for (const block of blocks) {
+    const { brokers, foreign } = sideParties(block, side);
+    const key = `${brokers[0]} ${foreign}`;
+    if (!samples.has(key)) samples.set(key, block);
+  }
+  return [...samples.values()];
+}
+function BlockSide({ block, side }: { block: Block; side: 'buy' | 'sell' }) {
+  const { brokers, foreign } = sideParties(block, side);
   return brokers.length === 1 ? (
-    <Broker code={brokers[0]!} foreign={parties.some((party) => party.foreign)} />
+    <Broker code={brokers[0]!} foreign={foreign} />
   ) : (
     <span className="tick-stack" aria-label={`${nf(brokers.length)} brokers`}>
       <svg
