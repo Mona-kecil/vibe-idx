@@ -4,7 +4,6 @@ import { gzipSync } from 'node:zlib';
 import { exportJWK, generateKeyPair, SignJWT } from 'jose';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vite-plus/test';
 import type { JWTPayload } from 'jose';
-import api from '../api/brokers';
 import { createBrokerHandler } from '../api/_brokers';
 import { brokerHistorySchema } from './brokers';
 import type { BrokerDay, BrokerRow } from './brokers';
@@ -374,13 +373,13 @@ describe('private broker API', () => {
   });
 
   it('blocks unsupported methods and unsafe ticker paths without touching WorkOS or R2', async () => {
+    const handle = createBrokerHandler({ env, fetcher });
     for (const method of ['POST', 'PUT', 'DELETE', 'OPTIONS', 'HEAD']) {
-      const response = await api.fetch(request({ method }));
+      const response = await handle(request({ method }));
       expect(response.status).toBe(405);
       expect(response.headers.get('Allow')).toBe('GET');
       expectPrivate(response);
     }
-    const handle = createBrokerHandler({ env, fetcher });
     for (const ticker of [
       '',
       'bbca',

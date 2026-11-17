@@ -33,9 +33,8 @@ const wasmModule: PluginOption = {
 
 export default defineConfig(({ command, mode }) => ({
   plugins: lazyPlugins(() => [wasmModule, react() as unknown as PluginOption]),
-  // Vercel keeps the client ID from its own environment variables until it is retired.
   define:
-    command === 'build' && mode !== 'development' && !process.env.VERCEL
+    command === 'build' && mode !== 'development'
       ? { 'import.meta.env.VITE_WORKOS_CLIENT_ID': JSON.stringify(deployedClientId(mode)) }
       : undefined,
   server: {
