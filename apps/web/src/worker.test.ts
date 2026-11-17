@@ -13,6 +13,7 @@ function environment() {
     PRIVATE: { get: vi.fn<(key: string) => Promise<null>>(async () => null) },
     WORKOS_CLIENT_ID: 'client_test',
     DEPLOYMENT: 'test',
+    WORKER_VERSION: { id: 'first-deployment' },
   };
 }
 const dsn = 'https://publickey@o1.ingest.example.io/42';
@@ -74,6 +75,7 @@ function stored(body: string, cacheControl?: string) {
 
 beforeEach(() => void stubEdgeCache());
 afterEach(() => {
+  void pending.splice(0);
   vi.unstubAllGlobals();
   ctx.waitUntil.mockClear();
 });
@@ -107,6 +109,51 @@ describe('Worker', () => {
     expect(response.status).toBe(200);
     expect(await response.text()).toContain('content="https://preview.test/api/og"');
   });
+  it('shares ticker HTML within a deployment and refreshes assets after a deploy', async () => {
+    let asset = html;
+    const env = {
+      ...environment(),
+      ASSETS: { fetch: vi.fn<() => Promise<Response>>(async () => new Response(asset)) },
+      PUBLIC: { get: vi.fn<typeof bucketCard>(bucketCard) },
+    };
+    const read = (path: string) =>
+      worker.fetch(new Request(`https://preview.test${path}`), env, ctx);
+    const first = await read('/t/BBCA');
+    const original = await first.text();
+    await settle();
+    const hit = await read('/t/bbca/?utm_source=chat');
+    expect(hit.headers.get('X-Edge-Cache')).toBe('HIT');
+    expect(await hit.text()).toBe(original);
+    expect(env.PUBLIC.get).toHaveBeenCalledOnce();
+    expect(env.ASSETS.fetch).toHaveBeenCalledOnce();
+    asset = html.replace('</body>', '<script src="/new-assets.js"></script></body>');
+    env.WORKER_VERSION.id = 'second-deployment';
+    const updated = await read('/t/BBCA');
+    expect(updated.headers.get('X-Edge-Cache')).toBe('MISS');
+    expect(await updated.text()).toContain('/new-assets.js');
+    expect(env.PUBLIC.get).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not keep fallback metadata after a public data outage recovers', async () => {
+    const get = vi
+      .fn<Parameters<typeof worker.fetch>[1]['PUBLIC']['get']>()
+      .mockRejectedValueOnce(new Error('R2 unavailable'))
+      .mockImplementation(bucketCard);
+    const env = {
+      ...environment(),
+      ASSETS: { fetch: async () => new Response(html) },
+      PUBLIC: { get },
+    };
+    const read = () => worker.fetch(new Request('https://preview.test/t/BBCA'), env, ctx);
+    const fallback = await read();
+    expect(fallback.headers.get('Cache-Control')).toBe('no-store');
+    expect(fallback.headers.get('X-Edge-Cache')).toBe('BYPASS');
+    await settle();
+    const recovered = await read();
+    expect(await recovered.text()).toContain('<title>BBCA Bank Central Asia</title>');
+    expect(get).toHaveBeenCalledTimes(2);
+  });
+
   describe('Ticker cards', () => {
     const date = history.prices.at(-1)?.date;
     beforeEach(() => {
@@ -282,6 +329,39 @@ describe('Worker', () => {
       vi.unstubAllGlobals();
     }
   });
+  it('caches news by ticker and date selection without hiding invalid requests', async () => {
+    const rows = [13, 14].map((day) => ({
+      title: `News ${day}`,
+      url: `https://news.test/${day}`,
+      published_at: `2026-10-${day}T05:00:00Z`,
+      source: 'Test',
+    }));
+    const get = vi.fn<() => Promise<ReturnType<typeof stored>>>(async () =>
+      stored(JSON.stringify({ news: rows })),
+    );
+    const env = { ...environment(), PUBLIC: { get } };
+    const read = (query: string, method = 'GET') =>
+      worker.fetch(new Request(`https://preview.test/api/news?${query}`, { method }), env, ctx);
+    const query = 'ticker=BBCA&from=2026-10-13&to=2026-10-13';
+    expect(await (await read(query)).json()).toEqual([rows[0]]);
+    await settle();
+    const hit = await read('to=2026-10-13&from=2026-10-13&ticker=BBCA&utm_source=chat');
+    expect(hit.headers.get('X-Edge-Cache')).toBe('HIT');
+    expect(await hit.json()).toEqual([rows[0]]);
+    expect(get).toHaveBeenCalledOnce();
+    expect((await read(`${query}&ticker=BBRI`)).status).toBe(400);
+    expect((await read(`${query}&from=2026-10-14`)).status).toBe(400);
+    expect((await read(query, 'POST')).status).toBe(405);
+    expect(get).toHaveBeenCalledOnce();
+    expect(await (await read('ticker=BBCA&from=2026-10-14&to=2026-10-14')).json()).toEqual([
+      rows[1],
+    ]);
+    expect(
+      (await read('ticker=BBRI&from=2026-10-13&to=2026-10-13')).headers.get('X-Edge-Cache'),
+    ).toBe('MISS');
+    expect(get).toHaveBeenCalledTimes(3);
+  });
+
   it('reports the read error behind a failed news answer once', async () => {
     const network = vi.fn<typeof fetch>(async () => new Response(null, { status: 200 }));
     vi.stubGlobal('fetch', network);

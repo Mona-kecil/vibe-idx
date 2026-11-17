@@ -83,18 +83,26 @@ export function cardKey(url: URL) {
 }
 
 // Caches only 200 responses that declare an s-maxage. 400, 404 and 5xx pass through.
-export async function edgeCachedCard(
-  request: Request,
+export async function edgeCachedResponse(
+  key: Request,
   edge: EdgeCache,
   produce: () => Promise<Response>,
+  maxAge = Infinity,
 ) {
-  const key = cardKey(new URL(request.url));
   const hit = await edge.get(key);
   if (hit) return hit;
   const response = await produce();
-  const ttl = response.status === 200 ? sMaxAge(response) : 0;
+  const ttl = response.status === 200 ? Math.min(sMaxAge(response), maxAge) : 0;
   if (ttl > 0) edge.put(key, response, `public, max-age=${ttl}`);
   return withHeaders(response, (headers) =>
     headers.set('X-Edge-Cache', ttl > 0 ? 'MISS' : 'BYPASS'),
   );
+}
+
+/** Only these parameters affect news; keep duplicates so invalid requests cannot hit valid entries. */
+export function newsKey(url: URL) {
+  const key = new URL('/api/news', url);
+  for (const name of ['ticker', 'from', 'to'])
+    for (const value of url.searchParams.getAll(name)) key.searchParams.append(name, value);
+  return new Request(key);
 }
