@@ -1,0 +1,61 @@
+name: Deploy Worker
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # On the job, so a skipped run never takes a pending deploy's place in the queue.
+    concurrency:
+      group: deploy-worker-${{ github.event_name }}
+      cancel-in-progress: false
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+      GH_TOKEN: ${{ github.token }}
+      TARGET: ${{ github.event_name == 'workflow_run' && 'production' || 'preview' }}
+      SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+    steps:
+      - id: gate
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
+            echo "::notice::CLOUDFLARE_API_TOKEN is not set; skipping the $TARGET deploy"
+            echo run=false >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          head=$SHA
+          if [ "$TARGET" = production ]; then head=$(gh api "repos/$GITHUB_REPOSITORY/commits/master" --jq .sha); fi
+          if [ "$head" != "$SHA" ]; then
+            echo "::notice::$SHA is no longer the head of master; skipping the production deploy"
+            echo run=false >> "$GITHUB_OUTPUT"
+          else
+            echo run=true >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.gate.outputs.run == 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SHA }}
+      - if: steps.gate.outputs.run == 'true'
+        uses: pnpm/action-setup@v4
+      - if: steps.gate.outputs.run == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - if: steps.gate.outputs.run == 'true'
+        run: pnpm install --frozen-lockfile
+      - if: steps.gate.outputs.run == 'true'
+        run: pnpm --filter @vibe-idx/web ${{ env.TARGET == 'production' && 'build' || 'build:preview' }}
+      # Production deploys claim idx.monosodiums.com and, without a TTY, replace any existing record.
+      - if: steps.gate.outputs.run == 'true'
+        run: pnpm --filter @vibe-idx/web exec wrangler deploy ${{ env.TARGET == 'production' && '--env production' || '' }}
