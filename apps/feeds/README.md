@@ -4,7 +4,7 @@
 
 The news items match the terminal `newsArticleSchema`. `sum` contains the feed's own summary with HTML removed. The collector never requests article pages or stores article bodies.
 
-The Indonesian sources are CNBC Indonesia, Antara, Kontan and IDX Channel. Bisnis is not read: every Bisnis feed URL answers a Cloudflare challenge page. The world sources are Bloomberg, CNBC and WSJ.
+The scheduled Indonesian sources are CNBC Indonesia, Antara and IDX Channel. Kontan answers locally but rejects GitHub runners with HTTP 403, so it is excluded from scheduled collection; existing archived articles remain available, and Google backfills can still include its stories. Bisnis is not read: every Bisnis feed URL answers a Cloudflare challenge page. The world sources are Bloomberg, CNBC and WSJ.
 
 Tagging uses the company names in `tickers.json` in the public bucket, with `PT`, `Persero`, and `Tbk` normalized. Longer names match first. A single-word company name requires `PT` or `Tbk`. Group nicknames and bank abbreviations never tag.
 

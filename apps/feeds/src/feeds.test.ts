@@ -249,7 +249,7 @@ describe('publication failure isolation', () => {
         return new Response(fixture('rss.xml'));
       },
     });
-    expect(newsSchema.parse(JSON.parse(memory.text('news.json') ?? 'null')).news).toHaveLength(16);
+    expect(newsSchema.parse(JSON.parse(memory.text('news.json') ?? 'null')).news).toHaveLength(14);
     expect(memory.text('calendar.json')).toBeDefined();
     expect(failures).toEqual(['bps']);
     const archive = JSON.parse(memory.text('news/archive/2026-11.json') ?? 'null');

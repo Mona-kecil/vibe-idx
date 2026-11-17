@@ -17,12 +17,6 @@ const FEEDS = [
     region: 'ID',
   },
   {
-    id: 'kontan',
-    url: 'https://investasi.kontan.co.id/rss',
-    src: 'Kontan',
-    region: 'ID',
-  },
-  {
     id: 'idx-channel',
     url: 'https://www.idxchannel.com/rss',
     src: 'IDX Channel',
