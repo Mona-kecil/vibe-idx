@@ -188,7 +188,7 @@ describe('private broker API', () => {
       request({ token: auth, query: 'view=ticks&ticker=BBCA&date=2026-11-10&kind=trades' }),
     );
     expect(trades.status).toBe(404);
-    expect(keys).toEqual([
+    expect(keys.filter((key) => key !== 'site/bars/sessions.json')).toEqual([
       'site/ticks/BBCA/2026-11-10.book.json.gz',
       'site/ticks/BBCA/2026-11-10.trades.json.gz',
     ]);
@@ -199,6 +199,84 @@ describe('private broker API', () => {
       'view=other&ticker=BBCA',
     ])
       expect((await handle(request({ token: auth, query }))).status).toBe(400);
+  });
+
+  describe('caching a session in the browser', () => {
+    const stored = gzipSync(JSON.stringify({ date: '2026-11-10', ticker: 'BBCA' }));
+    let published: string | null;
+    const handle = createBrokerHandler({
+      env: { WORKOS_CLIENT_ID: clientId },
+      fetcher,
+      store: async (key) => {
+        if (key === 'site/bars/sessions.json')
+          return published === null ? new Response('', { status: 404 }) : new Response(published);
+        return key.startsWith('site/ticks/BBCA/2026-11-1')
+          ? new Response(stored)
+          : new Response('', { status: 404 });
+      },
+    });
+    const sessions = (...days: string[]) => JSON.stringify({ sessions: days });
+    async function ticks(date: string, kind = 'trades') {
+      return handle(
+        request({
+          token: await token(),
+          query: `view=ticks&ticker=BBCA&date=${date}&kind=${kind}`,
+        }),
+      );
+    }
+
+    it('keeps a session before the latest one for a year, whichever token asks', async () => {
+      published = sessions('2026-11-09', '2026-11-10', '2026-11-11');
+      for (const kind of ['trades', 'book']) {
+        const response = await ticks('2026-11-10', kind);
+        expect(response.status).toBe(200);
+        expect(response.headers.get('Cache-Control')).toBe('private, max-age=31536000, immutable');
+        expect(response.headers.has('Vary')).toBe(false);
+        expect(response.headers.has('Access-Control-Allow-Origin')).toBe(false);
+        expect(Buffer.from(await response.arrayBuffer()).equals(stored)).toBe(true);
+      }
+    });
+
+    it('never keeps the latest session, a newer one, or any session when the list is unknown', async () => {
+      published = sessions('2026-11-09', '2026-11-10');
+      expectPrivate(await ticks('2026-11-10'));
+      expectPrivate(await ticks('2026-11-11'));
+      for (const unknown of [
+        null,
+        'not json',
+        JSON.stringify({ sessions: ['10 Nov'] }),
+        sessions(),
+      ]) {
+        published = unknown;
+        const response = await ticks('2026-11-10');
+        expect(response.status).toBe(200);
+        expectPrivate(response);
+      }
+    });
+
+    it('never keeps a session that is not published, a failed read, or a bar file', async () => {
+      published = sessions('2026-11-09', '2026-11-15');
+      expectPrivate(await ticks('2026-11-08'));
+      const degraded = createBrokerHandler({
+        env: { WORKOS_CLIENT_ID: clientId },
+        fetcher,
+        store: async (key) =>
+          key === 'site/bars/sessions.json'
+            ? new Response(published)
+            : key === 'site/bars/BBCA.json.gz'
+              ? new Response(stored)
+              : new Response('', { status: 503 }),
+      });
+      const auth = await token();
+      const response = await degraded(request({ token: auth, query: 'view=bars&ticker=BBCA' }));
+      expect(response.status).toBe(200);
+      expectPrivate(response);
+      const failed = await degraded(
+        request({ token: auth, query: 'view=ticks&ticker=BBCA&date=2026-11-09&kind=book' }),
+      );
+      expect(failed.status).toBe(503);
+      expectPrivate(failed);
+    });
   });
 
   it("passes a ticker's bar file through gzipped, behind the same sign-in", async () => {
