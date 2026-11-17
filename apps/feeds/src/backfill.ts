@@ -6,8 +6,12 @@ import { archiveSchema, type ArchiveArticle, type Ticker } from './contracts';
 import { cleanHTML } from './parsers';
 
 const dayMs = 24 * 3600e3;
-/** One Google News query returns about 74 items however wide its window, so a full page means a cut-off one. */
-export const PAGE = 70;
+/**
+ * Google answers a query with a ranked sample of its hits, never all of them, and a wider window returns a smaller
+ * share (measured for one ticker: 12 months 40 items, 1 month 25). A page of this many items or more may be cut off,
+ * so its window is halved until every part comes back smaller.
+ */
+export const PAGE = 15;
 
 const itemSchema = z.object({
   title: z.string(),
@@ -148,8 +152,6 @@ export function politeGoogle({
     }
   };
 }
-
-export type Progress = { done: string[] };
 
 /**
  * Fills the archive back over `window` for each ticker, a batch at a time through the same merge the Feeds job

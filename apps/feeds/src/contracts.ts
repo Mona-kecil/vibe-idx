@@ -1,7 +1,13 @@
 import { z } from 'zod';
 
 export const tickerSchema = z
-  .array(z.object({ ticker: z.string().regex(/^[A-Z]{4,5}$/), name: z.string().min(1) }))
+  .array(
+    z.object({
+      ticker: z.string().regex(/^[A-Z]{4,5}$/),
+      name: z.string().min(1),
+      value: z.number().optional(),
+    }),
+  )
   .min(1);
 export type Ticker = z.infer<typeof tickerSchema>[number];
 export const newsArticleSchema = z.object({

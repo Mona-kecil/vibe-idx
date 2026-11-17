@@ -8,31 +8,35 @@ import { directoryBucket, r2Bucket } from './src/storage';
 import { tickerSchema } from './src/contracts';
 import { tickerTagger } from './src/tagging';
 
-const usage = `pnpm --filter @vibe-idx/feeds backfill --local [DIR] | --r2 [--months 12] [--tickers BBCA,TLKM] [--delay 3000] [--retag]
+const usage = `pnpm --filter @vibe-idx/feeds backfill --local [--dir DIR] | --r2 [--months 12] [--tickers BBCA,TLKM | --top 100] [--delay 3000] [--retag]
 
 Fills the news archive back from Google News, one ticker at a time, through the merge the Feeds job uses, so a
 rerun adds nothing. Run it from a machine Google News answers, not from a Cloudflare Worker.
---local DIR   writes to DIR, the public bucket's files; default is the fixtures' public folder
+--local       writes to the fixtures' public folder, VIBE_IDX_FIXTURES or ~/.cache/vibe-idx/local, as the
+              public bucket's files; --dir DIR writes to DIR instead
 --r2          writes to the real public bucket, with the Feeds job's R2_ACCOUNT_ID, R2_ACCESS_KEY_ID and
               R2_SECRET_ACCESS_KEY; it never does so unless asked
 --months N    how far back, 12 by default
 --tickers     only these codes
+--top N       only the N tickers with the highest value traded; they come first in any run
 --delay MS    between Google requests, 3000 by default; it backs off by itself on 429 and 503
 --retag       with --local, tag the archive again with the current tagger and stop, without asking Google
 A run that stops resumes where it stopped: finished tickers are listed in the state file next to DIR.`;
 
 const { values: args } = parseArgs({
   options: {
-    local: { type: 'string' },
+    local: { type: 'boolean', default: false },
+    dir: { type: 'string' },
     r2: { type: 'boolean', default: false },
     months: { type: 'string', default: '12' },
     tickers: { type: 'string' },
+    top: { type: 'string' },
     delay: { type: 'string', default: '3000' },
     retag: { type: 'boolean', default: false },
     help: { type: 'boolean', default: false },
   },
 });
-if (args.help || (args.local === undefined) === !args.r2) {
+if (args.help || args.local === args.r2) {
   console.log(usage);
   process.exit(args.help ? 0 : 1);
 }
@@ -41,7 +45,7 @@ const fixtures = join(
   process.env.VIBE_IDX_FIXTURES ?? join(homedir(), '.cache/vibe-idx/local'),
   'public',
 );
-const directory = args.local || fixtures;
+const directory = args.dir ?? fixtures;
 const now = new Date();
 const bucket = args.r2
   ? r2Bucket(
@@ -81,7 +85,11 @@ if (args.retag) {
 }
 
 const wanted = args.tickers?.split(',').map((t) => t.trim().toUpperCase());
-const chosen = wanted ? tickers.filter((t) => wanted.includes(t.ticker)) : tickers;
+const byValue = [...tickers].sort((a, b) => (b.value ?? 0) - (a.value ?? 0));
+const chosen = (wanted ? byValue.filter((t) => wanted.includes(t.ticker)) : byValue).slice(
+  0,
+  args.top ? z.coerce.number().int().positive().parse(args.top) : undefined,
+);
 const missing = wanted?.filter((code) => !chosen.some((t) => t.ticker === code)) ?? [];
 if (missing.length) throw new Error(`Not in tickers.json: ${missing.join(', ')}`);
 const done: string[] = z
@@ -94,14 +102,19 @@ console.log(
   `${args.r2 ? 'REAL BUCKET' : directory}  ${window.from}..${window.to}  ${chosen.length - chosen.filter((t) => done.includes(t.ticker)).length} tickers left`,
 );
 const started = performance.now();
+const google = politeGoogle({
+  delay: z.coerce.number().int().min(500).parse(args.delay),
+  log: console.error,
+});
+let requests = 0;
 const totals = await backfill({
   bucket,
   tickers: chosen,
   window,
-  fetchPage: politeGoogle({
-    delay: z.coerce.number().int().min(500).parse(args.delay),
-    log: console.error,
-  }),
+  fetchPage: async (query) => {
+    requests++;
+    return google(query);
+  },
   tag,
   now,
   done,
@@ -113,5 +126,5 @@ const totals = await backfill({
   log: (line) => console.log(line),
 });
 console.log(
-  `${totals.articles} articles added for ${totals.tickers} tickers in ${((performance.now() - started) / 60000).toFixed(1)} min`,
+  `${totals.articles} articles added for ${totals.tickers} tickers, ${requests} requests, ${((performance.now() - started) / 60000).toFixed(1)} min`,
 );
