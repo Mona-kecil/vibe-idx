@@ -63,10 +63,17 @@ describe('codes with a stock marker', () => {
     ['Saham GOTOM dan GOTO Dilepas Investor Asing', ['GOTO', 'GOTOM']],
   ])('%s', (text, expected) => expect(tag(text)).toEqual(expected));
 
-  it('chains a stock list from its first marked code', () => {
+  it('carries a stock list to its word-like codes', () => {
     expect(tag('Saham BBCA, BBRI dan BMRI Kompak Menguat')).toEqual(['BBCA', 'BBRI', 'BMRI']);
-    expect(tag('Emiten ASII & DATA & DART Rilis Laporan')).toEqual(['ASII', 'DART', 'DATA']);
+    expect(tag('Emiten ASII & DATA & DART, Rilis Laporan')).toEqual(['ASII', 'DART', 'DATA']);
+    expect(tag('Rekomendasi Hari Ini: BBCA, VIVA, TLKM, dan MEGA')).toEqual([
+      'BBCA',
+      'MEGA',
+      'TLKM',
+      'VIVA',
+    ]);
     expect(tag('Saham BBCA turun, DATA center Bekasi dibuka')).toEqual(['BBCA']);
+    expect(tag('BBCA dan AUTO pilot Tesla')).toEqual(['BBCA']);
   });
 });
 

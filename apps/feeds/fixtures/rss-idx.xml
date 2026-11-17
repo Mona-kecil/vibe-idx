@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+ <channel>
+  <title>Contoh Kanal Rekaan</title>
+  <link>https://channel.example.test/rss</link>
+  <description>Contoh rekaan</description>
+  <item>
+   <title><![CDATA[Bank Mandiri Kebut Penyaluran Kredit Rekaan]]></title>
+   <link>https://channel.example.test/market/bank-mandiri-kebut-penyaluran-kredit</link>
+   <url>https://channel.example.test/rss</url>
+   <guid>https://channel.example.test/market/bank-mandiri-kebut-penyaluran-kredit</guid>
+   <idnews>100001</idnews>
+   <pubDate>Tue, 10 Nov 2026 19:30:00 +0700</pubDate>
+   <category><![CDATA[MARKET]]></category>
+   <description>&lt;img src=&quot;https://img.example.test/a.jpg&quot; align=&quot;left&quot; hspace=&quot;7&quot; width=&quot;100&quot; /&gt;<![CDATA[Bank Mandiri Kebut Penyaluran Kredit Rekaan. Foto: Contoh.]]></description>
+  </item>
+ </channel>
+</rss>

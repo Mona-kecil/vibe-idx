@@ -49,6 +49,37 @@ describe('source parsers', () => {
       )[0]?.sum,
     ).toBe(long.trim());
   });
+  it('reads the Kontan and IDX Channel item shapes', () => {
+    const tagged = tickerTagger([
+      ...tickers,
+      { ticker: 'PBRX', name: 'Pan Brothers Tbk' },
+      { ticker: 'BMRI', name: 'Bank Mandiri (Persero) Tbk' },
+    ]);
+    const kontan = parseRSS(
+      fixture('rss-kontan.xml'),
+      { id: 'kontan', src: 'Kontan', region: 'ID' },
+      tagged,
+    );
+    expect(kontan.map((row) => [row.tags, row.sum, row.ts])).toEqual([
+      [['PBRX'], 'Ringkasan rekaan peringkat utang.', '2026-11-10T12:31:24.000Z'],
+      [
+        [],
+        'Tekanan terhadap rupiah menjelang RDG BI dinilai terbatas.',
+        '2026-11-10T12:16:00.000Z',
+      ],
+    ]);
+    const idx = parseRSS(
+      fixture('rss-idx.xml'),
+      { id: 'idx-channel', src: 'IDX Channel', region: 'ID' },
+      tagged,
+    );
+    expect(idx).toHaveLength(1);
+    expect(idx[0]).toMatchObject({
+      tags: ['BMRI'],
+      link: 'https://channel.example.test/market/bank-mandiri-kebut-penyaluran-kredit',
+      sum: 'Bank Mandiri Kebut Penyaluran Kredit Rekaan. Foto: Contoh.',
+    });
+  });
   it.each(['<html>blocked</html>', '<rss><channel></channel></rss>', '<rss>'])(
     'rejects broken or empty feeds',
     (xml) => {
@@ -224,7 +255,7 @@ describe('publication failure isolation', () => {
         return new Response(fixture('rss.xml'));
       },
     });
-    expect(newsSchema.parse(JSON.parse(memory.get('news.json') ?? 'null')).news).toHaveLength(12);
+    expect(newsSchema.parse(JSON.parse(memory.get('news.json') ?? 'null')).news).toHaveLength(16);
     expect(memory.has('calendar.json')).toBe(true);
     expect(failures).toEqual(['bps']);
   });

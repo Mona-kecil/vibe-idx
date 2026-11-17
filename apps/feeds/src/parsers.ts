@@ -64,7 +64,7 @@ export function parseRSS(
       link: n.link ?? n.guid,
       region: feed.region,
       sum,
-      tags: feed.region === 'ID' ? tag(`${title} ${sum}`) : [],
+      tags: feed.region === 'ID' ? [...new Set([...tag(title), ...tag(sum)])].sort() : [],
       source_id: feed.id,
     });
     return result.success ? [result.data] : [];

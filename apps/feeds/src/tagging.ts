@@ -36,6 +36,7 @@ export const wordCodes = new Set(
 
 const marker = /\b(?:saham|emiten|ticker|kode(?: saham)?|sandi)[\s:(]+(?:berkode[\s:(]+)?$/iu;
 const listJoin = /^\s*(?:,\s*dan|,|&|\/|dan|serta|atau)\s*(?:saham\s+)?$/iu;
+const listEnd = /^(?:\s*$|\s*[,.;:!?)&/]|\s+(?:dan|serta|atau)\s)/iu;
 
 export function tickerTagger(tickers: Ticker[]) {
   const patterns = new Map<string, { ticker: string; tokens: string[]; rank: number }[]>();
@@ -81,14 +82,18 @@ export function tickerTagger(tickers: Ticker[]) {
       const end = match.index + code.length;
       const before = text.slice(Math.max(0, match.index - 45), match.index);
       const after = text.slice(end, end + 45);
-      const marked =
-        marker.test(before) ||
-        /^\s*[):,]?\s+Tbk\b/i.test(after) ||
-        (previousEnd >= 0 && listJoin.test(text.slice(previousEnd, match.index)));
+      const marked = marker.test(before) || /^\s*[):,]?\s+Tbk\b/i.test(after);
       const named = /\p{Lu}[\p{L}.]*\s*\($/u.test(before) && after.startsWith(')');
       const bare = !wordCodes.has(code) && !shouting;
-      if (marked || named || bare) tags.add(code);
-      if (marked || named) previousEnd = end;
+      // A word-like code tags inside a list of codes, where it is followed by the list's next separator or end.
+      const listed =
+        previousEnd >= 0 &&
+        listJoin.test(text.slice(previousEnd, match.index)) &&
+        listEnd.test(after);
+      if (marked || named || bare || listed) {
+        tags.add(code);
+        previousEnd = end;
+      }
     }
     return [...tags].sort();
   };
