@@ -6,7 +6,7 @@ The [README](../README.md) covers running, checking and operating the system. Th
 
 GitHub Actions runs Ingest and the Collector as separate workflows with separate queues. DuckDB reads private Parquet history and writes the public JSON that the Site and the Terminal read. Vercel serves the React app and its functions. Dispatch starts Ingest daily at 17:17 Jakarta and starts a Collector run every ten minutes when none is active. A manual Ingest refuses to start before 17:17 unless it only backfills Registry reports. Feeds publishes market news and the economic calendar on its own schedule; see [its README](../apps/feeds/README.md).
 
-Ticker links get server-rendered metadata with the company name, latest close, daily change and reporting date. `/api/og` renders the Ticker card from public ticker data, and its dated URL makes chat apps fetch a fresh card each session. The preview Worker injects the same metadata from the public bucket and proxies the image to Vercel. Missing ticker data falls back to the default preview.
+Ticker links get server-rendered metadata with the company name, latest close, daily change and reporting date. `/api/og` renders the Ticker card from public ticker data, and its dated URL makes chat apps fetch a fresh card each session. The app Worker injects the same metadata from the public bucket and proxies the image to Vercel. Missing ticker data falls back to the default preview.
 
 ## Ingest
 
@@ -54,7 +54,7 @@ The private bucket, `vibe-idx-private`:
 
 The Collector restores only prices, corporate actions, broker data years and Coverage. Ingest restores the IDX tables and raw responses without broker data, plus Coverage for its freshness check, and never uploads broker data. Nothing deletes stored objects.
 
-The public bucket, `vibe-idx-public`, holds `health.json`, `market.json`, `feed.json`, `tickers.json`, `ticker/<TICKER>.json`, and Feeds' `news.json`, `calendar.json`, `news/archive/<YYYY-MM>.json` and `news/ticker/<TICKER>.json`. Vercel maps `/data/*` to it. Broker data never enters it.
+The public bucket, `vibe-idx-public`, holds `health.json`, `market.json`, `feed.json`, `tickers.json`, `ticker/<TICKER>.json`, and Feeds' `news.json`, `calendar.json`, `news/archive/<YYYY-MM>.json` and `news/ticker/<TICKER>/<YYYY>.json`. Vercel and the app Worker serve `/data/*` from it. The app Worker keeps each object at the edge for the object's own `Cache-Control` max-age, 60 seconds when it has none, answers a matching `If-None-Match` with 304, serves from R2 when the edge cache fails, and never caches `/api/brokers`. Broker data never enters the public bucket.
 
 ## Sources and dates
 
@@ -64,8 +64,12 @@ The public bucket, `vibe-idx-public`, holds `health.json`, `market.json`, `feed.
 - **Insider reports:** dated by report date. Only the supported KSEI layout is read. The net change is shares after minus shares before, not every trade.
 - **Registry:** dated by month-end. Supported layouts give free float and shareholder counts. Total shares stay null until a verified parser exists.
 - **Unsupported layouts:** they keep their filing links, and unknown values stay null. They are listed in Ingest's `report_gaps`.
-- **Ticker news:** the Worker's `/api/news` reads `news/ticker/<TICKER>.json`, which Feeds fills from the News archive: every Indonesian market article it has read since the archive began, deduplicated by link and tagged with the tickers its title and summary name. It returns titles, sources, dates and links but no article bodies. The Worker never calls a news site.
+- **Ticker news:** the Worker's `/api/news` reads `news/ticker/<TICKER>/<YYYY>.json`, which Feeds fills from the News archive: every Indonesian market article it has read since the archive began, deduplicated by link and tagged with the tickers its title and summary name. It returns titles, sources, dates and links but no article bodies. The Worker never calls a news site.
 
 ## Deployment
 
 Set the README's environment variables in Vercel. GitHub secrets do not sync there. The Vercel functions need only read access to the private bucket, and Ingest and the Collector have their own write credentials in GitHub Actions. In WorkOS, enable Magic Auth and register the deployment's origin, `/callback` redirect, root sign-out URI and `/login` initiate-login URI, with matching client IDs for staging and production.
+
+The app Worker in `apps/web/worker.ts`, not Dispatch, serves the React app, `/data/*` and `/api/brokers`. It has two Wrangler environments. The top level of `wrangler.jsonc` is preview (`vibe-idx-preview`, `preview.idx.monosodiums.com`), so a bare `wrangler deploy` can only reach preview. `env.production` is `vibe-idx` on `idx.monosodiums.com`. Each declares its own WorkOS client ID, and `vp build` reads the same ID for the client bundle: `build` is the production bundle (`--mode production`) and `build:preview` the preview one, and any other mode fails the build. Wrangler comes from the `apps/web` dev dependencies, so `pnpm --filter @vibe-idx/web deploy:preview` and `deploy:production` build and deploy the matching pair.
+
+`.github/workflows/deploy.yml` deploys production after CI succeeds on a push to `master`, at that run's commit and only while it is still the head of `master`, and deploys preview on a manual run. It skips both until the `CLOUDFLARE_API_TOKEN` secret exists. A production deploy claims `idx.monosodiums.com`: Wrangler without a terminal replaces any existing DNS record or origin for that hostname, such as the Vercel CNAME. Point the hostname at the Worker by hand before the first merge to `master` after the secret is set, and treat every later production deploy as that replacement.

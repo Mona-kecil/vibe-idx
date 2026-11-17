@@ -16,7 +16,7 @@ import { previewClient } from './preview-client.js';
 /** This checkout's app, which the preview serves unless asked for another, such as a base checkout. */
 const ownWeb = fileURLToPath(new URL('..', import.meta.url));
 const publicBucket = 'https://pub-7982bfb066694e6e8615750132283eba.r2.dev';
-const liveApi = 'https://vibe-idx.vercel.app';
+const liveApi = 'https://idx.monosodiums.com';
 const snapshot = join(fixturesRoot, 'public');
 const snapshotFiles = [
   'tickers.json',

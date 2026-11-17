@@ -4,19 +4,138 @@ import { defaultMeta, parseTickerCard, tickerMeta, withShareMeta } from './api/_
 import { brokerTickerSchema } from './src/brokers.js';
 import { report } from './worker-sentry.js';
 
-type R2Object = { body: ReadableStream; httpEtag: string; writeHttpMetadata(h: Headers): void };
+type R2Object = {
+  httpEtag: string;
+  uploaded?: Date;
+  writeHttpMetadata(h: Headers): void;
+  body: ReadableStream;
+};
+type R2Bucket = { get(key: string): Promise<R2Object | null> };
 type Env = {
   ASSETS: { fetch(request: Request): Promise<Response> };
-  PUBLIC: { get(key: string): Promise<R2Object | null> };
-  PRIVATE: { get(key: string): Promise<R2Object | null> };
+  PUBLIC: R2Bucket;
+  PRIVATE: R2Bucket;
   WORKOS_CLIENT_ID: string;
+  DEPLOYMENT: string;
+};
+type Context = { waitUntil(p: Promise<unknown>): void };
+type EdgeCache = {
+  match(request: Request): Promise<Response | undefined>;
+  put(request: Request, response: Response): Promise<void>;
 };
 
 let brokers: ((request: Request) => Promise<Response>) | undefined;
 
+// The zone's Browser Cache TTL rewrites Cache-Control on cached responses to 4 hours, so the
+// object's own value travels in this header and is restored on a hit.
+const sourceCacheControl = 'X-Source-Cache-Control';
+
+const edgeCache = () => (caches as unknown as { default: EdgeCache }).default;
+
+// A failing edge cache must cost a read from R2, not the request.
+const cached = async (key: Request) => {
+  try {
+    return await edgeCache().match(key);
+  } catch {
+    return undefined;
+  }
+};
+const store = async (key: Request, response: Response) => {
+  try {
+    await edgeCache().put(key, response);
+  } catch {
+    // The next read finds nothing and tries again.
+  }
+};
+
+const validators = ['ETag', 'Cache-Control', 'Last-Modified', 'Age', 'X-Edge-Cache'];
+
+/** True when If-None-Match names this ETag, comparing weakly as RFC 9110 requires. */
+function matches(ifNoneMatch: string, etag: string) {
+  const bare = (tag: string) => tag.trim().replace(/^W\//, '');
+  return (
+    ifNoneMatch.trim() === '*' || ifNoneMatch.split(',').some((tag) => bare(tag) === bare(etag))
+  );
+}
+
+/** RFC 9110: If-None-Match decides when present; otherwise If-Modified-Since against Last-Modified. */
+function unchanged(request: Request, headers: Headers) {
+  const ifNoneMatch = request.headers.get('If-None-Match');
+  const etag = headers.get('ETag');
+  if (ifNoneMatch !== null) return etag !== null && matches(ifNoneMatch, etag);
+  const since = httpDate(request.headers.get('If-Modified-Since'));
+  const modified = httpDate(headers.get('Last-Modified'));
+  return modified <= since;
+}
+
+const fixdate =
+  /^(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun), \d{2} (?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{4} \d{2}:\d{2}:\d{2} GMT$/;
+
+/**
+ * An IMF-fixdate in milliseconds, or NaN, so a malformed date is ignored as RFC 9110 requires. The pattern fixes
+ * the form, including a four-digit year, and the toUTCString round trip rejects days that do not exist, such as
+ * 31 Nov, which Date.parse would roll over.
+ */
+function httpDate(value: string | null) {
+  if (!value || !fixdate.test(value)) return NaN;
+  const time = Date.parse(value);
+  return new Date(time).toUTCString() === value ? time : NaN;
+}
+
+const notModified = (headers: Headers) => {
+  const kept = new Headers();
+  for (const name of validators) {
+    const value = headers.get(name);
+    if (value) kept.set(name, value);
+  }
+  return new Response(null, { status: 304, headers: kept });
+};
+
+/**
+ * R2 reads cost 250 to 430 ms, so each data center keeps a copy for the object's own
+ * max-age (60 seconds unless the writer set one), the same bound browsers already apply.
+ */
+async function publicData(request: Request, env: Env, ctx: Context): Promise<Response> {
+  if (request.method !== 'GET' && request.method !== 'HEAD')
+    return new Response('Method not allowed', { status: 405, headers: { Allow: 'GET, HEAD' } });
+  const url = new URL(request.url);
+  const cacheable = request.method === 'GET';
+  const key = new Request(url.origin + url.pathname);
+  if (cacheable) {
+    const hit = await cached(key);
+    if (hit) {
+      const response = new Response(hit.body, hit);
+      response.headers.set(
+        'Cache-Control',
+        response.headers.get(sourceCacheControl) ?? 'public, max-age=60',
+      );
+      response.headers.delete(sourceCacheControl);
+      response.headers.set('X-Edge-Cache', 'HIT');
+      return unchanged(request, response.headers) ? notModified(response.headers) : response;
+    }
+  }
+  // A conditional miss still reads the whole object, so the next revalidation here is a hit.
+  const object = await env.PUBLIC.get(url.pathname.slice('/data/'.length));
+  if (!object) return new Response('Not found', { status: 404 });
+  const headers = new Headers({ ETag: object.httpEtag, 'Cache-Control': 'public, max-age=60' });
+  if (object.uploaded) headers.set('Last-Modified', object.uploaded.toUTCString());
+  object.writeHttpMetadata(headers);
+  const response = new Response(object.body, { headers });
+  if (cacheable) {
+    const copy = response.clone();
+    copy.headers.set(sourceCacheControl, headers.get('Cache-Control') ?? '');
+    ctx.waitUntil(store(key, copy));
+    response.headers.set('X-Edge-Cache', 'MISS');
+  }
+  if (!unchanged(request, response.headers)) return response;
+  void response.body?.cancel();
+  return notModified(response.headers);
+}
+
 async function route(
   request: Request,
   env: Env,
+  ctx: Context,
   failed: (cause: Error, tags: Record<string, string>) => void,
 ): Promise<Response> {
   const url = new URL(request.url);
@@ -42,13 +161,7 @@ async function route(
   if (url.pathname === '/api/og') return fetch(`https://vibe-idx.vercel.app/api/og${url.search}`);
   if (url.pathname.startsWith('/api/'))
     return Response.json({ error: 'not_found' }, { status: 404 });
-  if (url.pathname.startsWith('/data/')) {
-    const object = await env.PUBLIC.get(url.pathname.slice('/data/'.length));
-    if (!object) return new Response('Not found', { status: 404 });
-    const headers = new Headers({ ETag: object.httpEtag, 'Cache-Control': 'public, max-age=60' });
-    object.writeHttpMetadata(headers);
-    return new Response(object.body, { headers });
-  }
+  if (url.pathname.startsWith('/data/')) return publicData(request, env, ctx);
   if (/^\/t\/[^/]+\/?$/.test(url.pathname)) {
     const index = await env.ASSETS.fetch(new Request(new URL('/', url)));
     if (!index.ok) return new Response('Page unavailable', { status: 502 });
@@ -74,19 +187,19 @@ async function route(
 }
 
 export default {
-  async fetch(request: Request, env: Env, ctx: { waitUntil(p: Promise<unknown>): void }) {
+  async fetch(request: Request, env: Env, ctx: Context) {
     const path = new URL(request.url).pathname;
     let reported = false;
     try {
-      const response = await route(request, env, (cause, tags) => {
+      const response = await route(request, env, ctx, (cause, tags) => {
         reported = true;
-        ctx.waitUntil(report(cause, tags));
+        ctx.waitUntil(report(env.DEPLOYMENT, cause, tags));
       });
       if (response.status >= 500 && !reported)
-        ctx.waitUntil(report(`${path} returned ${response.status}`, { path }));
+        ctx.waitUntil(report(env.DEPLOYMENT, `${path} returned ${response.status}`, { path }));
       return response;
     } catch (error) {
-      ctx.waitUntil(report(error, { path }));
+      ctx.waitUntil(report(env.DEPLOYMENT, error, { path }));
       return new Response('Internal error', { status: 500 });
     }
   },
