@@ -6,7 +6,6 @@ import type { Selection } from '../ticker/logic';
 import type { BlockSelection } from '../ticks';
 import { initialPins, writeStorage } from '../watchlist.js';
 import {
-  fetchBrokers,
   fetchDetail,
   fetchTickerNews,
   type NewsArticle,
@@ -28,6 +27,7 @@ import {
   type Mode,
   type Timeframe,
 } from './state.js';
+import { clearBrokerHistory, loadBrokerHistory } from './broker-history.js';
 import { CommandBar } from './CommandBar.js';
 import { SplitLayout, modes } from './Layout.js';
 import { Empty, RiskFlags, StatusBar } from './ui.js';
@@ -236,23 +236,29 @@ function LoadedTerminal({ data }: { data: TerminalData }) {
     return id === 'BRK' || id === 'BFL' || id === 'FF';
   });
   useEffect(() => {
-    if (!userId || !needsBrokers) return;
-    const controller = new AbortController();
+    if (!userId) {
+      clearBrokerHistory();
+      return;
+    }
+    if (!needsBrokers) return;
+    let current = true;
     setBrokers({ kind: 'loading' });
     setBrokerError('');
-    void (async () => {
-      const token = await authRef.current.getAccessToken();
-      if (!token) throw new Error('Your sign-in expired. Sign in again.');
-      const days = await fetchBrokers(ticker, token, controller.signal);
-      if (!controller.signal.aborted) setBrokers({ kind: 'ready', data: days });
-    })().catch((error) => {
-      if (!controller.signal.aborted) {
-        setBrokers({ kind: 'unavailable' });
-        setBrokerError(error instanceof Error ? error.message : 'Broker summaries unavailable');
-      }
-    });
-    return () => controller.abort();
-  }, [ticker, userId, needsBrokers, attempt]);
+    loadBrokerHistory(ticker, getToken).then(
+      (days) => {
+        if (current) setBrokers({ kind: 'ready', data: days });
+      },
+      (error: unknown) => {
+        if (current) {
+          setBrokers({ kind: 'unavailable' });
+          setBrokerError(error instanceof Error ? error.message : 'Broker summaries unavailable');
+        }
+      },
+    );
+    return () => {
+      current = false;
+    };
+  }, [ticker, userId, needsBrokers, attempt, getToken]);
   function signIn() {
     window.sessionStorage.setItem(
       'vibe-idx-return-to',

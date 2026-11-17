@@ -1,9 +1,10 @@
 // @vitest-environment happy-dom
-import { act } from 'react';
+import { act, StrictMode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { Terminal } from './Terminal';
-import { clearBars } from './tick-data';
+import { clearBrokerHistory } from './broker-history';
+import { clearTickData } from './tick-data';
 import { cumulativeFlows, foreignFlow } from './BrokerPanes';
 import type { BrokerDay } from '../brokers';
 import { brokerRow, tradeSession, type Fill } from '../test-builders';
@@ -205,7 +206,8 @@ async function command(text: string) {
   );
 }
 beforeEach(() => {
-  clearBars();
+  clearTickData();
+  clearBrokerHistory();
   tickSessions = false;
   drilldown = null;
   sourceFailed = false;
@@ -685,6 +687,139 @@ describe('React terminal', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]?.textContent).toContain('1,450');
     expect(rows[0]?.querySelector('.tick-foreign')?.textContent).toBe('YP F');
+  });
+  describe('before the ticker price file arrives', () => {
+    const ticksFor = (date: string) =>
+      fetcher.mock.calls
+        .map(([input]) => requestUrl(input))
+        .filter((path) => path.includes('view=ticks') && path.includes(`date=${date}`));
+    async function withHeldPriceFile(
+      prices: string[],
+      opened: (release: () => Promise<void>) => Promise<void>,
+    ) {
+      const serve = fetcher.getMockImplementation();
+      if (!serve) throw new Error('Missing fixture fetcher');
+      window.history.replaceState(null, '', '/terminal?t=BREN&l=flow');
+      auth.user = { id: 'test-user' };
+      let release!: () => void;
+      const held = new Promise<void>((resolve) => (release = resolve));
+      fetcher.mockImplementation(async (input, init) => {
+        const path = requestUrl(input);
+        if (!path.includes('ticker/BREN')) return serve(input, init);
+        await held;
+        return Response.json({
+          ticker: 'BREN',
+          name: 'Company BREN',
+          prices: prices.map((date) => ({
+            date,
+            open: null,
+            close: 7675,
+            volume: 100,
+            value: 767500,
+            net_foreign: 0,
+          })),
+          holders: [],
+          changes: [],
+        });
+      });
+      try {
+        await render();
+        await opened(() => act(async () => release()));
+      } finally {
+        fetcher.mockImplementation(serve);
+        release();
+      }
+    }
+    const done = () => host.querySelectorAll('[aria-label="Done detail"] tbody tr').length;
+    const session = () => host.querySelector('[aria-label="Done detail"] .tick-session time');
+
+    it('asks for the latest session at once and shows it once the prices arrive', async () => {
+      await withHeldPriceFile(['2026-11-06', '2026-11-09'], async (release) => {
+        expect(ticksFor('2026-11-09').filter((path) => path.includes('kind=trades'))).toHaveLength(
+          1,
+        );
+        expect(ticksFor('2026-11-09').filter((path) => path.includes('kind=book'))).toHaveLength(1);
+        expect(session()?.textContent).toBe('9 Nov 2026');
+        expect(host.querySelector('[aria-label="Done detail"]')?.textContent).toContain(
+          'Loading 9 Nov 2026…',
+        );
+        expect(done()).toBe(0);
+        await release();
+        expect(done()).toBeGreaterThan(0);
+        expect(session()?.textContent).toBe('9 Nov 2026');
+        expect(
+          host.querySelector<HTMLButtonElement>('[aria-label="Previous session"]')?.disabled,
+        ).toBe(false);
+        expect(ticksFor('2026-11-09').filter((path) => path.includes('kind=trades'))).toHaveLength(
+          1,
+        );
+      });
+    });
+
+    it("moves to the ticker's own latest session when its prices end earlier", async () => {
+      await withHeldPriceFile(['2026-11-05', '2026-11-06'], async (release) => {
+        expect(ticksFor('2026-11-09').length).toBeGreaterThan(0);
+        await release();
+        expect(session()?.textContent).toBe('6 Nov 2026');
+        expect(host.querySelector('[aria-label="Done detail"]')?.textContent).toContain(
+          'Not collected for 6 Nov 2026',
+        );
+        expect(ticksFor('2026-11-06').length).toBeGreaterThan(0);
+        expect(host.querySelector<HTMLButtonElement>('[aria-label="Next session"]')?.disabled).toBe(
+          true,
+        );
+      });
+    });
+
+    it('says a ticker has no sessions only once its prices have arrived without any', async () => {
+      await withHeldPriceFile([], async (release) => {
+        expect(host.querySelector('[aria-label="Done detail"]')?.textContent).not.toContain(
+          'No 2026 sessions',
+        );
+        await release();
+        expect(host.querySelector('[aria-label="Done detail"]')?.textContent).toContain(
+          'No 2026 sessions for this ticker',
+        );
+      });
+    });
+  });
+  describe('broker history', () => {
+    const histories = () =>
+      fetcher.mock.calls
+        .map(([input]) => requestUrl(input))
+        .filter((path) => path.includes('/api/brokers?ticker='));
+    beforeEach(() => {
+      window.history.replaceState(null, '', '/terminal?t=BREN&l=flow');
+      auth.user = { id: 'test-user' };
+    });
+
+    it('is requested once when the terminal opens, even if it mounts twice', async () => {
+      await act(async () =>
+        root.render(
+          <StrictMode>
+            <Terminal />
+          </StrictMode>,
+        ),
+      );
+      expect(histories()).toEqual(['/api/brokers?ticker=BREN']);
+    });
+
+    it('is not requested again when returning to a ticker', async () => {
+      await render();
+      await command('BBCA');
+      await command('BREN');
+      expect(histories()).toEqual(['/api/brokers?ticker=BREN', '/api/brokers?ticker=BBCA']);
+      expect(host.querySelector('[role="alert"]')).toBeNull();
+    });
+
+    it('is requested again after signing out and back in', async () => {
+      await render();
+      auth.user = null;
+      await render();
+      auth.user = { id: 'test-user' };
+      await render();
+      expect(histories()).toHaveLength(2);
+    });
   });
 });
 

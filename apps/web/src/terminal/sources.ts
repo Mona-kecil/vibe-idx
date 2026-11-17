@@ -143,9 +143,9 @@ export async function fetchTicks<K extends TickKind>(
   signal?: AbortSignal,
 ): Promise<(K extends 'book' ? TickBook : TickTrades) | null> {
   const query = new URLSearchParams({ view: 'ticks', ticker, date, kind });
+  // The browser cache keeps a past session, which the response marks immutable. The latest one is marked no-store.
   const response = await fetch(`/api/brokers?${query}`, {
     headers: { Authorization: `Bearer ${token}` },
-    cache: 'no-store',
     signal,
   });
   if (response.status === 401) throw new Error('Your sign-in expired. Sign in again.');

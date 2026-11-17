@@ -27,10 +27,10 @@ Ticker links get server-rendered metadata with the company name, latest close, d
 
 ## Sign-in and private data
 
-`apps/web/api/brokers.ts` verifies the WorkOS JWT against the client's signing keys before it reads the private bucket, and responds with private, no-store caching.
+`apps/web/api/brokers.ts` verifies the WorkOS JWT against the client's signing keys before it reads the private bucket, and responds with private, no-store caching. The one exception is a session's running trade or order book from before the latest published session, which the Collector does not republish: it carries `private, max-age=31536000, immutable` and `Vary: Authorization`, so the browser can reuse it only for the same access token. Signed-out requests cannot match a signed-in cache entry. The latest session and the bar file stay no-store.
 
 - `GET /api/brokers?ticker=BBCA` returns `{ticker, days}`. Each day has `date`, `board`, `buy` and `sell`. Each broker row has `broker`, `investor` (domestic or foreign clients), `broker_type`, `shares`, `value`, `avg_price` and `freq`.
-- `view=ticks&date=…&kind=trades|book` returns one session's running trades or closing order book.
+- `view=ticks&date=…&kind=trades|book` returns one session's running trades or closing order book. It reads `site/bars/sessions.json` for the latest published session.
 - `view=bars&ticker=…` returns every collected session of one ticker as 15-minute regular-board bars. GP combines them into 1H and 4H.
 - `view=market` returns Accumulation.
 

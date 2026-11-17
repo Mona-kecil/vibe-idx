@@ -33,17 +33,28 @@ export function loadTicks<K extends TickKind>(
   return request as Promise<Loaded<K> | null>;
 }
 
-/** Sessions the ticker traded in 2026, and the one the tick panes show. */
+const firstSession = '2026-01-01';
+
+/**
+ * Sessions the ticker traded in 2026, and the one the tick panes show. The price file lists the sessions, but the
+ * market data the Terminal opens with already names the latest one, so the tick request needn't wait for the file.
+ */
 export function useSession() {
-  const { detail, tickDate, setTickDate } = useTerminal();
+  const { data, detail, tickDate, setTickDate } = useTerminal();
   const dates = useMemo(
     () =>
       detail.kind === 'ready'
-        ? detail.data.prices.map((p) => p.date).filter((date) => date >= '2026-01-01')
+        ? detail.data.prices.map((p) => p.date).filter((date) => date >= firstSession)
         : [],
     [detail],
   );
-  const date = tickDate && dates.includes(tickDate) ? tickDate : dates.at(-1);
+  const latest = data.health.prices ?? data.market.date;
+  const date =
+    detail.kind === 'loading'
+      ? (tickDate ?? (latest && latest >= firstSession ? latest : undefined))
+      : tickDate && dates.includes(tickDate)
+        ? tickDate
+        : dates.at(-1);
   return { dates, date, setTickDate };
 }
 
@@ -83,7 +94,10 @@ export type BarState =
 
 // One file holds every collected session of a ticker, so each timeframe on GP shares one request.
 const barCache = new Map<string, Promise<BarFile | null>>();
-export const clearBars = () => barCache.clear();
+export const clearTickData = () => {
+  cache.clear();
+  barCache.clear();
+};
 
 function loadBars(
   ticker: string,

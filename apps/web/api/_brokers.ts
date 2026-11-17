@@ -11,19 +11,33 @@ const storageConfigSchema = z.object({
   R2_SECRET_ACCESS_KEY: z.string().min(1),
 });
 const sourceSchema = z.array(brokerDaySchema);
+// The sessions whose running trade the Collector has published for every ticker.
+const sessionsSchema = z.object({ sessions: z.array(z.iso.date()) });
+
+const noStore = { 'Cache-Control': 'private, no-store', Vary: 'Authorization' };
+// Published sessions are immutable; token-specific variants keep signed-out requests out of the browser cache.
+const settled = { 'Cache-Control': 'private, max-age=31536000, immutable', Vary: 'Authorization' };
 
 function json(body: unknown, status: number, headers?: Record<string, string>) {
-  return Response.json(body, {
-    status,
-    headers: {
-      'Cache-Control': 'private, no-store',
-      Vary: 'Authorization',
-      ...headers,
-    },
-  });
+  return Response.json(body, { status, headers: { ...noStore, ...headers } });
 }
 
 export type BrokerStore = (key: string) => Promise<Response>;
+
+/** The newest published session, or null when the list can't be read, which keeps every response uncached. */
+async function latestSession(read: BrokerStore) {
+  try {
+    const response = await read('site/bars/sessions.json');
+    if (!response.ok) return null;
+    const { sessions } = sessionsSchema.parse(await response.json());
+    return sessions.reduce<string | null>(
+      (latest, day) => (!latest || day > latest ? day : latest),
+      null,
+    );
+  } catch {
+    return null;
+  }
+}
 
 function s3Store(env: NodeJS.ProcessEnv, fetcher: typeof fetch): BrokerStore | null {
   const storage = storageConfigSchema.safeParse(env);
@@ -143,7 +157,10 @@ export function createBrokerHandler({
             : 'bars' in target
               ? `site/bars/${target.ticker}.json.gz`
               : `site/broker/${target.ticker}.json.gz`;
-      const response = await read(key);
+      const [response, latest] = await Promise.all([
+        read(key),
+        target !== 'market' && 'kind' in target ? latestSession(read) : null,
+      ]);
       if (response.status === 404) return json({ error: 'not_found' }, 404);
       if (!response.ok) {
         await reportFailure(
@@ -158,8 +175,8 @@ export function createBrokerHandler({
         return new Response(response.body, {
           status: 200,
           headers: {
-            'Cache-Control': 'private, no-store',
-            Vary: 'Authorization',
+            // The latest session may still be republished, and a bar file changes with it.
+            ...('kind' in target && latest && target.date < latest ? settled : noStore),
             'Content-Type': 'application/json',
             'Content-Encoding': 'gzip',
           },
