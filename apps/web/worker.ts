@@ -67,13 +67,18 @@ function unchanged(request: Request, headers: Headers) {
   return modified <= since;
 }
 
+const fixdate =
+  /^(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun), \d{2} (?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{4} \d{2}:\d{2}:\d{2} GMT$/;
+
 /**
- * An IMF-fixdate in milliseconds, or NaN, so a malformed date is ignored as RFC 9110 requires. It is exactly the
- * form toUTCString prints, so a value that does not survive the round trip, such as 31 Nov, is not a date.
+ * An IMF-fixdate in milliseconds, or NaN, so a malformed date is ignored as RFC 9110 requires. The pattern fixes
+ * the form, including a four-digit year, and the toUTCString round trip rejects days that do not exist, such as
+ * 31 Nov, which Date.parse would roll over.
  */
 function httpDate(value: string | null) {
-  const time = Date.parse(value ?? '');
-  return Number.isFinite(time) && new Date(time).toUTCString() === value ? time : NaN;
+  if (!value || !fixdate.test(value)) return NaN;
+  const time = Date.parse(value);
+  return new Date(time).toUTCString() === value ? time : NaN;
 }
 
 const notModified = (headers: Headers) => {

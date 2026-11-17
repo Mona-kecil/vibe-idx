@@ -204,11 +204,41 @@ describe('Worker', () => {
     expect((await read({ 'If-Modified-Since': 'Tue, 31 Nov 2099 00:00:00 GMT' })).status).toBe(200);
     expect((await read({ 'If-Modified-Since': 'Sun, 29 Feb 2099 00:00:00 GMT' })).status).toBe(200);
     expect((await read({ 'If-Modified-Since': 'Mon, 01 Jan 2099 00:00:00 GMT' })).status).toBe(200);
+    expect((await read({ 'If-Modified-Since': 'Sat, 01 Jan 10000 00:00:00 GMT' })).status).toBe(
+      200,
+    );
+    expect((await read({ 'If-Modified-Since': 'Sat, 13 Sep 275760 00:00:00 GMT' })).status).toBe(
+      200,
+    );
     expect((await read({ 'If-Modified-Since': 'Thu, 01 Jan 2099 00:00:00 GMT' })).status).toBe(304);
     expect((await read({ 'If-None-Match': '"other"', 'If-Modified-Since': uploaded })).status).toBe(
       200,
     );
     expect(env.PUBLIC.get).toHaveBeenCalledTimes(1);
+  });
+  it('ignores a malformed If-Modified-Since on a miss as well as on a hit', async () => {
+    const malformed = [
+      '2099',
+      '2099-01-01',
+      'Tue, 31 Nov 2099 00:00:00 GMT',
+      'Sun, 29 Feb 2099 00:00:00 GMT',
+      'Sat, 01 Jan 10000 00:00:00 GMT',
+      'Sat, 13 Sep 275760 00:00:00 GMT',
+    ];
+    for (const [index, since] of malformed.entries()) {
+      const env = environment();
+      env.PUBLIC.get.mockResolvedValueOnce(stored('{"a":1}') as never);
+      const response = await worker.fetch(
+        new Request(`https://idx.test/data/miss-${index}.json`, {
+          headers: { 'If-Modified-Since': since },
+        }),
+        env,
+        ctx,
+      );
+      expect(response.headers.get('x-edge-cache')).toBe('MISS');
+      expect(response.status).toBe(200);
+      expect(await response.text()).toBe('{"a":1}');
+    }
   });
   it('answers only GET and HEAD for public data', async () => {
     const env = environment();
