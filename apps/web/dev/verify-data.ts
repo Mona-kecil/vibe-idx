@@ -10,6 +10,8 @@ import { tickBookSchema, tickTradesSchema } from '../src/ticks.js';
 import { cliErrors, plural } from '../../pipeline/dev/cli.js';
 import { table } from './format.js';
 import { fixtureState, fixturesRoot, localBrokerApi } from './local-api.js';
+import { archiveSchema, tickerNewsSchema } from '../../feeds/src/contracts.js';
+import { tickerTagger } from '../../feeds/src/tagging.js';
 
 // The terminal's panes import their CSS, which only the bundler can load.
 registerHooks({
@@ -88,6 +90,37 @@ const tickers = positionals.length
     ].sort();
 
 const api = await localBrokerApi();
+const newsRoot = join(fixturesRoot, 'public/news');
+const archive = (
+  await Promise.all(
+    (existsSync(join(newsRoot, 'archive')) ? await readdir(join(newsRoot, 'archive')) : []).map(
+      async (file) =>
+        archiveSchema.parse(JSON.parse(await readFile(join(newsRoot, 'archive', file), 'utf8')))
+          .articles,
+    ),
+  )
+).flat();
+const tag = tickerTagger(
+  z
+    .array(z.object({ ticker: z.string(), name: z.string() }))
+    .parse(JSON.parse(await readFile(join(fixturesRoot, 'public/tickers.json'), 'utf8'))),
+);
+/** What each archived article is tagged with now, grouped by every ticker it is or would be tagged with. */
+const archivedByTicker = new Map<
+  string,
+  { article: (typeof archive)[number]; expected: string[] }[]
+>();
+for (const article of archive) {
+  const expected = tag(article.title);
+  for (const code of new Set([...article.tags, ...expected]))
+    archivedByTicker.set(code, [...(archivedByTicker.get(code) ?? []), { article, expected }]);
+}
+const newsIndex = async (ticker: string) => {
+  const file = join(newsRoot, 'ticker', `${ticker}.json`);
+  return existsSync(file)
+    ? tickerNewsSchema.parse(JSON.parse(await readFile(file, 'utf8'))).news
+    : undefined;
+};
 const publicTicker = async (ticker: string) => {
   const file = join(fixturesRoot, 'public/ticker', `${ticker}.json`);
   return existsSync(file)
@@ -148,6 +181,17 @@ await Promise.all(
             ticker,
             brokers.length ? check.history({ brokers }) : { skip: 'no broker data' },
           );
+      for (const check of chosen)
+        if ('news' in check)
+          record(
+            check,
+            ticker,
+            check.news({
+              ticker,
+              articles: archivedByTicker.get(ticker) ?? [],
+              index: await newsIndex(ticker),
+            }),
+          );
       if (!chosen.some((check) => 'session' in check)) continue;
       const prices = (await publicTicker(ticker))?.prices;
       for (const date of dates) {
@@ -183,8 +227,13 @@ if (unknownTickers.length)
 const results = chosen.map((c) => ({
   name: c.name,
   title: c.title,
-  // A session check runs once per ticker and session, a history check once per ticker over the year.
-  scope: 'session' in c ? ('session' as const) : ('history' as const),
+  // A session check runs once per ticker and session, a history check once per ticker over the year, and a news check once per ticker over the archive.
+  scope:
+    'session' in c
+      ? ('session' as const)
+      : 'history' in c
+        ? ('history' as const)
+        : ('news' as const),
   ...tally.get(c.name)!,
 }));
 const compared = results.some((r) => r.passed || r.failed);

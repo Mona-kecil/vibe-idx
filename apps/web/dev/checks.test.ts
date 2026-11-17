@@ -2,7 +2,15 @@ import { describe, expect, it } from 'vite-plus/test';
 import type { BrokerDay } from '../src/brokers';
 import type { Ticker } from '../src/data';
 import { brokerRow, tradeSession, type Fill } from '../src/test-builders';
-import { checks, noTrades, skipLine, type CorporateAction, type Session } from './checks';
+import type { ArchiveArticle } from '../../feeds/src/contracts';
+import {
+  checks,
+  noTrades,
+  skipLine,
+  type CorporateAction,
+  type NewsView,
+  type Session,
+} from './checks';
 
 const date = '2026-11-10';
 
@@ -152,6 +160,87 @@ describe('bfl-brk', () => {
     const check = checks.find((c) => c.name === 'bfl-brk')!;
     if (!('history' in check)) throw new Error('bfl-brk is a history check');
     expect(check.history({ brokers: [agreeing] })).toEqual([]);
+  });
+});
+
+const article = (fields: Partial<ArchiveArticle> = {}): ArchiveArticle => ({
+  ts: '2026-11-10T03:00:00.000Z',
+  src: 'Kontan',
+  title: 'Saham BBCA Menguat',
+  link: 'https://news.example.test/a',
+  tags: ['BBCA'],
+  source_id: 'kontan',
+  ...fields,
+});
+const row = (a: ArchiveArticle) => ({
+  title: a.title,
+  url: a.link,
+  published_at: a.ts,
+  source: a.src,
+});
+const runNews = (name: string, n: Partial<NewsView>) => {
+  const check = checks.find((c) => c.name === name)!;
+  if (!('news' in check)) throw new Error(`${name} is not a news check`);
+  return check.news({ ticker: 'BBCA', articles: [], index: undefined, ...n });
+};
+
+describe('news-index', () => {
+  const a = article();
+  it('passes when the file lists the tagged articles', () => {
+    expect(
+      runNews('news-index', { articles: [{ article: a, expected: ['BBCA'] }], index: [row(a)] }),
+    ).toEqual([]);
+    expect(
+      runNews('news-index', {
+        articles: [{ article: a, expected: ['BBCA'] }],
+        index: [row({ ...a, link: 'http://www.news.example.test/a/' })],
+      }),
+    ).toEqual([]);
+  });
+  it('names an article the file lacks, one it should not hold, and one that differs', () => {
+    const other = article({
+      title: 'Saham BBRI',
+      link: 'https://news.example.test/b',
+      tags: ['BBRI'],
+    });
+    expect(
+      runNews('news-index', { articles: [{ article: a, expected: ['BBCA'] }], index: [] }),
+    ).toHaveLength(1);
+    expect(
+      runNews('news-index', {
+        articles: [{ article: a, expected: ['BBCA'] }],
+        index: [row(a), row(other)],
+      }),
+    ).toHaveLength(1);
+    expect(
+      runNews('news-index', {
+        articles: [{ article: a, expected: ['BBCA'] }],
+        index: [{ ...row(a), source: 'Antara' }],
+      }),
+    ).toHaveLength(1);
+  });
+  it('skips a ticker with no news', () => {
+    expect(runNews('news-index', {})).toEqual({ skip: 'no archived news' });
+  });
+});
+
+describe('news-tags', () => {
+  it('fails an article the tagger now tags but the archive does not, and the reverse for Google', () => {
+    const missed = article({ tags: [] });
+    expect(
+      runNews('news-tags', { articles: [{ article: missed, expected: ['BBCA'] }] }),
+    ).toHaveLength(1);
+    const stale = article({ source_id: 'google-news', tags: ['BBCA'] });
+    expect(runNews('news-tags', { articles: [{ article: stale, expected: [] }] })).toHaveLength(1);
+  });
+  it('passes a feed tag the title does not show, as a note', () => {
+    const outcome = runNews('news-tags', { articles: [{ article: article(), expected: [] }] });
+    expect(outcome).toEqual([{ note: '1 article tagged from a summary' }]);
+  });
+  it('passes when archive and tagger agree', () => {
+    expect(
+      runNews('news-tags', { articles: [{ article: article(), expected: ['BBCA'] }] }),
+    ).toEqual([]);
   });
 });
 
