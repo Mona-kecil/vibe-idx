@@ -10,27 +10,16 @@ Use Node 24 and pnpm 11.9.
 pnpm install --frozen-lockfile
 ```
 
-Add these variables to `apps/web/.env.local`. Use the same WorkOS environment for both client IDs.
-
-```dotenv
-VITE_WORKOS_CLIENT_ID=your_workos_client_id
-WORKOS_CLIENT_ID=your_workos_client_id
-R2_ACCOUNT_ID=your_cloudflare_account_id
-R2_ACCESS_KEY_ID=your_r2_access_key_id
-R2_SECRET_ACCESS_KEY=your_r2_secret_access_key
-```
-
-The R2 credential needs object read access to `vibe-idx-private`. Keep secret values out of `VITE_` variables and source control.
-
-Register `http://localhost:5173/callback` as a WorkOS redirect URI, `http://localhost:5173` as an allowed origin and sign-out URI, and `http://localhost:5173/login` as the initiate-login URI. Enable Magic Auth for email-code sign-in.
-
-Start the Site, the Terminal and their Vercel functions together.
+For repeatable local work, use the fixture preview. It signs in locally and replays public responses without production credentials:
 
 ```sh
-pnpm dlx vercel dev --listen 5173 --cwd apps/web
+pnpm fixtures
+pnpm preview:local
 ```
 
-Open `http://localhost:5173`. Public pages read the published R2 JSON. The broker endpoint reads private R2 after verifying the WorkOS session. `pnpm --filter @vibe-idx/web dev` runs only the frontend and its public-data proxy.
+The preview prints its URL. See the local-data commands in [AGENTS.md](AGENTS.md) for UI checks, clock controls and screenshots.
+
+For development against published data, set `VITE_WORKOS_CLIENT_ID` in `apps/web/.env.local` to the production WorkOS client ID and run `pnpm --filter @vibe-idx/web dev`. Register `http://localhost:5173/callback` as a WorkOS redirect URI, `http://localhost:5173` as an allowed origin and sign-out URI, and `http://localhost:5173/login` as the initiate-login URI. This mode proxies API requests to the production Worker and public data to R2.
 
 ## Run checks
 
@@ -79,6 +68,6 @@ The collector authenticates only when it needs Stockbit and conditionally saves 
 
 Each run holds `broker-run.json` until it ends, so a second collector refuses to start instead of overwriting the first one's files. The marker expires 15 minutes after its run's deadline, so a run that dies without deleting it delays the next run rather than blocking collection. Configure the dispatch Worker's `GITHUB_TOKEN` secret before deployment. IDX ingestion restores only broker activity coverage for its freshness check and never uploads broker activity.
 
-GitHub Actions uses `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY` secrets with read and write access to both buckets, plus the `R2_ACCOUNT_ID` repository variable. Vercel needs its own server environment variables. GitHub secrets do not sync to Vercel. Broker activity since January 2026 remains in private Parquet storage and the private ticker exports. Archived per-stock broker objects remain stored but are unused.
+GitHub Actions uses `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY` secrets with read and write access to both buckets, plus the `R2_ACCOUNT_ID` repository variable. The Cloudflare Worker reads R2 through bucket bindings and takes its WorkOS client ID from `apps/web/wrangler.jsonc`. Broker activity since January 2026 remains in private Parquet storage and the private ticker exports. Archived per-stock broker objects remain stored but are unused.
 
 See [the architecture](docs/architecture.md) for storage paths, source dates, and parsing limits.

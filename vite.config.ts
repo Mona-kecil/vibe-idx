@@ -16,7 +16,7 @@ export default defineConfig({
     },
     overrides: [
       {
-        // Vercel runs api/*.ts and what they import under plain Node ESM, which needs the .js suffix.
+        // Keep web modules compatible with plain ESM imports.
         files: ['apps/web/**'],
         plugins: ['typescript', 'react', 'import'],
         rules: {
@@ -33,7 +33,7 @@ export default defineConfig({
         rules: { 'import/extensions': 'off' },
       },
       {
-        // Run locally with tsx, never by Vercel.
+        // Local tools run with tsx.
         files: ['apps/web/hillclimb/**', 'apps/web/scripts/**'],
         plugins: ['typescript', 'react', 'import'],
         rules: { 'import/extensions': 'off' },
