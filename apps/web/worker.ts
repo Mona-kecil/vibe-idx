@@ -1,4 +1,5 @@
 import { createBrokerHandler } from './api/_brokers.js';
+import { createNewsHandler } from './api/_news.js';
 import { defaultMeta, parseTickerCard, tickerMeta, withShareMeta } from './api/_share.js';
 import { brokerTickerSchema } from './src/brokers.js';
 import { report } from './worker-sentry.js';
@@ -12,6 +13,7 @@ type Env = {
 };
 
 let brokers: ((request: Request) => Promise<Response>) | undefined;
+let news: ((request: Request) => Promise<Response>) | undefined;
 
 async function route(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
@@ -25,9 +27,15 @@ async function route(request: Request, env: Env): Promise<Response> {
     });
     return brokers(request);
   }
-  // Google News returns 503 to Workers, so ticker news comes from the Vercel handler.
-  if (url.pathname === '/api/news')
-    return fetch(`https://vibe-idx.vercel.app/api/news${url.search}`);
+  if (url.pathname === '/api/news') {
+    news ??= createNewsHandler({
+      store: async (key) => {
+        const object = await env.PUBLIC.get(key);
+        return object ? new Response(object.body) : new Response(null, { status: 404 });
+      },
+    });
+    return news(request);
+  }
   if (url.pathname === '/api/og') return fetch(`https://vibe-idx.vercel.app/api/og${url.search}`);
   if (url.pathname.startsWith('/api/'))
     return Response.json({ error: 'not_found' }, { status: 404 });

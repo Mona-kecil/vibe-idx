@@ -8,6 +8,7 @@ import { parseArgs } from 'node:util';
 import { createServer } from 'vite-plus';
 import { z } from 'zod';
 import { cliErrors } from '../../pipeline/dev/cli.js';
+import { createNewsHandler } from '../api/_news.js';
 import { writeAtomic } from '../../pipeline/dev/local-r2.js';
 import { fixtureState, fixturesRoot, localBrokerApi } from './local-api.js';
 import { previewClient } from './preview-client.js';
@@ -132,6 +133,22 @@ export async function startPreview({
     res.end(body);
   }
 
+  /** The production news handler over the ticker news files in the public snapshot. */
+  const tickerNews = createNewsHandler({
+    now: () => Date.parse(`${state.asOf}T12:00:00+07:00`),
+    store: (key) =>
+      readFile(join(snapshot, key)).then(
+        (bytes) => new Response(bytes),
+        () => new Response(null, { status: 404 }),
+      ),
+  });
+  async function news(req: IncomingMessage, res: ServerResponse) {
+    const response = await tickerNews(new Request(new URL(req.url!, 'http://localhost')));
+    res.statusCode = response.status;
+    response.headers.forEach((value, key) => res.setHeader(key, value));
+    res.end(Buffer.from(await response.arrayBuffer()));
+  }
+
   async function publicData(req: IncomingMessage, res: ServerResponse) {
     const path = new URL(req.url!, 'http://localhost').pathname.slice('/data/'.length);
     const file = join(snapshot, path);
@@ -223,11 +240,13 @@ export async function startPreview({
             const path = req.url ?? '';
             const route = path.startsWith('/api/brokers')
               ? brokers
-              : path.startsWith('/data/')
-                ? publicData
-                : path.startsWith('/api/')
-                  ? recorded
-                  : null;
+              : path.startsWith('/api/news')
+                ? news
+                : path.startsWith('/data/')
+                  ? publicData
+                  : path.startsWith('/api/')
+                    ? recorded
+                    : null;
             if (!route) return next();
             route(req, res).catch((error: unknown) => {
               console.error(path, error);

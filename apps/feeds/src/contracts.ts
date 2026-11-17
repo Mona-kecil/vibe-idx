@@ -18,7 +18,7 @@ export const newsArticleSchema = z.object({
  * One Indonesian market article in the news archive, kept for good. `news/archive/YYYY-MM.json` holds a Jakarta
  * month of them, newest first, deduplicated by canonical link.
  */
-export const archiveArticleSchema = newsArticleSchema.pick({
+const archiveArticleSchema = newsArticleSchema.pick({
   ts: true,
   src: true,
   title: true,
@@ -36,7 +36,7 @@ export const archiveSchema = z.object({
  * A ticker's archived news in the shape `/api/news` answers with, so the Worker only filters and cuts.
  * `news/ticker/CODE.json` holds every archived article tagged with the code, newest first.
  */
-export const tickerNewsRowSchema = z.object({
+const tickerNewsRowSchema = z.object({
   title: z.string().min(1),
   url: z.url(),
   published_at: z.iso.datetime(),

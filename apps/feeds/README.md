@@ -2,7 +2,9 @@
 
 `pnpm --filter @vibe-idx/feeds collect` publishes `news.json` and `calendar.json` to the `vibe-idx-public` R2 bucket. The News and calendar feeds workflow runs every 15 minutes, at minutes 7, 22, 37, and 52, and accepts manual dispatches. GitHub may delay scheduled runs. ForexFactory and BPS refresh hourly. BI refreshes daily. Failed sources retry on the next run.
 
-The news items match the terminal `newsArticleSchema`. `sum` contains the feed's own summary with HTML removed. The collector never requests article pages or stores article bodies. The Google News and Vercel ticker-news paths remain separate.
+The news items match the terminal `newsArticleSchema`. `sum` contains the feed's own summary with HTML removed. The collector never requests article pages or stores article bodies.
+
+The Indonesian sources are CNBC Indonesia, Antara, Kontan and IDX Channel. Bisnis is not read: every Bisnis feed URL answers a Cloudflare challenge page. The world sources are Bloomberg, CNBC and WSJ.
 
 Tagging uses the company names in `tickers.json` in the public bucket, with `PT`, `Persero`, and `Tbk` normalized. Longer names match first. A single-word company name requires `PT` or `Tbk`. Group nicknames and bank abbreviations never tag.
 

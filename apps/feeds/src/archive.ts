@@ -97,7 +97,7 @@ const newestRow = (a: TickerNewsRow, b: TickerNewsRow) =>
   b.published_at.localeCompare(a.published_at) || a.url.localeCompare(b.url);
 
 /** One ticker's index after the changes, or null when they leave it as it is. */
-export function updateIndex(existing: TickerNewsRow[], ticker: string, changes: Change[]) {
+function updateIndex(existing: TickerNewsRow[], ticker: string, changes: Change[]) {
   const byLink = new Map(existing.map((row) => [canonicalLink(row.url), row]));
   let changed = false;
   for (const { article, before, after } of changes) {
