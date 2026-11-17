@@ -91,9 +91,6 @@ importers:
       aws4fetch:
         specifier: ^1.0.20
         version: 1.0.20
-      fast-xml-parser:
-        specifier: ^5.11.2
-        version: 5.11.2
       harfbuzzjs:
         specifier: 0.10.0
         version: 0.10.0

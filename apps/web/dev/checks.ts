@@ -3,6 +3,8 @@
  * take plain data, so a test can feed them a session built by hand.
  */
 import { z } from 'zod';
+import { readFile, readdir } from 'node:fs/promises';
+import { join } from 'node:path';
 import { aggregateBrokers } from '../src/broker-data.js';
 import {
   brokerBoards,
@@ -11,6 +13,8 @@ import {
   type InvestorFilter,
 } from '../src/brokers.js';
 import { corporateActionSchema, type Ticker } from '../src/data.js';
+import { canonicalLink } from '../../feeds/src/archive.js';
+import { tickerNewsSchema, type ArchiveArticle } from '../../feeds/src/contracts.js';
 import { cumulativeFlows, foreignFlow } from '../src/terminal/BrokerPanes.js';
 import {
   bars,
@@ -49,9 +53,19 @@ export type History = { brokers: BrokerDay[] };
  */
 export type Finding = string | { note: string };
 export type Outcome = Finding[] | { skip: string };
+/**
+ * One ticker's archived news: the articles tagged with it, or that the current tagger would tag with it, each with the
+ * tags the tagger gives its title now, and the ticker news file `/api/news` serves.
+ */
+export type NewsView = {
+  ticker: string;
+  articles: { article: ArchiveArticle; expected: string[] }[];
+  index: { title: string; url: string; published_at: string; source: string }[] | undefined;
+};
 export type Check =
   | { name: string; title: string; session: (s: Session) => Outcome }
-  | { name: string; title: string; history: (h: History) => Outcome };
+  | { name: string; title: string; history: (h: History) => Outcome }
+  | { name: string; title: string; news: (n: NewsView) => Outcome };
 
 const boardCode = { regular: 'RG', negotiation: 'NG', cash: 'TN' } as const satisfies Record<
   BrokerBoard,
@@ -330,10 +344,82 @@ export const checks: Check[] = [
         });
       }),
   },
+  {
+    name: 'news-index',
+    title: 'The ticker news file lists the archived articles tagged with the ticker',
+    news: (n) => {
+      const archived = new Map(
+        n.articles
+          .filter(({ article }) => article.tags.includes(n.ticker))
+          .map(({ article }) => [canonicalLink(article.link), article]),
+      );
+      if (!archived.size && !n.index?.length) return { skip: 'no archived news' };
+      const listed = new Map((n.index ?? []).map((row) => [canonicalLink(row.url), row]));
+      return [
+        ...[...archived]
+          .filter(([key]) => !listed.has(key))
+          .map(([, a]) => `archived but not in the news file: ${a.title}`),
+        ...[...listed]
+          .filter(([key]) => !archived.has(key))
+          .map(([, row]) => `in the news file but not archived with this tag: ${row.title}`),
+        ...[...archived].flatMap(([key, a]) => {
+          const row = listed.get(key);
+          return row && (row.title !== a.title || row.published_at !== a.ts || row.source !== a.src)
+            ? [`news file row differs from the archive: ${a.title}`]
+            : [];
+        }),
+      ];
+    },
+  },
+  {
+    name: 'news-tags',
+    title: 'Archived tags agree with what the tagger finds in the title now',
+    news: (n) => {
+      const mismatches: Finding[] = [];
+      let fromSummary = 0;
+      for (const { article, expected } of n.articles) {
+        const stored = article.tags.includes(n.ticker);
+        const found = expected.includes(n.ticker);
+        if (stored === found) continue;
+        // A feed article was also tagged from a summary the archive does not keep.
+        if (stored && article.source_id !== 'google-news') fromSummary++;
+        else
+          mismatches.push(
+            `${article.title} (${article.source_id}) is ${stored ? 'tagged' : 'not tagged'}, the tagger says ${found ? 'tag' : 'no tag'}`,
+          );
+      }
+      if (!n.articles.length) return { skip: 'no archived news' };
+      return [
+        ...mismatches,
+        ...(fromSummary
+          ? [{ note: `${plural(fromSummary, 'article')} tagged from a summary` }]
+          : []),
+      ];
+    },
+  },
 ];
 
 /** A skip reason with where it applied: a short list whole, a long one, such as every warrant, up to `show`. */
 export function skipLine(reason: string, where: string[], show: number) {
   const listed = where.length <= 12 ? where.length : Math.max(show, 1);
   return `skip: ${reason}, ${plural(where.length, 'time')}: ${where.slice(0, listed).join(', ')}${where.length > listed ? `, and ${where.length - listed} more` : ''}`;
+}
+
+/** All annual ticker files, matching the monthly archive's full history. */
+export async function readNewsIndex(newsRoot: string, ticker: string) {
+  const directory = join(newsRoot, 'ticker', ticker);
+  const files = await readdir(directory).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === 'ENOENT') return [];
+    throw error;
+  });
+  return (
+    await Promise.all(
+      files
+        .filter((file) => /^\d{4}\.json$/.test(file))
+        .map(
+          async (file) =>
+            tickerNewsSchema.parse(JSON.parse(await readFile(join(directory, file), 'utf8'))).news,
+        ),
+    )
+  ).flat();
 }

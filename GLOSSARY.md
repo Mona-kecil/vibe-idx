@@ -381,8 +381,12 @@ The Cloudflare Worker that starts ingest daily and a collector run whenever none
 _Avoid_: cron, scheduler
 
 **Feeds**:
-The job that publishes market news and the economic calendar on a 15-minute schedule.
+The job that publishes market news and the economic calendar and keeps the news archive, on a 15-minute schedule.
 _Avoid_: feed (alone), news job, RSS
+
+**News archive**:
+Every Indonesian market article Feeds has read, kept by month with the tickers each names. Ticker news comes from it, so a date range reaches back only to the day the archive began or its backfill reached.
+_Avoid_: news history, news database
 
 **Ticker card**:
 The price image shown when a Ticker page link is shared.

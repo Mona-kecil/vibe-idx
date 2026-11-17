@@ -1,5 +1,6 @@
 import layoutWasm from 'satori/layout.wasm';
 import resvgWasm from '@resvg/resvg-wasm/index_bg.wasm';
+import { createNewsHandler } from './api/_news.js';
 import { createBrokerHandler } from './api/_brokers.js';
 import { assetFonts, createCardRenderer, createOgHandler } from './api/_og.js';
 import { defaultMeta, tickerMeta, withShareMeta } from './api/_share.js';
@@ -124,9 +125,15 @@ async function route(request: Request, env: Env, ctx: Ctx, fail: Fail): Promise<
     });
     return brokers(request);
   }
-  // Google News returns 503 to Workers, so ticker news comes from the Vercel handler.
-  if (url.pathname === '/api/news')
-    return fetch(`https://vibe-idx.vercel.app/api/news${url.search}`);
+  if (url.pathname === '/api/news') {
+    const news = createNewsHandler({
+      store: async (key) => {
+        const object = await env.PUBLIC.get(key);
+        return object ? new Response(object.body) : new Response(null, { status: 404 });
+      },
+    });
+    return news(request, (cause) => fail(cause, { path: url.pathname }));
+  }
   if (url.pathname === '/api/og') {
     const handler = (og ??= createOgHandler({
       render: createCardRenderer({

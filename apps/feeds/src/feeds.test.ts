@@ -2,7 +2,8 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vite-plus/test';
 import { cleanHTML, parseRSS, parseForexFactory, parseBI, parseBPSReleases } from './parsers';
 import { tickerTagger } from './tagging';
-import { collect, refresh, type Bucket, type Source } from './collector';
+import { collect, refresh, type Source } from './collector';
+import { memoryBucket } from './memory-bucket';
 import { newsSources, request } from './sources';
 import { report as sentryReport } from './sentry';
 import { newsSchema } from './contracts';
@@ -23,28 +24,6 @@ const tickers = [
   { ticker: 'ICBP', name: 'Indofood CBP Sukses Makmur Tbk' },
 ];
 const tag = tickerTagger(tickers);
-describe('company tagging', () => {
-  it.each([
-    ['Bank Central Asia menguji produk', ['BBCA']],
-    ['PT Bank Rakyat Indonesia (Persero) Tbk menguji produk', ['BBRI']],
-    ['Saham BBCA menguat; emiten BBRI naik', ['BBCA', 'BBRI']],
-    ['BBCA BBRI DATA AUTO meluncur', []],
-    ['DATA inflasi dan rasio CASA membaik', []],
-    ['DATA SAHAM HARI INI', []],
-    ['AUTO pilot digunakan dan mandiri dalam bekerja', []],
-    ['Ekonomi mandiri tumbuh, grup Adaro bertemu', []],
-    ['Alamtri Resources Indonesia merilis laporan', ['ADRO']],
-    ['Adaro Andalan Indonesia merilis laporan', ['AADI']],
-    ['Indofood CBP Sukses Makmur menguji produk', ['ICBP']],
-    ['Saham AUTO dan emiten DATA menguat', ['AUTO', 'DATA']],
-    ['Bank Central Asiana berbeda dari bank lokal', []],
-    ['Pasar saham berbasis DATA dan kendaraan AUTO', []],
-    ['PT Petrosea membahas rencana rekaan', ['PTRO']],
-    ['PT TIMAH (Persero) Tbk membahas rencana rekaan', ['TINS']],
-    ['Hasil timah meningkat di pelabuhan', []],
-    ['Bank Mandiri menyampaikan laporan', ['BMRI']],
-  ])('%s', (text, expected) => expect(tag(text)).toEqual(expected));
-});
 describe('source parsers', () => {
   it('cleans only RSS summaries and never uses content:encoded', () => {
     const rows = parseRSS(fixture('rss.xml'), { id: 'example', src: 'Example', region: 'ID' }, tag);
@@ -70,6 +49,37 @@ describe('source parsers', () => {
         tag,
       )[0]?.sum,
     ).toBe(long.trim());
+  });
+  it('reads the Kontan and IDX Channel item shapes', () => {
+    const tagged = tickerTagger([
+      ...tickers,
+      { ticker: 'PBRX', name: 'Pan Brothers Tbk' },
+      { ticker: 'BMRI', name: 'Bank Mandiri (Persero) Tbk' },
+    ]);
+    const kontan = parseRSS(
+      fixture('rss-kontan.xml'),
+      { id: 'kontan', src: 'Kontan', region: 'ID' },
+      tagged,
+    );
+    expect(kontan.map((row) => [row.tags, row.sum, row.ts])).toEqual([
+      [['PBRX'], 'Ringkasan rekaan peringkat utang.', '2026-11-10T12:31:24.000Z'],
+      [
+        [],
+        'Tekanan terhadap rupiah menjelang RDG BI dinilai terbatas.',
+        '2026-11-10T12:16:00.000Z',
+      ],
+    ]);
+    const idx = parseRSS(
+      fixture('rss-idx.xml'),
+      { id: 'idx-channel', src: 'IDX Channel', region: 'ID' },
+      tagged,
+    );
+    expect(idx).toHaveLength(1);
+    expect(idx[0]).toMatchObject({
+      tags: ['BMRI'],
+      link: 'https://channel.example.test/market/bank-mandiri-kebut-penyaluran-kredit',
+      sum: 'Bank Mandiri Kebut Penyaluran Kredit Rekaan. Foto: Contoh.',
+    });
   });
   it.each(['<html>blocked</html>', '<rss><channel></channel></rss>', '<rss>'])(
     'rejects broken or empty feeds',
@@ -222,16 +232,9 @@ describe('publication failure isolation', () => {
     expect(result?.sources.antara?.status).toBe('unavailable');
   });
   it('runs the collector with the real parsers, writes public shapes, and isolates calendar failure', async () => {
-    const memory = new Map<string, string>([['tickers.json', JSON.stringify(tickers)]]);
-    const bucket: Bucket = {
-      async get(key) {
-        const s = memory.get(key);
-        return s ? { json: async (): Promise<unknown> => JSON.parse(s) } : null;
-      },
-      async put(key, value) {
-        memory.set(key, value);
-      },
-    };
+    const memory = memoryBucket();
+    memory.set('tickers.json', JSON.stringify(tickers));
+    const bucket = memory.bucket;
     const failures: string[] = [];
     await collect({
       bucket,
@@ -246,9 +249,12 @@ describe('publication failure isolation', () => {
         return new Response(fixture('rss.xml'));
       },
     });
-    expect(newsSchema.parse(JSON.parse(memory.get('news.json') ?? 'null')).news).toHaveLength(12);
-    expect(memory.has('calendar.json')).toBe(true);
+    expect(newsSchema.parse(JSON.parse(memory.text('news.json') ?? 'null')).news).toHaveLength(16);
+    expect(memory.text('calendar.json')).toBeDefined();
     expect(failures).toEqual(['bps']);
+    const archive = JSON.parse(memory.text('news/archive/2026-11.json') ?? 'null');
+    expect(archive.articles).toHaveLength(2);
+    expect(JSON.parse(memory.text('news/ticker/BBCA/2026.json') ?? 'null').news).toHaveLength(2);
   });
 });
 

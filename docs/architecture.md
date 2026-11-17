@@ -56,7 +56,7 @@ The private bucket, `vibe-idx-private`:
 
 The Collector restores only prices, corporate actions, broker data years and Coverage. Ingest restores the IDX tables and raw responses without broker data, plus Coverage for its freshness check, and never uploads broker data. Nothing deletes stored objects.
 
-The public bucket, `vibe-idx-public`, holds `health.json`, `market.json`, `feed.json`, `tickers.json`, `ticker/<TICKER>.json`, and Feeds' `news.json` and `calendar.json`. Vercel and the app Worker serve `/data/*` from it. The app Worker keeps each object at the edge for the object's own `Cache-Control` max-age, 60 seconds when it has none, answers a matching `If-None-Match` with 304, serves from R2 when the edge cache fails, and never caches `/api/brokers`. Broker data never enters the public bucket.
+The public bucket, `vibe-idx-public`, holds `health.json`, `market.json`, `feed.json`, `tickers.json`, `ticker/<TICKER>.json`, and Feeds' `news.json`, `calendar.json`, `news/archive/<YYYY-MM>.json` and `news/ticker/<TICKER>/<YYYY>.json`. Vercel and the app Worker serve `/data/*` from it. The app Worker keeps each object at the edge for the object's own `Cache-Control` max-age, 60 seconds when it has none, answers a matching `If-None-Match` with 304, serves from R2 when the edge cache fails, and never caches `/api/brokers`. Broker data never enters the public bucket.
 
 ## Sources and dates
 
@@ -66,7 +66,7 @@ The public bucket, `vibe-idx-public`, holds `health.json`, `market.json`, `feed.
 - **Insider reports:** dated by report date. Only the supported KSEI layout is read. The net change is shares after minus shares before, not every trade.
 - **Registry:** dated by month-end. Supported layouts give free float and shareholder counts. Total shares stay null until a verified parser exists.
 - **Unsupported layouts:** they keep their filing links, and unknown values stay null. They are listed in Ingest's `report_gaps`.
-- **Ticker news:** `api/news.ts` searches Google News for the ticker and `saham`, returning titles, sources, dates and links but no article bodies. Matching on the code can return unrelated articles.
+- **Ticker news:** the Worker's `/api/news` reads `news/ticker/<TICKER>/<YYYY>.json`, which Feeds fills from the News archive: every Indonesian market article it has read since the archive began, deduplicated by link and tagged with the tickers its title and summary name. It returns titles, sources, dates and links but no article bodies. The Worker never calls a news site.
 
 ## Deployment
 

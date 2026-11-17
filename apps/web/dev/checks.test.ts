@@ -1,9 +1,21 @@
 import { describe, expect, it } from 'vite-plus/test';
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { BrokerDay } from '../src/brokers';
 import type { Ticker } from '../src/data';
 import { brokerRow, tradeSession, type Fill } from '../src/test-builders';
+import type { ArchiveArticle } from '../../feeds/src/contracts';
+import {
+  checks,
+  noTrades,
+  skipLine,
+  readNewsIndex,
+  type CorporateAction,
+  type NewsView,
+  type Session,
+} from './checks';
 import { packBars, sessionBars } from '../src/ticks';
-import { checks, noTrades, skipLine, type CorporateAction, type Session } from './checks';
 
 const date = '2026-11-10';
 
@@ -194,6 +206,87 @@ describe('bfl-brk', () => {
   });
 });
 
+const article = (fields: Partial<ArchiveArticle> = {}): ArchiveArticle => ({
+  ts: '2026-11-10T03:00:00.000Z',
+  src: 'Kontan',
+  title: 'Saham BBCA Menguat',
+  link: 'https://news.example.test/a',
+  tags: ['BBCA'],
+  source_id: 'kontan',
+  ...fields,
+});
+const row = (a: ArchiveArticle) => ({
+  title: a.title,
+  url: a.link,
+  published_at: a.ts,
+  source: a.src,
+});
+const runNews = (name: string, n: Partial<NewsView>) => {
+  const check = checks.find((c) => c.name === name)!;
+  if (!('news' in check)) throw new Error(`${name} is not a news check`);
+  return check.news({ ticker: 'BBCA', articles: [], index: undefined, ...n });
+};
+
+describe('news-index', () => {
+  const a = article();
+  it('passes when the file lists the tagged articles', () => {
+    expect(
+      runNews('news-index', { articles: [{ article: a, expected: ['BBCA'] }], index: [row(a)] }),
+    ).toEqual([]);
+    expect(
+      runNews('news-index', {
+        articles: [{ article: a, expected: ['BBCA'] }],
+        index: [row({ ...a, link: 'http://www.news.example.test/a/' })],
+      }),
+    ).toEqual([]);
+  });
+  it('names an article the file lacks, one it should not hold, and one that differs', () => {
+    const other = article({
+      title: 'Saham BBRI',
+      link: 'https://news.example.test/b',
+      tags: ['BBRI'],
+    });
+    expect(
+      runNews('news-index', { articles: [{ article: a, expected: ['BBCA'] }], index: [] }),
+    ).toHaveLength(1);
+    expect(
+      runNews('news-index', {
+        articles: [{ article: a, expected: ['BBCA'] }],
+        index: [row(a), row(other)],
+      }),
+    ).toHaveLength(1);
+    expect(
+      runNews('news-index', {
+        articles: [{ article: a, expected: ['BBCA'] }],
+        index: [{ ...row(a), source: 'Antara' }],
+      }),
+    ).toHaveLength(1);
+  });
+  it('skips a ticker with no news', () => {
+    expect(runNews('news-index', {})).toEqual({ skip: 'no archived news' });
+  });
+});
+
+describe('news-tags', () => {
+  it('fails an article the tagger now tags but the archive does not, and the reverse for Google', () => {
+    const missed = article({ tags: [] });
+    expect(
+      runNews('news-tags', { articles: [{ article: missed, expected: ['BBCA'] }] }),
+    ).toHaveLength(1);
+    const stale = article({ source_id: 'google-news', tags: ['BBCA'] });
+    expect(runNews('news-tags', { articles: [{ article: stale, expected: [] }] })).toHaveLength(1);
+  });
+  it('passes a feed tag the title does not show, as a note', () => {
+    const outcome = runNews('news-tags', { articles: [{ article: article(), expected: [] }] });
+    expect(outcome).toEqual([{ note: '1 article tagged from a summary' }]);
+  });
+  it('passes when archive and tagger agree', () => {
+    expect(
+      runNews('news-tags', { articles: [{ article: article(), expected: ['BBCA'] }] }),
+    ).toEqual([]);
+  });
+});
+
 describe('skipLine', () => {
   it('lists a short list whole, whatever --show says', () => {
     const where = ['a', 'b', 'c', 'd', 'e', 'f'];
@@ -208,4 +301,35 @@ describe('skipLine', () => {
       'skip: no daily prices, 20 times: t0, t1, t2, and 17 more',
     );
   });
+});
+
+it('verifies every annual ticker news file and tolerates an uncollected ticker', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'news-index-'));
+  try {
+    const directory = join(root, 'ticker', 'BBCA');
+    await mkdir(directory, { recursive: true });
+    for (const year of ['2025', '2026'])
+      await writeFile(
+        join(directory, `${year}.json`),
+        JSON.stringify({
+          ticker: 'BBCA',
+          as_of: '2026-11-17T00:00:00Z',
+          news: [
+            {
+              title: `Saham BBCA ${year}`,
+              url: `https://example.test/${year}`,
+              published_at: `${year}-11-10T00:00:00Z`,
+              source: 'Test',
+            },
+          ],
+        }),
+      );
+    const rows = await readNewsIndex(root, 'BBCA');
+    expect(rows.map((row) => row.title).sort()).toEqual(['Saham BBCA 2025', 'Saham BBCA 2026']);
+    expect(await readNewsIndex(root, 'BBRI')).toEqual([]);
+    await writeFile(join(directory, '2026.json'), '{');
+    await expect(readNewsIndex(root, 'BBCA')).rejects.toThrow(SyntaxError);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
