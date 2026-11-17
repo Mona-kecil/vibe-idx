@@ -15,7 +15,8 @@
     "ui:check": "pnpm --filter @vibe-idx/web -s ui:check",
     "shots": "pnpm --filter @vibe-idx/web -s shots",
     "verify:data": "pnpm --filter @vibe-idx/web -s verify:data",
-    "bench:publish": "pnpm --filter @vibe-idx/pipeline -s bench:publish"
+    "bench:publish": "pnpm --filter @vibe-idx/pipeline -s bench:publish",
+    "perf:terminal": "pnpm --filter @vibe-idx/web -s perf:terminal"
   },
   "devDependencies": {
     "knip": "6.44.0",
