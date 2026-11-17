@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vite-plus/test';
 import type { BrokerDay } from '../src/brokers';
 import type { Ticker } from '../src/data';
 import { brokerRow, tradeSession, type Fill } from '../src/test-builders';
+import { packBars, sessionBars } from '../src/ticks';
 import { checks, noTrades, skipLine, type CorporateAction, type Session } from './checks';
 
 const date = '2026-11-10';
@@ -39,6 +40,7 @@ function session(fields: Partial<Session> = {}): Session {
     date,
     asOf: date,
     trades: tradeSession(fills, { date }),
+    bars: packBars('BBCA', sessionBars(tradeSession(fills, { date }))),
     book: undefined,
     brokers: [agreeing],
     prices: [price()],
@@ -124,6 +126,43 @@ describe('prices-rt', () => {
   it('skips a ticker without daily prices, such as a warrant', () => {
     expect(run('prices-rt', session({ prices: undefined }))).toEqual({
       skip: 'no daily prices, as for a warrant',
+    });
+  });
+});
+
+describe('bars-rt', () => {
+  it('passes when the published bars are the ones running trade makes', () => {
+    expect(run('bars-rt', session())).toEqual([]);
+  });
+
+  it('ignores the bars of other sessions in the file', () => {
+    const other = sessionBars(tradeSession([{ price: 50 }], { date: '2026-11-09' }));
+    const file = packBars('BBCA', [...sessionBars(tradeSession(fills, { date })), ...other]);
+    expect(run('bars-rt', session({ bars: file }))).toEqual([]);
+  });
+
+  it('fails naming the bar and field that differ', () => {
+    const rows = sessionBars(tradeSession(fills, { date }));
+    const off = packBars('BBCA', [{ ...rows[0]!, close: 105 }]);
+    expect(failures(run('bars-rt', session({ bars: off }))).join(' ')).toMatch(
+      /09:00 close published 105 RT 100/,
+    );
+  });
+
+  it('fails when a session has trades but the ticker has no bar file', () => {
+    expect(failures(run('bars-rt', session({ bars: undefined }))).join(' ')).toMatch(
+      /1 bar missing from the file: 09:00/,
+    );
+  });
+
+  it('fails when bars remain for a session without regular-board trades', () => {
+    const outcome = run('bars-rt', session({ trades: noTrades('BBCA', date) }));
+    expect(failures(outcome).join(' ')).toMatch(/1 bar in the file without RT: 09:00/);
+  });
+
+  it('skips a session with neither', () => {
+    expect(run('bars-rt', session({ trades: noTrades('BBCA', date), bars: undefined }))).toEqual({
+      skip: 'no regular-board trades',
     });
   });
 });

@@ -6,7 +6,7 @@ import { parseArgs } from 'node:util';
 import { z } from 'zod';
 import { brokerHistorySchema } from '../src/brokers.js';
 import { corporateActionsSchema, tickerSchema } from '../src/data.js';
-import { tickBookSchema, tickTradesSchema } from '../src/ticks.js';
+import { barFileSchema, tickBookSchema, tickTradesSchema } from '../src/ticks.js';
 import { cliErrors, plural } from '../../pipeline/dev/cli.js';
 import { table } from './format.js';
 import { fixtureState, fixturesRoot, localBrokerApi } from './local-api.js';
@@ -150,6 +150,8 @@ await Promise.all(
           );
       if (!chosen.some((check) => 'session' in check)) continue;
       const prices = (await publicTicker(ticker))?.prices;
+      const published = await api.json(`view=bars&ticker=${ticker}`);
+      const bars = published ? barFileSchema.parse(published) : undefined;
       for (const date of dates) {
         const raw = await api.json(`view=ticks&ticker=${ticker}&date=${date}&kind=trades`);
         // A session without a running trade file still runs, as no trades, so broker data or prices for it fail.
@@ -163,6 +165,7 @@ await Promise.all(
           date,
           asOf,
           trades: tickTradesSchema.parse(raw ?? noTrades(ticker, date)),
+          bars,
           book: book ? tickBookSchema.parse(book) : undefined,
           brokers,
           prices,
