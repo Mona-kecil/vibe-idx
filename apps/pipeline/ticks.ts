@@ -25,6 +25,7 @@ export async function collectTicks({
   request,
   deadline,
   minutes = Number(process.env.TICKS_BUDGET_MINUTES ?? 45),
+  backfillFrom = process.env.TICKS_BACKFILL_FROM,
   report = reportError,
 }: {
   data: string;
@@ -32,10 +33,12 @@ export async function collectTicks({
   request: Request;
   deadline: number;
   minutes?: number;
+  backfillFrom?: string;
   report?: typeof reportError;
 }): Promise<TickSummary> {
   if (!Number.isFinite(minutes) || minutes <= 0)
     throw new Error('TICKS_BUDGET_MINUTES must be positive');
+  const floor = sessionDate.optional().parse(backfillFrom || undefined);
   const end = Math.min(deadline, Date.now() + minutes * 60000);
   const store = await TickStore.open(data, r2);
   const summary: TickSummary = { published: [], pending: [] };
@@ -351,7 +354,9 @@ export async function collectTicks({
     await alerts();
     if (!bounded() && now < nextPreOpen(latest, dates)) await closingBook(latest, tickers, dates);
     // Negotiated trades print until about 16:30 Jakarta, after which the day's trade count is final.
-    const completed = dates.filter((day) => Date.parse(`${day}T10:00:00Z`) <= Date.now());
+    const completed = dates.filter(
+      (day) => (!floor || day >= floor) && Date.parse(`${day}T10:00:00Z`) <= Date.now(),
+    );
     // Newest first, so collected history always extends back from today without gaps.
     for (const date of [...completed].reverse()) {
       if (bounded()) break;
