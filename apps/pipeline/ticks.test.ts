@@ -634,6 +634,22 @@ it('waits until 16:30 WIB for the latest running trade, then visits older missin
   });
   expect([...new Set(calls)]).toEqual([day, '2026-01-05', '2026-01-02']);
 });
+it('stops the running trade backfill at the configured first session', async () => {
+  vi.setSystemTime(new Date(`${day}T10:00:00Z`));
+  const f = await fixture({ dates: ['2026-01-02', '2026-01-05', day], tickers: ['SINI'] });
+  const calls: string[] = [];
+  await collectTicks({
+    ...f,
+    backfillFrom: '2026-01-05',
+    request: async (input) => {
+      const u = new URL(input);
+      if (u.pathname.includes('orderbook')) return Response.json(await book());
+      calls.push(u.searchParams.get('date')!);
+      return page([1]);
+    },
+  });
+  expect([...new Set(calls)]).toEqual([day, '2026-01-05']);
+});
 it('does not publish a book whose date mismatches or whose capture crosses the next pre-open', async () => {
   vi.setSystemTime(new Date('2026-11-10T01:44:59.900Z'));
   const f = await fixture({ tickers: ['SINI'] });
