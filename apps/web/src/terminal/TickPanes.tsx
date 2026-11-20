@@ -6,6 +6,7 @@ import {
   clock,
   doneDetail,
   isBlockTrade,
+  sideParties,
   tradeBook,
   type Block,
   type TickBook,
@@ -17,6 +18,8 @@ import {
 import { useSession, useTicks, type Loaded } from './tick-data.js';
 import { useTerminal } from './state.js';
 import { Empty, Scroll, Segments, SignInPrompt } from './ui.js';
+import { FilterControls, FilterToggle, useTradeFilter } from './TradeFilterControls.js';
+import { actions, blockMatches, tradeMatches, type TradeFilter } from './trade-filter.js';
 import { WindowedTable } from './WindowedTable.js';
 import './tick-panes.css';
 
@@ -47,10 +50,12 @@ function SessionPicker() {
 function TickPane<K extends TickKind>({
   kind,
   controls,
+  filters,
   children,
 }: {
   kind: K;
   controls?: ReactNode;
+  filters?: ReactNode;
   children: (data: Loaded<K>) => ReactNode;
 }) {
   const { authState, detail } = useTerminal();
@@ -76,6 +81,7 @@ function TickPane<K extends TickKind>({
         <SessionPicker />
         {controls}
       </div>
+      {filters}
       {body}
     </>
   );
@@ -215,20 +221,6 @@ function Ladder({ book }: { book: TickBook }) {
   );
 }
 
-const sides = ['ALL', 'BUY', 'SELL'] as const;
-function BrokerFilter({ value, onChange }: { value: string; onChange: (value: string) => void }) {
-  return (
-    <input
-      className="tick-filter"
-      aria-label="Filter by broker"
-      placeholder="Broker"
-      value={value}
-      maxLength={4}
-      onChange={(event) => onChange(event.target.value.toUpperCase().trim())}
-    />
-  );
-}
-
 function action(side: Block['side'], auction: boolean, board: string) {
   if (board !== 'RG') return board === 'NG' ? 'NEGO' : board === 'TN' ? 'CASH' : board;
   return auction ? 'AUC' : side === 'buy' ? 'BUY' : 'SELL';
@@ -295,31 +287,29 @@ function TradeHeader() {
 
 export function RunningTradePane() {
   const { tickBlock } = useTerminal();
-  const [broker, setBroker] = useState('');
-  const [side, setSide] = useState<(typeof sides)[number]>('ALL');
+  const state = useTradeFilter();
+  const { filter, setFilter, reset } = state;
   useEffect(() => {
-    if (tickBlock) {
-      setBroker('');
-      setSide('ALL');
-    }
-  }, [tickBlock]);
+    if (tickBlock) reset(false);
+  }, [tickBlock, reset]);
   return (
     <TickPane
       kind="trades"
       controls={
         <>
-          <Segments label="Trade side" values={sides} value={side} onChange={setSide} />
-          <BrokerFilter value={broker} onChange={setBroker} />
+          <Segments
+            label="Trade side"
+            values={actions}
+            value={filter.action}
+            onChange={(action) => setFilter({ ...filter, action })}
+          />
+          <FilterToggle state={state} />
         </>
       }
+      filters={<FilterControls state={state} />}
     >
       {(trades) => (
-        <TradeTape
-          key={`${trades.ticker}${trades.date}`}
-          trades={trades}
-          broker={broker}
-          side={side}
-        />
+        <TradeTape key={`${trades.ticker}${trades.date}`} trades={trades} filter={filter} />
       )}
     </TickPane>
   );
@@ -449,15 +439,7 @@ function BlockSummary({
     </div>
   );
 }
-function TradeTape({
-  trades,
-  broker,
-  side,
-}: {
-  trades: TickTrades;
-  broker: string;
-  side: (typeof sides)[number];
-}) {
+function TradeTape({ trades, filter }: { trades: TickTrades; filter: TradeFilter }) {
   const { tickBlock } = useTerminal();
   const open = useSessionOpen(trades);
   const block = useMemo(
@@ -488,16 +470,10 @@ function TradeTape({
   const rows = useMemo(() => {
     const rows: number[] = [];
     for (let i = trades.time.length - 1; i >= 0; i--) {
-      if (
-        side !== 'ALL' &&
-        (trades.board[i] !== 'RG' || trades.side[i] !== (side === 'BUY' ? 'b' : 's'))
-      )
-        continue;
-      if (broker && trades.buyer[i] !== broker && trades.seller[i] !== broker) continue;
-      rows.push(i);
+      if (tradeMatches(trades, i, filter)) rows.push(i);
     }
     return rows;
-  }, [trades, side, broker]);
+  }, [trades, filter]);
   let lastFill = -1;
   if (tickBlock)
     for (let index = rows.length - 1; index >= 0 && lastFill < 0; index--)
@@ -526,7 +502,7 @@ function TradeTape({
   return (
     <>
       <WindowedTable
-        reset={`${trades.ticker}${trades.date}${broker}${side}`}
+        reset={`${trades.ticker}${trades.date}${JSON.stringify(filter)}`}
         count={Math.min(rows.length, loaded)}
         target={firstMatch === undefined ? undefined : rows.indexOf(firstMatch)}
         className="tick-table tick-tape tick-orders"
@@ -612,26 +588,31 @@ function TradeTape({
 const blockSorts = ['LOT', 'TIME'] as const;
 export function DoneDetailPane() {
   const [sort, setSort] = useState<(typeof blockSorts)[number]>('LOT');
-  const [side, setSide] = useState<(typeof sides)[number]>('ALL');
-  const [broker, setBroker] = useState('');
+  const state = useTradeFilter();
+  const { filter, setFilter } = state;
   return (
     <TickPane
       kind="trades"
       controls={
         <>
           <Segments label="Block sort" values={blockSorts} value={sort} onChange={setSort} />
-          <Segments label="Block side" values={sides} value={side} onChange={setSide} />
-          <BrokerFilter value={broker} onChange={setBroker} />
+          <Segments
+            label="Block side"
+            values={actions}
+            value={filter.action}
+            onChange={(action) => setFilter({ ...filter, action })}
+          />
+          <FilterToggle state={state} />
         </>
       }
+      filters={<FilterControls state={state} />}
     >
       {(trades) => (
         <Blocks
           key={`${trades.ticker}${trades.date}`}
           trades={trades}
           sort={sort}
-          side={side}
-          broker={broker}
+          filter={filter}
         />
       )}
     </TickPane>
@@ -640,13 +621,11 @@ export function DoneDetailPane() {
 function Blocks({
   trades,
   sort,
-  side,
-  broker,
+  filter,
 }: {
   trades: TickTrades;
   sort: (typeof blockSorts)[number];
-  side: (typeof sides)[number];
-  broker: string;
+  filter: TradeFilter;
 }) {
   const all = useMemo(() => doneDetail(trades), [trades]);
   const [limit, setLimit] = useState(300);
@@ -655,17 +634,11 @@ function Blocks({
   const shown = useMemo(
     () =>
       all
-        .filter(
-          (block) =>
-            (side === 'ALL' || block.side === side.toLowerCase()) &&
-            (!broker ||
-              block.broker === broker ||
-              block.counterparties.some((party) => party.broker === broker)),
-        )
+        .filter((block) => blockMatches(block, filter))
         .sort((a, b) =>
           sort === 'LOT' ? b.shares - a.shares || a.start - b.start : a.start - b.start,
         ),
-    [all, side, broker, sort],
+    [all, filter, sort],
   );
   const footer = useMemo(
     () => (
@@ -684,7 +657,7 @@ function Blocks({
   if (!shown.length) return <Empty>No blocks in this view</Empty>;
   return (
     <WindowedTable
-      reset={`${trades.ticker}${trades.date}${sort}${side}${broker}`}
+      reset={`${trades.ticker}${trades.date}${sort}${JSON.stringify(filter)}`}
       count={Math.min(shown.length, limit)}
       className="tick-table tick-blocks tick-orders"
       header={<TradeHeader />}
@@ -758,14 +731,6 @@ function Blocks({
   );
 }
 
-function sideParties(block: Block, side: 'buy' | 'sell') {
-  const parties =
-    side === (block.side === 'none' ? 'sell' : block.side) ? [block] : block.counterparties;
-  return {
-    brokers: [...new Set(parties.map((party) => party.broker))],
-    foreign: parties.some((party) => party.foreign),
-  };
-}
 /** The block with the most brokers on this side, whose stack is wider than any broker code, or else one block per code. */
 function sideSamples(blocks: Block[], side: 'buy' | 'sell') {
   let most: Block | undefined;
