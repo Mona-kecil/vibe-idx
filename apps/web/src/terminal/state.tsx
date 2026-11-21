@@ -22,7 +22,7 @@ export type BrokerFilters = {
   mode: 'NET' | 'GROSS';
   unit: 'VALUE' | 'LOT';
   period: '1D' | '5D' | '20D';
-  flow: '1W' | '1M' | '3M' | 'YTD';
+  flow: '1D' | '1W' | '1M' | '3M' | 'YTD';
 };
 export type Filters = {
   news: 'ID' | 'WORLD' | 'TICKER';

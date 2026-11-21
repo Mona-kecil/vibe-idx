@@ -4,6 +4,8 @@ import {
   LineSeries,
   type AutoscaleInfoProvider,
   type ISeriesApi,
+  type Time,
+  type UTCTimestamp,
 } from 'lightweight-charts';
 import { aggregateBrokers, brokerName, edgeFills } from '../broker-data.js';
 import {
@@ -15,6 +17,9 @@ import {
 import { bounds } from '../ticker/logic.js';
 import { dateText, rangeText, nf, short, signed } from '../ticker/format.js';
 import { useTerminal, type BrokerFilters } from './state.js';
+import { useSession, useTicks } from './tick-data.js';
+import { SessionPicker } from './TickPanes.js';
+import { clock, type TickTrades } from '../ticks.js';
 import { Empty, Scroll, Segments, SignInPrompt, direction } from './ui.js';
 import { terminalChart, chartDate } from './charts.js';
 import { ChartAttribution as Attribution } from '../ChartAttribution.js';
@@ -74,7 +79,7 @@ function BrokerControls({ flow = false, foreign = false }: { flow?: boolean; for
       {flow ? (
         <Segments
           label="Flow period"
-          values={['1W', '1M', '3M', 'YTD']}
+          values={['1D', '1W', '1M', '3M', 'YTD']}
           value={broker.flow}
           onChange={(value) => {
             setBroker('flow', value);
@@ -283,10 +288,17 @@ function flowDays(days: BrokerDay[], broker: BrokerFilters, start?: string, end?
 // Teal, red and gold mean up, down and accent elsewhere, so broker lines avoid them.
 const palette = ['#6f9be8', '#b28ae6', '#e58bb8', '#79d2f0', '#cfd3d8', '#9a7f5c'];
 export function BrokerFlowPane() {
+  const { broker, selection } = useTerminal();
+  const b = bounds(selection);
+  const intraday = b ? b.start === b.end : broker.flow === '1D';
   return (
     <>
       <BrokerControls flow />
-      <BrokerGate>{(days) => <Flow days={days} />}</BrokerGate>
+      {intraday ? (
+        <IntradayFlow day={b?.start} />
+      ) : (
+        <BrokerGate>{(days) => <DailyFlow days={days} />}</BrokerGate>
+      )}
     </>
   );
 }
@@ -319,30 +331,162 @@ export function cumulativeFlows(
     };
   });
 }
-function Flow({ days }: { days: BrokerDay[] }) {
-  const {
-    broker,
-    selection,
-    ticker,
-    detail,
-    flowPins: pins,
-    setFlowPins: setPins,
-    flowHidden: hidden,
-    setFlowHidden: setHidden,
-  } = useTerminal();
-  const [hover, setHover] = useState<string | null>(null);
-  const lines = useRef(new Map<string, ISeriesApi<'Line'>>());
-  const [adding, setAdding] = useState(false),
-    [query, setQuery] = useState('');
-  const addBroker = useRef<HTMLButtonElement>(null);
-  const host = useRef<HTMLDivElement>(null);
+const boardCodes = { regular: 'RG', negotiation: 'NG', cash: 'TN' } as const;
+/**
+ * Each broker's net buying summed from the session open, one point per minute that traded. Times are
+ * the Jakarta clock written as UTC, so the chart's own axis labels read in Jakarta time.
+ */
+export function intradayFlows(
+  trades: TickTrades,
+  filters: Pick<BrokerFilters, 'board' | 'type' | 'unit'>,
+) {
+  const midnight = Date.parse(`${trades.date}T00:00:00Z`) / 1000;
+  const counts = (foreign: boolean) =>
+    filters.type === 'ALL' || foreign === (filters.type === 'FOREIGN');
+  const net = new Map<string, Map<number, number>>();
+  const minutes = new Set<number>();
+  const prices = new Map<number, number>();
+  trades.time.forEach((seconds, i) => {
+    const minute = midnight + seconds - (seconds % 60);
+    if (trades.board[i] === 'RG') prices.set(minute, trades.price[i]!);
+    if (filters.board !== 'all' && trades.board[i] !== boardCodes[filters.board]) return;
+    const amount =
+      filters.unit === 'LOT' ? trades.shares[i]! / 100 : trades.shares[i]! * trades.price[i]!;
+    for (const [code, foreign, sign] of [
+      [trades.buyer[i]!, trades.buyer_foreign[i]!, 1],
+      [trades.seller[i]!, trades.seller_foreign[i]!, -1],
+    ] as const) {
+      if (!counts(foreign)) continue;
+      const series = net.get(code) ?? new Map<number, number>();
+      series.set(minute, (series.get(minute) ?? 0) + sign * amount);
+      net.set(code, series);
+      minutes.add(minute);
+    }
+  });
+  const times = [...minutes].sort((a, b) => a - b) as UTCTimestamp[];
+  let last: number | undefined;
+  const closes = new Map<number, number | undefined>(
+    [...new Set([...prices.keys(), ...times])]
+      .sort((a, b) => a - b)
+      .map((minute) => [minute, (last = prices.get(minute) ?? last)]),
+  );
+  return {
+    times,
+    closes,
+    series: [...net].map(([code, values]) => {
+      let sum = 0;
+      return {
+        code,
+        points: times.map((time) => ({ time, value: (sum += values.get(time) ?? 0) })),
+      };
+    }),
+  };
+}
+type Flows = { times: Time[]; series: { code: string; points: { time: Time; value: number }[] }[] };
+function DailyFlow({ days }: { days: BrokerDay[] }) {
+  const { broker, selection, detail } = useTerminal();
   const b = bounds(selection),
     start = b?.start,
     end = b?.end;
   const flows = useMemo(() => {
     const { dates, onBoard } = flowDays(days, broker, start, end);
-    return { dates, series: cumulativeFlows(onBoard, dates, broker.unit, broker.type) };
+    return { times: dates, series: cumulativeFlows(onBoard, dates, broker.unit, broker.type) };
   }, [days, broker, start, end]);
+  return (
+    <Flow
+      flows={flows}
+      header={<BrokerDates days={days} dates={flows.times} />}
+      legend={(time) => {
+        const date = chartDate(time);
+        const price =
+          detail.kind === 'ready' ? detail.data.prices.find((p) => p.date === date) : undefined;
+        return (
+          <>
+            <time>{date && dateText(date)}</time>
+            {price && <span>C {nf(price.close)} IDR</span>}
+          </>
+        );
+      }}
+    />
+  );
+}
+function IntradayFlow({ day }: { day?: string }) {
+  const { broker, authState } = useTerminal();
+  const session = useSession();
+  const date = day ?? session.date;
+  const state = useTicks('trades', date);
+  const flows = useMemo(
+    () => (state.kind === 'ready' ? intradayFlows(state.data, broker) : null),
+    [state, broker],
+  );
+  if (authState !== 'signed-in') return <SignInPrompt />;
+  const header = day ? (
+    <div className="broker-date">
+      <span>{dateText(day)}</span>
+    </div>
+  ) : (
+    <SessionPicker />
+  );
+  let body: ReactNode;
+  if (!date) body = <Empty>No 2026 sessions for this ticker</Empty>;
+  else if (state.kind === 'error')
+    body = (
+      <p className="empty" role="alert">
+        {state.message}
+      </p>
+    );
+  else if (!flows)
+    body = (
+      <Empty>
+        {state.kind === 'loading' ? 'Loading running trade…' : 'No running trade for this session'}
+      </Empty>
+    );
+  else
+    return (
+      <Flow
+        flows={flows}
+        header={header}
+        legend={(time) => {
+          const close = typeof time === 'number' ? flows.closes.get(time) : undefined;
+          return (
+            <>
+              <time>{typeof time === 'number' && clock(time % 86400).slice(0, 5)}</time>
+              {close !== undefined && <span>C {nf(close)} IDR</span>}
+            </>
+          );
+        }}
+      />
+    );
+  return (
+    <>
+      {header}
+      {body}
+    </>
+  );
+}
+function Flow({
+  flows,
+  header,
+  legend,
+}: {
+  flows: Flows;
+  header: ReactNode;
+  legend: (time: Time | undefined) => ReactNode;
+}) {
+  const {
+    broker,
+    ticker,
+    flowPins: pins,
+    setFlowPins: setPins,
+    flowHidden: hidden,
+    setFlowHidden: setHidden,
+  } = useTerminal();
+  const [hover, setHover] = useState<Time | null>(null);
+  const lines = useRef(new Map<string, ISeriesApi<'Line'>>());
+  const [adding, setAdding] = useState(false),
+    [query, setQuery] = useState('');
+  const addBroker = useRef<HTMLButtonElement>(null);
+  const host = useRef<HTMLDivElement>(null);
   const total = (series: (typeof flows.series)[number]) => series.points.at(-1)?.value ?? 0;
   const shown = useMemo(() => {
     const pinned = flows.series.filter((s) => pins.includes(s.code));
@@ -387,33 +531,34 @@ function Flow({ days }: { days: BrokerDay[] }) {
       line.setData(series.points);
       lines.current.set(series.code, line);
     });
-    chart.subscribeCrosshairMove((event) => setHover(chartDate(event.time)));
-    chart.timeScale().applyOptions({ rightOffsetPixels: 6 });
+    chart.subscribeCrosshairMove((event) => setHover(event.time ?? null));
+    chart.timeScale().applyOptions({
+      rightOffsetPixels: 6,
+      timeVisible: typeof flows.times[0] === 'number',
+      secondsVisible: false,
+    });
     chart.timeScale().fitContent();
     return () => {
       lines.current.clear();
       chart.remove();
     };
-  }, [shown, colors, ticker]);
+  }, [shown, colors, ticker, flows.times]);
   useEffect(() => {
     for (const [code, line] of lines.current)
       line.applyOptions({ visible: !hidden.includes(code) });
   }, [hidden, shown]);
-  const date = hover && flows.dates.includes(hover) ? hover : flows.dates.at(-1);
-  const price =
-    detail.kind === 'ready' ? detail.data.prices.find((p) => p.date === date) : undefined;
+  const at = hover !== null && flows.times.includes(hover) ? hover : flows.times.at(-1);
   const currentValue = (series: (typeof flows.series)[number]) =>
-    series.points.find((p) => p.time === date)?.value ?? total(series);
+    series.points.find((p) => p.time === at)?.value ?? total(series);
   return (
     <>
-      <BrokerDates days={days} dates={flows.dates} />
-      {!flows.dates.length || !flows.series.length ? (
+      {header}
+      {!flows.times.length || !flows.series.length ? (
         <Empty>No trades</Empty>
       ) : (
         <div className="flow-view">
           <div className="legend">
-            <time>{date && dateText(date)}</time>
-            {price && <span>C {nf(price.close)} IDR</span>}
+            {legend(at)}
             {shown.map((series) => (
               <span className="broker-key" key={series.code}>
                 <button

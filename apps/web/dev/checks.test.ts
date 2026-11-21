@@ -237,6 +237,51 @@ describe('bfl-brk', () => {
   });
 });
 
+describe('bfl-1d', () => {
+  it('passes when every broker line ends where broker data nets, for each investor and the lots', () => {
+    expect(run('bfl-1d', session())).toEqual([]);
+  });
+
+  it('fails naming the broker whose net differs', () => {
+    const off = day(
+      [brokerRow('AA', 300, 31_000, { investor: 'foreign' })],
+      [brokerRow('BB', 300, 30_000)],
+    );
+    expect(failures(run('bfl-1d', session({ brokers: [off] }))).join(' ')).toMatch(/AA/);
+  });
+
+  it('fails on a lot count that differs when broker data has not been restated', () => {
+    const off = day(
+      [brokerRow('AA', 600, 30_000, { investor: 'foreign' })],
+      [brokerRow('BB', 600, 30_000)],
+    );
+    expect(failures(run('bfl-1d', session({ brokers: [off] }))).join(' ')).toMatch(/lots/);
+  });
+
+  it('compares only values, with a note, when broker data restates lots after a bonus issue', () => {
+    const bonus: CorporateAction = {
+      ticker: 'BBCA',
+      kind: 'BONUS',
+      label: 'Bonus shares',
+      amount: null,
+      steps: [{ step: 'ex', date: '2026-11-12' }],
+    };
+    const restated = day(
+      [brokerRow('AA', 600, 30_000, { investor: 'foreign' })],
+      [brokerRow('BB', 600, 30_000)],
+    );
+    expect(
+      run('bfl-1d', session({ brokers: [restated], actions: [bonus], asOf: '2026-11-13' })),
+    ).toEqual([{ note: expect.stringMatching(/lots not compared/) }]);
+  });
+
+  it('skips a session without both sources', () => {
+    expect(run('bfl-1d', session({ brokers: [] }))).toEqual({
+      skip: 'no board with both broker data and running trade',
+    });
+  });
+});
+
 const article = (fields: Partial<ArchiveArticle> = {}): ArchiveArticle => ({
   ts: '2026-11-10T03:00:00.000Z',
   src: 'Kontan',

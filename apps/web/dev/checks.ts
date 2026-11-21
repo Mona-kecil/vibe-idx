@@ -16,7 +16,7 @@ import {
 import { corporateActionSchema, type Ticker } from '../src/data.js';
 import { canonicalLink } from '../../feeds/src/archive.js';
 import { tickerNewsSchema, type ArchiveArticle } from '../../feeds/src/contracts.js';
-import { cumulativeFlows, foreignFlow } from '../src/terminal/BrokerPanes.js';
+import { cumulativeFlows, foreignFlow, intradayFlows } from '../src/terminal/BrokerPanes.js';
 import {
   bars,
   clock,
@@ -371,6 +371,63 @@ export const checks: Check[] = [
           );
         });
       }),
+  },
+  {
+    name: 'bfl-1d',
+    title: 'BFL 1D end matches BRK net on the session',
+    session: (s) => {
+      const active = boards(s).filter(({ days, rt }) => days.length && rt.count);
+      if (!active.length) return { skip: 'no board with both broker data and running trade' };
+      const restated = restatedBy(s);
+      const groups = [
+        ...active.map(({ board, days }) => ({ board: board as BrokerBoard | 'all', days })),
+        { board: 'all' as const, days: active.flatMap(({ days }) => days) },
+      ];
+      const findings: Finding[] = groups.flatMap(({ board, days }) =>
+        (['ALL', 'FOREIGN', 'DOMESTIC'] as InvestorFilter[]).flatMap((type) => {
+          const brk = aggregateBrokers(days, type);
+          const ends = (unit: 'VALUE' | 'LOT') => {
+            const end = new Map(
+              intradayFlows(s.trades, { board, type, unit }).series.map((line) => [
+                line.code,
+                line.points.at(-1)?.value ?? 0,
+              ]),
+            );
+            return { end, codes: [...new Set([...end.keys(), ...brk.map((b) => b.code)])].sort() };
+          };
+          const value = ends('VALUE');
+          const lot = ends('LOT');
+          return [
+            ...differences(
+              `${board} ${type.toLowerCase()} value`,
+              value.codes.map((code): [string, number, number] => {
+                const b = brk.find((row) => row.code === code);
+                return [code, value.end.get(code) ?? 0, b ? b.buyValue - b.sellValue : 0];
+              }),
+              ['BFL', 'BRK'],
+            ),
+            ...(restated
+              ? []
+              : differences(
+                  `${board} ${type.toLowerCase()} lots`,
+                  lot.codes.map((code): [string, number, number] => {
+                    const b = brk.find((row) => row.code === code);
+                    return [code, lot.end.get(code) ?? 0, b ? (b.buy - b.sell) / 100 : 0];
+                  }),
+                  ['BFL', 'BRK'],
+                )),
+          ];
+        }),
+      );
+      return restated
+        ? [
+            ...findings,
+            {
+              note: `lots not compared, broker data restates them for ${restated.label.toLowerCase()}`,
+            },
+          ]
+        : findings;
+    },
   },
   {
     name: 'news-index',
