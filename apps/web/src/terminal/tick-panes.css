@@ -62,11 +62,11 @@
   border-top: 1px solid var(--line, #222826);
   color: var(--muted);
 }
-.terminal-page .tick-highlight,
-.terminal-page .tick-highlight:hover {
+.terminal-page .tick-picked,
+.terminal-page .tick-picked:hover {
   background: var(--sel);
 }
-.terminal-page .tick-tape .tick-highlight td:first-child {
+.terminal-page .tick-tape .tick-picked td:first-child {
   box-shadow: inset 2px 0 var(--accent);
 }
 .terminal-page .tick-tape .tick-dimmed {
@@ -101,16 +101,16 @@
 .terminal-page .tick-blocks td {
   vertical-align: middle;
 }
-.terminal-page .tick-block-select {
+.terminal-page .tick-block-pick {
   padding: 0;
   min-height: 0;
   font: inherit;
   color: inherit;
 }
-.terminal-page .tick-block-select:focus-visible {
+.terminal-page .tick-block-pick:focus-visible {
   outline: none;
 }
-.terminal-page .tick-blocks tr.tick-highlight,
+.terminal-page .tick-blocks tr.tick-picked,
 .terminal-page .tick-blocks tr:has(:focus-visible) {
   outline: 1px solid var(--accent);
   outline-offset: -1px;

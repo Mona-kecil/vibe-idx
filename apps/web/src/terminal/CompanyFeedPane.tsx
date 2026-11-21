@@ -7,7 +7,7 @@ import { Availability, Empty, Scroll } from './ui.js';
 import './company-feed.css';
 
 type Action = Extract<
-  ReturnType<typeof usePublications>['actions'],
+  ReturnType<typeof usePublications>['corpActions'],
   { kind: 'ready' }
 >['data']['actions'][number];
 type FeedItem =
@@ -164,7 +164,7 @@ function SourceDate({ health, noActions }: { health: TerminalData['health']; noA
     .join('\n');
   return health.corporate_actions ? (
     <span className="feed-asof" title={dates} data-feed-empty={noActions ? 'action' : undefined}>
-      {noActions ? `No corporate actions for ${ticker} as of ` : 'Actions as of '}
+      {noActions ? `No corporate actions for ${ticker} as of ` : 'Corp actions as of '}
       {dateText(health.corporate_actions)}
     </span>
   ) : (
@@ -186,8 +186,8 @@ export function CompanyFeedPane() {
   ];
   const news = [...new Map([...candidates].reverse().map((item) => [item.link, item])).values()];
   const actions =
-    publications.actions.kind === 'ready'
-      ? publications.actions.data.actions.filter((item) => item.ticker === ticker)
+    publications.corpActions.kind === 'ready'
+      ? publications.corpActions.data.actions.filter((item) => item.ticker === ticker)
       : [];
   const items: FeedItem[] = [
     ...filings.map(
@@ -237,7 +237,8 @@ export function CompanyFeedPane() {
         <SourceDate
           health={data.health}
           noActions={
-            publications.actions.kind === 'ready' && !actions.some((action) => action.steps.length)
+            publications.corpActions.kind === 'ready' &&
+            !actions.some((action) => action.steps.length)
           }
         />
         {publications.news.kind === 'ready' &&
@@ -254,7 +255,7 @@ export function CompanyFeedPane() {
             )
           }
         </Availability>
-        <Availability resource={publications.actions} name="Corporate actions">
+        <Availability resource={publications.corpActions} name="Corporate actions">
           {() => null}
         </Availability>
       </div>
@@ -265,7 +266,7 @@ export function CompanyFeedPane() {
           <col />
         </colgroup>
         {upcomingItems.length > 0 && (
-          <tbody aria-label="Upcoming actions">
+          <tbody aria-label="Upcoming corp actions">
             {upcomingItems.map((item) => (
               <FeedRow key={item.key} item={item} />
             ))}

@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import { functions, isFunction, isMode, type FunctionId, type Mode, useTerminal } from './state.js';
+import { functions, isFunction, signedInOnly, type FunctionId, useTerminal } from './state.js';
 import type { Stock } from '../data';
+import { PinIcon } from '../PinIcon.js';
+import { Lock, RiskFlags } from './ui.js';
 import './command.css';
 
 export function commandSuggestions(
@@ -22,7 +24,7 @@ export function commandSuggestions(
           : 3;
   return [
     ...Object.entries(functions).map(([code, label]) => ({ code, label })),
-    ...['GRID', 'FOCUS', 'FLOW', 'HELP'].map((code) => ({ code, label: '' })),
+    ...['HELP'].map((code) => ({ code, label: '' })),
     { code: 'PIN', label: 'Pin or unpin ticker' },
     ...[...stocks]
       .sort((a, b) => b.value - a.value)
@@ -34,17 +36,24 @@ export function commandSuggestions(
 }
 
 export function CommandBar({
-  mode,
-  setMode,
   openFunction,
   maximize,
 }: {
-  mode: Mode;
-  setMode: (mode: Mode) => void;
-  openFunction: (id: FunctionId, mode: Mode) => void;
+  openFunction: (id: FunctionId) => void;
   maximize: () => void;
 }) {
-  const { data, setTicker, pins, togglePin, ticker, select, selection, filter } = useTerminal();
+  const {
+    data,
+    setTicker,
+    openTicker,
+    pins,
+    togglePin,
+    ticker,
+    select,
+    selection,
+    filter,
+    authState,
+  } = useTerminal();
   const input = useRef<HTMLInputElement>(null);
   const helpButton = useRef<HTMLButtonElement>(null);
   const [text, setText] = useState(''),
@@ -65,22 +74,15 @@ export function CommandBar({
       filter('news', 'TICKER');
     const named = tokens.filter((token) => data.stocks.some((stock) => stock.ticker === token));
     if (tokens.includes('PIN')) for (const code of named.length ? named : [ticker]) togglePin(code);
-    let targetMode = mode;
     let targetFunction: FunctionId | null = null;
     for (const token of tokens) {
-      if (named.includes(token)) setTicker(token);
+      if (named.includes(token)) (tokens.includes('PIN') ? setTicker : openTicker)(token);
       else if (isFunction(token)) targetFunction = token;
-      else if (isMode(token.toLowerCase())) {
-        const next = token.toLowerCase();
-        if (isMode(next)) {
-          targetMode = next;
-          setMode(next);
-        }
-      } else if (token === 'HELP' || token === '?') setHelp(true);
+      else if (token === 'HELP' || token === '?') setHelp(true);
       else if (token === 'PIN') continue;
       else if (token) setError(`Unknown command: ${token}`);
     }
-    if (targetFunction) openFunction(targetFunction, targetMode);
+    if (targetFunction) openFunction(targetFunction);
     setText('');
     setActive(0);
   }
@@ -117,18 +119,6 @@ export function CommandBar({
         dismiss();
         return;
       }
-      const next =
-        event.key === '1'
-          ? 'grid'
-          : event.key === '2'
-            ? 'focus'
-            : event.key === '3'
-              ? 'flow'
-              : null;
-      if (isMode(next)) {
-        setMode(next);
-        return;
-      }
       if (event.key === '?') {
         setHelp((value) => !value);
         return;
@@ -158,7 +148,8 @@ export function CommandBar({
         <a className="home-link" href="/" aria-label="Home">
           HOME
         </a>
-        <span className="prompt" aria-hidden="true">
+        <TickerTitle />
+        <span className="caret" aria-hidden="true">
           &gt;
         </span>
         <input
@@ -199,12 +190,6 @@ export function CommandBar({
               setText('');
               setError('');
               dismiss();
-            } else if (!text && ['1', '2', '3'].includes(event.key)) {
-              const next = ['grid', 'focus', 'flow'][Number(event.key) - 1];
-              if (next && isMode(next)) {
-                event.preventDefault();
-                setMode(next);
-              }
             }
           }}
         />
@@ -225,8 +210,22 @@ export function CommandBar({
                 run(complete(item.code));
               }}
             >
-              <b>{item.code}</b>
-              <span>{item.label}</span>
+              {isFunction(item.code) ? (
+                <b
+                  className="ac-function"
+                  data-locked={
+                    (authState === 'signed-out' && signedInOnly.has(item.code)) || undefined
+                  }
+                >
+                  {authState === 'signed-out' && signedInOnly.has(item.code) && <Lock />}
+                  {item.label}
+                </b>
+              ) : (
+                <>
+                  <b>{item.code}</b>
+                  <span>{item.label}</span>
+                </>
+              )}
               {stockCodes.has(item.code) && (
                 <button
                   className="pin-button"
@@ -239,20 +238,12 @@ export function CommandBar({
                     togglePin(item.code);
                   }}
                 >
-                  {pins.includes(item.code) ? '★' : '☆'}
+                  <PinIcon />
                 </button>
               )}
             </div>
           ))}
         </div>
-        <nav className="lay" aria-label="Mode">
-          {(['grid', 'focus', 'flow'] as const).map((value, index) => (
-            <button key={value} aria-pressed={mode === value} onClick={() => setMode(value)}>
-              <kbd>{index + 1}</kbd>
-              {value.toUpperCase()}
-            </button>
-          ))}
-        </nav>
         <button
           ref={helpButton}
           className="helpbtn"
@@ -327,8 +318,6 @@ export function CommandBar({
                     <dd>Complete suggestion</dd>
                     <dt>Up Down</dt>
                     <dd>Move through suggestions or watchlist</dd>
-                    <dt>1 2 3</dt>
-                    <dd>GRID FOCUS FLOW</dd>
                     <dt>Esc</dt>
                     <dd>Clear selection or restore pane</dd>
                     <dt>Drag borders</dt>
@@ -364,5 +353,22 @@ export function CommandBar({
         </div>
       )}
     </>
+  );
+}
+
+/** The one place the Terminal names its ticker; every ticker pane follows it. */
+function TickerTitle() {
+  const { data, ticker, publications } = useTerminal();
+  const name = data.stocks.find((stock) => stock.ticker === ticker)?.name;
+  return (
+    <div className="ticker-title">
+      <b>{ticker}</b>
+      {name && <span title={name}>{name}</span>}
+      <RiskFlags
+        risk={
+          publications.risks.kind === 'ready' ? publications.risks.data.risk[ticker] : undefined
+        }
+      />
+    </div>
   );
 }

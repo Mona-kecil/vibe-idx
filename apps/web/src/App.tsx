@@ -6,7 +6,8 @@ import { LocaleProvider, useLocale, type Locale } from './locale.js';
 import { LoginPage } from './BrokerPanel.js';
 import { Today } from './Today.js';
 import { MarketPage } from './MarketPage.js';
-import { TerminalBoot, useTerminalBoot } from './terminal/TerminalBoot.js';
+import { TerminalSkeleton } from './terminal/TerminalSkeleton.js';
+import { prefetchTerminalData } from './terminal/boot.js';
 
 const TickerPage = lazy(() =>
   import('./ticker/TickerPage.js').then((m) => ({ default: m.TickerPage })),
@@ -72,16 +73,16 @@ function TerminalAvailability() {
 }
 
 function TerminalRoute() {
-  const { phase, reducedMotion, settle } = useTerminalBoot();
-  const booting = phase !== 'gone';
+  useState(prefetchTerminalData);
   return (
-    <>
-      <div inert={booting}>
-        <Suspense fallback={<div className="terminal-page" />}>
-          <Terminal onSettled={settle} booting={booting} />
-        </Suspense>
-      </div>
-      {booting && <TerminalBoot phase={phase} reducedMotion={reducedMotion} />}
-    </>
+    <Suspense
+      fallback={
+        <div className="terminal-page">
+          <TerminalSkeleton />
+        </div>
+      }
+    >
+      <Terminal />
+    </Suspense>
   );
 }

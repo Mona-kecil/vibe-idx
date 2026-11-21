@@ -7,6 +7,8 @@ import { functions } from './state';
 
 const togglePin = vi.fn<(ticker: string) => void>();
 const setTicker = vi.fn<(ticker: string) => void>();
+const openTicker = vi.fn<(ticker: string) => void>();
+const auth = vi.hoisted(() => ({ state: 'signed-in' as 'signed-in' | 'signed-out' }));
 vi.mock('./state', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./state')>()),
   useTerminal: () => ({
@@ -15,6 +17,9 @@ vi.mock('./state', async (importOriginal) => ({
     ticker: 'BBCA',
     togglePin,
     setTicker,
+    openTicker,
+    authState: auth.state,
+    publications: { risks: { kind: 'loading' } },
     filter: vi.fn<() => void>(),
   }),
 }));
@@ -37,7 +42,7 @@ describe('command ranking', () => {
     }
     expect(commandSuggestions(tickers, 'CA')[0]).toEqual({
       code: 'CA',
-      label: 'Corporate actions',
+      label: 'Corp actions',
     });
     expect(commandSuggestions(tickers, 'LIVE')[0]?.code).toBe('LIVE');
   });
@@ -62,21 +67,14 @@ it('keeps every shortcut and function in help and restores focus on close', asyn
   const root = createRoot(host);
   try {
     await act(async () => {
-      root.render(
-        <CommandBar
-          mode="grid"
-          setMode={vi.fn<() => void>()}
-          openFunction={vi.fn<() => void>()}
-          maximize={vi.fn<() => void>()}
-        />,
-      );
+      root.render(<CommandBar openFunction={vi.fn<() => void>()} maximize={vi.fn<() => void>()} />);
     });
     const help = host.querySelector<HTMLButtonElement>('[aria-label="Keyboard reference"]');
     await act(async () => help?.click());
     const dialog = host.querySelector('[role="dialog"]');
     expect(dialog?.getAttribute('aria-label')).toBe('Keyboard reference');
     const keys = dialog?.querySelector('[aria-labelledby="terminal-help-keys"]');
-    expect(keys?.querySelectorAll('dt')).toHaveLength(11);
+    expect(keys?.querySelectorAll('dt')).toHaveLength(10);
     expect(keys?.textContent).toContain('BREN PIN');
     expect(keys?.textContent).toContain('Shift-drag chart');
     const reference = dialog?.querySelector('[aria-labelledby="terminal-help-functions"]');
@@ -93,6 +91,44 @@ it('keeps every shortcut and function in help and restores focus on close', asyn
     expect(host.querySelector('[role="dialog"]')).toBeNull();
     expect(document.activeElement).toBe(help);
   } finally {
+    await act(async () => root.unmount());
+    host.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
+it.each([
+  ['signed out', 'signed-out', true],
+  ['signed in', 'signed-in', false],
+])('marks functions that need sign-in only when %s', async (_, state, marked) => {
+  vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+  auth.state = state as 'signed-in' | 'signed-out';
+  const host = document.createElement('div');
+  document.body.append(host);
+  const root = createRoot(host);
+  try {
+    await act(async () => {
+      root.render(<CommandBar openFunction={vi.fn<() => void>()} maximize={vi.fn<() => void>()} />);
+    });
+    const input = host.querySelector<HTMLInputElement>('[aria-label="Command"]')!;
+    const names = async (text: string) => {
+      await act(async () => {
+        input.focus();
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(
+          input,
+          text,
+        );
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+      return [...host.querySelectorAll<HTMLElement>('.ac-function')].map((item) => [
+        item.textContent,
+        item.hasAttribute('data-locked'),
+      ]);
+    };
+    expect(await names('RT')).toEqual([['Running trade', marked]]);
+    expect(await names('KEY')).toEqual([['Key figures', false]]);
+  } finally {
+    auth.state = 'signed-in';
     await act(async () => root.unmount());
     host.remove();
     vi.unstubAllGlobals();
@@ -122,14 +158,7 @@ it('pins the named or current ticker from the command line and from a suggestion
   }
   try {
     await act(async () => {
-      root.render(
-        <CommandBar
-          mode="grid"
-          setMode={vi.fn<() => void>()}
-          openFunction={vi.fn<() => void>()}
-          maximize={vi.fn<() => void>()}
-        />,
-      );
+      root.render(<CommandBar openFunction={vi.fn<() => void>()} maximize={vi.fn<() => void>()} />);
     });
     togglePin.mockClear();
     await type('NICE PIN');

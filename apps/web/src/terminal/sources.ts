@@ -58,7 +58,7 @@ const newsSchema = z
 const calendarSchema = z
   .object({ ...publication, cal: z.array(calendarEventSchema) })
   .transform((data) => ({ ...data, errors: publicationWarnings(data) }));
-const actionsSchema = corporateActionsSchema.transform((actions) => ({ actions }));
+const corpActionsSchema = corporateActionsSchema.transform((actions) => ({ actions }));
 const risks = risksSchema.transform((risk) => ({ risk }));
 
 async function published<T>(
@@ -78,20 +78,10 @@ async function published<T>(
 export const fetchNews = (signal?: AbortSignal) => published('news.json', newsSchema, signal);
 export const fetchCalendar = (signal?: AbortSignal) =>
   published('calendar.json', calendarSchema, signal);
-export const fetchActions = (signal?: AbortSignal) =>
-  published('corporate-actions.json', actionsSchema, signal);
+export const fetchCorpActions = (signal?: AbortSignal) =>
+  published('corporate-actions.json', corpActionsSchema, signal);
 export const fetchRisk = (signal?: AbortSignal) => published('risk.json', risks, signal);
-export async function terminalData() {
-  const [stocks, market, health, feed, summary] = await Promise.all([
-    load('tickers.json'),
-    load('market.json'),
-    load('health.json'),
-    load('feed.json'),
-    load('market-summary.json'),
-  ]);
-  return { stocks, market, health, feed, summary };
-}
-export type TerminalData = Awaited<ReturnType<typeof terminalData>>;
+export { terminalData, type TerminalData } from './boot.js';
 export async function fetchDetail(ticker: string) {
   return load(`ticker/${brokerTickerSchema.parse(ticker)}.json`);
 }

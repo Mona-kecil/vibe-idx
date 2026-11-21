@@ -81,14 +81,14 @@ export function sideParties(block: Block, side: 'buy' | 'sell') {
   };
 }
 
-export type BlockSelection = BlockIdentity & Pick<TickTrades, 'ticker' | 'date'>;
+export type BlockRef = BlockIdentity & Pick<TickTrades, 'ticker' | 'date'>;
 
 export const blockId = (block: BlockIdentity) =>
   block.matching === 'off-board'
     ? `${block.board}:${block.buyOrder}:${block.sellOrder}:${block.tradeIndex}`
     : `${block.matching}:${block.side}:${block.order}`;
 
-export function isBlockTrade(trades: TickTrades, i: number, block: BlockSelection): boolean {
+export function isBlockTrade(trades: TickTrades, i: number, block: BlockRef): boolean {
   if (trades.ticker !== block.ticker || trades.date !== block.date) return false;
   if (block.matching === 'off-board')
     return (

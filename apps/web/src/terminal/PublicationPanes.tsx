@@ -258,10 +258,10 @@ const steps = {
   meeting: 'RUPS',
   delisting: 'DELIST',
 };
-export function ActionsPane() {
+export function CorpActionsPane() {
   const { publications, filters, filter, ticker, data: market } = useTerminal();
   const [open, setOpen] = useState<string | null>(null);
-  const data = publications.actions.kind === 'ready' ? publications.actions.data : null;
+  const data = publications.corpActions.kind === 'ready' ? publications.corpActions.data : null;
   const { scroll, isPast } = usePublicationTimeline(
     data,
     `${filters.ca}:${filters.ca === 'TICKER' ? ticker : ''}`,
@@ -286,14 +286,14 @@ export function ActionsPane() {
         />
       </div>
       <div className="pb" ref={scroll}>
-        <Availability resource={publications.actions} name="Corporate actions">
+        <Availability resource={publications.corpActions} name="Corporate actions">
           {() => {
             let day = '';
             return (
               <>
                 <Publication date={market.health.corporate_actions} />
                 {rows.length ? (
-                  <table className="actions">
+                  <table className="corp-actions">
                     <tbody>
                       {rows.map((row, i) => {
                         const heading = day !== row.date.slice(0, 10);

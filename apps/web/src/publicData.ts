@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { fetchActions, fetchCalendar, fetchRisk, type Resource } from './terminal/sources.js';
+import { fetchCorpActions, fetchCalendar, fetchRisk, type Resource } from './terminal/sources.js';
 
 function once<T>(load: () => Promise<Resource<T>>) {
   let promise: Promise<Resource<T>> | undefined;
@@ -8,7 +8,7 @@ function once<T>(load: () => Promise<Resource<T>>) {
 
 const loaders = {
   risk: once(() => fetchRisk()),
-  actions: once(() => fetchActions()),
+  corpActions: once(() => fetchCorpActions()),
   calendar: once(() => fetchCalendar()),
 };
 type Key = keyof typeof loaders;

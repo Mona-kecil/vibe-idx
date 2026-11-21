@@ -1,7 +1,7 @@
 export type Tile<T> = { item: T; x: number; y: number; w: number; h: number };
 
-/** Squarified treemap: areas proportional to `value`, in input order. */
-export function treemap<T extends { value: number }>(
+/** Squarified heatmap layout: tile areas proportional to `value`, in input order. */
+export function heatmapLayout<T extends { value: number }>(
   items: T[],
   width: number,
   height: number,

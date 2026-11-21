@@ -356,7 +356,7 @@ html {
   border-radius: 4px;
   color: var(--muted);
 }
-.site .pin svg {
+.site .pin .pin-icon {
   width: 15px;
   height: 15px;
   fill: none;
@@ -366,7 +366,7 @@ html {
 .site .pin[aria-pressed='true'] {
   color: var(--ink);
 }
-.site .pin[aria-pressed='true'] svg {
+.site .pin[aria-pressed='true'] .pin-icon {
   fill: currentColor;
 }
 

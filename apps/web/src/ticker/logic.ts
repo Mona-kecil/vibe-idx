@@ -471,7 +471,7 @@ export function nextAction(
 }
 
 export type ChartMark = { date: string; kind: 'filing' | 'ownership' | 'action'; label: string };
-/** Filings, ownership changes and past corporate-action dates, each snapped to the next trading day. */
+/** Filings, ownership changes and past corporate-action dates, each snapped to the next session. */
 export function chartMarks(
   data: Ticker,
   events: HoldingEvent[],

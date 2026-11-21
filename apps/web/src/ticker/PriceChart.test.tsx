@@ -289,7 +289,7 @@ describe('ticker chart selection', () => {
     await drag(20, 50);
     expect(selected).toHaveBeenLastCalledWith({ anchor: '2026-01-03', end: '2026-01-06' });
     expect(element('.chart-selection').textContent).toContain('3–6 Jan');
-    expect(element('.chart-selection').textContent).toContain('4 trading days');
+    expect(element('.chart-selection').textContent).toContain('4 sessions');
     const band = element('.selection-band') as HTMLElement;
     expect([band.style.left, band.style.width]).toEqual(['15px', '40px']);
     const count = selected.mock.calls.length;

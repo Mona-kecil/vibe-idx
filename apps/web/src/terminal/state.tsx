@@ -1,47 +1,19 @@
+export { functions, isFunction, signedInOnly, type FunctionId } from './functions.js';
 import { createContext, useContext, useEffect, useState } from 'react';
 import type { Ticker } from '../data';
 import type { BrokerDay, BrokerBoard, InvestorFilter } from '../brokers';
 import type { Selection } from '../ticker/logic';
-import type { BlockSelection } from '../ticks';
+import type { BlockRef } from '../ticks';
 import {
   fetchNews,
   fetchCalendar,
-  fetchActions,
+  fetchCorpActions,
   fetchRisk,
   type TerminalData,
   type Resource,
   type NewsArticle,
 } from './sources.js';
 
-export const functions = {
-  WL: 'Watchlist',
-  GP: 'Price history',
-  KEY: 'Key figures',
-  BRK: 'Broker summary',
-  BFL: 'Broker flow',
-  FF: 'Foreign flow',
-  OB: 'Closing order book',
-  RT: 'Running trade',
-  DD: 'Done detail',
-  TB: 'Trade book',
-  HDS: 'Holders and changes',
-  DISC: 'IDX disclosures',
-  FEED: 'Company feed',
-  SIG: 'Signals feed',
-  HEAT: 'Heatmap by value',
-  MOV: 'Market movers',
-  NEWS: 'News',
-  CAL: 'Economic calendar',
-  CA: 'Corporate actions',
-  RISK: 'Risk flags',
-};
-export type FunctionId = keyof typeof functions;
-export const isFunction = (value: string): value is FunctionId => Object.hasOwn(functions, value);
-export type Mode = 'grid' | 'focus' | 'flow';
-export const isMode = (value: string | null): value is Mode =>
-  value === 'grid' || value === 'focus' || value === 'flow';
-export const parseMode = (value: string | null): Mode | null =>
-  value === 'live' ? 'flow' : isMode(value) ? value : null;
 export type Timeframe = 'W' | 'D' | '4H' | '1H' | '15M';
 type AuthState = 'checking' | 'signed-in' | 'signed-out';
 export type BrokerFilters = {
@@ -95,7 +67,7 @@ export function usePublications() {
   return {
     news: useResource(fetchNews),
     calendar: useResource(fetchCalendar),
-    actions: useResource(fetchActions),
+    corpActions: useResource(fetchCorpActions),
     risks: useResource(fetchRisk),
   };
 }
@@ -104,6 +76,7 @@ type TerminalContextValue = {
   detail: Resource<Ticker>;
   ticker: string;
   setTicker: (ticker: string) => void;
+  openTicker: (ticker: string) => void;
   pins: string[];
   togglePin: (ticker: string) => void;
   selection: Selection;
@@ -121,8 +94,8 @@ type TerminalContextValue = {
   getToken: () => Promise<string | undefined>;
   tickDate: string | null;
   setTickDate: (date: string | null) => void;
-  tickBlock: BlockSelection | null;
-  selectTickBlock: (block: BlockSelection | null) => void;
+  pickedBlock: BlockRef | null;
+  pickBlock: (block: BlockRef | null) => void;
   retryBrokers: () => void;
   publications: ReturnType<typeof usePublications>;
   tickerNews: Resource<NewsArticle[]>;

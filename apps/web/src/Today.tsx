@@ -31,7 +31,7 @@ import { RiskFlagChips, useRiskFor } from './RiskFlagChips.js';
 import { PinButton, SiteHeader } from './SiteHeader.js';
 import { Stale } from './Stale.js';
 import { fetchNews, type NewsArticle } from './terminal/sources.js';
-import { treemap } from './treemap.js';
+import { heatmapLayout } from './heatmap-layout.js';
 import { calendarDate, dateText, direction, moveWord, nf, wib } from './ticker/format.js';
 import { usePins } from './watchlist.js';
 import { useNarrow } from './useNarrow.js';
@@ -161,7 +161,7 @@ function Pulse({ data, excluded }: { data: Data; excluded: number }) {
                 ? 'Unchanged today'
                 : `${moveWord(last.change)} ${nf(Math.abs(last.change), 2)} (${nf(Math.abs(last.change_pct), 2)}%) today`}
           </span>
-          <Spark rows={history} label="IHSG closing levels over 60 trading days" />
+          <Spark rows={history} label="IHSG closing levels over 60 sessions" />
         </div>
       ) : (
         <p role="status">Market history unavailable</p>
@@ -295,7 +295,7 @@ function Heatmap({ stocks }: { stocks: Stock[] }) {
         </div>
       </div>
       <div ref={ref} className="heat">
-        {treemap(top, size.width, size.height).map(({ item: { stock: s }, x, y, w, h }) => (
+        {heatmapLayout(top, size.width, size.height).map(({ item: { stock: s }, x, y, w, h }) => (
           <a
             key={s.ticker}
             href={`/t/${s.ticker}`}
@@ -388,11 +388,11 @@ function WeekLine({ item }: { item: WeekItem }) {
 
 function Week({ pins }: { pins: string[] }) {
   const calendar = usePublished('calendar'),
-    actions = usePublished('actions');
+    corpActions = usePublished('corpActions');
   const days = weekStrip(
     weekAhead(
       calendar.kind === 'ready' ? calendar.data.cal : [],
-      actions.kind === 'ready' ? actions.data.actions : [],
+      corpActions.kind === 'ready' ? corpActions.data.actions : [],
       pins,
       new Date(),
     ),
@@ -517,7 +517,7 @@ function WatchRow({
       {detail?.prices.length ? (
         <Spark
           rows={detail.prices.slice(-60)}
-          label={`${stock.ticker} closing price over 60 trading days`}
+          label={`${stock.ticker} closing price over 60 sessions`}
         />
       ) : (
         <span className="spark spark-empty">

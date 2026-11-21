@@ -189,6 +189,37 @@ function button(selector: string) {
 async function click(selector: string) {
   await act(async () => button(selector).click());
 }
+function tab(name: string) {
+  const el = [...host.querySelectorAll('[role="tab"]')].find((item) => item.textContent === name);
+  if (!(el instanceof HTMLButtonElement)) throw new Error(`Missing tab ${name}`);
+  return el;
+}
+async function clickTab(name: string) {
+  await act(async () => tab(name).click());
+}
+async function shiftClickTab(name: string) {
+  await act(async () =>
+    tab(name).dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true })),
+  );
+}
+const shownTab = (slot: string) =>
+  host.querySelector(`[data-slot="${slot}"] [role="tab"][aria-selected="true"]`)?.textContent;
+async function showTrade() {
+  await command('DD');
+  await command('RT');
+}
+function tickerRow(ticker: string) {
+  const row = [...host.querySelectorAll('[data-slot="a"] tr.ticker-row')].find(
+    (item) => item.querySelector('a.ticker')?.textContent === ticker,
+  );
+  if (!row) throw new Error(`Missing row ${ticker}`);
+  return row;
+}
+async function clickRow(ticker: string) {
+  await act(async () =>
+    tickerRow(ticker).dispatchEvent(new MouseEvent('click', { bubbles: true })),
+  );
+}
 async function render() {
   await act(async () => root.render(<Terminal />));
 }
@@ -212,7 +243,7 @@ beforeEach(() => {
   drilldown = null;
   sourceFailed = false;
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
-  window.history.replaceState(null, '', '/terminal?t=BREN&l=grid');
+  window.history.replaceState(null, '', '/terminal?t=BREN');
   window.localStorage.clear();
   auth.user = null;
   auth.isLoading = false;
@@ -230,51 +261,65 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 describe('React terminal', () => {
-  it('shows watchlist, signals, heatmap with movers behind it, and news in separate GRID panes', async () => {
+  it('shows the market list, heatmap, news, key figures and holders on one screen', async () => {
     await render();
     expect(
       [...host.querySelectorAll('.pane')]
         .map((el) => el.querySelector('[role="tab"][aria-selected="true"]')?.textContent ?? '')
         .sort((a, b) => a.localeCompare(b)),
-    ).toEqual(['HEAT', 'NEWS', 'SIG', 'WL']);
-    expect(host.querySelector('[data-slot="d"] .heat')).not.toBeNull();
-    expect(host.querySelector('[data-slot="c"] [role="tab"][title="Market movers"]')).toBeNull();
-    await click('[data-slot="d"] [role="tab"][title="Market movers"]');
-    expect(host.querySelector('[data-slot="d"] [aria-label="Change ranking"]')).not.toBeNull();
-    expect(host.querySelector('[data-slot="d"] [aria-label="Value ranking"]')).not.toBeNull();
+    ).toEqual(['Heatmap', 'Holders', 'Key figures', 'Movers', 'News']);
+    expect(host.querySelector('[data-slot="b"] .heat')).not.toBeNull();
+    expect(host.querySelector('[data-slot="a"] [aria-label="Change ranking"]')).not.toBeNull();
+    expect(host.querySelector('[data-slot="a"] [aria-label="Value ranking"]')).not.toBeNull();
+    expect(
+      [...host.querySelectorAll('[data-slot="a"] [role="tab"]')].map((el) => el.textContent),
+    ).toEqual(['Movers', 'Watchlist', 'Signals', 'Corp actions']);
+    expect(
+      [...host.querySelectorAll('[data-slot="d"] [role="tab"]')].map((el) => el.textContent),
+    ).toEqual(['Key figures', 'Running trade', 'Closing order book', 'Trade book']);
+    expect(host.querySelectorAll('.pane')).toHaveLength(5);
   });
-  it('opens ticker links, switches modes and restores maximized panes', async () => {
+  it('opens ticker links and restores maximized panes', async () => {
     window.localStorage.setItem('vibe-idx:watchlist', JSON.stringify(['BBCA']));
     await render();
+    await clickTab('Watchlist');
     const link = host.querySelector<HTMLAnchorElement>('a.ticker');
-    expect(link?.getAttribute('href')).toBe('/terminal?t=BBCA&l=focus');
+    expect(link?.getAttribute('href')).toBe('/terminal?t=BBCA');
     await act(async () => link?.click());
-    expect(window.location.search).toContain('t=BBCA');
-    await click('.lay button:nth-child(2)');
-    expect(host.querySelectorAll('.pane')).toHaveLength(3);
-    expect(window.location.search).toContain('l=focus');
+    expect(window.location.search).toBe('?t=BBCA');
     await click('.pane .maxb');
     expect(host.querySelector('.pane.max')).not.toBeNull();
     await click('.pane.max .maxb');
     expect(host.querySelector('.pane.max')).toBeNull();
-    await click('.lay button:nth-child(3)');
-    expect(host.querySelectorAll('.pane')).toHaveLength(4);
     expect(host.textContent).not.toContain('SAMPLE');
-    expect(host.querySelector('[role="tab"][title="Closing order book"]')).not.toBeNull();
   });
   it.each([
-    ['GP', 'FF'],
-    ['DD', 'RT'],
-    ['TB', 'OB'],
-  ])('keeps %s and %s visible together in FLOW', async (first, second) => {
+    ['Chart', 'Foreign flow'],
+    ['Done detail', 'Running trade'],
+  ])('keeps %s and %s visible together in different panes', async (first, second) => {
     await render();
-    await command('FLOW');
-    await click(`[role="tab"][id$="-${first}"]`);
-    await click(`[role="tab"][id$="-${second}"]`);
-    for (const id of [first, second]) {
-      expect(button(`[role="tab"][id$="-${id}"]`).getAttribute('aria-selected')).toBe('true');
-      expect(host.querySelector(`[role="tabpanel"][aria-labelledby$="-${id}"]`)).not.toBeNull();
+    await clickTab(first);
+    await clickTab(second);
+    for (const name of [first, second]) {
+      expect(tab(name).getAttribute('aria-selected')).toBe('true');
+      expect(
+        host.querySelector(`[role="tabpanel"][aria-labelledby="${tab(name).id}"]`),
+      ).not.toBeNull();
     }
+  });
+  it('shows two functions of one pane side by side on shift-click and keeps one', async () => {
+    await render();
+    await clickTab('Trade book');
+    await shiftClickTab('Closing order book');
+    expect(tab('Trade book').getAttribute('aria-selected')).toBe('true');
+    expect(tab('Closing order book').getAttribute('aria-selected')).toBe('true');
+    expect(host.querySelectorAll('[data-slot="d"] [role="tabpanel"]')).toHaveLength(2);
+    await shiftClickTab('Trade book');
+    expect(tab('Trade book').getAttribute('aria-selected')).toBe('false');
+    await shiftClickTab('Closing order book');
+    expect(tab('Closing order book').getAttribute('aria-selected')).toBe('true');
+    await clickTab('Trade book');
+    expect(tab('Closing order book').getAttribute('aria-selected')).toBe('false');
   });
   it('renders missing publications once and resets scrolling on filter changes', async () => {
     await render();
@@ -313,10 +358,10 @@ describe('React terminal', () => {
   it('supports ticker commands and preserves the sign-in return query', async () => {
     await render();
     await command('BBCA BRK');
-    expect(window.location.search).toBe('?t=BBCA&l=grid');
+    expect(window.location.search).toBe('?t=BBCA');
     await click('[role="tabpanel"][aria-labelledby$="-BRK"] .empty button');
     expect(auth.signIn).toHaveBeenCalledOnce();
-    expect(window.sessionStorage.getItem('vibe-idx-return-to')).toBe('/terminal?t=BBCA&l=grid');
+    expect(window.sessionStorage.getItem('vibe-idx-return-to')).toBe('/terminal?t=BBCA');
     expect(fetcher.mock.calls.every(([path]) => !requestUrl(path).includes('/api/brokers'))).toBe(
       true,
     );
@@ -325,7 +370,7 @@ describe('React terminal', () => {
     'hides %s filters while signed out',
     async (pane) => {
       await render();
-      await command(`FOCUS BREN ${pane}`);
+      await command(`BREN ${pane}`);
       expect(host.querySelector('.broker-controls')).toBeNull();
       expect(host.textContent).toContain('Sign in to see broker and trade data');
       expect(fetcher.mock.calls.every(([path]) => !requestUrl(path).includes('/api/brokers'))).toBe(
@@ -333,11 +378,11 @@ describe('React terminal', () => {
       );
     },
   );
-  it('runs mode and ticker commands together and reads ticker news through the existing API', async () => {
+  it('runs ticker and function commands together and reads ticker news through the existing API', async () => {
     await render();
-    await command('FOCUS BBCA NEWS');
-    expect(window.location.search).toBe('?t=BBCA&l=focus');
-    expect(host.querySelectorAll('.pane')).toHaveLength(3);
+    await command('BBCA NEWS');
+    expect(window.location.search).toBe('?t=BBCA');
+    expect(shownTab('c')).toBe('News');
     expect(
       host.querySelector('[aria-label="News region"] button[aria-pressed="true"]')?.textContent,
     ).toBe('TICKER');
@@ -346,19 +391,18 @@ describe('React terminal', () => {
   });
   it('opens the company feed without filters and keeps every publication function command available', async () => {
     await render();
-    await command('FOCUS BBCA FEED');
-    expect(host.querySelectorAll('.pane')).toHaveLength(3);
-    for (const id of ['GP', 'HDS', 'FEED'])
+    await command('BBCA FEED');
+    expect(shownTab('b')).toBe('Chart');
+    expect(shownTab('e')).toBe('Timeline');
+    for (const id of ['GP', 'FEED'])
       expect(host.querySelector(`[role="tabpanel"][aria-labelledby$="-${id}"]`)).not.toBeNull();
-    expect(host.querySelector('[aria-label="News region"]')).toBeNull();
+    expect(host.querySelector('[data-slot="e"] [aria-label="News region"]')).toBeNull();
     expect(host.querySelector('[data-feed-kind="news"] a')?.getAttribute('href')).toBe(
       'https://example.com/ticker-news',
     );
     expect(
       fetcher.mock.calls.some(([path]) => requestUrl(path).includes('/api/news?ticker=BBCA')),
     ).toBe(true);
-    await command('GRID');
-    await command('FOCUS');
     expect(
       fetcher.mock.calls.filter(([path]) => requestUrl(path).includes('/api/news?ticker=BBCA')),
     ).toHaveLength(1);
@@ -395,7 +439,7 @@ describe('React terminal', () => {
     await command('BRK');
     expect(host.querySelector('.broker-ledger button')).toBeNull();
     expect(host.querySelector('.broker-ledger td.l span')?.getAttribute('title')).toContain(
-      'LOCAL',
+      'Domestic-owned',
     );
     await click('[aria-label="Broker mode"] button:nth-child(2)');
     await click('.broker-ledger.buy button');
@@ -417,7 +461,7 @@ describe('React terminal', () => {
         await click('[aria-label="Broker period"] button:nth-child(2)');
         expect(host.querySelector('.broker-date')?.textContent).toContain('6–9 Nov 2026');
         for (const pane of ['BRK', 'BFL', 'FF']) {
-          await command(`FOCUS BREN ${pane}`);
+          await command(`BREN ${pane}`);
           const date = host.querySelector('.broker-date');
           expect(date?.getAttribute('role')).toBe('status');
           expect(date?.textContent).toContain('Behind prices');
@@ -473,6 +517,7 @@ describe('React terminal', () => {
   });
   it('pins the current ticker in the empty watchlist and can unpin it', async () => {
     await render();
+    await clickTab('Watchlist');
     expect(host.querySelector('[data-slot="a"] a[href="/"]')).toBeNull();
     await click('[data-slot="a"] [aria-label="Pin BREN"]');
     expect(JSON.parse(window.localStorage.getItem('vibe-idx:watchlist') ?? '[]')).toEqual(['BREN']);
@@ -483,11 +528,10 @@ describe('React terminal', () => {
   });
   it('uses the entire mover row to select a ticker and keeps links and pin controls independent', async () => {
     await render();
-    await command('MOV');
     await click('[aria-label="Value movers"] button:nth-child(2)');
     await click('[aria-label="Value ranking"] [aria-label="Pin BBCA"]');
     expect(window.location.search).toContain('t=BREN');
-    expect(host.querySelector('[data-slot="a"] a.ticker')?.textContent).toBe('BBCA');
+    expect(JSON.parse(window.localStorage.getItem('vibe-idx:watchlist') ?? '[]')).toEqual(['BBCA']);
     await act(async () => {
       host
         .querySelector('[aria-label="Value ranking"] tbody tr:nth-child(2) td:last-child')
@@ -506,7 +550,7 @@ describe('React terminal', () => {
   it('keeps broker flow colours stable across pins and closes the picker on Escape', async () => {
     auth.user = { id: 'test-user' };
     await render();
-    await command('FOCUS BREN BFL');
+    await command('BREN BFL');
     const colours = () =>
       new Map(
         [...host.querySelectorAll<HTMLElement>('.broker-key')].map((key) => [
@@ -534,7 +578,7 @@ describe('React terminal', () => {
     for (const colour of colours().values())
       expect(colour).not.toMatch(/34, 166, 160|214, 178, 94|228, 87, 63/);
   });
-  it('builds cumulative net flows from actual dates and selected broker types', () => {
+  it('builds cumulative net flows from actual dates and the selected domestic or foreign clients', () => {
     const regular = days.filter((day) => day.board === 'regular');
     const flow = cumulativeFlows(regular, ['2026-11-06', '2026-11-09'], 'VALUE', 'ALL');
     expect(flow.find((series) => series.code === 'AA')?.points.map((p) => p.value)).toEqual([
@@ -608,7 +652,7 @@ describe('React terminal', () => {
       },
       async () => {
         await render();
-        await command('FOCUS BBCA GP');
+        await command('BBCA GP');
         await click('[aria-label="Chart timeframe"] button:nth-child(4)');
         const header = () => host.querySelector('.price-view .legend');
         expect(header()?.textContent).toContain('16:00 WIBO 90H 90L 90C 90 IDRLOT 3');
@@ -655,7 +699,7 @@ describe('React terminal', () => {
       },
       async () => {
         await render();
-        await command('FOCUS BBCA OB');
+        await command('BBCA OB');
         expect(host.querySelectorAll('.tick-book .depth.bid')).toHaveLength(1);
         expect(host.querySelectorAll('.tick-book .depth.offer')).toHaveLength(3);
         expect(
@@ -664,7 +708,7 @@ describe('React terminal', () => {
       },
     );
   });
-  it('shows the closing book for the latest session, steps back, and filters running trades by broker', async () => {
+  it('shows the closing order book for the latest session, steps back, and filters running trades by broker', async () => {
     tickSessions = true;
     auth.user = { id: 'test-user' };
     await render();
@@ -700,7 +744,7 @@ describe('React terminal', () => {
     ) {
       const serve = fetcher.getMockImplementation();
       if (!serve) throw new Error('Missing fixture fetcher');
-      window.history.replaceState(null, '', '/terminal?t=BREN&l=flow');
+      window.history.replaceState(null, '', '/terminal?t=BREN');
       auth.user = { id: 'test-user' };
       let release!: () => void;
       const held = new Promise<void>((resolve) => (release = resolve));
@@ -725,6 +769,8 @@ describe('React terminal', () => {
       });
       try {
         await render();
+        await command('DD');
+        await command('OB');
         await opened(() => act(async () => release()));
       } finally {
         fetcher.mockImplementation(serve);
@@ -790,11 +836,11 @@ describe('React terminal', () => {
         .map(([input]) => requestUrl(input))
         .filter((path) => path.includes('/api/brokers?ticker='));
     beforeEach(() => {
-      window.history.replaceState(null, '', '/terminal?t=BREN&l=flow');
+      window.history.replaceState(null, '', '/terminal?t=BREN');
       auth.user = { id: 'test-user' };
     });
 
-    it('is requested once when the terminal opens, even if it mounts twice', async () => {
+    it('is requested once when a broker pane opens, even if it mounts twice', async () => {
       await act(async () =>
         root.render(
           <StrictMode>
@@ -802,11 +848,14 @@ describe('React terminal', () => {
           </StrictMode>,
         ),
       );
+      expect(histories()).toEqual([]);
+      await command('BRK');
       expect(histories()).toEqual(['/api/brokers?ticker=BREN']);
     });
 
     it('is not requested again when returning to a ticker', async () => {
       await render();
+      await command('BRK');
       await command('BBCA');
       await command('BREN');
       expect(histories()).toEqual(['/api/brokers?ticker=BREN', '/api/brokers?ticker=BBCA']);
@@ -815,6 +864,7 @@ describe('React terminal', () => {
 
     it('is requested again after signing out and back in', async () => {
       await render();
+      await command('BRK');
       auth.user = null;
       await render();
       auth.user = { id: 'test-user' };
@@ -828,54 +878,74 @@ function requestUrl(input: RequestInfo | URL) {
   return input instanceof Request ? input.url : input.toString();
 }
 
-it('pushes ticker navigation, replaces mode navigation and restores on popstate', async () => {
+it('pushes ticker navigation and restores it on popstate', async () => {
   const push = vi.spyOn(window.history, 'pushState');
   const replace = vi.spyOn(window.history, 'replaceState');
   await render();
   expect(push).not.toHaveBeenCalled();
   await command('BBCA');
   expect(push).toHaveBeenCalledOnce();
-  await command('FOCUS');
-  expect(push).toHaveBeenCalledOnce();
   expect(replace).toHaveBeenCalled();
   await act(async () => {
-    window.history.replaceState(null, '', '/terminal?t=BREN&l=grid');
+    window.history.replaceState(null, '', '/terminal?t=BREN');
     window.dispatchEvent(new PopStateEvent('popstate'));
   });
   expect(host.querySelector('[aria-label="Pin BREN"]')).not.toBeNull();
-  expect(host.querySelectorAll('.pane')).toHaveLength(4);
   expect(push).toHaveBeenCalledOnce();
   push.mockRestore();
   replace.mockRestore();
 });
 
-it('restores the mode when a command targets a different maximized pane', async () => {
+it('restores the maximized pane when a command targets a different pane', async () => {
   await render();
   await click('[data-slot="b"] .maxb');
   await command('SIG');
   expect(host.querySelector('.pane.max')).toBeNull();
-  expect(host.querySelector('[data-slot="c"] [aria-selected="true"]')?.textContent).toBe('SIG');
+  expect(shownTab('a')).toBe('Signals');
 });
 
-it('shows the company name beside the GP ticker and keeps other pane headers compact', async () => {
+it('names the ticker once, in the command header', async () => {
   await render();
-  await command('FOCUS');
-  const contexts = [...host.querySelectorAll('.ctx')].filter((el) => el.querySelector('b'));
-  expect(contexts).toHaveLength(3);
-  expect(contexts.map((el) => el.textContent)).toEqual(['BRENCompany BREN', 'BREN', 'BREN']);
-  expect(host.querySelector('.company-name')?.getAttribute('title')).toBe('Company BREN');
+  expect(host.querySelectorAll('.ticker-title')).toHaveLength(1);
+  const header = host.querySelector('.cmd')!;
+  expect(header.querySelector('.ticker-title b')?.textContent).toBe('BREN');
+  expect(header.querySelector('.ticker-title span')?.getAttribute('title')).toBe('Company BREN');
+  expect(header.textContent?.match(/\bBREN\b/g)).toHaveLength(1);
+  for (const pane of host.querySelectorAll('.ph')) expect(pane.textContent).not.toContain('BREN');
   await command('BBCA');
-  expect(host.querySelector('.company-name')?.textContent).toBe('Company BBCA');
+  expect(header.querySelector('.ticker-title b')?.textContent).toBe('BBCA');
+  expect(header.querySelector('.ticker-title span')?.textContent).toBe('Company BBCA');
+  expect(header.textContent?.match(/\bBBCA\b/g)).toHaveLength(1);
 });
 
-it.each(['GRID', 'FOCUS', 'FLOW'])('opens KEY only from the command bar in %s', async (mode) => {
+it('flips a Heatmap pane to Chart when a ticker is picked, and leaves a Chart pane alone', async () => {
+  window.localStorage.setItem('vibe-idx:watchlist', JSON.stringify(['BREN', 'BBCA']));
   await render();
-  await command(mode);
-  expect(host.querySelector('[role="tab"][title="Key figures"]')).toBeNull();
+  await clickTab('Watchlist');
+  expect(shownTab('b')).toBe('Heatmap');
+  await clickRow('BBCA');
+  expect(window.location.search).toContain('t=BBCA');
+  expect(shownTab('b')).toBe('Chart');
+  await clickRow('BREN');
+  expect(window.location.search).toContain('t=BREN');
+  expect(shownTab('b')).toBe('Chart');
+  await clickTab('Heatmap');
+  await command('BBCA');
+  expect(shownTab('b')).toBe('Chart');
+  await clickTab('Heatmap');
+  await shiftClickTab('Chart');
+  await clickRow('BREN');
+  expect(tab('Chart').getAttribute('aria-selected')).toBe('true');
+  expect(tab('Heatmap').getAttribute('aria-selected')).toBe('true');
+});
+
+it('shows Key figures first and reopens them from the command bar', async () => {
+  await render();
+  expect(shownTab('d')).toBe('Key figures');
+  await clickTab('Running trade');
+  expect(tab('Key figures').getAttribute('aria-selected')).toBe('false');
   await command('KEY');
-  expect(
-    host.querySelector('[role="tab"][title="Key figures"]')?.getAttribute('aria-selected'),
-  ).toBe('true');
+  expect(tab('Key figures').getAttribute('aria-selected')).toBe('true');
   expect(host.querySelector('.description h1')?.textContent).toBe('Company BREN');
   expect(host.querySelector('.description [aria-label="Pin BREN"]')).not.toBeNull();
 });
@@ -890,18 +960,85 @@ it('uses one tab stop per pane tablist and segment group with arrow navigation',
     tab.focus();
     tab.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
   });
-  expect(document.activeElement?.textContent).toBe('CA');
+  expect(document.activeElement?.textContent).toBe('Chart');
   const panel = host.querySelector('[data-slot="b"] [role="tabpanel"]');
   expect(document.activeElement?.getAttribute('aria-controls')).toBe(panel?.id);
   expect(panel?.getAttribute('aria-labelledby')).toBe(document.activeElement?.id);
   await command('MOV');
-  const segment = button('[aria-label="Movers"] button');
+  const segment = button('.seg[aria-label="Movers"] button');
   await act(async () => {
     segment.focus();
     segment.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
   });
   expect(document.activeElement?.getAttribute('aria-pressed')).toBe('true');
   expect(document.activeElement?.textContent).toBe('LOSE');
+});
+
+describe('signed out', () => {
+  const locked = [
+    'Broker summary',
+    'Broker flow',
+    'Foreign flow',
+    'Closing order book',
+    'Running trade',
+    'Done detail',
+    'Trade book',
+  ];
+  const lockedTabs = () =>
+    [...host.querySelectorAll('[role="tab"][data-locked]')].map((el) => el.textContent);
+  it('marks tabs that need sign-in and leaves the rest plain', async () => {
+    await render();
+    await clickTab('Broker summary');
+    expect(lockedTabs().sort()).toEqual(locked.sort());
+    for (const name of ['Chart', 'Key figures', 'Holders', 'News', 'Movers'])
+      expect(tab(name).hasAttribute('data-locked')).toBe(false);
+    expect(tab('Running trade').getAttribute('aria-description')).toBe('Needs sign-in');
+    expect(tab('Running trade').querySelector('svg.lock')).not.toBeNull();
+    expect(tab('Key figures').hasAttribute('aria-description')).toBe(false);
+  });
+  it('shows no lock once signed in', async () => {
+    auth.user = { id: 'test-user' };
+    await render();
+    expect(lockedTabs()).toEqual([]);
+    expect(host.querySelector('svg.lock')).toBeNull();
+  });
+  it('shows no lock while the sign-in state is still loading', async () => {
+    auth.isLoading = true;
+    await render();
+    expect(lockedTabs()).toEqual([]);
+  });
+  it('marks the intraday timeframes and lifts the marks on sign-in', async () => {
+    await render();
+    await clickTab('Chart');
+    const frames = () =>
+      [...host.querySelectorAll('[aria-label="Chart timeframe"] button')].map(
+        (el) => [el.textContent, el.hasAttribute('data-locked')] as const,
+      );
+    expect(frames()).toEqual([
+      ['W', false],
+      ['D', false],
+      ['4H', true],
+      ['1H', true],
+      ['15M', true],
+    ]);
+    auth.user = { id: 'test-user' };
+    await render();
+    expect(frames().every(([, marked]) => !marked)).toBe(true);
+  });
+  it.each(locked)('opens the sign-in prompt from the locked %s tab', async (name) => {
+    await render();
+    await clickTab(name);
+    expect(tab(name).getAttribute('aria-selected')).toBe('true');
+    await click(`[role="tabpanel"][aria-labelledby="${tab(name).id}"] .empty button`);
+    expect(auth.signIn).toHaveBeenCalledOnce();
+  });
+  it('opens the sign-in prompt from a locked timeframe', async () => {
+    await render();
+    await clickTab('Chart');
+    await click('[aria-label="Chart timeframe"] button:nth-child(3)');
+    await click('[data-slot="b"] .empty button');
+    expect(auth.signIn).toHaveBeenCalledOnce();
+  });
 });
 
 it('traps keyboard focus in help and restores focus on Escape', async () => {
@@ -931,7 +1068,7 @@ it('traps keyboard focus in help and restores focus on Escape', async () => {
 it('identifies failed broker sources even when the publication run is fresh', async () => {
   sourceFailed = true;
   await render();
-  expect(host.querySelector('.status .stale')?.textContent).toBe(
+  expect(host.querySelector('.status-bar .stale')?.textContent).toBe(
     'Broker data not updated since 6 Nov 2026',
   );
 });
@@ -1079,7 +1216,7 @@ describe('intraday timeframes', () => {
       () => Response.json(barsOf('BBCA')),
       async () => {
         await render();
-        await command('FOCUS BBCA GP');
+        await command('BBCA GP');
         for (const timeframe of ['15M', '1H', '4H']) {
           await choose(timeframe);
           expect(host.querySelector('.chart-host')?.getAttribute('data-bars')).toBe('25');
@@ -1099,7 +1236,7 @@ describe('intraday timeframes', () => {
       () => new Response('', { status: 404 }),
       async () => {
         await render();
-        await command('FOCUS BREN GP');
+        await command('BREN GP');
         await choose('1H');
         expect(host.querySelector('.chart-host')).toBeNull();
         expect(host.textContent).toContain('No collected regular-board trades');
@@ -1113,7 +1250,7 @@ describe('intraday timeframes', () => {
       () => new Response('', { status: 503 }),
       async () => {
         await render();
-        await command('FOCUS BREN GP');
+        await command('BREN GP');
         await choose('4H');
         expect(host.querySelector('[role="alert"]')?.textContent).toBe(
           'Tick data is unavailable. Retry.',
@@ -1162,9 +1299,9 @@ function prepareBlocks(filler = 10) {
   auth.user = { id: 'test-user' };
   drilldown = blockSession(filler);
 }
-const highlightedFills = () => [...host.querySelectorAll('.tick-tape [data-highlighted="true"]')];
+const blockFills = () => [...host.querySelectorAll('.tick-tape [data-picked="true"]')];
 
-const sharedTradeColumns = ['Time', 'Price', 'Action', 'Lot', 'Val', 'Buy', 'Sell', 'Market'];
+const sharedTradeColumns = ['Time', 'Price', 'Action', 'Lot', 'Val', 'Buy', 'Sell', 'Board'];
 const cells = (row: Element) => [...row.querySelectorAll('td')].map((cell) => cell.textContent);
 async function clickBlock(index = 1) {
   await act(async () =>
@@ -1175,7 +1312,8 @@ async function clickBlock(index = 1) {
 it('selects a whole order row and opens the existing RT tab with its morning fills', async () => {
   prepareBlocks(pagedSession);
   await render();
-  await command('FLOW RT');
+  await showTrade();
+  await command('RT');
   await command('DD');
   const first = host.querySelector('.tick-blocks tbody tr[data-rowindex]')!;
   expect([...host.querySelectorAll('.tick-blocks th')].map((th) => th.textContent)).toEqual(
@@ -1199,20 +1337,19 @@ it('selects a whole order row and opens the existing RT tab with its morning fil
     'First RG continuous trade 100',
   );
   await clickBlock();
-  expect(window.location.search).toContain('l=flow');
   expect(button('[role="tab"][id$="-RT"]').getAttribute('aria-selected')).toBe('true');
   expect([...host.querySelectorAll('.tick-tape th')].map((th) => th.textContent)).toEqual(
     sharedTradeColumns,
   );
-  expect(highlightedFills().map(cells)).toEqual([
+  expect(blockFills().map(cells)).toEqual([
     ['09:00:00', '100 (0.00%)', 'SELL', '50', '500.0K', 'AA F', 'XL D', 'RG'],
     ['09:00:00', '100 (0.00%)', 'SELL', '200', '2.0M', 'BB D', 'XL D', 'RG'],
     ['09:00:00', '100 (0.00%)', 'SELL', '100', '1.0M', 'AA F', 'XL D', 'RG'],
   ]);
-  expect(highlightedFills()[2]?.querySelector('.tick-foreign')?.textContent).toBe('AA F');
+  expect(blockFills()[2]?.querySelector('.tick-foreign')?.textContent).toBe('AA F');
   expect(host.querySelectorAll('.tick-tape tbody tr[data-rowindex]').length).toBeLessThan(100);
   expect(
-    host.querySelector('.tick-tape tbody tr[data-rowindex]:not([data-highlighted])'),
+    host.querySelector('.tick-tape tbody tr[data-rowindex]:not([data-picked])'),
   ).not.toBeNull();
   const summary = host.querySelector('.tick-summary')!;
   expect(summary.querySelector('.tick-summary-main')?.textContent).toBe(
@@ -1228,14 +1365,14 @@ it('selects a whole order row and opens the existing RT tab with its morning fil
   await command('DD');
   expect(host.querySelectorAll('.tick-blocks [aria-pressed="true"]')).toHaveLength(1);
   await clickBlock();
-  expect(highlightedFills()).toHaveLength(0);
+  expect(blockFills()).toHaveLength(0);
   expect(host.querySelector('.tick-summary')).toBeNull();
   expect(host.querySelector('.tick-blocks [aria-pressed="true"]')).toBeNull();
   await clickBlock();
   await act(async () =>
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })),
   );
-  expect(highlightedFills()).toHaveLength(0);
+  expect(blockFills()).toHaveLength(0);
   expect(button('[role="tab"][id$="-RT"]').getAttribute('aria-selected')).toBe('true');
   expect(host.querySelectorAll('.tick-tape tbody tr[data-rowindex]').length).toBeLessThan(100);
   expect(host.querySelector('.tick-summary')).toBeNull();
@@ -1244,13 +1381,13 @@ it('selects a whole order row and opens the existing RT tab with its morning fil
 it('shows BUY blocks with their fills', async () => {
   prepareBlocks();
   await render();
-  await command('FLOW');
+  await showTrade();
   expect(
     host.querySelector('.tick-blocks tbody tr[data-rowindex]:nth-child(2) td:nth-child(3)')
       ?.textContent,
   ).toBe('BUY');
   await click('.tick-blocks tbody tr[data-rowindex]:nth-child(2) button');
-  expect(highlightedFills().map(cells)).toEqual([
+  expect(blockFills().map(cells)).toEqual([
     ['09:00:00', '100 (0.00%)', 'BUY', '50', '500.0K', 'CC D', 'DD D', 'RG'],
   ]);
 });
@@ -1258,7 +1395,7 @@ it('shows BUY blocks with their fills', async () => {
 it('clears the selection when the session date changes', async () => {
   prepareBlocks();
   await render();
-  await command('FLOW');
+  await showTrade();
   await clickBlock();
   await click('[aria-label="Running trade"] [aria-label="Previous session"]');
   expect(host.querySelector('.tick-blocks [aria-pressed="true"]')).toBeNull();
@@ -1268,11 +1405,11 @@ it('clears the selection when the session date changes', async () => {
 it('clears the selection when the ticker changes', async () => {
   prepareBlocks();
   await render();
-  await command('FLOW');
+  await showTrade();
   await clickBlock();
-  expect(highlightedFills()).toHaveLength(3);
+  expect(blockFills()).toHaveLength(3);
   await command('BBCA');
-  expect(highlightedFills()).toHaveLength(0);
+  expect(blockFills()).toHaveLength(0);
   await command('BREN');
   expect(host.querySelector('.tick-blocks [aria-pressed="true"]')).toBeNull();
 });
@@ -1280,7 +1417,7 @@ it('clears the selection when the ticker changes', async () => {
 it('shows AUC and groups interleaved auction counterparties by lots without matching other orders or boards', async () => {
   prepareBlocks();
   await render();
-  await command('FLOW');
+  await showTrade();
   const auction = host.querySelector('.tick-blocks tbody tr[data-rowindex]:nth-child(3)')!;
   expect(cells(auction)).toEqual([
     '16:00:00',
@@ -1293,7 +1430,7 @@ it('shows AUC and groups interleaved auction counterparties by lots without matc
     'RG',
   ]);
   await clickBlock(3);
-  expect(highlightedFills().map(cells)).toEqual([
+  expect(blockFills().map(cells)).toEqual([
     ['16:00:00', '100 (0.00%)', 'AUC', '6', '60.0K', 'RC D', 'XL D', 'RG'],
     ['16:00:00', '100 (0.00%)', 'AUC', '5', '50.0K', 'QB D', 'XL D', 'RG'],
     ['16:00:00', '100 (0.00%)', 'AUC', '4', '40.0K', 'PA D', 'XL D', 'RG'],
@@ -1305,7 +1442,7 @@ it('shows AUC and groups interleaved auction counterparties by lots without matc
     ),
   ).toEqual(['RC D 6', 'QB D 5', 'PA D 4']);
   const tape = [...host.querySelectorAll('.tick-tape tbody tr[data-rowindex]')];
-  expect(tape.slice(1, 6).map((row) => row.hasAttribute('data-highlighted'))).toEqual([
+  expect(tape.slice(1, 6).map((row) => row.hasAttribute('data-picked'))).toEqual([
     true,
     false,
     true,
@@ -1317,6 +1454,7 @@ it('shows AUC and groups interleaved auction counterparties by lots without matc
 it('counts a broker once when its fills include domestic and foreign clients', async () => {
   prepareBlocks();
   await render();
+  await showTrade();
   await command('DD');
   const order = [...host.querySelectorAll('.tick-blocks tbody tr[data-rowindex]')].find(
     (row) => row.querySelector('.tick-sell')?.textContent === 'KK D',
@@ -1332,14 +1470,14 @@ it('colours DD averages, RT prices and the summary against GP’s daily open', a
   drilldown!.price[0] = 110;
   drilldown!.price[1] = 90;
   await render();
-  await command('FLOW');
+  await showTrade();
   const first = host.querySelector('.tick-blocks tbody tr[data-rowindex]')!;
   expect(first.querySelector('td:nth-child(2) .dn')?.textContent).toBe('97.1 (−2.86%)');
   expect(first.querySelector('td:nth-child(2) span')?.getAttribute('title')).toBe(
     'GP daily open 100',
   );
   await clickBlock();
-  const fills = highlightedFills();
+  const fills = blockFills();
   expect(fills.map((row) => row.querySelector('td:nth-child(2) span')?.className)).toEqual([
     'mut',
     'dn',
@@ -1376,7 +1514,7 @@ it.each(['sell', 'buy', 'auction'])(
       if (direction === 'auction') trades.auction[i] = true;
     }
     await render();
-    await command('FLOW');
+    await showTrade();
     await clickBlock();
     const party = (tag: string) =>
       [...host.querySelectorAll<HTMLButtonElement>('.tick-counterparties button')].find((button) =>
@@ -1388,14 +1526,14 @@ it.each(['sell', 'buy', 'auction'])(
           candidate === tag ? 'true' : null,
         );
       }
-      expect(highlightedFills()).toHaveLength(9);
-      for (const row of highlightedFills()) {
+      expect(blockFills()).toHaveLength(9);
+      for (const row of blockFills()) {
         const counterparty = cells(row)[direction === 'buy' ? 6 : 5];
         expect(row.classList.contains('tick-dimmed')).toBe(
           tag !== null && counterparty !== `AA ${tag}`,
         );
       }
-      expect(host.querySelector('.tick-tape tr:not([data-highlighted]).tick-dimmed')).toBeNull();
+      expect(host.querySelector('.tick-tape tr:not([data-picked]).tick-dimmed')).toBeNull();
     };
     checkIsolated(null);
     await act(async () => party('F').dispatchEvent(new MouseEvent('mouseover', { bubbles: true })));
@@ -1437,7 +1575,7 @@ it.each(['sell', 'buy', 'auction-sell'])(
       }
     }
     await render();
-    await command('FLOW');
+    await showTrade();
     await clickBlock();
     const line = host.querySelector('.tick-prices')!;
     const descending = direction === 'sell';
@@ -1469,7 +1607,7 @@ it('shows each NEGO and CASH match with fractional lots and highlights only its 
   trades.buy_order[1] = trades.buy_order[0]!;
   trades.shares[0] = 25;
   await render();
-  await command('FLOW');
+  await showTrade();
   await click('[aria-label="Done detail"] .tick-filter-toggle');
   await act(async () => {
     const input = host.querySelector<HTMLInputElement>(
@@ -1484,21 +1622,14 @@ it('shows each NEGO and CASH match with fractional lots and highlights only its 
   expect(cells(nego).slice(2)).toEqual(['NEGO', '0.25', '2.5K', 'AA F', 'XL D', 'NG']);
   expect(cells(cash)[7]).toBe('TN');
   await act(async () => nego.querySelector('button')!.click());
-  expect(highlightedFills()).toHaveLength(1);
-  expect(cells(highlightedFills()[0]!).slice(2)).toEqual([
-    'NEGO',
-    '0.25',
-    '2.5K',
-    'AA F',
-    'XL D',
-    'NG',
-  ]);
+  expect(blockFills()).toHaveLength(1);
+  expect(cells(blockFills()[0]!).slice(2)).toEqual(['NEGO', '0.25', '2.5K', 'AA F', 'XL D', 'NG']);
   expect(host.querySelector('.tick-summary-main')?.textContent).toContain('100 (0.00%)');
   expect(host.querySelector('.tick-summary-main')?.textContent).not.toContain(' to ');
   await act(async () => cash.querySelector('button')!.click());
-  expect(highlightedFills()).toHaveLength(1);
-  expect(cells(highlightedFills()[0]!)[2]).toBe('CASH');
-  expect(cells(highlightedFills()[0]!)[7]).toBe('TN');
+  expect(blockFills()).toHaveLength(1);
+  expect(cells(blockFills()[0]!)[2]).toBe('CASH');
+  expect(cells(blockFills()[0]!)[7]).toBe('TN');
   await click('[aria-label="Block sort"] button:nth-child(2)');
   const times = [...host.querySelectorAll('.tick-blocks tbody tr[data-rowindex]')].map(
     (row) => cells(row)[0],
@@ -1528,7 +1659,7 @@ it('lets a small negotiated trade below the first page be reached in DD', async 
   drilldown!.board[0] = 'NG';
   drilldown!.shares[0] = 25;
   await render();
-  await command('FLOW');
+  await showTrade();
   const oddLot = () =>
     [...host.querySelectorAll('.tick-blocks tbody tr[data-rowindex]')].find(
       (row) => cells(row)[2] === 'NEGO' && cells(row)[3] === '0.25',
@@ -1547,7 +1678,7 @@ it('lets a small negotiated trade below the first page be reached in DD', async 
 it('keeps RT filters and the selected summary available while filtering its fills', async () => {
   prepareBlocks();
   await render();
-  await command('FLOW');
+  await showTrade();
   await clickBlock();
   const rt = host.querySelector('[aria-label="Running trade"]')!;
   expect(rt.querySelector('[aria-label="Previous session"]')).not.toBeNull();
@@ -1558,10 +1689,10 @@ it('keeps RT filters and the selected summary available while filtering its fill
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'AA');
     input.dispatchEvent(new Event('input', { bubbles: true }));
   });
-  expect(highlightedFills()).toHaveLength(2);
-  expect(highlightedFills().every((row) => cells(row)[5] === 'AA F')).toBe(true);
+  expect(blockFills()).toHaveLength(2);
+  expect(blockFills().every((row) => cells(row)[5] === 'AA F')).toBe(true);
   await click('[aria-label="Trade side"] button:nth-child(2)');
-  expect(highlightedFills()).toHaveLength(0);
+  expect(blockFills()).toHaveLength(0);
   expect(rt.querySelector('[aria-label="Selected block summary"]')).not.toBeNull();
   await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'ZZ');
@@ -1579,7 +1710,7 @@ it('keeps RT filters and the selected summary available while filtering its fill
 it('keeps keyboard traversal and focused DD rows available across the rendered window', async () => {
   prepareBlocks(pagedSession);
   await render();
-  await command('FLOW');
+  await showTrade();
   const body = host.querySelector<HTMLDivElement>('[aria-label="Done detail"] .pb')!;
   await act(async () =>
     body.querySelector<HTMLButtonElement>('tr[data-rowindex="0"] button')!.focus(),

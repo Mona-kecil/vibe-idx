@@ -43,7 +43,7 @@ vi.mock('./state', async (importOriginal) => {
         filters,
         filter: (name: string, value: string) =>
           setFilters((current) => ({ ...current, [name]: value })),
-        setTicker: vi.fn<() => void>(),
+        openTicker: vi.fn<() => void>(),
         togglePin: vi.fn<() => void>(),
       };
     },
@@ -231,7 +231,7 @@ it('shows change and value rankings together with the columns needed to read eac
       [...host.querySelectorAll('[aria-label="Value ranking"] th')].map((el) => el.textContent),
     ).toEqual(['TICKER', 'CHG', 'VALUE IDR']);
     expect(host.querySelectorAll('.pin-button')).toHaveLength(6);
-    expect(host.querySelector('a.ticker')?.getAttribute('href')).toBe('/terminal?t=AAA&l=focus');
+    expect(host.querySelector('a.ticker')?.getAttribute('href')).toBe('/terminal?t=AAA');
   });
 });
 it('toggles each ranking independently, including foreign buys and sells', async () => {

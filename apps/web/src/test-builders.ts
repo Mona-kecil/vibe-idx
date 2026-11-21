@@ -65,7 +65,7 @@ export function tradeSession(
   });
 }
 
-/** One broker's side of a day in broker data: a domestic client at a local broker unless `fields` says otherwise. */
+/** One broker's side of a session in broker data: a domestic client at a domestic-owned broker unless `fields` says otherwise. */
 export function brokerRow(
   broker: string,
   shares: number,

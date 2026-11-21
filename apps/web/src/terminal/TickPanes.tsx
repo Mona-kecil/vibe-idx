@@ -270,7 +270,7 @@ function PriceRange({ block, open }: { block: Block; open: SessionOpen | null })
     </>
   );
 }
-const tradeColumns = ['Time', 'Price', 'Action', 'Lot', 'Val', 'Buy', 'Sell', 'Market'];
+const tradeColumns = ['Time', 'Price', 'Action', 'Lot', 'Val', 'Buy', 'Sell', 'Board'];
 function TradeHeader() {
   return (
     <thead>
@@ -286,12 +286,12 @@ function TradeHeader() {
 }
 
 export function RunningTradePane() {
-  const { tickBlock } = useTerminal();
+  const { pickedBlock } = useTerminal();
   const state = useTradeFilter();
   const { filter, setFilter, reset } = state;
   useEffect(() => {
-    if (tickBlock) reset(false);
-  }, [tickBlock, reset]);
+    if (pickedBlock) reset(false);
+  }, [pickedBlock, reset]);
   return (
     <TickPane
       kind="trades"
@@ -440,14 +440,14 @@ function BlockSummary({
   );
 }
 function TradeTape({ trades, filter }: { trades: TickTrades; filter: TradeFilter }) {
-  const { tickBlock } = useTerminal();
+  const { pickedBlock } = useTerminal();
   const open = useSessionOpen(trades);
   const block = useMemo(
     () =>
-      tickBlock
-        ? doneDetail(trades).find((candidate) => blockId(candidate) === blockId(tickBlock))
+      pickedBlock
+        ? doneDetail(trades).find((candidate) => blockId(candidate) === blockId(pickedBlock))
         : undefined,
-    [trades, tickBlock],
+    [trades, pickedBlock],
   );
   const [limit, setLimit] = useState(500);
   const [hovered, setHovered] = useState<{ block: Block; party: Party } | null>(null);
@@ -457,16 +457,16 @@ function TradeTape({ trades, filter }: { trades: TickTrades; filter: TradeFilter
     (focused && focused.block === block ? focused.party : null);
   const prices = useMemo(() => {
     const levels = new Map<number, number>();
-    if (tickBlock && block) {
+    if (pickedBlock && block) {
       trades.price.forEach((price, i) => {
-        if (isBlockTrade(trades, i, tickBlock))
+        if (isBlockTrade(trades, i, pickedBlock))
           levels.set(price, (levels.get(price) ?? 0) + trades.shares[i]!);
       });
     }
     return [...levels].sort(([a], [b]) =>
       block?.matching === 'continuous' && block.side === 'sell' ? b - a : a - b,
     );
-  }, [trades, tickBlock, block]);
+  }, [trades, pickedBlock, block]);
   const rows = useMemo(() => {
     const rows: number[] = [];
     for (let i = trades.time.length - 1; i >= 0; i--) {
@@ -475,9 +475,9 @@ function TradeTape({ trades, filter }: { trades: TickTrades; filter: TradeFilter
     return rows;
   }, [trades, filter]);
   let lastFill = -1;
-  if (tickBlock)
+  if (pickedBlock)
     for (let index = rows.length - 1; index >= 0 && lastFill < 0; index--)
-      if (isBlockTrade(trades, rows[index]!, tickBlock)) lastFill = index;
+      if (isBlockTrade(trades, rows[index]!, pickedBlock)) lastFill = index;
   const footer = useMemo(
     () =>
       rows.length > 0 && (
@@ -495,10 +495,12 @@ function TradeTape({ trades, filter }: { trades: TickTrades; filter: TradeFilter
   );
   // Keep every fill in RT, including orders older than the initial page.
   const loaded = Math.max(limit, lastFill + 51);
-  const firstMatch = tickBlock ? rows.find((i) => isBlockTrade(trades, i, tickBlock)) : undefined;
+  const firstMatch = pickedBlock
+    ? rows.find((i) => isBlockTrade(trades, i, pickedBlock))
+    : undefined;
   useEffect(() => {
     setLimit((previous) => Math.max(previous, lastFill + 51));
-  }, [tickBlock, trades, lastFill]);
+  }, [pickedBlock, trades, lastFill]);
   return (
     <>
       <WindowedTable
@@ -510,13 +512,13 @@ function TradeTape({ trades, filter }: { trades: TickTrades; filter: TradeFilter
         footer={footer}
         row={(index) => {
           const i = rows[index]!;
-          const highlighted = tickBlock !== null && isBlockTrade(trades, i, tickBlock);
+          const picked = pickedBlock !== null && isBlockTrade(trades, i, pickedBlock);
           const counterparty =
             block?.side === 'buy'
               ? { broker: trades.seller[i], foreign: trades.seller_foreign[i] }
               : { broker: trades.buyer[i], foreign: trades.buyer_foreign[i] };
           const dimmed =
-            highlighted &&
+            picked &&
             isolated &&
             (counterparty.broker !== isolated.broker || counterparty.foreign !== isolated.foreign);
           return (
@@ -524,8 +526,8 @@ function TradeTape({ trades, filter }: { trades: TickTrades; filter: TradeFilter
               key={i}
               data-rowindex={index}
               aria-rowindex={index + 2}
-              className={highlighted ? `tick-highlight${dimmed ? ' tick-dimmed' : ''}` : undefined}
-              data-highlighted={highlighted || undefined}
+              className={picked ? `tick-picked${dimmed ? ' tick-dimmed' : ''}` : undefined}
+              data-picked={picked || undefined}
             >
               <td className="mut">{clock(trades.time[i]!)}</td>
               <td>
@@ -630,7 +632,7 @@ function Blocks({
   const all = useMemo(() => doneDetail(trades), [trades]);
   const [limit, setLimit] = useState(300);
   const open = useSessionOpen(trades);
-  const { tickBlock, selectTickBlock } = useTerminal();
+  const { pickedBlock, pickBlock } = useTerminal();
   const shown = useMemo(
     () =>
       all
@@ -664,13 +666,13 @@ function Blocks({
       footer={footer}
       row={(index) => {
         const block = shown[index]!;
-        const selected =
-          tickBlock?.ticker === trades.ticker &&
-          tickBlock.date === trades.date &&
-          blockId(tickBlock) === blockId(block);
-        const select = () =>
-          selectTickBlock(
-            selected
+        const picked =
+          pickedBlock?.ticker === trades.ticker &&
+          pickedBlock.date === trades.date &&
+          blockId(pickedBlock) === blockId(block);
+        const pick = () =>
+          pickBlock(
+            picked
               ? null
               : {
                   ticker: trades.ticker,
@@ -683,16 +685,16 @@ function Blocks({
             key={blockId(block)}
             data-rowindex={index}
             aria-rowindex={index + 2}
-            className={selected ? 'tick-highlight' : undefined}
+            className={picked ? 'tick-picked' : undefined}
             onClick={(event) => {
               event.currentTarget.querySelector('button')?.focus({ preventScroll: true });
-              select();
+              pick();
             }}
           >
             <td className="mut">
               <button
-                className="tick-block-select"
-                aria-pressed={selected}
+                className="tick-block-pick"
+                aria-pressed={picked}
                 aria-label={`${clock(block.start)} ${action(block.side, block.matching === 'auction', block.board)} ${lots(block.shares)} lot ${block.broker} ${block.foreign ? 'F' : 'D'}, show fills`}
                 title={fillCount(block.fills)}
               >

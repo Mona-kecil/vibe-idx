@@ -3,8 +3,8 @@ import { useAuth } from '@workos-inc/authkit-react';
 import type { Ticker } from '../data';
 import type { BrokerDay } from '../brokers';
 import type { Selection } from '../ticker/logic';
-import type { BlockSelection } from '../ticks';
-import { initialPins, writeStorage } from '../watchlist.js';
+import type { BlockRef } from '../ticks';
+import { initialPins, readStorage, writeStorage } from '../watchlist.js';
 import {
   fetchDetail,
   fetchTickerNews,
@@ -18,41 +18,32 @@ import {
   functions,
   initialFilters,
   initialBrokerFilters,
-  parseMode,
+  signedInOnly,
   usePublications,
-  useTerminal,
   type Filters,
   type BrokerFilters,
   type FunctionId,
-  type Mode,
   type Timeframe,
 } from './state.js';
 import { clearBrokerHistory, loadBrokerHistory } from './broker-history.js';
 import { CommandBar } from './CommandBar.js';
-import { SplitLayout, modes } from './Layout.js';
-import { Empty, RiskFlags, StatusBar } from './ui.js';
+import { SplitLayout, layout, layoutPath } from './Layout.js';
+import { Empty, Lock, StatusBar } from './ui.js';
 import { PricePane } from './PricePane.js';
 import { BrokerSummaryPane, BrokerFlowPane, ForeignFlowPane } from './BrokerPanes.js';
 import { DoneDetailPane, OrderBookPane, RunningTradePane, TradeBookPane } from './TickPanes.js';
 import { WatchlistPane, MoversPane, SignalsPane, HeatmapPane } from './MarketPanes.js';
 import { KeyFiguresPane, HoldersAndChangesPane, DisclosuresPane } from './TickerPanes.js';
 import { CompanyFeedPane } from './CompanyFeedPane.js';
-import { NewsPane, CalendarPane, ActionsPane, RiskPane } from './PublicationPanes.js';
+import { NewsPane, CalendarPane, CorpActionsPane, RiskPane } from './PublicationPanes.js';
+import { TerminalSkeleton } from './TerminalSkeleton.js';
 import './terminal.css';
 
-export function Terminal({
-  onSettled,
-  booting = false,
-}: { onSettled?: () => void; booting?: boolean } = {}) {
-  const [state, setState] = useState<Resource<TerminalData>>({ kind: 'loading' });
+export function Terminal() {
+  const [state, setState] = useState<Resource<TerminalData>>({
+    kind: 'loading',
+  });
   const [attempt, retry] = useState(0);
-  const notified = useRef(false);
-  useEffect(() => {
-    if (state.kind !== 'loading' && !notified.current) {
-      notified.current = true;
-      onSettled?.();
-    }
-  }, [state.kind, onSettled]);
   useEffect(() => {
     let active = true;
     document.title = 'Terminal  Vibe IDX';
@@ -73,23 +64,19 @@ export function Terminal({
     <div className="terminal-page">
       {state.kind === 'ready' ? (
         <LoadedTerminal data={state.data} />
-      ) : state.kind === 'loading' && booting ? null : (
+      ) : state.kind === 'loading' ? (
+        <TerminalSkeleton />
+      ) : (
         <Empty>
-          {state.kind === 'loading' ? (
-            'Loading terminal…'
-          ) : (
-            <>
-              Terminal data unavailable{' '}
-              <button
-                onClick={() => {
-                  setState({ kind: 'loading' });
-                  retry(attempt + 1);
-                }}
-              >
-                Retry
-              </button>
-            </>
-          )}
+          Terminal data unavailable{' '}
+          <button
+            onClick={() => {
+              setState({ kind: 'loading' });
+              retry(attempt + 1);
+            }}
+          >
+            Retry
+          </button>
         </Empty>
       )}
     </div>
@@ -109,35 +96,36 @@ function LoadedTerminal({ data }: { data: TerminalData }) {
       ''
     );
   });
-  const [mode, changeMode] = useState<Mode>(() => {
-    return parseMode(query.get('l')) ?? 'grid';
-  });
   const [selection, select] = useState<Selection>(null),
     [timeframe, setTimeframe] = useState<Timeframe>('D');
   const [filters, setFilters] = useState(initialFilters),
     [broker, changeBroker] = useState(initialBrokerFilters);
   const [detail, setDetail] = useState<Resource<Ticker>>({ kind: 'loading' });
-  const [brokers, setBrokers] = useState<Resource<BrokerDay[]>>({ kind: 'loading' }),
+  const [brokers, setBrokers] = useState<Resource<BrokerDay[]>>({
+      kind: 'loading',
+    }),
     [brokerError, setBrokerError] = useState(''),
     [attempt, retry] = useState(0);
   const [tickDate, changeTickDate] = useState<string | null>(null);
-  const [tickBlock, setTickBlock] = useState<BlockSelection | null>(null);
+  const [pickedBlock, setPickedBlock] = useState<BlockRef | null>(null);
   function setTickDate(date: string | null) {
-    if (date !== tickDate) setTickBlock(null);
+    if (date !== tickDate) setPickedBlock(null);
     changeTickDate(date);
   }
   useEffect(() => {
-    if (!tickBlock) return;
+    if (!pickedBlock) return;
     const clear = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setTickBlock(null);
+      if (event.key === 'Escape') setPickedBlock(null);
     };
     window.addEventListener('keydown', clear);
     return () => window.removeEventListener('keydown', clear);
-  }, [tickBlock]);
+  }, [pickedBlock]);
   const getToken = useCallback(() => authRef.current.getAccessToken(), []);
   const [flowPins, setFlowPins] = useState<string[]>([]),
     [flowHidden, setFlowHidden] = useState<string[]>([]);
-  const [tickerNews, setTickerNews] = useState<Resource<NewsArticle[]>>({ kind: 'loading' });
+  const [tickerNews, setTickerNews] = useState<Resource<NewsArticle[]>>({
+    kind: 'loading',
+  });
   useEffect(() => {
     let current = true;
     setTickerNews({ kind: 'loading' });
@@ -150,12 +138,26 @@ function LoadedTerminal({ data }: { data: TerminalData }) {
   }, [ticker]);
   const [max, setMax] = useState<string | null>(null),
     [focused, setFocused] = useState('b');
-  const [slots, setSlots] = useState<Record<Mode, Record<string, FunctionId[]>>>(() => ({
-    grid: modes.grid.slots,
-    focus: modes.focus.slots,
-    flow: modes.flow.slots,
-  }));
-  const [active, setActive] = useState<Record<string, FunctionId>>({});
+  const [slots, setSlots] = useState(layout.slots);
+  const [active, setActiveState] = useState<Record<string, FunctionId[]>>(() => {
+    try {
+      return JSON.parse(readStorage('terminal:shown') ?? '{}') as Record<string, FunctionId[]>;
+    } catch {
+      return {};
+    }
+  });
+  const setActive = (
+    update: (previous: Record<string, FunctionId[]>) => Record<string, FunctionId[]>,
+  ) =>
+    setActiveState((previous) => {
+      const next = update(previous);
+      writeStorage('terminal:shown', JSON.stringify(next));
+      return next;
+    });
+  const shownIn = (slot: string, state = active, ids = slots[slot] ?? []): FunctionId[] => {
+    const picked = (state[slot] ?? []).filter((id) => ids.includes(id));
+    return picked.length ? picked : ids.slice(0, 1);
+  };
   const publications = usePublications();
   const [pins, setPins] = useState(() =>
     initialPins().filter((pin) => data.stocks.some((stock) => stock.ticker === pin)),
@@ -180,16 +182,18 @@ function LoadedTerminal({ data }: { data: TerminalData }) {
       if (data.stocks.some((stock) => stock.ticker === value)) {
         changeTicker(value);
         select(null);
-        if (value !== ticker) setTickBlock(null);
+        if (value !== ticker) setPickedBlock(null);
       }
     },
     [data, ticker],
   );
-  const setMode = useCallback((value: Mode) => {
-    changeMode(value);
-    setMax(null);
-    setFocused('b');
-  }, []);
+  function openTicker(value: string) {
+    setTicker(value);
+    // Picking a ticker while the heatmap covers the chart brings the chart back.
+    const chart = Object.keys(slots).find((slot) => slots[slot]?.includes('GP'));
+    if (chart && shownIn(chart).includes('HEAT') && !shownIn(chart).includes('GP'))
+      openFunction('GP');
+  }
   const filter = <K extends keyof Filters>(key: K, value: Filters[K]) =>
     setFilters((previous) => ({ ...previous, [key]: value }));
   const setBroker = <K extends keyof BrokerFilters>(key: K, value: BrokerFilters[K]) =>
@@ -199,22 +203,18 @@ function LoadedTerminal({ data }: { data: TerminalData }) {
     const url = new URL(window.location.href);
     const push = historyTicker.current !== ticker && url.searchParams.get('t') !== ticker;
     url.searchParams.set('t', ticker);
-    url.searchParams.set('l', mode);
     if (push) window.history.pushState(null, '', url);
     else window.history.replaceState(null, '', url);
     historyTicker.current = ticker;
-  }, [ticker, mode]);
+  }, [ticker]);
   useEffect(() => {
     const pop = () => {
-      const params = new URLSearchParams(window.location.search),
-        value = parseMode(params.get('l'));
-      const target = params.get('t');
+      const target = new URLSearchParams(window.location.search).get('t');
       if (target) setTicker(target);
-      if (value) setMode(value);
     };
     window.addEventListener('popstate', pop);
     return () => window.removeEventListener('popstate', pop);
-  }, [setTicker, setMode]);
+  }, [setTicker]);
   useEffect(() => {
     let current = true;
     setDetail({ kind: 'loading' });
@@ -231,10 +231,9 @@ function LoadedTerminal({ data }: { data: TerminalData }) {
     };
   }, [ticker]);
   const userId = auth.user?.id;
-  const needsBrokers = Object.entries(slots[mode]).some(([slot, ids]) => {
-    const id = active[`${mode}:${slot}`] ?? ids[0];
-    return id === 'BRK' || id === 'BFL' || id === 'FF';
-  });
+  const needsBrokers = Object.keys(slots).some((slot) =>
+    shownIn(slot).some((id) => id === 'BRK' || id === 'BFL' || id === 'FF'),
+  );
   useEffect(() => {
     if (!userId) {
       clearBrokerHistory();
@@ -266,39 +265,49 @@ function LoadedTerminal({ data }: { data: TerminalData }) {
     );
     void auth.signIn().catch(() => setBrokerError('Could not sign in. Retry.'));
   }
-  function openFunction(id: FunctionId, targetMode: Mode) {
-    const entries = Object.entries(slots[targetMode]);
+  function openFunction(id: FunctionId) {
     const slot =
-      entries.find(([, ids]) => ids.includes(id))?.[0] ??
-      (slots[targetMode][focused] ? focused : 'b');
-    if (!slots[targetMode][slot]?.includes(id))
-      setSlots((previous) => ({
-        ...previous,
-        [targetMode]: {
-          ...previous[targetMode],
-          [slot]: [id, ...(previous[targetMode][slot] ?? [])],
-        },
-      }));
+      Object.entries(slots).find(([, ids]) => ids.includes(id))?.[0] ??
+      (slots[focused] ? focused : 'b');
+    if (!slots[slot]?.includes(id))
+      setSlots((previous) => ({ ...previous, [slot]: [id, ...(previous[slot] ?? [])] }));
     if (max && max !== slot) setMax(null);
-    setActive((previous) => ({ ...previous, [`${targetMode}:${slot}`]: id }));
+    setActive((previous) =>
+      shownIn(slot, previous, [...(slots[slot] ?? []), id]).includes(id)
+        ? previous
+        : { ...previous, [slot]: [id] },
+    );
     setFocused(slot);
   }
-  function selectTickBlock(block: BlockSelection | null) {
-    setTickBlock(block);
+  function pickBlock(block: BlockRef | null) {
+    setPickedBlock(block);
     if (!block) return;
-    const targetMode = Object.values(slots[mode]).some((ids) => ids.includes('RT')) ? mode : 'flow';
-    if (targetMode !== mode) setMode(targetMode);
-    openFunction('RT', targetMode);
+    openFunction('RT');
   }
+  const locked = (fn: FunctionId) => !auth.isLoading && !auth.user && signedInOnly.has(fn);
   function pane(slot: string) {
-    const ids = slots[mode][slot] ?? [],
-      id = active[`${mode}:${slot}`] ?? ids[0];
+    const ids = slots[slot] ?? [],
+      shown = shownIn(slot),
+      id = shown[0];
     if (!id) return null;
+    function pick(fn: FunctionId, add: boolean) {
+      setActive((previous) => {
+        const current = shownIn(slot, previous);
+        const next = !add
+          ? [fn]
+          : current.includes(fn)
+            ? current.length > 1
+              ? current.filter((x) => x !== fn)
+              : current
+            : ids.filter((x) => x === fn || current.includes(x));
+        return { ...previous, [slot]: next };
+      });
+    }
     return (
       <section
         className={`pane${slot === 'b' ? ' wide' : ''}${max === slot ? ' max' : ''}${focused === slot ? ' focus' : ''}`}
         data-slot={slot}
-        aria-label={functions[id]}
+        aria-label={shown.map((fn) => functions[fn]).join(' and ')}
         onPointerDown={() => setFocused(slot)}
       >
         <header
@@ -308,15 +317,20 @@ function LoadedTerminal({ data }: { data: TerminalData }) {
               setMax(max === slot ? null : slot);
           }}
         >
-          <div className="tabs" role="tablist" aria-label={`Pane ${slot}`}>
+          <div
+            className="tabs"
+            role="tablist"
+            aria-label={`Pane ${slot}`}
+            aria-multiselectable="true"
+          >
             {ids.map((fn) => (
               <button
                 key={fn}
                 role="tab"
-                title={functions[fn]}
-                id={`tab-${mode}-${slot}-${fn}`}
-                aria-controls={`panel-${mode}-${slot}`}
-                aria-selected={fn === id}
+                title="Shift-click to show beside"
+                id={`tab-${slot}-${fn}`}
+                aria-controls={`panel-${slot}-${fn}`}
+                aria-selected={shown.includes(fn)}
                 tabIndex={fn === id ? 0 : -1}
                 onKeyDown={(event) => {
                   if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
@@ -337,13 +351,15 @@ function LoadedTerminal({ data }: { data: TerminalData }) {
                   tabs[next]?.click();
                   tabs[next]?.focus();
                 }}
-                onClick={() => setActive((previous) => ({ ...previous, [`${mode}:${slot}`]: fn }))}
+                onClick={(event) => pick(fn, event.shiftKey)}
+                data-locked={locked(fn) || undefined}
+                aria-description={locked(fn) ? 'Needs sign-in' : undefined}
               >
-                {fn}
+                {locked(fn) && <Lock />}
+                {functions[fn]}
               </button>
             ))}
           </div>
-          <PaneContext id={id} />
           <button
             className="maxb"
             aria-label={max === slot ? 'Restore pane' : 'Maximize pane'}
@@ -352,14 +368,19 @@ function LoadedTerminal({ data }: { data: TerminalData }) {
             {max === slot ? '↙' : '□'}
           </button>
         </header>
-        <div
-          className="pane-view"
-          role="tabpanel"
-          id={`panel-${mode}-${slot}`}
-          aria-labelledby={`tab-${mode}-${slot}-${id}`}
-          key={id}
-        >
-          <PaneView id={id} />
+        <div className={`pane-views${shown.length > 1 ? ' multi' : ''}`}>
+          {shown.map((fn) => (
+            <div
+              key={fn}
+              className="pane-view"
+              role="tabpanel"
+              id={`panel-${slot}-${fn}`}
+              aria-labelledby={`tab-${slot}-${fn}`}
+            >
+              {shown.length > 1 && <div className="pane-view-code">{functions[fn]}</div>}
+              <PaneView id={fn} />
+            </div>
+          ))}
         </div>
       </section>
     );
@@ -370,6 +391,7 @@ function LoadedTerminal({ data }: { data: TerminalData }) {
         data,
         ticker,
         setTicker,
+        openTicker,
         detail,
         pins,
         togglePin,
@@ -388,8 +410,8 @@ function LoadedTerminal({ data }: { data: TerminalData }) {
         getToken,
         tickDate,
         setTickDate,
-        tickBlock,
-        selectTickBlock,
+        pickedBlock,
+        pickBlock,
         retryBrokers: () => retry(attempt + 1),
         publications,
         tickerNews,
@@ -400,40 +422,13 @@ function LoadedTerminal({ data }: { data: TerminalData }) {
       }}
     >
       <div className="term">
-        <CommandBar
-          mode={mode}
-          setMode={setMode}
-          openFunction={openFunction}
-          maximize={() => setMax(null)}
-        />
-        <main className={`ws${max ? ' has-max' : ''}`}>
-          <SplitLayout key={mode} node={modes[mode].tree} path={mode} pane={pane} />
+        <CommandBar openFunction={openFunction} maximize={() => setMax(null)} />
+        <main className={`layout${max ? ' has-max' : ''}`}>
+          <SplitLayout node={layout.tree} path={layoutPath} pane={pane} />
         </main>
         <StatusBar />
       </div>
     </TerminalContext>
-  );
-}
-function PaneContext({ id }: { id: FunctionId }) {
-  const { ticker, detail, publications } = useTerminal();
-  if (
-    !['GP', 'KEY', 'BRK', 'BFL', 'FF', 'OB', 'RT', 'DD', 'TB', 'HDS', 'DISC', 'FEED'].includes(id)
-  )
-    return <span className="ctx" />;
-  return (
-    <div className="ctx">
-      <b>{ticker}</b>
-      {id === 'GP' && detail.kind === 'ready' && (
-        <span className="company-name" title={detail.data.name}>
-          {detail.data.name}
-        </span>
-      )}
-      <RiskFlags
-        risk={
-          publications.risks.kind === 'ready' ? publications.risks.data.risk[ticker] : undefined
-        }
-      />
-    </div>
   );
 }
 function PaneView({ id }: { id: FunctionId }) {
@@ -475,7 +470,7 @@ function PaneView({ id }: { id: FunctionId }) {
     case 'CAL':
       return <CalendarPane />;
     case 'CA':
-      return <ActionsPane />;
+      return <CorpActionsPane />;
     case 'RISK':
       return <RiskPane />;
   }
