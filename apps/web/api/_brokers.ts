@@ -5,7 +5,6 @@ import {
   accumulationSchema,
   brokerCodeSchema,
   brokerDaySchema,
-  brokerLedgerSchema,
   brokerTickerSchema,
 } from '../src/brokers.js';
 import { tickKinds } from '../src/ticks.js';
@@ -186,8 +185,8 @@ export function createBrokerHandler({
         return json({ error: 'unavailable' }, 503);
       }
       if (target === 'market') return json(accumulationSchema.parse(await response.json()), 200);
-      // A busy stock's trades are megabytes as JSON, so pass the stored gzip through for the browser to inflate.
-      if ('kind' in target || 'bars' in target || ('broker' in target && target.date))
+      // A busy stock's trades or a busy broker's year are megabytes as JSON, so pass the stored gzip through for the browser to inflate and check.
+      if ('kind' in target || 'bars' in target || 'broker' in target)
         return new Response(response.body, {
           status: 200,
           headers: {
@@ -200,7 +199,6 @@ export function createBrokerHandler({
           encodeBody: 'manual',
         } as ResponseInit);
       const source = new Response(response.body?.pipeThrough(new DecompressionStream('gzip')));
-      if ('broker' in target) return json(brokerLedgerSchema.parse(await source.json()), 200);
       const days = sourceSchema.parse(await source.json());
       days.sort((a, b) => b.date.localeCompare(a.date));
       return json({ ticker: target.ticker, days }, 200);

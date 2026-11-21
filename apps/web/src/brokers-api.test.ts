@@ -307,7 +307,7 @@ describe('private broker API', () => {
     expect(keys).toEqual(['site/bars/BBCA.json.gz', 'site/bars/TLKM.json.gz']);
   });
 
-  it('reads one broker across tickers, passes its session through gzipped and rejects bad codes', async () => {
+  it('passes one broker across tickers and its session through gzipped and rejects bad codes', async () => {
     const keys: string[] = [];
     const ledger = {
       broker: 'HP',
@@ -323,22 +323,22 @@ describe('private broker API', () => {
         },
       ],
     };
+    const year = gzipSync(JSON.stringify(ledger));
     const session = gzipSync(JSON.stringify({ date: '2026-11-10', broker: 'HP' }));
     const handle = createBrokerHandler({
       env: { WORKOS_CLIENT_ID: clientId },
       fetcher,
       store: async (key) => {
         keys.push(key);
-        return new Response(
-          key.includes('broker-ticks') ? session : gzipSync(JSON.stringify(ledger)),
-        );
+        return new Response(key.includes('broker-ticks') ? session : year);
       },
     });
     const auth = await token();
     const range = await handle(request({ token: auth, query: 'view=broker&broker=HP' }));
     expect(range.status).toBe(200);
     expectPrivate(range);
-    expect(await range.json()).toEqual(ledger);
+    expect(range.headers.get('Content-Encoding')).toBe('gzip');
+    expect(Buffer.from(await range.arrayBuffer()).equals(year)).toBe(true);
     const day = await handle(
       request({ token: auth, query: 'view=broker&broker=HP&date=2026-11-10' }),
     );
