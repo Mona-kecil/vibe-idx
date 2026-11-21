@@ -255,7 +255,7 @@ Net or gross buyers and sellers by broker over a period. The Site's twin is Brok
 _Avoid_: broker flow (that is BFL), broker table
 
 **BFL** (Broker flow):
-Each chosen broker's net buying, summed from zero across the selection or flow period, not the broker's total holding. It has no Site twin.
+Each chosen broker's net buying, summed from zero across the selection or flow period, not the broker's total holding. For one session, from a one-day selection or the 1D flow period, it sums that session's running trade minute by minute. It has no Site twin.
 _Avoid_: broker summary, accumulation chart
 
 **FF** (Foreign flow):

@@ -20,7 +20,7 @@ import { Empty, Scroll, Segments, SignInPrompt } from './ui.js';
 import { WindowedTable } from './WindowedTable.js';
 import './tick-panes.css';
 
-function SessionPicker() {
+export function SessionPicker() {
   const { dates, date, setTickDate } = useSession();
   const index = date ? dates.indexOf(date) : -1;
   return (
