@@ -58,7 +58,7 @@ const columns: { key: SortKey; label: string; unit?: string; title?: string }[] 
   {
     key: 'change_pct',
     label: 'Change %',
-    title: 'Latest close compared with the close N trading days earlier.',
+    title: 'Latest close compared with the close N sessions earlier.',
   },
   {
     key: 'value',
@@ -75,7 +75,7 @@ const columns: { key: SortKey; label: string; unit?: string; title?: string }[] 
   {
     key: 'rel_volume',
     label: 'Volume × average',
-    title: 'Mean daily volume in the window ÷ mean daily volume in the 20 trading days before it.',
+    title: 'Mean daily volume in the window ÷ mean daily volume in the 20 sessions before it.',
   },
   {
     key: 'acc',

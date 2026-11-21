@@ -39,15 +39,15 @@ A scenarios file can live anywhere and default-exports an array of scenarios:
 
   import type { Scenario } from '${fileURLToPath(new URL('scenario.ts', import.meta.url))}';
   export default [{
-    name: 'brk-1030',                      names the files
-    path: '/terminal?t=BBCA&l=flow',       the page
+    name: 'broker-summary-1030',                    names the files
+    path: '/terminal?t=BBCA',       the page
     clock: '10:30',                        HH:MM in the as-of session, or close (the default)
     signedOut: false,
     size: '1440x900',
-    click: ['BRK'],                        tabs or buttons by accessible name, in order
+    click: ['Broker summary'],                        tabs or buttons by accessible name, in order
     fill: [['Command', 'TLKM']],           fields by accessible name, each then Enter
     steps: async (page) => {},             a Playwright Page, for anything else, after clicks and fills
-    within: 'BRK',                         the panel or region to shoot; the window when left out
+    within: 'Broker summary',                         the panel or region to shoot; the window when left out
     notes: [{ at: 'role=tab[name="1D"]', text: 'What the reader should see', on: 'after' }],
   }] satisfies Scenario[];
 

@@ -19,7 +19,7 @@ const context: {
   tickerNews: { kind: 'loading' },
   publications: {
     news: { kind: 'loading' },
-    actions: { kind: 'loading' },
+    corpActions: { kind: 'loading' },
     calendar: { kind: 'loading' },
     risks: { kind: 'loading' },
   },
@@ -103,7 +103,7 @@ describe('company feed', () => {
       kind: 'ready',
       data: { news: [], sources: {}, errors: [], as_of: '2026-11-11' },
     };
-    context.publications.actions = {
+    context.publications.corpActions = {
       kind: 'ready',
       data: {
         actions: [
@@ -153,16 +153,16 @@ describe('company feed', () => {
       '2026-11-09T12:00:00.000Z',
     ]);
     expect(host.querySelectorAll('th')).toHaveLength(0);
-    expect(host.querySelector('[aria-label="Upcoming actions"]')?.children).toHaveLength(2);
+    expect(host.querySelector('[aria-label="Upcoming corp actions"]')?.children).toHaveLength(2);
     expect(host.querySelector('[aria-label="Recent items"]')?.children).toHaveLength(4);
     expect(host.textContent).toContain('50 IDR per share');
     expect(host.querySelector('.feed-status')?.firstElementChild?.textContent).toBe(
-      'Actions as of 11 Nov 2026',
+      'Corp actions as of 11 Nov 2026',
     );
     expect(host.textContent).not.toContain('Other company');
   });
   it('keeps date-only events imprecise and moves timed events into history once they pass', async () => {
-    context.publications.actions = {
+    context.publications.corpActions = {
       kind: 'ready',
       data: {
         actions: [
@@ -243,7 +243,7 @@ describe('company feed', () => {
   });
   it('names missing coverage and empty results separately, and clears ticker-specific items', async () => {
     context.tickerNews = { kind: 'unavailable' };
-    context.publications.actions = { kind: 'ready', data: { actions: [] } };
+    context.publications.corpActions = { kind: 'ready', data: { actions: [] } };
     await render();
     expect(host.textContent).toContain('Ticker news unavailable');
     expect(host.querySelector('[data-feed-empty="action"]')?.textContent).toBe(

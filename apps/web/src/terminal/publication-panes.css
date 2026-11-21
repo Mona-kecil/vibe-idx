@@ -53,24 +53,24 @@
   color: var(--accent);
   font-size: 10px;
 }
-.terminal-page .actions td:not([colspan]):nth-child(-n + 2) {
+.terminal-page .corp-actions td:not([colspan]):nth-child(-n + 2) {
   width: 1%;
 }
-.terminal-page .actions td:not([colspan]):first-child {
+.terminal-page .corp-actions td:not([colspan]):first-child {
   white-space: normal;
 }
-.terminal-page .actions td:nth-child(3) {
+.terminal-page .corp-actions td:nth-child(3) {
   text-wrap: pretty;
 }
-.terminal-page .actions .action-amount {
+.terminal-page .corp-actions .action-amount {
   white-space: nowrap;
 }
 .terminal-page .calendar td:nth-child(3),
-.terminal-page .actions td:nth-child(3) {
+.terminal-page .corp-actions td:nth-child(3) {
   white-space: normal;
   min-width: 140px;
 }
-.terminal-page .actions td {
+.terminal-page .corp-actions td {
   vertical-align: baseline;
 }
 .terminal-page .day td {
@@ -82,8 +82,8 @@
 .terminal-page .past {
   color: var(--muted);
 }
-.terminal-page .actions .past .accent,
-.terminal-page .actions .past .ticker {
+.terminal-page .corp-actions .past .accent,
+.terminal-page .corp-actions .past .ticker {
   color: inherit;
 }
 .terminal-page .details td {

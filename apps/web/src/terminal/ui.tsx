@@ -8,12 +8,22 @@ export const direction = (value: number | null | undefined) =>
   value && value > 0 ? 'up' : value && value < 0 ? 'dn' : 'mut';
 export const percent = (value: number | null) =>
   value === null ? '—' : `${signed(value, (n) => nf(n, 2))}%`;
+/** Marks something only a signed-in user can see. It stays clickable, and opens the sign-in prompt. */
+export function Lock() {
+  return (
+    <svg className="lock" aria-hidden="true" width="8" height="10" viewBox="0 0 8 10">
+      <path d="M2 4.5V3a2 2 0 0 1 4 0v1.5" fill="none" stroke="currentColor" />
+      <rect x="0.5" y="4.5" width="7" height="5" rx="1" fill="currentColor" />
+    </svg>
+  );
+}
 export function Segments<T extends string>({
   label,
   values,
   value,
   onChange,
   disabled = [],
+  locked = [],
   renderOption,
   optionLabel,
 }: {
@@ -22,6 +32,8 @@ export function Segments<T extends string>({
   value: T;
   onChange: (value: T) => void;
   disabled?: readonly T[];
+  /** Options only a signed-in user can use. */
+  locked?: readonly T[];
   renderOption?: (option: T) => ReactNode;
   optionLabel?: (option: T) => string;
 }) {
@@ -34,6 +46,8 @@ export function Segments<T extends string>({
           aria-pressed={option === value}
           aria-label={optionLabel?.(option)}
           disabled={disabled.includes(option)}
+          data-locked={locked.includes(option) || undefined}
+          aria-description={locked.includes(option) ? 'Needs sign-in' : undefined}
           tabIndex={option === value ? 0 : -1}
           onClick={() => onChange(option)}
           onKeyDown={(event) => {
@@ -56,6 +70,7 @@ export function Segments<T extends string>({
               [values.indexOf(target)]?.focus();
           }}
         >
+          {locked.includes(option) && <Lock />}
           {renderOption ? renderOption(option) : option}
         </button>
       ))}
@@ -134,12 +149,12 @@ export function TickerLink({ ticker }: { ticker: string }) {
   return (
     <a
       className="ticker"
-      href={`/terminal?t=${encodeURIComponent(ticker)}&l=focus`}
+      href={`/terminal?t=${encodeURIComponent(ticker)}`}
       onClick={(event) => {
         if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0)
           return;
         event.preventDefault();
-        terminal.setTicker(ticker);
+        terminal.openTicker(ticker);
       }}
     >
       {ticker}
@@ -195,7 +210,7 @@ export function StatusBar() {
   const low = Math.min(...values),
     high = Math.max(...values);
   return (
-    <footer className="status">
+    <footer className="status-bar">
       <span className="hidenarrow" title="Weekday trading schedule; holidays are not reflected">
         {sessionLabel(clock)}
       </span>

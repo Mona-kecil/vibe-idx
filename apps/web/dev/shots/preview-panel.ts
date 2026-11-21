@@ -3,7 +3,7 @@ import type { Scenario } from '../scenario.js';
 export default [
   {
     name: 'preview-panel',
-    path: '/terminal?t=BBCA&l=flow',
+    path: '/terminal?t=BBCA',
     clock: '10:30',
     panel: true,
     steps: async (page) => {
@@ -23,7 +23,7 @@ export default [
         text: 'Signed in: untick to see the signed-out site.',
       },
       {
-        at: 'role=tab[name="DD"]',
+        at: 'role=tab[name="Done detail"]',
         text: 'Done detail shows the session before, since running trade is published after the close.',
       },
     ],

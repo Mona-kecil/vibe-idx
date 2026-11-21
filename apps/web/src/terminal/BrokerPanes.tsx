@@ -15,6 +15,13 @@ import { terminalChart, chartDate } from './charts.js';
 import { ChartAttribution as Attribution } from '../ChartAttribution.js';
 import './broker-panes.css';
 
+/** Who owns the broker firm, which colours its code. Not where its clients are based. */
+const ownership = {
+  local: 'Domestic-owned',
+  foreign: 'Foreign-owned',
+  government: 'State-owned',
+  unknown: 'Ownership unknown',
+} as const;
 function BrokerGate({ children }: { children: (days: BrokerDay[]) => ReactNode }) {
   const { brokers, authState, signIn, brokerError, retryBrokers } = useTerminal();
   if (authState !== 'signed-in') return <SignInPrompt />;
@@ -169,7 +176,7 @@ function Summary({ days }: { days: BrokerDay[] }) {
           volume = gross ? shares : shares - otherShares;
         return {
           code: row.code,
-          type: row.broker_type === 'government' ? 'GOV' : row.broker_type.toUpperCase(),
+          owner: row.broker_type,
           amount,
           volume,
           avg: which === 'buy' ? row.buyAvg : row.sellAvg,
@@ -205,8 +212,8 @@ function Summary({ days }: { days: BrokerDay[] }) {
               <td className="l">
                 {gross ? (
                   <button
-                    title={`${brokerName(row.code)}\n${row.type}`}
-                    className={`type-${row.type}`}
+                    title={`${brokerName(row.code)}\n${ownership[row.owner]}`}
+                    className={`owner-${row.owner}`}
                     aria-pressed={pair === row.code}
                     onClick={() => setPair(pair === row.code ? null : row.code)}
                   >
@@ -214,8 +221,8 @@ function Summary({ days }: { days: BrokerDay[] }) {
                   </button>
                 ) : (
                   <span
-                    title={`${brokerName(row.code)}\n${row.type}`}
-                    className={`type-${row.type}`}
+                    title={`${brokerName(row.code)}\n${ownership[row.owner]}`}
+                    className={`owner-${row.owner}`}
                   >
                     {row.code}
                   </span>

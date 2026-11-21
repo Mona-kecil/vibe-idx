@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import {
-  fetchActions,
+  fetchCorpActions,
   fetchBrokers,
   fetchCalendar,
   fetchNews,
@@ -12,7 +12,7 @@ import {
 } from './sources';
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { NewsPane, CalendarPane, ActionsPane, RiskPane } from './PublicationPanes';
+import { NewsPane, CalendarPane, CorpActionsPane, RiskPane } from './PublicationPanes';
 import { calendarEventSchema } from './contracts';
 afterEach(() => vi.unstubAllGlobals());
 const timestamp = '2026-11-09T08:00:00Z';
@@ -68,7 +68,7 @@ describe('terminal publications', () => {
     vi.stubGlobal('fetch', fetcher);
     const news = await fetchNews(),
       calendar = await fetchCalendar(),
-      actions = await fetchActions(),
+      actions = await fetchCorpActions(),
       risk = await fetchRisk();
     expect(news.kind === 'ready' && news.data.news[0]?.sum).toBe('Own summary');
     expect(calendar.kind === 'ready' && calendar.data.as_of).toBe(timestamp);
@@ -92,7 +92,7 @@ describe('terminal publications', () => {
         },
       ]),
     );
-    const actions = await fetchActions();
+    const actions = await fetchCorpActions();
     expect(actions.kind === 'ready' && actions.data.actions[0]?.ticker).toBe('BREN');
     fetcher.mockResolvedValueOnce(
       Response.json({
@@ -246,27 +246,27 @@ const context: {
   publications: {
     news: Awaited<ReturnType<typeof fetchNews>>;
     calendar: Awaited<ReturnType<typeof fetchCalendar>>;
-    actions: Awaited<ReturnType<typeof fetchActions>>;
+    corpActions: Awaited<ReturnType<typeof fetchCorpActions>>;
     risks: Awaited<ReturnType<typeof fetchRisk>>;
   };
   tickerNews: Resource<NewsArticle[]>;
   ticker: string;
   filters: { news: string; cal: string; ca: string; risk: string };
   filter: ReturnType<typeof vi.fn>;
-  setTicker: ReturnType<typeof vi.fn>;
+  openTicker: ReturnType<typeof vi.fn>;
   data: { health: { corporate_actions: string; risk: string } };
 } = {
   publications: {
     news: { kind: 'unavailable' },
     calendar: { kind: 'unavailable' },
-    actions: { kind: 'unavailable' },
+    corpActions: { kind: 'unavailable' },
     risks: { kind: 'unavailable' },
   },
   tickerNews: { kind: 'unavailable' },
   ticker: 'BBRI',
   filters: { news: 'ID', cal: 'ALL', ca: 'ALL', risk: 'ALL' },
   filter: vi.fn<(key: string, value: string) => void>(),
-  setTicker: vi.fn<(ticker: string) => void>(),
+  openTicker: vi.fn<(ticker: string) => void>(),
   data: { health: { corporate_actions: '2026-11-09', risk: '2026-11-09' } },
 };
 vi.mock('./state', () => ({ useTerminal: () => context }));
@@ -279,7 +279,7 @@ describe('publication pane interactions', () => {
     context.filters.ca = 'ALL';
     context.filters.cal = 'ALL';
     context.ticker = 'BBRI';
-    context.setTicker.mockClear();
+    context.openTicker.mockClear();
     host = document.createElement('div');
     document.body.append(host);
     root = createRoot(host);
@@ -320,7 +320,7 @@ describe('publication pane interactions', () => {
     expect(items.every((item) => item.target === '_blank' && item.rel === 'noreferrer')).toBe(true);
   });
   it('expands a corporate action without switching ticker and keeps the ticker link active', async () => {
-    context.publications.actions = {
+    context.publications.corpActions = {
       kind: 'ready',
       data: {
         actions: [
@@ -337,15 +337,15 @@ describe('publication pane interactions', () => {
         ],
       },
     };
-    await act(async () => root.render(createElement(ActionsPane)));
-    await click('.actions td.l button');
+    await act(async () => root.render(createElement(CorpActionsPane)));
+    await click('.corp-actions td.l button');
     expect(host.querySelector('.details')?.textContent).toContain('10 Nov 2026');
-    expect(context.setTicker).not.toHaveBeenCalled();
+    expect(context.openTicker).not.toHaveBeenCalled();
     expect(host.querySelector('.details')?.textContent).toContain('11 Nov, 10:00 WIB');
     const link = host.querySelector('a.ticker');
     if (!(link instanceof HTMLAnchorElement)) throw new Error('Missing ticker');
     await act(async () => link.click());
-    expect(context.setTicker).toHaveBeenCalledWith('BBCA');
+    expect(context.openTicker).toHaveBeenCalledWith('BBCA');
   });
   it('leaves date-only times empty, keeps past rows and reveals forecast values on expansion', async () => {
     vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-11-11T06:00:00Z'));
@@ -386,7 +386,7 @@ describe('publication pane interactions', () => {
   });
   it('keeps today’s action steps upcoming in WIB and updates the target for ticker filters', async () => {
     vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-11-10T18:00:00Z'));
-    context.publications.actions = {
+    context.publications.corpActions = {
       kind: 'ready',
       data: {
         actions: [
@@ -411,21 +411,21 @@ describe('publication pane interactions', () => {
         ],
       },
     };
-    await act(async () => root.render(createElement(ActionsPane)));
-    expect(host.querySelectorAll('.actions .past')).toHaveLength(1);
+    await act(async () => root.render(createElement(CorpActionsPane)));
+    expect(host.querySelectorAll('.corp-actions .past')).toHaveLength(1);
     expect(host.querySelector('.past')?.textContent).toContain('CUMBBCA');
     expect(host.querySelector('[data-upcoming="true"]')?.textContent).toContain('EXBBCA');
     context.filters.ca = 'TICKER';
-    await act(async () => root.render(createElement(ActionsPane)));
-    expect(host.querySelectorAll('.actions .ticker')).toHaveLength(1);
+    await act(async () => root.render(createElement(CorpActionsPane)));
+    expect(host.querySelectorAll('.corp-actions .ticker')).toHaveLength(1);
     expect(host.querySelector('[data-upcoming="true"]')?.textContent).toContain('RUPSBBRI');
     context.ticker = 'BBCA';
-    await act(async () => root.render(createElement(ActionsPane)));
-    expect(host.querySelectorAll('.actions .ticker')).toHaveLength(3);
+    await act(async () => root.render(createElement(CorpActionsPane)));
+    expect(host.querySelectorAll('.corp-actions .ticker')).toHaveLength(3);
     expect(host.querySelector('[data-upcoming="true"]')?.textContent).toContain('EXBBCA');
     vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-11-13T06:00:00Z'));
-    await act(async () => root.render(createElement(ActionsPane)));
-    expect(host.querySelectorAll('.actions .past')).toHaveLength(3);
+    await act(async () => root.render(createElement(CorpActionsPane)));
+    expect(host.querySelectorAll('.corp-actions .past')).toHaveLength(3);
     expect(host.querySelector('[data-upcoming="true"]')).toBeNull();
   });
   it('formats risk dates and exposes full flag meanings without hover', async () => {

@@ -3,6 +3,7 @@ import { AccountControls, CompactAccountControls } from './BrokerPanel.js';
 import { TerminalLink } from './TerminalLink.js';
 import { useNarrow } from './useNarrow.js';
 import './site.css';
+import { PinIcon } from './PinIcon.js';
 
 type Page = 'today' | 'market' | 'ticker';
 type Listing = { ticker: string; name: string };
@@ -192,9 +193,7 @@ export function PinButton({
       aria-pressed={pinned}
       onClick={(e) => toggle(e.currentTarget)}
     >
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M7 3h10v18l-5-3-5 3z" />
-      </svg>
+      <PinIcon />
     </button>
   );
 }

@@ -1,14 +1,5 @@
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
-.terminal-boot {
-  position: fixed;
-  inset: 0;
-  z-index: 1000;
-  overflow: hidden;
-}
-.terminal-boot--holding {
-  background: #050505;
-}
-.terminal-boot-status {
+.terminal-page .skeleton-status {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -182,7 +173,7 @@
   color: var(--muted);
   font-size: 10px;
 }
-.terminal-page .status {
+.terminal-page .status-bar {
   display: flex;
   gap: 12px;
   align-items: center;
@@ -193,21 +184,21 @@
   font-size: 10px;
   overflow: hidden;
 }
-.terminal-page .status .asof {
+.terminal-page .status-bar .asof {
   display: flex;
   flex: none;
   gap: 12px;
   align-items: center;
   margin-left: auto;
 }
-.terminal-page .status .stale {
+.terminal-page .status-bar .stale {
   color: var(--accent);
 }
-.terminal-page .status > .hidenarrow {
+.terminal-page .status-bar > .hidenarrow {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.terminal-page .status .spark {
+.terminal-page .status-bar .spark {
   flex: none;
 }
 .terminal-page .flags {
@@ -228,8 +219,8 @@
   color: #b494db;
 }
 @media (max-width: 1150px) {
-  .terminal-page .status .hidenarrow,
-  .terminal-page .status .spark {
+  .terminal-page .status-bar .hidenarrow,
+  .terminal-page .status-bar .spark {
     display: none;
   }
 }

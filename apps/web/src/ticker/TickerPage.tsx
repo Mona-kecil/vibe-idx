@@ -111,7 +111,7 @@ function TickerDetail({
   const [selection, select] = useState<Selection>(null),
     [period, setPeriod] = useState<Period>(openingPeriod);
   const risk = useRiskFor(data.ticker),
-    actions = usePublished('actions');
+    corpActions = usePublished('corpActions');
   const dailyDate =
     health?.five_pct ??
     data.changes
@@ -121,7 +121,7 @@ function TickerDetail({
     null;
   const events = useMemo(() => ownershipEvents(data), [data]);
   const series = useMemo(() => holdingSeries(data, dailyDate, events), [data, dailyDate, events]);
-  const actionList = actions.kind === 'ready' ? actions.data.actions : null;
+  const actionList = corpActions.kind === 'ready' ? corpActions.data.actions : null;
   const marks = useMemo(
     () => chartMarks(data, events, actionList ?? []),
     [data, events, actionList],
@@ -136,8 +136,8 @@ function TickerDetail({
     ytd = last && first?.close ? (last.close / first.close - 1) * 100 : null;
   const visible = visiblePrices(prices, period);
   const chip =
-    actions.kind === 'ready'
-      ? nextAction(actions.data.actions, data.ticker, calendarDate(new Date().toISOString()))
+    corpActions.kind === 'ready'
+      ? nextAction(corpActions.data.actions, data.ticker, calendarDate(new Date().toISOString()))
       : null;
   const stats = last
     ? [

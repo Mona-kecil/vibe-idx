@@ -1,7 +1,7 @@
 import { Fragment, useRef, useState, type ReactNode, type PointerEvent } from 'react';
 import { z } from 'zod';
 import { readStorage, writeStorage } from '../watchlist.js';
-import type { FunctionId, Mode } from './state';
+import type { FunctionId } from './state';
 import './layout.css';
 
 export type LayoutNode =
@@ -12,50 +12,25 @@ export type LayoutNode =
       basis?: (number | null)[];
       children: LayoutNode[];
     };
-export const modes: Record<Mode, { tree: LayoutNode; slots: Record<string, FunctionId[]> }> = {
-  grid: {
-    tree: {
-      direction: 'row',
-      sizes: [38, 40, 22],
-      basis: [576, null, null],
-      children: [
-        'c',
-        { direction: 'col', sizes: [30, 70], basis: [264, null], children: ['a', 'd'] },
-        'b',
-      ],
-    },
-    slots: {
-      a: ['WL'],
-      b: ['NEWS', 'CA'],
-      c: ['SIG'],
-      d: ['HEAT', 'MOV'],
-    },
+/** Where the split sizes are stored; the loading skeleton reads the same ones. */
+export const layoutPath = 'terminal';
+export const layout: { tree: LayoutNode; slots: Record<string, FunctionId[]> } = {
+  tree: {
+    direction: 'row',
+    sizes: [20, 48, 32],
+    basis: [352, null, 502],
+    children: [
+      'a',
+      { direction: 'col', sizes: [55, 45], children: ['b', 'e'] },
+      { direction: 'col', sizes: [50, 50], children: ['c', 'd'] },
+    ],
   },
-  focus: {
-    tree: {
-      direction: 'row',
-      sizes: [64, 36],
-      children: [{ direction: 'col', sizes: [50, 50], children: ['b', 'f'] }, 'c'],
-    },
-    slots: {
-      b: ['GP'],
-      c: ['FEED'],
-      f: ['HDS'],
-    },
-  },
-  flow: {
-    tree: {
-      direction: 'row',
-      sizes: [52, 24, 24],
-      basis: [null, 475, 446],
-      children: [{ direction: 'col', sizes: [50, 50], children: ['b', 'e'] }, 'c', 'd'],
-    },
-    slots: {
-      b: ['GP'],
-      c: ['DD'],
-      d: ['OB', 'RT'],
-      e: ['FF', 'BRK', 'BFL', 'TB'],
-    },
+  slots: {
+    a: ['MOV', 'WL', 'SIG', 'CA'],
+    b: ['HEAT', 'GP'],
+    c: ['NEWS', 'DD'],
+    d: ['KEY', 'RT', 'OB', 'TB'],
+    e: ['HDS', 'BRK', 'BFL', 'FF', 'FEED'],
   },
 };
 export function SplitLayout({

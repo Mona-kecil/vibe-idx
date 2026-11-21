@@ -592,7 +592,7 @@ describe('chart windows', () => {
     expect(visibleWindow(10, { from: 20, to: 30 })).toBeNull();
     expect(visibleWindow(10, null)).toBeNull();
   });
-  it('finds the trading days inside a selection even when its edges are not trading days', () => {
+  it('finds the sessions inside a selection even when its edges are not sessions', () => {
     expect(selectedRows(dates, { anchor: '2026-08-21', end: '2026-08-11' })).toEqual({
       first: 1,
       last: 3,
@@ -641,7 +641,7 @@ describe('timeline cleanup and chart marks', () => {
     expect(withoutSource('Title | CNBC Indonesia', 'CNBC Indonesia')).toBe('Title');
     expect(withoutSource('Title', '')).toBe('Title');
   });
-  it('snaps marks to the next trading day and merges same-day marks of one kind', () => {
+  it('snaps marks to the next session and merges same-session marks of one kind', () => {
     const data = tickerSchema.parse({
       ...tickerSchema.parse(tpiaFixture),
       ticker: 'TEST',

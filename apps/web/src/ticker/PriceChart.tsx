@@ -41,7 +41,7 @@ function SelectionLabel({ prices, selection }: { prices: Price[]; selection: Sel
       <span className="selection-dates">{rangeText(b.start, b.end)}</span>
       <span className="selection-count">
         <span>
-          {totals.rows.length} trading {totals.rows.length === 1 ? 'day' : 'days'}
+          {totals.rows.length} {totals.rows.length === 1 ? 'session' : 'sessions'}
         </span>
         {totals.suspended > 0 && <span>{totals.suspended} suspended</span>}
       </span>

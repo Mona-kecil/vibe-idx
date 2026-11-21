@@ -201,12 +201,26 @@
   cursor: pointer;
 }
 .terminal-page .pin-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-width: 24px;
   min-height: 24px;
   color: var(--muted);
+  vertical-align: middle;
 }
 .terminal-page .pin-button[aria-pressed='true'] {
   color: var(--accent);
+}
+.terminal-page .pin-button .pin-icon {
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+}
+.terminal-page .pin-button[aria-pressed='true'] .pin-icon {
+  fill: currentColor;
 }
 .terminal-page .quote-ticker {
   padding-top: 1px;
@@ -221,6 +235,17 @@
   column-gap: 24px;
   flex: 1;
   min-height: 0;
+}
+.terminal-page .pane-view:has(> .movers),
+.terminal-page .pane-view:has(.movers) {
+  container-type: inline-size;
+}
+@container (max-width: 560px) {
+  .terminal-page .movers {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: repeat(2, minmax(0, 1fr));
+    row-gap: 12px;
+  }
 }
 .terminal-page .mover-list {
   display: flex;

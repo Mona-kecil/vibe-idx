@@ -77,6 +77,7 @@ export function PricePane() {
         <Segments
           label="Chart timeframe"
           values={['W', 'D', '4H', '1H', '15M']}
+          locked={authState === 'signed-out' ? ['4H', '1H', '15M'] : []}
           value={timeframe}
           onChange={setTimeframe}
         />

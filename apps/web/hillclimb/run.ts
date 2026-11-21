@@ -6,7 +6,7 @@ import { chromium, type Browser } from 'playwright-core';
 import { frozenStore } from './network';
 import { questions } from './questions';
 import { devServer } from './server';
-import { modes, Ui } from './ui';
+import { Ui } from './ui';
 
 const { values: args } = parseArgs({
   options: {
@@ -41,7 +41,7 @@ type Session = {
   steps: (number | null)[];
   errors: string[];
   log: string[][];
-  controls: Record<string, number>;
+  controls: number;
 };
 
 async function session(
@@ -66,19 +66,13 @@ async function session(
   });
   const ui = new Ui(page);
 
-  const controls: Record<string, number> = {};
-  for (const mode of modes) {
-    await page.goto(`${url}/terminal?t=${ticker}&l=${mode}`);
-    await ui.settle();
-    controls[mode] = await page.evaluate(countVisible, interactive);
-    if (args.shots && ticker === tickers[0]) {
-      await mkdir(args.shots, { recursive: true });
-      await page.screenshot({ path: join(args.shots, `${viewport.name}-${mode}.png`) });
-    }
-  }
-
   await page.goto(`${url}/terminal?t=${ticker}`);
   await ui.settle();
+  const controls = await page.evaluate(countVisible, interactive);
+  if (args.shots && ticker === tickers[0]) {
+    await mkdir(args.shots, { recursive: true });
+    await page.screenshot({ path: join(args.shots, `${viewport.name}.png`) });
+  }
   const steps: (number | null)[] = [],
     log: string[][] = [];
   for (const [index, question] of questions.entries()) {
@@ -174,12 +168,9 @@ try {
           .join(''),
       );
     }
-    for (const mode of modes)
-      console.log(
-        [`ctl ${mode}`, ...results.map((r) => String(r.controls[mode]))]
-          .map((c) => c.padStart(10))
-          .join(''),
-      );
+    console.log(
+      ['ctl', ...results.map((r) => String(r.controls))].map((c) => c.padStart(10)).join(''),
+    );
     if (args.verbose)
       for (const r of results)
         for (const [index, lines] of r.log.entries())

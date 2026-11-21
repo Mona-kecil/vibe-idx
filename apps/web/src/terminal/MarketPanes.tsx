@@ -1,6 +1,7 @@
+import { PinIcon } from '../PinIcon.js';
 import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import type { SignalFeed, Stock } from '../data';
-import { treemap } from '../treemap.js';
+import { heatmapLayout } from '../heatmap-layout.js';
 import { nf, short, signed, dateText } from '../ticker/format.js';
 import { useTerminal } from './state.js';
 import { Empty, Scroll, Segments, TickerLink, percent, direction } from './ui.js';
@@ -42,17 +43,17 @@ export function PinButton({
       title={label}
       onClick={() => togglePin(ticker)}
     >
-      {showTicker ? label : pinned ? '★' : '☆'}
+      {showTicker ? label : <PinIcon />}
     </button>
   );
 }
 function selectRow(
   event: MouseEvent<HTMLTableRowElement>,
   ticker: string,
-  setTicker: (ticker: string) => void,
+  openTicker: (ticker: string) => void,
 ) {
   if (event.target instanceof Element && event.target.closest('a,button')) return;
-  setTicker(ticker);
+  openTicker(ticker);
 }
 function QuoteTable({
   stocks,
@@ -65,7 +66,7 @@ function QuoteTable({
   foreign?: boolean;
   columns?: 'quote' | 'change' | 'value';
 }) {
-  const { setTicker } = useTerminal();
+  const { openTicker } = useTerminal();
   return (
     <table
       className="quote-table"
@@ -86,7 +87,7 @@ function QuoteTable({
           <tr
             key={stock.ticker}
             className={`ticker-row${stock.ticker === selected ? ' on' : ''}`}
-            onClick={(event) => selectRow(event, stock.ticker, setTicker)}
+            onClick={(event) => selectRow(event, stock.ticker, openTicker)}
           >
             <td className="quote-ticker">
               <PinButton ticker={stock.ticker} />
@@ -236,7 +237,7 @@ function SignalDetail({ row }: { row: SignalFeed[number] }) {
   }
 }
 export function SignalsPane() {
-  const { data, filters, filter, ticker, setTicker } = useTerminal();
+  const { data, filters, filter, ticker, openTicker } = useTerminal();
   const rows = data.feed
     .filter(
       (row) =>
@@ -276,7 +277,7 @@ export function SignalsPane() {
                   <tr
                     key={`${row.ticker}:${row.kind}:${row.date}:${i}`}
                     className={`ticker-row${row.ticker === ticker ? ' on' : ''}`}
-                    onClick={(event) => selectRow(event, row.ticker, setTicker)}
+                    onClick={(event) => selectRow(event, row.ticker, openTicker)}
                   >
                     <td className="quote-ticker">
                       <PinButton ticker={row.ticker} />
@@ -304,7 +305,7 @@ function heatColour(change: number) {
   return `rgb(${[43, 48, 46].map((n, i) => Math.round(n + ((end[i] ?? 0) - n) * strength)).join(',')})`;
 }
 export function HeatmapPane() {
-  const { data, ticker, setTicker } = useTerminal();
+  const { data, ticker, openTicker } = useTerminal();
   const ref = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
   useEffect(() => {
@@ -331,14 +332,14 @@ export function HeatmapPane() {
         ))}
       </div>
       <div ref={ref} className="heat">
-        {treemap(stocks, size.width, size.height).map((tile) => {
+        {heatmapLayout(stocks, size.width, size.height).map((tile) => {
           return (
             <button
               key={tile.item.ticker}
               className={`tile${ticker === tile.item.ticker ? ' on' : ''}`}
               aria-label={`${tile.item.ticker} ${tile.item.name}, change ${percent(tile.item.change_pct)}, last ${nf(tile.item.close)} IDR, traded value ${nf(tile.item.value)} IDR`}
               title={`${tile.item.name}\n${nf(tile.item.close)} IDR\n${nf(tile.item.value)} IDR value`}
-              onClick={() => setTicker(tile.item.ticker)}
+              onClick={() => openTicker(tile.item.ticker)}
               style={{
                 left: tile.x + 1,
                 top: tile.y + 1,

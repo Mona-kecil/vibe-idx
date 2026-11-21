@@ -36,13 +36,13 @@
 .terminal-page .pairable .broker-ledger button {
   cursor: pointer;
 }
-.terminal-page .broker-ledger .type-LOCAL {
+.terminal-page .broker-ledger .owner-local {
   color: var(--broker-local);
 }
-.terminal-page .broker-ledger .type-GOV {
+.terminal-page .broker-ledger .owner-government {
   color: var(--broker-gov);
 }
-.terminal-page .broker-ledger .type-FOREIGN {
+.terminal-page .broker-ledger .owner-foreign {
   color: var(--broker-foreign);
 }
 .terminal-page .broker-date {

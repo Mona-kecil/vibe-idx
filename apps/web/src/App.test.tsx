@@ -3,7 +3,6 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { App } from './App';
-import { arrivalMs } from './Void';
 import { tickerSchema, type SignalFeed, type Ticker } from './data';
 import { brokerRow } from './test-builders';
 import { HoldingsChart } from './ticker/Ownership';
@@ -398,7 +397,7 @@ describe('daily briefing', () => {
     expect(host.querySelectorAll('.tile')).toHaveLength(0);
     expect(host.querySelector('.signals-empty')?.textContent).toBe('No signals on the latest day.');
   });
-  it('shows the watchlist right under the pulse line with each stock risk badge', async () => {
+  it('shows the watchlist right under the pulse line with the risk flags of each ticker', async () => {
     pin('AAAA', 'BBBB');
     await render();
     const watchlist = element('.watchlist', HTMLElement);
@@ -603,7 +602,7 @@ describe('daily briefing', () => {
     expect(navigate).toHaveBeenCalledWith('/t/BBCA');
     expect(auth.getAccessToken).not.toHaveBeenCalled();
   });
-  it('seeds saved workspace tickers once, shows snapshot prices and the latest disclosure, and persists unpinning', async () => {
+  it('seeds the watchlist from legacy saved tickers once, shows snapshot prices and the latest disclosure, and persists unpinning', async () => {
     window.localStorage.setItem(
       'vibe-idx-workspace-v1',
       JSON.stringify({ panels: [{ state: { ticker: 'BBCA' } }, { state: { ticker: 'BBCA' } }] }),
@@ -655,13 +654,11 @@ describe('daily briefing', () => {
 });
 
 describe('terminal availability', () => {
-  function desktop(reducedMotion = false) {
+  function desktop() {
     const matchMedia = window.matchMedia.bind(window);
     vi.spyOn(window, 'matchMedia').mockImplementation((query) => {
       const media = matchMedia(query);
-      vi.spyOn(media, 'matches', 'get').mockReturnValue(
-        query === '(prefers-reduced-motion: reduce)' ? reducedMotion : true,
-      );
+      vi.spyOn(media, 'matches', 'get').mockReturnValue(true);
       return media;
     });
     window.history.replaceState(null, '', '/terminal');
@@ -672,42 +669,7 @@ describe('terminal availability', () => {
       await vi.dynamicImportSettled();
     });
   }
-  async function advance(ms: number) {
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(ms);
-    });
-  }
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  it('covers the desktop load with one loading announcement and keeps fast loads through the minimum and fade', async () => {
-    vi.useFakeTimers();
-    desktop();
-    await openTerminal();
-    expect(host.querySelector('.terminal-boot canvas[aria-hidden="true"]')).not.toBeNull();
-    expect(
-      [...host.querySelectorAll('[role="status"]')].filter(
-        (node) => node.textContent === 'Loading terminal…',
-      ),
-    ).toHaveLength(1);
-    expect(host.querySelector('.term')).not.toBeNull();
-    expect(host.querySelector('.term')?.closest('[inert]')).not.toBeNull();
-    await advance(799);
-    expect(host.querySelector('.terminal-boot')).not.toBeNull();
-    await advance(1);
-    expect(host.querySelector('.terminal-boot')).not.toBeNull();
-    await advance(449);
-    expect(host.querySelector('.terminal-boot')).not.toBeNull();
-    await advance(1);
-    expect(host.querySelector('.terminal-boot')).toBeNull();
-    expect(host.querySelector('.term')).not.toBeNull();
-    expect(host.querySelector('[inert]')).toBeNull();
-    expect(host.textContent).not.toContain('Loading terminal…');
-  });
-
-  it('waits for slow data even after the minimum has elapsed', async () => {
-    vi.useFakeTimers();
+  it('shows the Terminal layout as a skeleton while its data loads, then the Terminal in its place', async () => {
     desktop();
     let release = () => {};
     const pending = new Promise<void>((resolve) => {
@@ -720,54 +682,41 @@ describe('terminal availability', () => {
       return baseFetch(input);
     });
     await openTerminal();
-    await advance(1500);
-    expect(host.querySelector('.terminal-boot')).not.toBeNull();
+    const skeleton = host.querySelector('.term[aria-busy="true"]');
+    expect(skeleton).not.toBeNull();
+    expect(skeleton?.textContent).toContain('Done detail');
+    expect(
+      [...host.querySelectorAll('[role="status"]')].filter(
+        (node) => node.textContent === 'Loading terminal…',
+      ),
+    ).toHaveLength(1);
     await act(async () => {
       release();
     });
-    await advance(450);
-    expect(host.querySelector('.terminal-boot')).toBeNull();
+    await act(async () => {
+      await vi.dynamicImportSettled();
+    });
+    expect(host.querySelector('[aria-busy="true"]')).toBeNull();
     expect(host.querySelector('.term')).not.toBeNull();
+    expect(host.textContent).not.toContain('Loading terminal…');
   });
 
-  it('reveals the Terminal immediately when reduced motion is requested', async () => {
-    vi.useFakeTimers();
-    desktop(true);
-    await openTerminal();
-    expect(host.querySelector('.terminal-boot')).toBeNull();
-    expect(host.querySelector('.term')).not.toBeNull();
-    expect(host.querySelector('[inert]')).toBeNull();
-  });
-
-  it('covers the home page from the Terminal button and opens the terminal without a reload', async () => {
-    vi.useFakeTimers();
+  it('opens the terminal from the home page Terminal button without a reload', async () => {
     desktop();
     window.history.replaceState(null, '', '/');
     await render();
     await act(async () => host.querySelector<HTMLAnchorElement>('a.terminal-link')?.click());
-    expect(document.querySelector('.terminal-veil')).toBeNull();
-    await advance(300);
-    expect(document.querySelector('.terminal-veil')).not.toBeNull();
-    expect(window.location.pathname).toBe('/');
-    await advance(arrivalMs());
+    expect(window.location.pathname).toBe('/terminal');
     await act(async () => {
       await vi.dynamicImportSettled();
     });
-    expect(window.location.pathname).toBe('/terminal');
-    expect(document.querySelector('.terminal-veil')).toBeNull();
-    expect(host.querySelector('.terminal-boot')).not.toBeNull();
+    expect(host.querySelector('.term')).not.toBeNull();
   });
 
-  it('reveals the failed data request and keeps retry loading plain', async () => {
-    vi.useFakeTimers();
+  it('reveals the failed data request and shows the skeleton again while retrying', async () => {
     desktop();
     fetcher.mockRejectedValueOnce(new Error('Offline'));
     await openTerminal();
-    expect(host.querySelector('.terminal-boot')).not.toBeNull();
-    await advance(800);
-    await advance(450);
-    expect(host.querySelector('.terminal-boot')).toBeNull();
-    expect(host.querySelector('[inert]')).toBeNull();
     expect(host.textContent).toContain('Terminal data unavailable');
     expect(host.querySelector('.empty button')?.textContent).toBe('Retry');
     let fail = (_error: Error) => {};
@@ -777,7 +726,7 @@ describe('terminal availability', () => {
       }),
     );
     await click('.empty button');
-    expect(host.querySelector('.terminal-boot')).toBeNull();
+    expect(host.querySelector('[aria-busy="true"]')).not.toBeNull();
     expect(host.querySelector('[role="status"]')?.textContent).toBe('Loading terminal…');
     await act(async () => {
       fail(new Error('Still offline'));
@@ -793,7 +742,7 @@ describe('terminal availability', () => {
     await render();
     expect(host.textContent).toContain('The terminal is not available on mobile yet.');
     expect(host.querySelector('a')?.getAttribute('href')).toBe('/');
-    expect(host.querySelector('.terminal-boot')).toBeNull();
+    expect(host.querySelector('[aria-busy="true"]')).toBeNull();
     expect(fetcher).not.toHaveBeenCalled();
     fetcher.mockRejectedValueOnce(new Error('Offline'));
     await act(async () => {
