@@ -32,6 +32,7 @@ import { Empty, Lock, StatusBar } from './ui.js';
 import { PricePane } from './PricePane.js';
 import { BrokerSummaryPane, BrokerFlowPane, ForeignFlowPane } from './BrokerPanes.js';
 import { BrokerDistributionPane } from './DistributionPane.js';
+import { BrokerActivityPane } from './BrokerActivityPane.js';
 import { DoneDetailPane, OrderBookPane, RunningTradePane, TradeBookPane } from './TickPanes.js';
 import { WatchlistPane, MoversPane, SignalsPane, HeatmapPane } from './MarketPanes.js';
 import { KeyFiguresPane, HoldersAndChangesPane, DisclosuresPane } from './TickerPanes.js';
@@ -446,6 +447,8 @@ function PaneView({ id }: { id: FunctionId }) {
       return <BrokerFlowPane />;
     case 'BD':
       return <BrokerDistributionPane />;
+    case 'BA':
+      return <BrokerActivityPane />;
     case 'FF':
       return <ForeignFlowPane />;
     case 'OB':

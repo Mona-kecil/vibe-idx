@@ -4,9 +4,14 @@ import { registerHooks } from 'node:module';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { z } from 'zod';
-import { brokerHistorySchema } from '../src/brokers.js';
+import {
+  brokerBoards,
+  brokerHistorySchema,
+  brokerLedgerSchema,
+  brokerSessionSchema,
+} from '../src/brokers.js';
 import { corporateActionsSchema, tickerSchema } from '../src/data.js';
-import { barFileSchema, tickBookSchema, tickTradesSchema } from '../src/ticks.js';
+import { barFileSchema, boardCodes, tickBookSchema, tickTradesSchema } from '../src/ticks.js';
 import { cliErrors, plural } from '../../pipeline/dev/cli.js';
 import { table } from './format.js';
 import { fixtureState, fixturesRoot, localBrokerApi } from './local-api.js';
@@ -21,6 +26,7 @@ registerHooks({
       : next(url, context),
 });
 const { checks, noTrades, skipLine, readNewsIndex } = await import('./checks.js');
+type Activity = import('./checks.js').BrokerActivity;
 type Check = (typeof checks)[number];
 type Outcome = ReturnType<Extract<Check, { session: unknown }>['session']>;
 
@@ -123,6 +129,70 @@ const publicTicker = async (ticker: string) => {
     : undefined;
 };
 
+/**
+ * What every broker's own files say about each ticker, for the sessions checked. Undefined when the fixtures have no
+ * per-broker files, which only a build from the per-broker publication code writes.
+ */
+const activity = await (async () => {
+  const folder = join(fixturesRoot, 'bucket/site/broker-ledger');
+  if (!existsSync(folder) || !chosen.some((c) => 'session' in c)) return undefined;
+  const byTicker = new Map<string, Map<string, Activity>>();
+  const slot = (ticker: string, date: string) => {
+    const days = byTicker.get(ticker) ?? new Map<string, Activity>();
+    byTicker.set(ticker, days);
+    const found = days.get(date) ?? { ledger: [], running: [] };
+    days.set(date, found);
+    return found;
+  };
+  const boardOf = new Map<string, (typeof brokerBoards)[number]>(
+    brokerBoards.map((board) => [boardCodes[board], board]),
+  );
+  const brokers = (await readdir(folder)).map((file) => file.replace(/\.json\.gz$/, ''));
+  for (const broker of brokers) {
+    const ledger = brokerLedgerSchema.parse(await api.json(`view=broker&broker=${broker}`));
+    for (const day of ledger.days) {
+      if (!dates.includes(day.date)) continue;
+      day.ticker.forEach((ticker, i) =>
+        slot(ticker, day.date).ledger.push({
+          broker,
+          board: day.board,
+          buyValue: day.buy_value[i]!,
+          buyShares: day.buy_shares[i]!,
+          sellValue: day.sell_value[i]!,
+          sellShares: day.sell_shares[i]!,
+        }),
+      );
+    }
+    for (const date of dates) {
+      const raw = await api.json(`view=broker&broker=${broker}&date=${date}`);
+      if (!raw) continue;
+      const session = brokerSessionSchema.parse(raw);
+      // The file has a row per minute, which is summed to the session.
+      const rows = new Map<string, Activity['running'][number]>();
+      session.ticker.forEach((ticker, i) => {
+        const board = boardOf.get(session.board[i]!);
+        if (!board) return;
+        const key = `${ticker} ${board}`;
+        const row = rows.get(key) ?? {
+          broker,
+          board,
+          buyValue: 0,
+          buyShares: 0,
+          sellValue: 0,
+          sellShares: 0,
+        };
+        row.buyValue += session.buy_value[i]!;
+        row.buyShares += session.buy_shares[i]!;
+        row.sellValue += session.sell_value[i]!;
+        row.sellShares += session.sell_shares[i]!;
+        rows.set(key, row);
+      });
+      for (const [key, row] of rows) slot(key.split(' ')[0]!, date).running.push(row);
+    }
+  }
+  return byTicker;
+})();
+
 const tally = new Map(
   chosen.map((c) => [
     c.name,
@@ -209,6 +279,8 @@ await Promise.all(
           brokers,
           prices,
           actions: actions.filter((action) => action.ticker === ticker),
+          // A fixture build with per-broker files has a file for every session broker, so a session without any is empty.
+          activity: activity && (activity.get(ticker)?.get(date) ?? { ledger: [], running: [] }),
         };
         for (const check of chosen)
           if ('session' in check) record(check, `${ticker} ${date}`, check.session(session));

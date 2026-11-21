@@ -28,7 +28,7 @@ export const layout: { tree: LayoutNode; slots: Record<string, FunctionId[]> } =
   slots: {
     a: ['MOV', 'WL', 'SIG', 'CA'],
     b: ['HEAT', 'GP', 'BD'],
-    c: ['NEWS', 'DD'],
+    c: ['NEWS', 'DD', 'BA'],
     d: ['KEY', 'RT', 'OB', 'TB'],
     e: ['HDS', 'BRK', 'BFL', 'FF', 'FEED'],
   },

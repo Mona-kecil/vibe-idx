@@ -979,6 +979,7 @@ describe('signed out', () => {
     'Broker summary',
     'Broker flow',
     'Broker distribution',
+    'Broker activity',
     'Foreign flow',
     'Closing order book',
     'Running trade',
