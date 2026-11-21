@@ -59,18 +59,18 @@
   align-items: center;
   gap: 8px;
 }
-.split {
+.breadth .split {
   display: flex;
   width: 96px;
   height: 8px;
   gap: 2px;
 }
-.split span {
+.breadth .split span {
   min-width: 2px;
   border-radius: 2px;
   background: var(--up);
 }
-.split .down {
+.breadth .split .down {
   background: var(--down);
 }
 .pulse .stale {
