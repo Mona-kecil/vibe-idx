@@ -59,7 +59,7 @@ The Site page that lists every ticker that traded in the latest session, ranked 
 _Avoid_: stock list, market page
 
 **Ticker page**:
-The Site page for one ticker: price chart, stats, ownership, timeline and broker summary.
+The Site page for one ticker: price chart, stats, ownership, timeline, broker summary and broker distribution.
 _Avoid_: stock page, company page, detail page
 
 **Search**:
@@ -130,6 +130,10 @@ _Avoid_: feed, disclosures
 The Ticker page section with buyers and sellers by broker over the selection. The Terminal's twin has the same name.
 _Avoid_: broker table
 
+**Broker distribution**:
+The Ticker page section that links each buyer to the brokers it bought from, on the regular board, for one session or the selection. The Terminal's twin has the same name.
+_Avoid_: sankey, broker flow (that is a function of its own)
+
 **Action chip**:
 The Ticker page header badge for the next corporate action within 30 days.
 _Avoid_: event badge, action tag
@@ -141,7 +145,7 @@ _Avoid_: boot, loading screen, splash, void
 ### Terminal
 
 **Layout**:
-The Terminal's one fixed arrangement of panes: the market list on the left, Heatmap and Chart above the ticker's holders and brokers in the middle, and News and Done detail above Key figures and the trade functions on the right.
+The Terminal's one fixed arrangement of panes: the market list on the left, Heatmap, Chart and Broker distribution above the ticker's holders and brokers in the middle, and News and Done detail above Key figures and the trade functions on the right.
 _Avoid_: mode, view, desk, workspace
 
 **Pane**:
@@ -203,7 +207,7 @@ Every signal, grouped by date. The Site's twin is the signal tiles.
 _Avoid_: alerts, signals feed
 
 **Heatmap** (HEAT):
-The heatmap of the 60 tickers with the highest value traded, in the pane it shares with Chart. Picking a ticker while it shows brings Chart back. The Site's twin is Most traded.
+The heatmap of the 60 tickers with the highest value traded, in the pane it shares with Chart and Broker distribution. Picking a ticker while it shows brings Chart back. The Site's twin is Most traded.
 _Avoid_: treemap
 
 **Movers** (MOV):
@@ -253,6 +257,10 @@ _Avoid_: broker flow (that is a function of its own), broker table
 **Broker flow** (BFL):
 Each chosen broker's net buying, summed from zero across the selection or flow period, not the broker's total holding. It has no Site twin.
 _Avoid_: broker summary, accumulation chart
+
+**Broker distribution** (BD):
+Gross buying between brokers from running trade, drawn as bands from each buyer to the sellers it bought from, for one session or the latest 20 sessions of the selection. It shares a pane with Heatmap and Chart. The Site's twin has the same name.
+_Avoid_: sankey, broker flow (that is a function of its own)
 
 **Foreign flow** (FF):
 Daily net buying by foreign clients and its running total, from broker data.
