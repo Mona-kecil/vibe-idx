@@ -36,13 +36,13 @@
 .terminal-page .pairable .broker-ledger button {
   cursor: pointer;
 }
-.terminal-page .broker-ledger .owner-local {
+.terminal-page .owner-local {
   color: var(--broker-local);
 }
-.terminal-page .broker-ledger .owner-government {
+.terminal-page .owner-government {
   color: var(--broker-gov);
 }
-.terminal-page .broker-ledger .owner-foreign {
+.terminal-page .owner-foreign {
   color: var(--broker-foreign);
 }
 .terminal-page .broker-date {
@@ -102,4 +102,71 @@
 }
 .terminal-page .broker-picker > button:hover {
   background: var(--sel);
+}
+.terminal-page .bd-chart {
+  flex: 1;
+  min-height: 160px;
+  margin: 4px 8px 0;
+}
+.terminal-page .bd-chart svg {
+  display: block;
+  overflow: visible;
+  font-size: 10px;
+}
+.terminal-page .bd-band {
+  fill: none;
+  stroke: currentColor;
+  stroke-opacity: 0.55;
+}
+.terminal-page .bd-band.dim {
+  stroke: var(--ink-2);
+  stroke-opacity: 0.07;
+}
+.terminal-page .bd-node {
+  cursor: pointer;
+  outline: none;
+}
+.terminal-page .bd-node rect {
+  fill: currentColor;
+}
+.terminal-page .bd-node text {
+  fill: var(--ink-2);
+  paint-order: stroke;
+  stroke: #101312;
+  stroke-width: 4px;
+  stroke-linejoin: round;
+}
+.terminal-page .bd-node .bd-code {
+  fill: currentColor;
+  font-weight: 600;
+}
+.terminal-page .bd-node.on text {
+  fill: var(--ink);
+  font-weight: 600;
+}
+.terminal-page .bd-node:hover text,
+.terminal-page .bd-node:focus-visible text {
+  text-decoration: underline;
+}
+.terminal-page .bd-keys {
+  display: flex;
+  gap: 12px;
+  margin-right: auto;
+  margin-left: 12px;
+}
+.terminal-page :is(.bd-chart, .bd-keys) .owner-unknown {
+  color: var(--muted);
+}
+.terminal-page .bd-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.terminal-page .bd-key i {
+  width: 7px;
+  height: 7px;
+  background: currentColor;
+}
+.terminal-page .bd-chart stop {
+  stop-color: currentColor;
 }

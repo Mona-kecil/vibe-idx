@@ -4,6 +4,7 @@ export const functions = {
   KEY: 'Key figures',
   BRK: 'Broker summary',
   BFL: 'Broker flow',
+  BD: 'Broker distribution',
   FF: 'Foreign flow',
   OB: 'Closing order book',
   RT: 'Running trade',
@@ -26,6 +27,7 @@ export const isFunction = (value: string): value is FunctionId => Object.hasOwn(
 export const signedInOnly: ReadonlySet<FunctionId> = new Set<FunctionId>([
   'BRK',
   'BFL',
+  'BD',
   'FF',
   'OB',
   'RT',

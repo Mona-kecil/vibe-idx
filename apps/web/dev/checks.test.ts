@@ -113,6 +113,37 @@ describe('brk-rt', () => {
   });
 });
 
+describe('bd-brk', () => {
+  it('passes when each broker bought and sold the value broker data says', () => {
+    expect(run('bd-brk', session())).toEqual([]);
+  });
+
+  it('fails naming the broker whose net value differs', () => {
+    const off = day([brokerRow('AA', 300, 40_000)], [brokerRow('BB', 300, 40_000)]);
+    expect(failures(run('bd-brk', session({ brokers: [off] }))).join(' ')).toMatch(/AA.*BB/);
+  });
+
+  it('counts a broker on both sides once, as its net', () => {
+    const crossed = [
+      ...fills,
+      { buyer: 'BB', seller: 'AA', shares: 100, price: 100, buyerForeign: false },
+    ];
+    const both = day(
+      [brokerRow('AA', 300, 30_000), brokerRow('BB', 100, 10_000)],
+      [brokerRow('BB', 300, 30_000), brokerRow('AA', 100, 10_000)],
+    );
+    expect(
+      run('bd-brk', session({ trades: tradeSession(crossed, { date }), brokers: [both] })),
+    ).toEqual([]);
+  });
+
+  it('skips a board that only one source has', () => {
+    expect(run('bd-brk', session({ brokers: [] }))).toEqual({
+      skip: 'no board with both broker data and running trade',
+    });
+  });
+});
+
 describe('ff-rt', () => {
   it('passes when foreign flow matches running trade foreign clients', () => {
     expect(run('ff-rt', session())).toEqual([]);

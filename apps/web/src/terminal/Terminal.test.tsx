@@ -978,6 +978,7 @@ describe('signed out', () => {
   const locked = [
     'Broker summary',
     'Broker flow',
+    'Broker distribution',
     'Foreign flow',
     'Closing order book',
     'Running trade',

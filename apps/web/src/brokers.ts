@@ -17,6 +17,13 @@ const brokerRowSchema = brokerAmounts.extend({
   investor: z.enum(['domestic', 'foreign', 'unknown']),
   broker_type: brokerTypeSchema,
 });
+/** Who owns the broker firm, which colours its code. Not where its clients are based. */
+export const brokerOwnership: Record<z.infer<typeof brokerTypeSchema>, string> = {
+  local: 'Domestic-owned',
+  foreign: 'Foreign-owned',
+  government: 'State-owned',
+  unknown: 'Ownership unknown',
+};
 export type InvestorFilter = 'ALL' | 'FOREIGN' | 'DOMESTIC';
 export function matchesInvestor(row: BrokerRow, filter: InvestorFilter) {
   return filter === 'ALL' || row.investor === filter.toLowerCase();

@@ -1500,3 +1500,123 @@
     box-shadow: 0 0 0 2px color-mix(in srgb, var(--mark) 35%, transparent);
   }
 }
+.ticker-page .bd-session {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.ticker-page .bd-session button {
+  min-width: 32px;
+  min-height: 32px;
+  color: var(--ink);
+}
+.ticker-page .bd-session button:disabled {
+  color: var(--line);
+}
+.ticker-page .bd-unit {
+  margin-bottom: 12px;
+}
+.ticker-page .bd-note {
+  color: var(--amber);
+  font-size: 13px;
+}
+.ticker-page .bd-columns {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  font-weight: 600;
+}
+.ticker-page .bd-columns .up {
+  color: var(--up);
+}
+.ticker-page .bd-columns .down {
+  color: var(--down);
+}
+.ticker-page .bd-chart {
+  height: 460px;
+  margin-top: 8px;
+}
+.ticker-page .bd-chart svg {
+  display: block;
+  overflow: visible;
+  font: 12px var(--font);
+  font-variant-numeric: tabular-nums;
+}
+.ticker-page .bd-band {
+  fill: none;
+  stroke: currentColor;
+  stroke-opacity: 0.5;
+}
+.ticker-page .bd-band.dim {
+  stroke: var(--muted);
+  stroke-opacity: 0.08;
+}
+.ticker-page .bd-node {
+  cursor: pointer;
+  outline: none;
+}
+.ticker-page .bd-node rect {
+  fill: currentColor;
+}
+.ticker-page .bd-node text {
+  fill: var(--ink);
+  paint-order: stroke;
+  stroke: var(--paper);
+  stroke-width: 4px;
+  stroke-linejoin: round;
+}
+.ticker-page .bd-node .bd-code {
+  fill: currentColor;
+  font-weight: 700;
+}
+.ticker-page .bd-node.on text {
+  font-weight: 700;
+}
+.ticker-page .bd-node:focus-visible text {
+  text-decoration: underline;
+}
+@media (hover: hover) and (pointer: fine) {
+  .ticker-page .bd-node:hover text {
+    text-decoration: underline;
+  }
+}
+.ticker-page .owner-local {
+  color: #7a4fc4;
+}
+.ticker-page .owner-government {
+  color: #167049;
+}
+.ticker-page .owner-foreign {
+  color: #b43c36;
+}
+.ticker-page .owner-unknown {
+  color: var(--muted);
+}
+.ticker-page .bd-keys {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  margin-top: 12px;
+  font-size: 13px;
+}
+.ticker-page .bd-keys span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.ticker-page .bd-keys i {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  background: currentColor;
+}
+@media (min-width: 901px) {
+  .ticker-page .bd-chart {
+    height: 520px;
+  }
+}
+.ticker-page .bd-chart stop {
+  stop-color: currentColor;
+}
