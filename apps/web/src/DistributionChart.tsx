@@ -1,12 +1,13 @@
 import { useId, useLayoutEffect, useRef, useState } from 'react';
 import {
   distributionLayout,
+  labelAmount,
   others,
+  type DistributionFocus,
   type BrokerOwner,
   type Distribution,
 } from './broker-distribution.js';
 
-type Focus = { side: 'buyer' | 'seller'; code: string };
 const bar = 6;
 
 export function DistributionChart({
@@ -33,7 +34,7 @@ export function DistributionChart({
     return () => observer.disconnect();
   }, []);
   const top = data.buyers[0];
-  const [picked, setPicked] = useState<Focus | null>(null);
+  const [picked, setPicked] = useState<DistributionFocus | null>(null);
   const focus =
     picked &&
     (picked.side === 'buyer' ? data.buyers : data.sellers).some((n) => n.code === picked.code)
@@ -51,6 +52,11 @@ export function DistributionChart({
   const node = (side: 'buyer' | 'seller', code: string, amount: number, y: number, h: number) => {
     const left = side === 'buyer';
     const on = focus?.side === side && focus.code === code;
+    const shown = labelAmount(data, focus ?? null, side, code);
+    const withFocus =
+      focus && focus.side !== side && shown !== null
+        ? `, ${format(shown)} ${left ? 'to' : 'from'} ${focus.code}`
+        : '';
     return (
       <g
         key={`${side}:${code}`}
@@ -58,7 +64,7 @@ export function DistributionChart({
         role="button"
         tabIndex={0}
         aria-pressed={on}
-        aria-label={`${code} ${left ? 'bought' : 'sold'} ${format(amount)} ${unit}`}
+        aria-label={`${code} ${left ? 'bought' : 'sold'} ${format(amount)} ${unit}${withFocus}`}
         onClick={() => setPicked({ side, code })}
         onKeyDown={(event) => {
           if (event.key !== 'Enter' && event.key !== ' ') return;
@@ -75,11 +81,13 @@ export function DistributionChart({
         >
           {left ? (
             <>
-              <tspan className="bd-code">{code}</tspan> {format(amount)}
+              <tspan className="bd-code">{code}</tspan>
+              {shown !== null && ` ${format(shown)}`}
             </>
           ) : (
             <>
-              {format(amount)} <tspan className="bd-code">{code}</tspan>
+              {shown !== null && `${format(shown)} `}
+              <tspan className="bd-code">{code}</tspan>
             </>
           )}
         </text>

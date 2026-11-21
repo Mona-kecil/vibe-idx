@@ -65,6 +65,30 @@ export function distribution(
 }
 
 type Box = { y: number; h: number };
+export type DistributionFocus = { side: 'buyer' | 'seller'; code: string };
+/**
+ * The amount a broker's label shows, as Stockbit does: the picked broker's own total, what each broker on the other
+ * side traded with it, and none for the rest of the picked broker's side or brokers it didn't trade with.
+ */
+export function labelAmount(
+  data: Distribution,
+  focus: DistributionFocus | null,
+  side: DistributionFocus['side'],
+  code: string,
+): number | null {
+  const total = (side === 'buyer' ? data.buyers : data.sellers).find(
+    (n) => n.code === code,
+  )?.amount;
+  if (!focus) return total ?? null;
+  if (focus.side === side) return focus.code === code ? (total ?? null) : null;
+  const link = data.links.find((l) =>
+    side === 'seller'
+      ? l.buyer === focus.code && l.seller === code
+      : l.seller === focus.code && l.buyer === code,
+  );
+  return link?.amount ?? null;
+}
+
 /**
  * Stacks each side's nodes top to bottom, every node at least `min` tall so its label fits, and
  * splits each node's height among its links in the other side's order so bands cross as little as

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vite-plus/test';
-import { distribution, distributionLayout, others } from './broker-distribution';
+import { distribution, distributionLayout, labelAmount, others } from './broker-distribution';
 import type { TickTrades } from './ticks';
 
 const session = (
@@ -72,5 +72,35 @@ describe('broker distribution', () => {
         expect(filled).toBeCloseTo(box.h);
         expect(box.y + box.h).toBeLessThanOrEqual(300 + 1e-9);
       }
+  });
+});
+
+describe('broker labels', () => {
+  const day = distribution(
+    [
+      session([
+        ['AA', 'XX', 100, 10],
+        ['AA', 'YY', 300, 10],
+        ['BB', 'XX', 200, 10],
+      ]),
+    ],
+    'regular',
+    'VALUE',
+  );
+  it('shows every total until a broker is picked', () => {
+    expect(labelAmount(day, null, 'buyer', 'AA')).toBe(4000);
+    expect(labelAmount(day, null, 'seller', 'XX')).toBe(3000);
+  });
+  it("shows the picked buyer's total and what each seller sold it, as Stockbit does", () => {
+    const focus = { side: 'buyer', code: 'AA' } as const;
+    expect(labelAmount(day, focus, 'buyer', 'AA')).toBe(4000);
+    expect(labelAmount(day, focus, 'buyer', 'BB')).toBeNull();
+    expect(labelAmount(day, focus, 'seller', 'XX')).toBe(1000);
+    expect(labelAmount(day, focus, 'seller', 'YY')).toBe(3000);
+  });
+  it('shows what each buyer bought from a picked seller, and nothing for a buyer that did not', () => {
+    const focus = { side: 'seller', code: 'YY' } as const;
+    expect(labelAmount(day, focus, 'buyer', 'AA')).toBe(3000);
+    expect(labelAmount(day, focus, 'buyer', 'BB')).toBeNull();
   });
 });
