@@ -44,14 +44,15 @@
   position: absolute;
 }
 .terminal-page .split.row::after {
-  inset: 0 -4px;
+  inset: 0 -6px;
 }
 .terminal-page .split.col::after {
-  inset: -4px 0;
+  inset: -6px 0;
 }
 .terminal-page .split:hover,
 .terminal-page .split:focus-visible {
   background: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
 }
 .terminal-page .pane {
   display: flex;
