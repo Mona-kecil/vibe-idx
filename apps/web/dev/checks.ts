@@ -31,6 +31,20 @@ import { plural } from '../../pipeline/dev/cli.js';
 import { money } from './format.js';
 
 export type CorporateAction = z.infer<typeof corporateActionSchema>;
+/** What one broker bought and sold in one ticker on one board of a session. */
+export type BrokerAmounts = {
+  broker: string;
+  board: BrokerBoard;
+  buyValue: number;
+  buyShares: number;
+  sellValue: number;
+  sellShares: number;
+};
+/**
+ * What every broker's own files say about one ticker and session: the ledger, built from broker data, and the
+ * session file, built from running trade.
+ */
+export type BrokerActivity = { ledger: BrokerAmounts[]; running: BrokerAmounts[] };
 /** One ticker's data on one session, as the app loads it. */
 export type Session = {
   ticker: string;
@@ -45,6 +59,8 @@ export type Session = {
   /** Undefined when the ticker has no price history, such as a warrant. */
   prices: Ticker['prices'] | undefined;
   actions: CorporateAction[];
+  /** Undefined when the fixtures have no per-broker files, which only a build from this code writes. */
+  activity?: BrokerActivity | undefined;
 };
 /** A ticker's whole broker history, for checks over a period rather than a session. */
 export type History = { brokers: BrokerDay[] };
@@ -101,6 +117,51 @@ function tradeTotals(trades: TickTrades, board: string) {
     if (trades.seller_foreign[i]) foreign -= amount;
   });
   return { brokers, value, shares, count, foreign };
+}
+
+/** What each broker bought and sold in running trade on one board. */
+function tradeSides(trades: TickTrades, board: string) {
+  const brokers = new Map<string, Omit<BrokerAmounts, 'broker' | 'board'>>();
+  const side = (code: string) => {
+    const total = brokers.get(code) ?? { buyValue: 0, buyShares: 0, sellValue: 0, sellShares: 0 };
+    brokers.set(code, total);
+    return total;
+  };
+  trades.time.forEach((_, i) => {
+    if (trades.board[i] !== board) return;
+    const shares = trades.shares[i]!,
+      value = trades.price[i]! * shares;
+    const buyer = side(trades.buyer[i]!);
+    buyer.buyValue += value;
+    buyer.buyShares += shares;
+    const seller = side(trades.seller[i]!);
+    seller.sellValue += value;
+    seller.sellShares += shares;
+  });
+  return brokers;
+}
+const amountKeys = ['buyValue', 'sellValue', 'buyShares', 'sellShares'] as const;
+/** Compares each broker's four totals on one board, and lists brokers that only one side has. */
+function compareAmounts(
+  board: BrokerBoard,
+  published: BrokerAmounts[],
+  expected: Map<string, Omit<BrokerAmounts, 'broker' | 'board'>>,
+  names: [string, string],
+) {
+  const own = new Map<string, BrokerAmounts>();
+  for (const row of published) if (row.board === board) own.set(row.broker, row);
+  const codes = [...new Set([...own.keys(), ...expected.keys()])].sort();
+  return differences(
+    board,
+    codes.flatMap((code) =>
+      amountKeys.map((key): [string, number, number] => [
+        `${code} ${key}`,
+        own.get(code)?.[key] ?? 0,
+        expected.get(code)?.[key] ?? 0,
+      ]),
+    ),
+    names,
+  );
 }
 
 /** Lists the first few differences of a keyed comparison, plus how many more there are. */
@@ -427,6 +488,60 @@ export const checks: Check[] = [
             },
           ]
         : findings;
+    },
+  },
+  {
+    name: 'ba-brk',
+    title: 'BA ledger per broker matches BRK',
+    session: (s) => {
+      if (!s.activity) return { skip: 'no per-broker files in the fixtures' };
+      const active = boards(s).filter(({ days }) => days.length);
+      const ledgerOnly = brokerBoards.filter(
+        (board) =>
+          !active.some((a) => a.board === board) &&
+          s.activity!.ledger.some((row) => row.board === board),
+      );
+      if (!active.length && !ledgerOnly.length) return { skip: 'no broker data' };
+      return [
+        ...ledgerOnly.map((board) => `${board}: the ledgers have rows, BRK has none`),
+        ...active.flatMap(({ board, days }) =>
+          compareAmounts(
+            board,
+            s.activity!.ledger,
+            new Map(
+              aggregateBrokers(days).map((b) => [
+                b.code,
+                {
+                  buyValue: b.buyValue,
+                  sellValue: b.sellValue,
+                  buyShares: b.buy,
+                  sellShares: b.sell,
+                },
+              ]),
+            ),
+            ['BA', 'BRK'],
+          ),
+        ),
+      ];
+    },
+  },
+  {
+    name: 'ba-rt',
+    title: 'BA session file per broker matches RT',
+    session: (s) => {
+      if (!s.activity) return { skip: 'no per-broker files in the fixtures' };
+      const withTrades = brokerBoards.filter(
+        (board) =>
+          tradeTotals(s.trades, boardCode[board]).count ||
+          s.activity!.running.some((row) => row.board === board),
+      );
+      if (!withTrades.length) return { skip: 'no running trade' };
+      return withTrades.flatMap((board) =>
+        compareAmounts(board, s.activity!.running, tradeSides(s.trades, boardCode[board]), [
+          'BA',
+          'RT',
+        ]),
+      );
     },
   },
   {

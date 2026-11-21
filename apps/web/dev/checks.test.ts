@@ -11,6 +11,7 @@ import {
   noTrades,
   skipLine,
   readNewsIndex,
+  type BrokerActivity,
   type CorporateAction,
   type NewsView,
   type Session,
@@ -279,6 +280,68 @@ describe('bfl-1d', () => {
     expect(run('bfl-1d', session({ brokers: [] }))).toEqual({
       skip: 'no board with both broker data and running trade',
     });
+  });
+});
+
+/** The ledger and session file rows for AA and BB when they agree with `fills`. */
+const amounts = (broker: string): BrokerActivity['ledger'] => [
+  broker === 'AA'
+    ? { broker, board: 'regular', buyValue: 30_000, buyShares: 300, sellValue: 0, sellShares: 0 }
+    : { broker, board: 'regular', buyValue: 0, buyShares: 0, sellValue: 30_000, sellShares: 300 },
+];
+const published: BrokerActivity = {
+  ledger: [...amounts('AA'), ...amounts('BB')],
+  running: [...amounts('AA'), ...amounts('BB')],
+};
+
+describe('ba-brk', () => {
+  it('passes when every broker ledger holds what broker data says', () => {
+    expect(run('ba-brk', session({ activity: published }))).toEqual([]);
+  });
+
+  it('fails naming the broker and the total that differs', () => {
+    const ledger = [{ ...amounts('AA')[0]!, buyShares: 200 }, ...amounts('BB')];
+    expect(
+      failures(run('ba-brk', session({ activity: { ...published, ledger } }))).join(' '),
+    ).toMatch(/AA buyShares BA 200 BRK 300/);
+  });
+
+  it('fails when a broker has no ledger row for a session broker data has', () => {
+    const ledger = amounts('AA');
+    expect(
+      failures(run('ba-brk', session({ activity: { ...published, ledger } }))).join(' '),
+    ).toMatch(/BB sellValue/);
+  });
+
+  it('skips when the fixtures have no per-broker files', () => {
+    expect(run('ba-brk', session())).toEqual({ skip: 'no per-broker files in the fixtures' });
+  });
+});
+
+describe('ba-rt', () => {
+  it('passes when every broker session file holds what running trade traded', () => {
+    expect(run('ba-rt', session({ activity: published }))).toEqual([]);
+  });
+
+  it('fails when a broker file lacks a seller', () => {
+    const running = amounts('AA');
+    expect(
+      failures(run('ba-rt', session({ activity: { ...published, running } }))).join(' '),
+    ).toMatch(/BB sellValue/);
+  });
+
+  it('fails when a broker file has a board that running trade lacks', () => {
+    const running = [...published.running, { ...amounts('AA')[0]!, board: 'cash' as const }];
+    expect(failures(run('ba-rt', session({ activity: { ...published, running } }))).length).toBe(1);
+  });
+
+  it('skips a session without running trade or broker files', () => {
+    expect(
+      run(
+        'ba-rt',
+        session({ trades: noTrades('BBCA', date), activity: { ledger: [], running: [] } }),
+      ),
+    ).toEqual({ skip: 'no running trade' });
   });
 });
 
