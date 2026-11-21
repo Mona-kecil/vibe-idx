@@ -1,8 +1,6 @@
 import type { Locator, Page } from 'playwright-core';
 
-export const modes = ['grid', 'focus', 'flow'] as const;
-type Mode = (typeof modes)[number];
-const modeButton = { grid: '1GRID', focus: '2FOCUS', flow: '3FLOW' } as const;
+import { functions, type FunctionId } from '../src/terminal/functions';
 
 /** Elements that must all be seen. `first` keeps only the leading rows of a ranked list. */
 export type Target = Locator | { rows: Locator; first: number };
@@ -11,7 +9,7 @@ type Cost = { steps: number; hidden: string[] };
 
 /**
  * Drives one terminal session and counts the steps a person would take.
- * A click, tab switch, mode switch or command is one step. Each screen of scrolling a pane needs
+ * A click, tab switch or command is one step. Each screen of scrolling a pane needs
  * to bring every target into view is one step.
  */
 export class Ui {
@@ -19,8 +17,8 @@ export class Ui {
   log: string[] = [];
   constructor(readonly page: Page) {}
 
-  pane(fn: string) {
-    return this.page.getByRole('tabpanel', { name: fn, exact: true });
+  pane(fn: FunctionId) {
+    return this.page.getByRole('tabpanel', { name: functions[fn], exact: true });
   }
 
   async settle() {
@@ -41,50 +39,21 @@ export class Ui {
     this.log.push(`${count} ${what}`);
   }
 
-  private async mode(): Promise<Mode> {
-    for (const mode of modes)
-      if (
-        (await this.page
-          .getByRole('button', { name: modeButton[mode] })
-          .getAttribute('aria-pressed')) === 'true'
-      )
-        return mode;
-    throw new Error('No layout is pressed');
+  private async shown(fn: FunctionId) {
+    const pane = this.pane(fn);
+    return (await pane.count()) > 0 && (await pane.isVisible());
   }
 
-  private async switchTo(mode: Mode) {
-    await this.page.getByRole('button', { name: modeButton[mode] }).click();
-    await this.settle();
-  }
-
-  private async shown(fn: string) {
-    const panel = this.pane(fn);
-    return (await panel.count()) > 0 && (await panel.isVisible());
-  }
-
-  /**
-   * Brings a function's pane on screen by the cheapest route: already visible costs nothing, then a
-   * tab in this mode, a mode where it is already showing, or the command bar, one step each.
-   */
-  async open(fn: string): Promise<Locator> {
+  /** Brings a function's pane on screen by the cheapest route: already visible costs nothing, then its tab, then the command bar, one step each. */
+  async open(fn: FunctionId): Promise<Locator> {
     if (await this.shown(fn)) return this.pane(fn);
-    const tab = this.page.getByRole('tab', { name: fn, exact: true });
+    const tab = this.page.getByRole('tab', { name: functions[fn], exact: true });
     if ((await tab.count()) > 0) {
       await tab.click();
       await this.settle();
-      this.step(`tab ${fn}`);
+      this.step(`tab ${functions[fn]}`);
       return this.pane(fn);
     }
-    const start = await this.mode();
-    for (const mode of modes) {
-      if (mode === start) continue;
-      await this.switchTo(mode);
-      if (await this.shown(fn)) {
-        this.step(`mode ${mode} for ${fn}`);
-        return this.pane(fn);
-      }
-    }
-    await this.switchTo(start);
     const command = this.page.getByRole('combobox', { name: 'Command' });
     await command.fill(fn);
     await command.press('Enter');
@@ -101,8 +70,8 @@ export class Ui {
   }
 
   /** Presses a segmented-control option unless it is already pressed. */
-  async press(panel: Locator, option: string) {
-    const button = panel.getByRole('button', { name: option, exact: true });
+  async press(pane: Locator, option: string) {
+    const button = pane.getByRole('button', { name: option, exact: true });
     if ((await button.getAttribute('aria-pressed')) === 'true') return;
     await this.click(button, option);
   }

@@ -84,7 +84,7 @@ export const questions: Question[] = [
       await ui.click(orders.first(), 'largest order');
       await ui.see(
         ui.page.getByLabel('Selected block summary'),
-        ui.page.locator('.tick-tape tbody > tr[data-highlighted="true"]').first(),
+        ui.page.locator('.tick-tape tbody > tr[data-picked="true"]').first(),
       );
     },
   },

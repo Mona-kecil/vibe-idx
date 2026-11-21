@@ -27,9 +27,10 @@ if (args.help) {
   console.log(`pnpm perf:terminal [--base REF] [--runs N] [--out DIR] [--profile]
 
 Builds production React with preview auth, using only local fixtures and recorded responses.
-Each fresh browser context opens BBCA FLOW, RT, BRK, BFL, TB, FF, BBRI, FOCUS,
-BBCA, GRID, then FLOW. Reports long-animation frames (>50ms), blocking duration,
-errors, requests and mounted rows. Score is the sum of the ten post-boot medians.
+Each fresh browser context opens BBCA, then clicks the tabs Chart, Heatmap, News, Done detail,
+Running trade, Broker summary, Broker flow, Foreign flow and Trade book, shows Chart again,
+and switches to BBRI and back to BBCA. Reports long-animation frames (>50ms), blocking
+duration, errors, requests and mounted rows. Score is the sum of the post-boot medians.
 Sides alternate AB BA; each has a fresh context per run. No CPU throttling.
 --profile collects separate CPU profiles instead of decision-grade timings.
 Artifacts stay outside the repository. No response bodies or screenshots are saved.`);
@@ -156,25 +157,30 @@ async function measure(browser: Browser, url: string, label: string): Promise<Ru
     await field.press('Enter');
   };
   const tab = (name: string) => page.getByRole('tab', { name, exact: true }).first().click();
-  const steps: [string, () => Promise<unknown>, string, string][] = [
-    ['boot-flow', () => page.goto(`${url}/terminal?t=BBCA&l=flow`), 'BBCA', 'flow'],
-    ...['RT', 'BRK', 'BFL', 'TB', 'FF'].map(
-      (name): [string, () => Promise<unknown>, string, string] => [
-        `tab-${name}`,
-        () => tab(name),
-        'BBCA',
-        'flow',
-      ],
-    ),
-    ['ticker-switch-flow', () => command('BBRI'), 'BBRI', 'flow'],
-    ['mode-focus', () => command('FOCUS'), 'BBRI', 'focus'],
-    ['ticker-switch-focus', () => command('BBCA'), 'BBCA', 'focus'],
-    ['mode-grid', () => command('GRID'), 'BBCA', 'grid'],
-    ['mode-flow-again', () => command('FLOW'), 'BBCA', 'flow'],
+  const steps: [string, () => Promise<unknown>, string][] = [
+    ['boot', () => page.goto(`${url}/terminal?t=BBCA`), 'BBCA'],
+    ...[
+      'Chart',
+      'Heatmap',
+      'News',
+      'Done detail',
+      'Running trade',
+      'Broker summary',
+      'Broker flow',
+      'Foreign flow',
+      'Trade book',
+      'Chart',
+    ].map((name): [string, () => Promise<unknown>, string] => [
+      `tab-${name}`,
+      () => tab(name),
+      'BBCA',
+    ]),
+    ['ticker-switch', () => command('BBRI'), 'BBRI'],
+    ['ticker-switch-back', () => command('BBCA'), 'BBCA'],
   ];
   const results: Click[] = [];
   try {
-    for (const [step, act, ticker, mode] of steps) {
+    for (const [step, act, ticker] of steps) {
       const errorStart = errors.length,
         requestStart = requests;
       await page.evaluate(() => document.dispatchEvent(new Event('perf-reset')));
@@ -198,8 +204,7 @@ async function measure(browser: Browser, url: string, label: string): Promise<Ru
         };
       });
       const query = new URL(page.url()).searchParams;
-      if (query.get('t') !== ticker || query.get('l') !== mode)
-        errors.push(`Wrong state after ${step}`);
+      if (query.get('t') !== ticker) errors.push(`Wrong state after ${step}`);
       if (
         step.startsWith('tab-') &&
         (await page

@@ -1,6 +1,6 @@
 # Terminal hillclimb
 
-Counts the steps the Terminal takes to answer a fixed list of daily questions. Lower is better. The total was 181 at the start and 86 on 11 November 2026.
+Counts the steps the Terminal takes to answer a fixed list of daily questions. Lower is better. The total was 181 at the start and 86 on 11 November 2026 and 139 on 21 November 2026, after the Terminal became one fixed screen.
 
 ## Run
 
@@ -8,20 +8,20 @@ Counts the steps the Terminal takes to answer a fixed list of daily questions. L
 pnpm --filter @vibe-idx/web hillclimb
 ```
 
-It prints steps per question for each ticker and window, the total, the count of questions answered, the error count, and the visible controls on each mode's default screen.
+It prints steps per question for each ticker and window, the total, the count of questions answered, the error count, and the visible controls on the default screen.
 
 - `--verbose` prints each step.
 - `--repeat 3` checks that the total repeats.
-- `--shots <dir>` saves each mode's default screen for SINI.
+- `--shots <dir>` saves the default screen for SINI at each window size.
 - `--record` fills missing responses from live public data and the private bucket copy in `~/.cache/vibe-idx/fixtures`. Re-recording sets a new baseline.
 
 The harness starts the dev server with a stub sign-in and replays every request from `~/.cache/vibe-idx/hillclimb`, so no request leaves the machine. That store holds private broker data and running trades, so it stays out of the repository. Copy the directory to run on another machine.
 
 ## Metric
 
-The total is the step count summed over three tickers and three windows. A step is one tab switch, mode switch, command, click or screen of scrolling. An answer already visible when its question starts costs nothing.
+The total is the step count summed over three tickers and three windows. A step is one tab switch, command, click or screen of scrolling. An answer already visible when its question starts costs nothing.
 
-The questions run in order, one run per ticker and window, starting from GRID, and the screen carries over between questions. To bring a pane on screen, the harness takes the cheapest route: nothing if it is showing, otherwise one step for a tab in this mode, a mode where it already shows, or the command bar. Scrolling counts the screens needed to bring every target's text and drawings into view, per scroll container. A target no scrolling can reveal is an error.
+The questions run in order, one run per ticker and window, starting from the default screen, and the screen carries over between questions. To bring a pane on screen, the harness takes the cheapest route: nothing if it is showing, otherwise one step for its tab, found by its readable name, or the command bar. Scrolling counts the screens needed to bring every target's text and drawings into view, per scroll container. A target no scrolling can reveal is an error.
 
 - **Clock:** frozen at 11 November 2026 12:28 WIB, with broker data and running trades through 10 November.
 - **Tickers:** SINI (13 holder blocks), BBCA (6) and UNVR (3). The Watchlist holds eight Pins.
@@ -58,4 +58,3 @@ A pane that answers none of these leaves the default slots. `questions.ts` scrip
 - One broker filter shared across panes.
 - A price line on FF, with one zero for the bars and the running total.
 - TB and OB as one ladder.
-- Picking a ticker in GRID jumps to FOCUS. This saves a keypress, but you can no longer arrow through the Watchlist with the chart in view.

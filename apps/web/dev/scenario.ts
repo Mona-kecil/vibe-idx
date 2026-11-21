@@ -5,7 +5,7 @@
 import type { Visit } from './browser.js';
 
 export type Note = {
-  /** A Playwright selector: CSS, or `role=tab[name="BRK"]`, `text=...`. */
+  /** A Playwright selector: CSS, or `role=tab[name="Broker summary"]`, `text=...`. */
   at: string;
   text: string;
   /** Which shot gets the box. Changed or new things go on after, removed things on before. */

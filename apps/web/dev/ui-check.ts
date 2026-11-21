@@ -30,7 +30,7 @@ Opens a page of the app in the local preview, on the fixtures, and prints consol
 the page's accessibility outline. Exits 1 on errors and failed requests, and with --strict on 404s too. A 404 the
 preview sends on purpose, such as the order book before the close, is listed apart and never fails.
 
-path            / by default. The terminal is /terminal?t=<TICKER>&l=<grid|focus|flow>; others include /market.
+path            / by default. The terminal is /terminal?t=<TICKER>; others include /market.
 --clock HH:MM   a time in the as-of session, or close (the default). During the session broker data, daily
                 prices and the tick panes end the session before, as in production: the session's running trade
                 and order book are published after the close.
