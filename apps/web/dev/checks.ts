@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { aggregateBrokers } from '../src/broker-data.js';
+import { distribution } from '../src/broker-distribution.js';
 import {
   brokerBoards,
   type BrokerBoard,
@@ -210,6 +211,33 @@ export const checks: Check[] = [
             ['BRK', 'RT'],
           ),
         ];
+      });
+    },
+  },
+  {
+    name: 'bd-brk',
+    title: 'BD net value by broker matches BRK',
+    // A board that only one source has fails brk-rt; here it has nothing to compare.
+    session: (s) => {
+      const withBrokers = boards(s).filter(({ days, rt }) => days.length && rt.count);
+      if (!withBrokers.length) return { skip: 'no board with both broker data and running trade' };
+      return withBrokers.flatMap(({ board, days }) => {
+        // Every broker keeps its own node, so none is folded into Others.
+        const chart = distribution([s.trades], board, 'VALUE', Infinity);
+        const bd = new Map<string, number>();
+        for (const { code, amount } of chart.buyers) bd.set(code, (bd.get(code) ?? 0) + amount);
+        for (const { code, amount } of chart.sellers) bd.set(code, (bd.get(code) ?? 0) - amount);
+        const brk = new Map(aggregateBrokers(days).map((b) => [b.code, b.buyValue - b.sellValue]));
+        const codes = [...new Set([...brk.keys(), ...bd.keys()])].sort();
+        return differences(
+          `${board} net value`,
+          codes.map((code): [string, number, number] => [
+            code,
+            bd.get(code) ?? 0,
+            brk.get(code) ?? 0,
+          ]),
+          ['BD', 'BRK'],
+        );
       });
     },
   },
