@@ -243,6 +243,13 @@ function PriceHistory({
     price.priceScale().applyOptions({
       scaleMargins: { top: 0.08, bottom: 0.28 },
     });
+    // The scale runs on into the volume strip below the bars, where it would label prices below zero.
+    api.applyOptions({
+      localization: {
+        tickmarksPriceFormatter: (values: number[]) =>
+          values.map((value) => (value < 0 ? '' : nf(value))),
+      },
+    });
     const volume = api.addSeries(HistogramSeries, {
       priceScaleId: 'volume',
       lastValueVisible: false,
