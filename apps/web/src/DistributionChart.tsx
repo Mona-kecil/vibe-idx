@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useId, useLayoutEffect, useRef, useState } from 'react';
 import {
   distributionLayout,
   others,
@@ -21,6 +21,7 @@ export function DistributionChart({
   unit: string;
 }) {
   const host = useRef<HTMLDivElement>(null);
+  const gradient = useId();
   const [size, setSize] = useState({ width: 0, height: 0 });
   useLayoutEffect(() => {
     const element = host.current;
@@ -46,6 +47,7 @@ export function DistributionChart({
     mid = width / 2;
   const lit = (band: { buyer: string; seller: string }) =>
     focus !== null && focus !== undefined && band[focus.side] === focus.code;
+  const litBands = view ? view.bands.filter(lit) : [];
   const node = (side: 'buyer' | 'seller', code: string, amount: number, y: number, h: number) => {
     const left = side === 'buyer';
     const on = focus?.side === side && focus.code === code;
@@ -88,12 +90,36 @@ export function DistributionChart({
     <div className="bd-chart" ref={host}>
       {view && (
         <svg width={width} height={height} role="group" aria-label={`Buyers to sellers, ${unit}`}>
+          <defs>
+            {litBands.map((band, index) => (
+              // Like Stockbit, a lit band fades from its buyer's ownership colour to its seller's.
+              <linearGradient
+                key={`${band.buyer} ${band.seller}`}
+                id={`${gradient}-${index}`}
+                gradientUnits="userSpaceOnUse"
+                x1={x0}
+                x2={x1}
+                y1={0}
+                y2={0}
+              >
+                <stop offset="0" className={`owner-${owner(band.buyer)}`} />
+                <stop offset="1" className={`owner-${owner(band.seller)}`} />
+              </linearGradient>
+            ))}
+          </defs>
           {[...view.bands]
             .sort((a, b) => Number(lit(a)) - Number(lit(b)))
             .map((band) => (
               <path
                 key={`${band.buyer} ${band.seller}`}
-                className={lit(band) ? `bd-band owner-${owner(focus!.code)}` : 'bd-band dim'}
+                className={lit(band) ? 'bd-band' : 'bd-band dim'}
+                style={
+                  lit(band)
+                    ? {
+                        stroke: `url(#${gradient}-${litBands.indexOf(band)})`,
+                      }
+                    : undefined
+                }
                 d={`M${x0},${band.from.y + band.from.h / 2} C${mid},${band.from.y + band.from.h / 2} ${mid},${band.to.y + band.to.h / 2} ${x1},${band.to.y + band.to.h / 2}`}
                 strokeWidth={Math.max(1, Math.min(band.from.h, band.to.h))}
               >

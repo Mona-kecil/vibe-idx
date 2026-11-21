@@ -1617,3 +1617,6 @@
     height: 520px;
   }
 }
+.ticker-page .bd-chart stop {
+  stop-color: currentColor;
+}
