@@ -1,7 +1,7 @@
 import type { BrokerBoard, BrokerDay, BrokerRow } from './brokers';
 import { boardCodes, type TickTrades } from './ticks.js';
 
-export type BrokerType = BrokerRow['broker_type'];
+export type BrokerOwner = BrokerRow['broker_type'];
 export const others = 'Others';
 type Node = { code: string; amount: number };
 export type Distribution = {
@@ -121,9 +121,9 @@ export function distributionLayout(data: Distribution, height: number, gap = 6, 
   };
 }
 
-export function brokerTypes(days: BrokerDay[]) {
-  const types = new Map<string, BrokerType>();
+export function brokerOwners(days: BrokerDay[]) {
+  const owners = new Map<string, BrokerOwner>();
   for (const day of days)
-    for (const row of [...day.buy, ...day.sell]) types.set(row.broker, row.broker_type);
-  return types;
+    for (const row of [...day.buy, ...day.sell]) owners.set(row.broker, row.broker_type);
+  return owners;
 }

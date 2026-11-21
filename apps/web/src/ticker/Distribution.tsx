@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@workos-inc/authkit-react';
-import { brokerTypes, distribution, type BrokerType } from '../broker-distribution.js';
+import { brokerOwners, distribution, type BrokerOwner } from '../broker-distribution.js';
+import { brokerOwnership } from '../brokers.js';
 import { DistributionChart } from '../DistributionChart.js';
 import { loadTicks } from '../terminal/tick-data.js';
 import type { TickTrades } from '../ticks.js';
@@ -9,11 +10,7 @@ import { bounds, type Selection } from './logic.js';
 import { dateText, rangeText, short } from './format.js';
 
 const sessionLimit = 20;
-const typeLabels: [BrokerType, string][] = [
-  ['local', 'Local'],
-  ['government', 'Government'],
-  ['foreign', 'Foreign'],
-];
+const ownerships = ['local', 'government', 'foreign'] as const;
 
 export function BrokerDistribution({
   ticker,
@@ -78,8 +75,8 @@ function Distribution({
     };
   }, [ticker, list, getAccessToken]);
   const history = useBrokerHistory(ticker).state;
-  const types = useMemo(
-    () => (history.kind === 'ready' ? brokerTypes(history.days) : new Map<string, BrokerType>()),
+  const owners = useMemo(
+    () => (history.kind === 'ready' ? brokerOwners(history.days) : new Map<string, BrokerOwner>()),
     [history],
   );
   const data = useMemo(
@@ -141,15 +138,15 @@ function Distribution({
           </div>
           <DistributionChart
             data={data}
-            types={types}
+            owners={owners}
             unit={unit === 'LOT' ? 'lot' : 'IDR'}
             format={short}
           />
           <div className="bd-keys">
-            {typeLabels.map(([type, label]) => (
-              <span key={type} className={`bd-${type}`}>
+            {ownerships.map((type) => (
+              <span key={type} className={`owner-${type}`}>
                 <i />
-                {label}
+                {brokerOwnership[type]}
               </span>
             ))}
           </div>

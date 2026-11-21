@@ -1582,16 +1582,16 @@
     text-decoration: underline;
   }
 }
-.ticker-page .bd-local {
+.ticker-page .owner-local {
   color: #7a4fc4;
 }
-.ticker-page .bd-government {
+.ticker-page .owner-government {
   color: #167049;
 }
-.ticker-page .bd-foreign {
+.ticker-page .owner-foreign {
   color: #b43c36;
 }
-.ticker-page .bd-unknown {
+.ticker-page .owner-unknown {
   color: var(--muted);
 }
 .ticker-page .bd-keys {

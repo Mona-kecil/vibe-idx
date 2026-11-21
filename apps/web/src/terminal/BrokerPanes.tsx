@@ -6,7 +6,12 @@ import {
   type ISeriesApi,
 } from 'lightweight-charts';
 import { aggregateBrokers, brokerName, edgeFills } from '../broker-data.js';
-import { matchesInvestor, type InvestorFilter, type BrokerDay } from '../brokers.js';
+import {
+  brokerOwnership,
+  matchesInvestor,
+  type InvestorFilter,
+  type BrokerDay,
+} from '../brokers.js';
 import { bounds } from '../ticker/logic.js';
 import { dateText, rangeText, nf, short, signed } from '../ticker/format.js';
 import { useTerminal, type BrokerFilters } from './state.js';
@@ -15,13 +20,6 @@ import { terminalChart, chartDate } from './charts.js';
 import { ChartAttribution as Attribution } from '../ChartAttribution.js';
 import './broker-panes.css';
 
-/** Who owns the broker firm, which colours its code. Not where its clients are based. */
-const ownership = {
-  local: 'Domestic-owned',
-  foreign: 'Foreign-owned',
-  government: 'State-owned',
-  unknown: 'Ownership unknown',
-} as const;
 function BrokerGate({ children }: { children: (days: BrokerDay[]) => ReactNode }) {
   const { brokers, authState, signIn, brokerError, retryBrokers } = useTerminal();
   if (authState !== 'signed-in') return <SignInPrompt />;
@@ -212,7 +210,7 @@ function Summary({ days }: { days: BrokerDay[] }) {
               <td className="l">
                 {gross ? (
                   <button
-                    title={`${brokerName(row.code)}\n${ownership[row.owner]}`}
+                    title={`${brokerName(row.code)}\n${brokerOwnership[row.owner]}`}
                     className={`owner-${row.owner}`}
                     aria-pressed={pair === row.code}
                     onClick={() => setPair(pair === row.code ? null : row.code)}
@@ -221,7 +219,7 @@ function Summary({ days }: { days: BrokerDay[] }) {
                   </button>
                 ) : (
                   <span
-                    title={`${brokerName(row.code)}\n${ownership[row.owner]}`}
+                    title={`${brokerName(row.code)}\n${brokerOwnership[row.owner]}`}
                     className={`owner-${row.owner}`}
                   >
                     {row.code}

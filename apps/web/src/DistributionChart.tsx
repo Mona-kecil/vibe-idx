@@ -2,7 +2,7 @@ import { useLayoutEffect, useRef, useState } from 'react';
 import {
   distributionLayout,
   others,
-  type BrokerType,
+  type BrokerOwner,
   type Distribution,
 } from './broker-distribution.js';
 
@@ -11,12 +11,12 @@ const bar = 6;
 
 export function DistributionChart({
   data,
-  types,
+  owners,
   format,
   unit,
 }: {
   data: Distribution;
-  types: Map<string, BrokerType>;
+  owners: Map<string, BrokerOwner>;
   format: (amount: number) => string;
   unit: string;
 }) {
@@ -40,7 +40,7 @@ export function DistributionChart({
       : top && { side: 'buyer' as const, code: top.code };
   const { width, height } = size;
   const view = width > 0 && height > 0 ? distributionLayout(data, height) : null;
-  const type = (code: string) => (code === others ? 'unknown' : (types.get(code) ?? 'unknown'));
+  const owner = (code: string) => (code === others ? 'unknown' : (owners.get(code) ?? 'unknown'));
   const x0 = bar,
     x1 = width - bar,
     mid = width / 2;
@@ -52,7 +52,7 @@ export function DistributionChart({
     return (
       <g
         key={`${side}:${code}`}
-        className={`bd-node bd-${type(code)}${on ? ' on' : ''}`}
+        className={`bd-node owner-${owner(code)}${on ? ' on' : ''}`}
         role="button"
         tabIndex={0}
         aria-pressed={on}
@@ -93,7 +93,7 @@ export function DistributionChart({
             .map((band) => (
               <path
                 key={`${band.buyer} ${band.seller}`}
-                className={lit(band) ? `bd-band bd-${type(focus!.code)}` : 'bd-band dim'}
+                className={lit(band) ? `bd-band owner-${owner(focus!.code)}` : 'bd-band dim'}
                 d={`M${x0},${band.from.y + band.from.h / 2} C${mid},${band.from.y + band.from.h / 2} ${mid},${band.to.y + band.to.h / 2} ${x1},${band.to.y + band.to.h / 2}`}
                 strokeWidth={Math.max(1, Math.min(band.from.h, band.to.h))}
               >

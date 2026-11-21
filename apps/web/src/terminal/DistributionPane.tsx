@@ -1,5 +1,6 @@
 import { useMemo, type ReactNode } from 'react';
-import { brokerTypes, distribution, type BrokerType } from '../broker-distribution.js';
+import { brokerOwners, distribution, others, type BrokerOwner } from '../broker-distribution.js';
+import { brokerOwnership } from '../brokers.js';
 import { DistributionChart } from '../DistributionChart.js';
 import { bounds } from '../ticker/logic.js';
 import { rangeText, short } from '../ticker/format.js';
@@ -11,12 +12,6 @@ import './broker-panes.css';
 
 /** A selection longer than this sums only its latest sessions, so a year never loads at once. */
 const distributionSessions = 20;
-const typeLabels: Record<BrokerType, string> = {
-  local: 'LOCAL',
-  government: 'GOV',
-  foreign: 'FOREIGN',
-  unknown: 'OTHER',
-};
 
 export function BrokerDistributionPane() {
   const { broker, setBroker, selection, brokers, authState } = useTerminal();
@@ -29,8 +24,8 @@ export function BrokerDistributionPane() {
       : [];
   const dates = range.slice(-distributionSessions);
   const state = useSessionsTrades(dates);
-  const types = useMemo(
-    () => (brokers.kind === 'ready' ? brokerTypes(brokers.data) : new Map<string, BrokerType>()),
+  const owners = useMemo(
+    () => (brokers.kind === 'ready' ? brokerOwners(brokers.data) : new Map<string, BrokerOwner>()),
     [brokers],
   );
   const data = useMemo(
@@ -62,13 +57,15 @@ export function BrokerDistributionPane() {
   else if (!data.total) body = <Empty>No trades</Empty>;
   else {
     const shown = new Set(
-      [...data.buyers, ...data.sellers].map((node) => types.get(node.code) ?? 'unknown'),
+      [...data.buyers, ...data.sellers]
+        .filter((node) => node.code !== others)
+        .map((node) => owners.get(node.code) ?? 'unknown'),
     );
     body = (
       <div className="flow-view">
         <DistributionChart
           data={data}
-          types={types}
+          owners={owners}
           unit={broker.unit === 'LOT' ? 'lot' : 'IDR'}
           format={short}
         />
@@ -78,9 +75,9 @@ export function BrokerDistributionPane() {
             {(['local', 'government', 'foreign', 'unknown'] as const)
               .filter((type) => shown.has(type))
               .map((type) => (
-                <span key={type} className={`bd-key bd-${type}`}>
+                <span key={type} className={`bd-key owner-${type}`}>
                   <i />
-                  {typeLabels[type]}
+                  {brokerOwnership[type]}
                 </span>
               ))}
           </span>
