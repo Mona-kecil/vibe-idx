@@ -677,8 +677,9 @@ describe('React terminal', () => {
     await click('[aria-label="Next session"]');
     await command('BREN RT');
     expect(host.querySelectorAll('.tick-table:not(.tick-book) tbody tr')).toHaveLength(2);
+    await click('[aria-label="Running trade"] .tick-filter-toggle');
     await act(async () => {
-      const input = host.querySelector('input[aria-label="Filter by broker"]');
+      const input = host.querySelector('input[aria-label="Buyer broker"]');
       if (!(input instanceof HTMLInputElement)) throw new Error('Missing broker filter');
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(input, 'xl');
       input.dispatchEvent(new Event('input', { bubbles: true }));
@@ -1469,9 +1470,10 @@ it('shows each NEGO and CASH match with fractional lots and highlights only its 
   trades.shares[0] = 25;
   await render();
   await command('FLOW');
+  await click('[aria-label="Done detail"] .tick-filter-toggle');
   await act(async () => {
     const input = host.querySelector<HTMLInputElement>(
-      '[aria-label="Done detail"] [aria-label="Filter by broker"]',
+      '[aria-label="Done detail"] [aria-label="Buyer broker"]',
     )!;
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'XL');
     input.dispatchEvent(new Event('input', { bubbles: true }));
@@ -1550,7 +1552,8 @@ it('keeps RT filters and the selected summary available while filtering its fill
   const rt = host.querySelector('[aria-label="Running trade"]')!;
   expect(rt.querySelector('[aria-label="Previous session"]')).not.toBeNull();
   expect(rt.querySelector('[aria-label="Trade side"]')).not.toBeNull();
-  const input = rt.querySelector<HTMLInputElement>('[aria-label="Filter by broker"]')!;
+  await click('[aria-label="Running trade"] .tick-filter-toggle');
+  const input = rt.querySelector<HTMLInputElement>('[aria-label="Buyer broker"]')!;
   await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'AA');
     input.dispatchEvent(new Event('input', { bubbles: true }));

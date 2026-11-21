@@ -70,6 +70,17 @@ export type Block = BlockIdentity & {
   counterparties: Party[];
 };
 
+/** The brokers on one side of a block, and whether any client behind that side is foreign or domestic. */
+export function sideParties(block: Block, side: 'buy' | 'sell') {
+  const parties =
+    side === (block.side === 'none' ? 'sell' : block.side) ? [block] : block.counterparties;
+  return {
+    brokers: [...new Set(parties.map((party) => party.broker))],
+    foreign: parties.some((party) => party.foreign),
+    domestic: parties.some((party) => !party.foreign),
+  };
+}
+
 export type BlockSelection = BlockIdentity & Pick<TickTrades, 'ticker' | 'date'>;
 
 export const blockId = (block: BlockIdentity) =>
